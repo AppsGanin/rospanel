@@ -297,11 +297,7 @@ func (s *UserService) trackSubscriber(from *User, chatID int64) {
 // so every reply — including one sent long after that contact — can be written in
 // it without asking. An unknown chat falls back to the reference language.
 func (s *UserService) lang(chatID int64) i18n.Lang {
-	sub, err := s.store.SubscriberByChat(chatID)
-	if err != nil || sub == nil {
-		return i18n.Default
-	}
-	return i18n.Normalize(sub.Lang)
+	return i18n.Normalize(s.store.ChatLang(chatID))
 }
 
 // selfActorCtx marks the context as "this VPN user is acting on themself".
@@ -490,7 +486,7 @@ func (s *UserService) handleCallback(ctx context.Context, client *Client, cb *Ca
 		// press only redraws the screen without it.
 		switch {
 		case set.TGMailingSwitch:
-			s.setMailing(ctx, client, chatID, msgID, set, on == "on")
+			s.setMailing(selfActorCtx(ctx, cb.From), client, chatID, msgID, set, on == "on")
 		default:
 			if u, ok := s.findLinkedUser(chatID); ok {
 				s.editUserMenu(ctx, client, chatID, msgID, set, u)
@@ -1357,11 +1353,9 @@ func (s *UserService) mailingRows(set *model.Settings, chatID int64, lang i18n.L
 
 // mailingRow is the switch: the current state, and a tap flips it.
 func (s *UserService) mailingRow(chatID int64, lang i18n.Lang) []InlineButton {
-	optOut := false
-	if sub, err := s.store.SubscriberByChat(chatID); err != nil {
+	optOut, err := s.store.ChatMailingOff(chatID)
+	if err != nil {
 		log.Printf("telegram user: mailing state for %d: %v", chatID, err)
-	} else if sub != nil {
-		optOut = sub.OptOut
 	}
 	if optOut {
 		return []InlineButton{{Text: i18n.T(lang, "user.btnMailingOff"), CallbackData: "vu:mail:on"}}
@@ -1371,7 +1365,7 @@ func (s *UserService) mailingRow(chatID int64, lang i18n.Lang) []InlineButton {
 
 // setMailing flips the switch and redraws the screen it sits on.
 func (s *UserService) setMailing(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, on bool) {
-	if err := s.store.SetSubscriberOptOut(chatID, !on, time.Now().Unix()); err != nil {
+	if err := s.panel.SetChatMailing(ctx, chatID, on); err != nil {
 		log.Printf("telegram user: set mailing for %d: %v", chatID, err)
 		return
 	}

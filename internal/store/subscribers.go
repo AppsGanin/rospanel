@@ -135,3 +135,21 @@ func (s *Store) SubscriberOrigin(chatID int64) (source string, refUserID int64) 
 		Scan(&source, &refUserID)
 	return source, refUserID
 }
+
+// OptedOutChats returns the chats that turned mailings off in the bot.
+func (s *Store) OptedOutChats() (map[int64]bool, error) {
+	rows, err := s.db.Query(`SELECT chat_id FROM tg_subscribers WHERE opt_out = 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}

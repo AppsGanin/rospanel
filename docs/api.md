@@ -185,7 +185,7 @@ monitor pointed here keeps working.
 | `POST` | `/v1/signup` | Sign up a client from an external system or your own bot under the self-registration rules (see below). |
 | `POST` | `/v1/users/bulk` | Apply one action to many users at once. |
 | `GET` | `/v1/users/{id}` | Get one user. |
-| `PATCH` | `/v1/users/{id}` | Update name / limits / expiry or a term from the first connection / device limit / speed limit / enabled / the external system's `external_id`. |
+| `PATCH` | `/v1/users/{id}` | Update name / limits / expiry or a term from the first connection / device limit / speed limit / enabled / the external system's `external_id` / `mailing` (broadcasts and automatic messages on or off — the bot's switch shows the same) / `lang` (`ru`, `en`, or `""` for what the Telegram reports). |
 | `DELETE` | `/v1/users/{id}` | Delete a user. |
 | `POST` | `/v1/users/{id}/reset` | Reset the user's traffic counters. |
 | `POST` | `/v1/users/{id}/reset-period` | Set auto-reset period. |
@@ -368,7 +368,11 @@ user to:
 ```
 
 A manual order — no `provider`, or `"manual"` — returns an empty `pay_url` and waits for
-`/confirm`; it is refused while manual payment is switched off. Creating an order
+`/confirm`; it is refused while manual payment is switched off. Money you take yourself —
+Telegram Stars in your own bot, your own checkout — is `"provider": "external"`, whatever the
+manual setting: `"paid": true` confirms it in the same call, or `/confirm` later — until then it
+stays pending, `/cancel` drops it; `external_ref` keeps your payment id as `provider_id`.
+It counts in the revenue like any payment. Creating an order
 is **not** idempotent by key, but it does not stack duplicates either: a still-pending
 order for the same user, plan and provider is reused instead of a second one being
 opened, so a retried call returns the order that already exists.
@@ -443,7 +447,7 @@ with `from_balance` when `money_rub` is 0 (add `expect_expire_at` — the `expir
 — so a retried request does not buy a second period), or with a `provider` for the rest. A
 top-up is `{"user_id": 5, "kind": "topup", "amount_rub": 300}` (plus `provider`, or none for a
 manual one). Both take `lang` (`ru`/`en`, for the manual-payment instructions) and
-`return_url` (where a hosted payment sends the payer back; Telegram when left out).
+`return_url` (where a hosted payment sends the payer back; the user's subscription link when left out — your own page, when one is set).
 
 **Your own bot or user cabinet** — the key stays on your server, never in a browser. Tick the
 methods it calls: creating users and linking Telegram, opening orders, promo codes, referrers,
@@ -485,7 +489,8 @@ account in full only to a key with `users.view`) instead of a second trial. The 
 must pass only an id it has verified (a confirmed e-mail): whoever passes it gets that account.
 A new account answers `201 "created"` with the account, a request `202 "pending"` with `request_id`
 (asking again while it waits files nothing). Optional: `name` (the external id when left out),
-`source` (the funnel's tag), `ref` (an invite code; an unknown one is ignored), and `ip` — the
+`source` (the funnel's tag), `ref` (an invite code; an unknown one is ignored), `lang` (`ru` or
+`en`, given to the account — at once, or when the operator approves it), and `ip` — the
 client's address, for a limit of one sign-up a minute per address (per /64 for IPv6) and per id,
 20 a minute in all; over it the answer is `429` with `Retry-After`. Tick the external system's key for
 `POST /v1/signup` (plus what it shows and sells) and not `POST /v1/users`: it then cannot make a
@@ -1165,16 +1170,16 @@ body is never read).
 | `user.deleted` | a user is deleted |
 | `registration.requested` | a sign-up waits for the operator (moderation): `data.request_id`, `data.name`, and `data.telegram_id` or `data.external_id` |
 | `user.registered` | a user self-registers: the Telegram user bot, the Mini App or `POST /v1/signup` (`external_id` or `telegram_id`); `data.telegram_id` when the Telegram is linked by then (a `telegram_id` sign-up, a moderation approval — `data.moderated`, `data.request_id`) — a bot or Mini App sign-up links it right after, in `user.telegram_linked` |
-| `registration.rejected` | an operator rejects a moderated sign-up (`telegram_id` or `external_id`) |
+| `registration.rejected` | a moderated sign-up closes without an account of its own (`telegram_id` or `external_id`): `data.reason` is `operator` (rejected) or `has_account` (approved, but the Telegram or `external_id` already has one — `data.user_id`) |
 | `user.expired` | a subscription lapses |
 | `user.limited` | a user exhausts their traffic quota |
 | `user.device_limited` | a user exceeds their device limit — or a new device is turned away at the limit (`data.refused`, `data.device`) |
-| `user.expiring` | a term is running out — at 14, 7, 3 and 1 days before it ends, each once per term (a renewal starts over; a term given with fewer days left gets the nearest stage only); `data.stage` (14, 7, 3 or 1), `data.days_left` — act on the stages you want |
+| `user.expiring` | a term is running out — at 14, 7, 3 and 1 days before it ends, each once per term (a renewal starts over; a term given with fewer days left gets the nearest stage only); `data.stage` (14, 7, 3 or 1), `data.days_left` — act on the stages you want; with a paid plan the balance can renew, `data.auto_renew`, `data.renew_price_kop`, `data.balance_kop` |
 | `user.traffic_low` | a user has spent 80% of the quota — once until usage drops back under it; `data.used`, `data.percent` |
 | `user.sub_rotated` | the subscription link is reissued (panel, API, or a Telegram move) — the old one no longer works; `data.sub_url` |
 | `user.telegram_linked` | a Telegram is bound to the account (panel, API, bot, Mini App); `data.telegram_id` |
 | `user.telegram_unlinked` | the account loses a Telegram — unlinked, the chat moved to another account, or the account moved to another Telegram; `data.telegram_id` |
-| `user.limits_changed` | the operator changed the limits or the term, or extended it (`data.extended_days` for a bulk extension) |
+| `user.limits_changed` | the operator changed the limits or the term, or extended it (`data.extended_days` for a bulk extension), or a refund took the order's days back (`data.refund_order_id`) |
 | `user.term_started` | a term waiting for the first connection started — `data.expire_at` is now set |
 | `user.traffic_reset` | the traffic counters were zeroed — by hand (`data.auto` false) or by the reset period (`data.auto` true) |
 | `user.device_bound` | a new device took a slot (`data.device`, `data.devices`, `data.device_limit`) |
@@ -1188,10 +1193,15 @@ body is never read).
 | `user.referred` | a user signed up by someone's invite; `data.referrer_id` |
 | `referral.reward` | an invited user's payment earned the inviter (the user in `data`) a reward; `data.reward_kop`, `data.reward_days`, `data.banked`, `data.referred_user_id`, `data.order_id` |
 | `promo.winback` | a lapsed user got a personal discount code; `data.code`, `data.percent`, `data.expires_at`, `data.attached` (already on their next payment) |
+| `promo.redeemed` | a code the user entered took effect: `data.code`, `data.kind` (`balance`, `days`, `percent`, `amount`), `data.value`, `data.plan` (days), `data.balance_kop` |
 | `payment.created` | a payment order is opened |
-| `payment.paid` | an order is paid and the plan applied |
+| `payment.paid` | an order is paid and the plan applied; `data.renewal` for an automatic renewal from the balance, `data.undelivered` when the plan could not be applied and the money went to the balance (`kind` is then `topup`) |
 | `payment.cancelled` | an order is cancelled |
-| `payment.refunded` | an order's money went back — to the balance by an operator, or by the payment system (`refund_source`) |
+| `payment.refunded` | an order's money went back — to the balance by an operator (`data.refund_kop`), or by the payment system (`refund_source`; `data.taken_kop`, `data.returned_kop`); `data.plan_cancelled` when the access it bought was taken back |
+| `user.message` | the operator wrote to the user from the panel: `data.text` (Telegram HTML), `data.buttons` (`text`, `url`), `data.media_kind`/`data.media_name` (the file goes only to Telegram), `data.telegram_sent` — false when the bot did not deliver it (no Telegram, a blocked bot, the bot off), then it is yours to deliver. With this event subscribed the panel can write to users without Telegram |
+| `user.auto_message` | an automatic message came due: `data.rule_id`, `data.rule`, `data.trigger`, `data.text` (Telegram HTML, variables filled in), `data.buttons`, `data.code`/`data.percent`/`data.code_expires_at` (a personal discount), `data.telegram_sent`. With this event subscribed the rules also cover the accounts the bot does not reach — all of them with the bot off — except who turned mailings off in the bot; each account hears a rule once per occurrence, whichever way |
+| `user.mailing` | mailings switched on or off for the user — by the bot's switch, the operator or `PATCH /v1/users/{id}`; `data.mailing` |
+| `broadcast.sent` | a broadcast went out — one delivery per broadcast: `data.id`, `data.text`, `data.buttons`, `data.audience`, `data.media_kind`/`data.media_name`, `data.telegram_recipients` (chats the bot sends it to), `data.users` (`id`, `external_id`) — the accounts in the audience the bot does not reach, except who turned mailings off in the bot. With this event subscribed broadcasts work with the bot off (text only) |
 
 ## Delivery format
 
@@ -1203,15 +1213,20 @@ Each delivery is an HTTP `POST` with a JSON body:
   "event": "user.created",
   "created_at": 1767225600,
   "data": { "id": 7, "name": "alice", "status": "active", "enabled": true,
-            "expire_at": 0, "data_limit": 0, "plan_id": 0 }
+            "expire_at": 0, "data_limit": 0, "plan_id": 0,
+            "external_id": "", "telegram_id": 0, "mailing": true, "lang": "ru" }
 }
 ```
 
 `data` is the user object (`id`, `name`, `status`, `enabled`, `expire_at`, `data_limit`,
-`plan_id`) for every event about a user — `user.*`, `plan.*`, `balance.adjusted`,
-`referral.reward` (the inviter), `promo.winback` — plus the fields the events table lists for it;
-the payment order for `payment.*`; and the request (`request_id`, `name`, `telegram_id` or
-`external_id`) for `registration.requested` and `registration.rejected`.
+`plan_id`, the ids you know the user by — `external_id`, `""` when none, and
+`telegram_id`, 0 when none — `mailing` and `lang`, `""` when unknown) for every event about a user — `user.*`, `plan.*`,
+`balance.adjusted`, `referral.reward` (the inviter), `promo.*` — plus the fields the events
+table lists for it; the payment order for `payment.*`, with `data.user` (that user object, as
+the order left it) and `data.user_balance_kop` (their balance now; the order's own
+`balance_kop` is the part of the price the balance covered); the request (`request_id`, `name`, `telegram_id`
+or `external_id`) for `registration.requested` and `registration.rejected`; and the broadcast
+for `broadcast.sent`.
 
 Headers:
 

@@ -38,10 +38,10 @@ func (s *Store) CreateBroadcast(b *model.Broadcast, now int64) (int64, error) {
 	var id int64
 	err := s.db.QueryRow(
 		`INSERT INTO broadcasts (created_by, text, media_kind, media_name, buttons_json,
-		                         audience, status, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		                         audience, status, created_at, hook_users)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 		b.CreatedBy, b.Text, b.MediaKind, b.MediaName, buttons,
-		b.Audience, model.BroadcastPaused, now,
+		b.Audience, model.BroadcastPaused, now, b.HookUsers,
 	).Scan(&id)
 	if err != nil {
 		return 0, err
@@ -106,6 +106,7 @@ func (s *Store) NextPendingTargets(broadcastID int64, limit int) ([]int64, error
 		 LEFT JOIN tg_subscribers s ON s.chat_id = t.chat_id
 		 WHERE t.broadcast_id = ? AND t.state = ?
 		   AND COALESCE(s.opt_out, 0) = 0 AND COALESCE(s.active, 1) = 1
+		   AND NOT EXISTS (SELECT 1 FROM users u WHERE u.tg_chat_id = t.chat_id AND u.tg_chat_id <> 0 AND u.mailing_off = 1)
 		 ORDER BY t.chat_id LIMIT ?`,
 		broadcastID, model.TargetPending, limit)
 	if err != nil {
@@ -306,7 +307,7 @@ func (s *Store) ListBroadcasts(limit int) ([]model.Broadcast, error) {
 }
 
 const broadcastSelect = `SELECT id, created_by, text, media_kind, media_file_id, media_name,
-       buttons_json, audience, status, created_at, started_at, finished_at FROM broadcasts`
+       buttons_json, audience, status, created_at, started_at, finished_at, hook_users FROM broadcasts`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
@@ -314,7 +315,7 @@ func scanBroadcastRow(r rowScanner) (*model.Broadcast, error) {
 	var b model.Broadcast
 	var buttons string
 	if err := r.Scan(&b.ID, &b.CreatedBy, &b.Text, &b.MediaKind, &b.MediaFileID, &b.MediaName,
-		&buttons, &b.Audience, &b.Status, &b.CreatedAt, &b.StartedAt, &b.FinishedAt); err != nil {
+		&buttons, &b.Audience, &b.Status, &b.CreatedAt, &b.StartedAt, &b.FinishedAt, &b.HookUsers); err != nil {
 		return nil, err
 	}
 	if buttons != "" {

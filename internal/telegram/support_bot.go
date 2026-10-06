@@ -83,11 +83,7 @@ func defaultSupportGreeting(lang i18n.Lang) string {
 // stores on first contact. Support and the client bot share the same person, so
 // the two speak to them in the same language.
 func (s *SupportService) lang(chatID int64) i18n.Lang {
-	sub, err := s.store.SubscriberByChat(chatID)
-	if err != nil || sub == nil {
-		return i18n.Default
-	}
-	return i18n.Normalize(sub.Lang)
+	return i18n.Normalize(s.store.ChatLang(chatID))
 }
 
 // NewSupport builds the support relay bot. Call Run to start polling.

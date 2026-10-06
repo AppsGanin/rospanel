@@ -9,6 +9,7 @@ import {
 import { BroadcastPanel } from "./BroadcastPanel";
 import { EventsPanel } from "./EventsPanel";
 import { GroupsPanel } from "./GroupsPanel";
+import { useMessageHooks } from "./messageHooks";
 import { RegistrationsPanel } from "./RegistrationsPanel";
 import { useCan } from "./role";
 import { PaymentsPage } from "./PaymentsPage";
@@ -60,6 +61,7 @@ export function UsersPage({
   const canExport = useCan("users.export");
   const canPayments = useCan("billing.view");
   const canBroadcast = useCan("broadcasts.manage");
+  const hooks = useMessageHooks();
   const canGroups = useCan("groups.view");
   const canStats = useCan("stats.view");
 
@@ -111,9 +113,9 @@ export function UsersPage({
       : []),
     // Broadcasts live here rather than at the top level: the audience is the bot's
     // users, and composing one is something you do while looking at them. Hidden
-    // without the user bot, which is what actually delivers them — the server would
-    // refuse anyway, and a tab that always errors is worse than no tab.
-    ...(canBroadcast && userBotEnabled
+    // without the user bot or an external system that delivers them — the server
+    // would refuse anyway, and a tab that always errors is worse than no tab.
+    ...(canBroadcast && (userBotEnabled || hooks.broadcast || hooks.autoMessage)
       ? [{ value: "broadcast" as SubTab, label: t("users.tabBroadcast") }]
       : []),
     // Payments are about what users pay for, so they belong beside the users rather
@@ -227,7 +229,7 @@ export function UsersPage({
         {tab === "requests" && (
           <RegistrationsPanel requests={reg.requests} onReload={loadReg} />
         )}
-        {tab === "broadcast" && <BroadcastPanel />}
+        {tab === "broadcast" && <BroadcastPanel userBot={userBotEnabled} />}
         {tab === "payments" && <PaymentsPage onPending={setPendingPay} userBotEnabled={userBotEnabled} />}
         {tab === "groups" && <GroupsPanel />}
         {tab === "stats" && <StatsPanel />}

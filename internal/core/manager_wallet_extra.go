@@ -51,7 +51,9 @@ func (m *Manager) RefundOrder(ctx context.Context, orderID int64, cancelPlan boo
 		}
 	}
 	if after, err := m.store.GetPaymentOrder(order.ID); err == nil {
-		m.EmitWebhook(model.WebhookPaymentRefunded, after)
+		m.emitPaymentWebhook(model.WebhookPaymentRefunded, after, map[string]any{
+			"refund_kop": kop, "plan_cancelled": cancelPlan,
+		})
 	}
 	wal, _ := m.store.GetWalletLite(u.ID)
 	m.notifyUserEvent(set, *u, model.UserNotifyPayment,
@@ -83,6 +85,7 @@ func (m *Manager) takeBackTerm(ctx context.Context, u model.User, order *model.P
 		return m.cancelUserPlan(ctx, u.ID, false)
 	}
 	m.TriggerUserSync()
+	m.emitUserWebhook(model.WebhookUserLimitsChanged, u.ID, map[string]any{"refund_order_id": order.ID})
 	return nil
 }
 

@@ -630,13 +630,14 @@ func (s *Store) LatestPendingManualOrder(userID, planID int64) (*model.PaymentOr
 // LatestPendingProviderOrder returns the newest still-pending order that went
 // through an automatic provider for a user (or sql.ErrNoRows). Used by the
 // subscription page to show a "payment processing" state after the user returns
-// from the provider until the webhook/poll confirms it.
+// from the provider until the webhook/poll confirms it. Not an external system's
+// order: the panel has no part in paying it.
 func (s *Store) LatestPendingProviderOrder(userID int64) (*model.PaymentOrder, error) {
 	orders, err := s.listPaymentOrders(
 		`SELECT `+orderCols+`
 		 FROM payment_orders o`+orderJoins+`
-		 WHERE o.user_id = ? AND o.status = 'pending' AND o.provider <> ''
-		 ORDER BY o.created_at DESC LIMIT 1`, userID)
+		 WHERE o.user_id = ? AND o.status = 'pending' AND o.provider <> '' AND o.provider <> ?
+		 ORDER BY o.created_at DESC LIMIT 1`, userID, model.ExternalPayProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -814,7 +815,8 @@ func (s *Store) SetPaymentWebhookSecret(secret string) error {
 
 // PendingProviderOrders returns pending orders that were started through a payment
 // provider (for the polling fallback). Stale ones (older than maxAge seconds) are
-// skipped — the caller marks them cancelled.
+// skipped — the caller marks them cancelled. An external system's orders are not here:
+// it confirms or cancels them itself.
 func (s *Store) PendingProviderOrders(limit int) ([]model.PaymentOrder, error) {
 	if limit <= 0 {
 		limit = 100
@@ -822,8 +824,8 @@ func (s *Store) PendingProviderOrders(limit int) ([]model.PaymentOrder, error) {
 	return s.listPaymentOrders(
 		`SELECT `+orderCols+`
 		 FROM payment_orders o`+orderJoins+`
-		 WHERE o.status = 'pending' AND o.provider != '' AND o.provider_id != ''
-		 ORDER BY o.created_at ASC LIMIT ?`, limit)
+		 WHERE o.status = 'pending' AND o.provider != '' AND o.provider_id != '' AND o.provider != ?
+		 ORDER BY o.created_at ASC LIMIT ?`, model.ExternalPayProvider, limit)
 }
 
 // periodsJSON stores the multi-period discounts; none is ”.

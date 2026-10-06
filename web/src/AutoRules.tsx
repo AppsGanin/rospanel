@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n, { currentLang, td } from "./i18n";
+import { useMessageHooks } from "./messageHooks";
 import { type AutoRule, deleteAutoRule, listAutoRules, saveAutoRule, testBroadcast } from "./api";
 import { HtmlEditor } from "./HtmlEditor";
 import { errMessage, notifyError, notifySuccess } from "./notify";
@@ -45,6 +46,7 @@ function delayLabel(h: number): string {
 export function AutoRules() {
   const { t } = useTranslation();
   const { confirm, confirmNode } = useConfirm();
+  const hooks = useMessageHooks();
   const [rules, setRules] = useState<AutoRule[] | null>(null);
   const [triggers, setTriggers] = useState<string[]>([]);
   const [edit, setEdit] = useState<AutoRule | null>(null);
@@ -123,7 +125,10 @@ export function AutoRules() {
         </Button>
       }
     >
-      <p className="border-t border-gray-100 px-3.5 py-2 text-[11px] text-ink-muted">{t("rules.hint")}</p>
+      <p className="border-t border-gray-100 px-3.5 py-2 text-[11px] text-ink-muted">
+        {t("rules.hint")}
+        {hooks.autoMessage && ` ${t("rules.hookNote")}`}
+      </p>
       {rules.length === 0 ? (
         <EmptyState title={t("rules.empty")} />
       ) : (

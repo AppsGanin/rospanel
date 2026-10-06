@@ -611,6 +611,7 @@ var ru = map[string]string{
 	"order.afterConfirm":              "\n\nПосле подтверждения платежа администратором услуга будет активирована.",
 	"order.description":               "Тариф «%s», заказ #%d",
 	"pay.manual":                      "вручную",
+	"pay.external":                    "внешняя система",
 	"pay.manualMethod":                "Вручную",
 	"sub.unavailable":                 "недоступно",
 	"sub.payUnavailable":              "оплата недоступна",

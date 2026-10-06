@@ -118,11 +118,18 @@ func (m *Manager) RunAutoRulesLoop(ctx context.Context) {
 	}
 }
 
-// RunAutoRules sends every enabled rule's due messages once.
+// RunAutoRules sends every enabled rule's due messages once: through the bot, and to
+// the external system for the accounts the bot does not reach while a webhook takes
+// user.auto_message.
 func (m *Manager) RunAutoRules(now int64) {
 	set, err := m.Settings()
+	if err != nil {
+		return
+	}
 	send := m.messenger()
-	if err != nil || !set.TGUserBotEnabled || send == nil {
+	bot := set.TGUserBotEnabled && send != nil
+	web := m.webhookWanted(model.WebhookUserAutoMessage)
+	if !bot && !web {
 		return
 	}
 	rules, err := m.store.ListAutoRulesBare()
@@ -140,25 +147,44 @@ func (m *Manager) RunAutoRules(now int64) {
 			continue
 		}
 		cut := now - int64(r.DelayHours)*3600
-		targets, err := m.store.AutoRuleTargets(r, cut-int64(autoRuleCatchUp.Seconds()), cut, now, autoRuleBatch)
-		if err != nil {
-			logErr("auto messages: targets", "rule", r.ID, "err", err)
-			continue
+		floor := cut - int64(autoRuleCatchUp.Seconds())
+		if bot {
+			targets, err := m.store.AutoRuleTargets(r, floor, cut, now, autoRuleBatch)
+			if err != nil {
+				logErr("auto messages: targets", "rule", r.ID, "err", err)
+				continue
+			}
+			for _, t := range targets {
+				if m.sendAutoRule(set, send, r, t, now) {
+					// Paced below Telegram's broadcast rate: the sweep sends itself rather
+					// than through the notice queue, which drops what does not fit.
+					time.Sleep(autoRuleGap)
+				}
+			}
 		}
-		for _, t := range targets {
-			if m.sendAutoRule(set, send, r, t, now) {
-				// Paced below Telegram's broadcast rate: the sweep sends itself rather
-				// than through the notice queue, which drops what does not fit.
-				time.Sleep(autoRuleGap)
+		if web {
+			targets, err := m.store.AutoRuleWebTargets(r, floor, cut, now, autoRuleBatch, !bot)
+			if err != nil {
+				logErr("auto messages: external targets", "rule", r.ID, "err", err)
+				continue
+			}
+			for _, t := range targets {
+				m.sendAutoRule(set, nil, r, t, now)
 			}
 		}
 	}
 }
 
 // sendAutoRule writes one message — unless the person moved on meanwhile — and
-// reports whether it tried.
+// reports whether it tried. A Web target's goes to the external system (send unused),
+// as does a copy of every message the bot delivered to an account.
 func (m *Manager) sendAutoRule(set *model.Settings, send func(int64, string, []model.BroadcastButton) error, r model.AutoRule, t store.AutoRuleTarget, now int64) bool {
-	lang := m.userLang(t.ChatID)
+	lang := m.botLang()
+	if !t.Web {
+		lang = m.userLang(t.ChatID)
+	} else if _, own, _ := m.UserContact(t.UserID); own != "" {
+		lang = i18n.Lang(own)
+	}
 	vars := map[string]string{"{name}": escHTML(t.Name), "{code}": "", "{percent}": "", "{until}": ""}
 	var code *model.PromoCode
 	if t.UserID == 0 && m.RegistrationBlacklisted(t.ChatID) {
@@ -215,6 +241,10 @@ func (m *Manager) sendAutoRule(set *model.Settings, send func(int64, string, []m
 		text += "\n\n" + i18n.T(lang, key, code.Value, escHTML(code.Code),
 			time.Unix(code.ExpiresAt, 0).In(m.loc()).Format("02.01.2006"))
 	}
+	if t.Web {
+		m.emitAutoMessage(r, t, text, code, false)
+		return true
+	}
 	if err := send(t.ChatID, text, r.Buttons); err != nil {
 		logErr("auto messages: not delivered", "rule", r.ID, "chat", t.ChatID, "err", err)
 		// Without a code it is simply tried again next time; a code already given is
@@ -224,14 +254,30 @@ func (m *Manager) sendAutoRule(set *model.Settings, send func(int64, string, []m
 		}
 		return true
 	}
-	if t.UserID != 0 {
-		data := map[string]any{"rule": r.Name}
-		if code != nil {
-			data["code"], data["percent"] = code.Code, code.Value
-		}
-		m.audit(context.Background(), t.UserID, model.EventAutoMessage, data)
-	}
+	m.emitAutoMessage(r, t, text, code, true)
 	return true
+}
+
+// emitAutoMessage records a delivered automatic message in the user's journal and
+// hands it to the external system: the text as sent (Telegram HTML), its buttons and
+// the personal code that came with it.
+func (m *Manager) emitAutoMessage(r model.AutoRule, t store.AutoRuleTarget, text string, code *model.PromoCode, telegramSent bool) {
+	if t.UserID == 0 {
+		return
+	}
+	data := map[string]any{"rule": r.Name}
+	if code != nil {
+		data["code"], data["percent"] = code.Code, code.Value
+	}
+	m.audit(context.Background(), t.UserID, model.EventAutoMessage, data)
+	extra := map[string]any{
+		"rule_id": r.ID, "rule": r.Name, "trigger": r.Trigger,
+		"text": text, "buttons": r.Buttons, "telegram_sent": telegramSent,
+	}
+	if code != nil {
+		extra["code"], extra["percent"], extra["code_expires_at"] = code.Code, code.Value, code.ExpiresAt
+	}
+	m.emitUserWebhook(model.WebhookUserAutoMessage, t.UserID, extra)
 }
 
 func newRuleCode() string {

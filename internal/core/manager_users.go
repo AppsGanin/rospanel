@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"strconv"
@@ -103,7 +104,7 @@ func (m *Manager) createUserTerm(name string, dataLimit, expireAt, holdSeconds i
 	}
 	logInfo("user created", "id", u.ID, "name", name, "limit", dataLimit, "expire", expireAt)
 	m.TriggerUserSync()
-	m.EmitWebhook(model.WebhookUserCreated, userEventData(*u))
+	m.EmitWebhook(model.WebhookUserCreated, m.userEventData(*u))
 	return u, nil
 }
 
@@ -221,15 +222,15 @@ func (m *Manager) DeleteUser(ctx context.Context, id int64) error {
 	// Capture the user before deletion so the webhook payload and the audit row carry
 	// its details (best-effort: a missing row still emits the id).
 	u, _ := m.store.GetUser(id)
+	data := map[string]any{"id": id}
+	name := ""
+	if u != nil {
+		data = m.userEventData(*u)
+		name = u.Name
+	}
 	err := m.mutateUser(fmt.Sprintf("user %d deleted", id),
 		func() error { return m.store.DeleteUser(id) })
 	if err == nil {
-		data := map[string]any{"id": id}
-		name := ""
-		if u != nil {
-			data = userEventData(*u)
-			name = u.Name
-		}
 		// auditNamed, not audit: the user row is gone, so the name can't be looked up.
 		m.auditNamed(ctx, id, name, model.EventUserDeleted, nil)
 		m.EmitWebhook(model.WebhookUserDeleted, data)
@@ -461,12 +462,14 @@ func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string
 				ids = append(ids, id)
 			}
 			items := make([]any, 0, len(ids))
-			for _, u := range m.snapshotUsers(ids) {
-				items = append(items, userEventData(u))
+			for _, d := range m.usersEventData(slices.Collect(maps.Values(m.snapshotUsers(ids)))) {
+				items = append(items, d)
 			}
 			m.EmitWebhookEach(enabledWebhook(enable), items)
 		}
 	case "delete":
+		// The payloads first: the external ids leave with the rows.
+		gone := m.usersEventData(slices.Collect(maps.Values(before)))
 		affected, err = m.store.DeleteUsers(ids)
 		if err == nil {
 			m.auditBulk(ctx, names(before), model.EventUserDeleted, nil)
@@ -475,9 +478,9 @@ func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string
 			// after a BULK delete: the same users removed one at a time are reported.
 			// EmitWebhookEach looks the subscribers up once rather than per user, which
 			// per-user meant N queries on the single connection inside this request.
-			items := make([]any, 0, len(before))
-			for _, u := range before {
-				items = append(items, userEventData(u))
+			items := make([]any, 0, len(gone))
+			for _, d := range gone {
+				items = append(items, d)
 			}
 			m.EmitWebhookEach(model.WebhookUserDeleted, items)
 		}
@@ -691,7 +694,7 @@ func (m *Manager) RotateSubToken(ctx context.Context, id int64) (*model.User, er
 	logInfo("sub token rotated", "id", id)
 	m.TriggerUserSync()
 	m.audit(ctx, id, model.EventSubRotated, nil)
-	d := userEventData(*u)
+	d := m.userEventData(*u)
 	if set, err := m.store.GetSettings(); err == nil {
 		d["sub_url"] = sub.URL(set, u.SubToken)
 	}
@@ -729,7 +732,7 @@ func (m *Manager) AuditTelegramDetached(ctx context.Context, id, chatID int64) {
 
 // emitTelegramWebhook tells an outside system which Telegram an account gained or lost.
 func (m *Manager) emitTelegramWebhook(event string, u model.User, chatID int64) {
-	d := userEventData(u)
+	d := m.userEventData(u)
 	d["telegram_id"] = chatID
 	m.EmitWebhook(event, d)
 }

@@ -16,7 +16,7 @@ const userCols = `id, name, uuid, password, sub_token, enabled,
 	plan_id, trial_used, tg_link_code, tg_link_code_at, notified_status,
 	notified_expire_at, notified_quota_at, device_over_since, note, tags, wg_private_key,
 	abuse_action, abuse_until, abuse_prev_speed, abuse_warned_day, hold_seconds, awg_slot,
-	extra_devices, pack_data, hook_expire_at, hook_quota_at, hook_expire_stage`
+	extra_devices, pack_data, hook_expire_at, hook_quota_at, hook_expire_stage, mailing_off, lang`
 
 // Lookups by a column whose index is partial. SQLite uses a partial index only when
 // the query's own WHERE implies the index's, and to the planner "sub_token = ?" does
@@ -1643,6 +1643,7 @@ func (s *Store) queryUsersOn(db *sql.DB, query string, args ...any) ([]model.Use
 		var created int64
 		var enabled, trialUsed int
 		var tags string
+		var mailingOff int
 		if err := rows.Scan(
 			&u.ID, &u.Name, &u.UUID, &u.Password, &u.SubToken, &enabled,
 			&u.DataLimit, &u.ExpireAt, &u.UsedUp, &u.UsedDown, &u.LastUp, &u.LastDown, &created,
@@ -1650,12 +1651,13 @@ func (s *Store) queryUsersOn(db *sql.DB, query string, args ...any) ([]model.Use
 			&u.PlanID, &trialUsed, &u.TgLinkCode, &u.TgLinkCodeAt, &u.NotifiedStatus,
 			&u.NotifiedExpireAt, &u.NotifiedQuotaAt, &u.DeviceOverSince, &u.Note, &tags, &u.WGPrivateKey,
 			&u.AbuseAction, &u.AbuseUntil, &u.AbusePrevSpeed, &u.AbuseWarnedDay, &u.HoldSeconds, &u.AWGSlot,
-			&u.ExtraDevices, &u.PackData, &u.HookExpireAt, &u.HookQuotaAt, &u.HookExpireStage,
+			&u.ExtraDevices, &u.PackData, &u.HookExpireAt, &u.HookQuotaAt, &u.HookExpireStage, &mailingOff, &u.Lang,
 		); err != nil {
 			return nil, err
 		}
 		u.Enabled = enabled != 0
 		u.TrialUsed = trialUsed != 0
+		u.MailingOff = mailingOff != 0
 		u.Tags = model.DecodeTags(tags)
 		u.Password = decField(u.Password)
 		u.WGPrivateKey = decField(u.WGPrivateKey)

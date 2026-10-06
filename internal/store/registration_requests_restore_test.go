@@ -16,7 +16,7 @@ func TestRestoreRegistrationRequestKeepsItsID(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 	for _, mk := range []func() (*int64, error){
 		func() (*int64, error) {
-			r, err := st.CreateWebRegistrationRequest("ann@example.com", "Ann", "ads", 7, 1000)
+			r, err := st.CreateWebRegistrationRequest("ann@example.com", "Ann", "ads", "en", 7, 1000)
 			if err != nil {
 				return nil, err
 			}

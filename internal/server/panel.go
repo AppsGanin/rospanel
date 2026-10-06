@@ -48,6 +48,12 @@ type userView struct {
 	// ExternalID is the website's id for a client it signed up (POST /v1/signup);
 	// filled for one user at a time, not in lists.
 	ExternalID string `json:"external_id,omitempty"`
+	// Mailing: broadcasts and automatic messages go to the user (their own switch and
+	// their Telegram's both allow it). Lang: the language to write to them in — their
+	// own, else what their Telegram reports; "" when unknown. Filled for one user and
+	// for the API's user list; left out of the panel's list.
+	Mailing *bool   `json:"mailing,omitempty"`
+	Lang    *string `json:"lang,omitempty"`
 }
 
 // namedLink is one share link with the node name a client displays for it.
@@ -124,6 +130,9 @@ func (rt *Router) userViewFor(u model.User, set *model.Settings, bot string) use
 	}
 	v := makeUserView(u, set, bot, rt.localInbounds(), groups, access)
 	v.ExternalID = rt.mgr.Store().UserExternalID(u.ID)
+	if mailing, lang, err := rt.mgr.UserContact(u.ID); err == nil {
+		v.Mailing, v.Lang = &mailing, &lang
+	}
 	return v
 }
 
@@ -458,6 +467,7 @@ func (rt *Router) panelMux() http.Handler {
 	canUsersManage("POST /api/users/{id}/enabled", withID(rt.setUserEnabled))
 	canUsersManage("POST /api/users/{id}/name", withID(rt.renameUser))
 	canUsersManage("POST /api/users/{id}/note", withID(rt.setUserNote))
+	canUsersManage("POST /api/users/{id}/mailing", withID(rt.setUserMailing))
 	canUsersManage("POST /api/users/{id}/tags", withID(rt.setUserTags))
 	canUsersView("GET /api/users/tags", rt.userTags)
 	// Import from another panel (see panel_import.go): inspect reads, import writes.
@@ -820,6 +830,11 @@ func (rt *Router) me(w http.ResponseWriter, r *http.Request) {
 		// the server would refuse.
 		resp["user_bot_enabled"] = set.TGUserBotEnabled
 	}
+	// The same surfaces reach users the bot does not through an external system that
+	// takes the events.
+	resp["message_hook"] = rt.mgr.WebhookWanted(model.WebhookUserMessage)
+	resp["broadcast_hook"] = rt.mgr.WebhookWanted(model.WebhookBroadcastSent)
+	resp["auto_message_hook"] = rt.mgr.WebhookWanted(model.WebhookUserAutoMessage)
 	writeJSON(w, http.StatusOK, resp)
 }
 

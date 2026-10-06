@@ -25,6 +25,7 @@ type (
 		Ref        string `json:"ref,omitempty"`    // the invite code of the user who referred them
 		Invite     string `json:"invite,omitempty"` // the registration code, when sign-up is by invitation
 		IP         string `json:"ip,omitempty"`     // the client's address, for the per-address rate limit
+		Lang       string `json:"lang,omitempty"`   // ru | en: the language a new account (or one approved later) is written to in
 	}
 	// apiSignupResp is the account (created or existing) or the pending request.
 	apiSignupResp struct {
@@ -44,7 +45,7 @@ func (rt *Router) apiSignup(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := rt.mgr.Signup(r.Context(), core.SignupRequest{
 		ExternalID: req.ExternalID, TelegramID: req.TelegramID, Name: req.Name, Source: req.Source,
-		Ref: req.Ref, Invite: req.Invite, IP: req.IP,
+		Ref: req.Ref, Invite: req.Invite, IP: req.IP, Lang: req.Lang,
 	})
 	if errors.Is(err, core.ErrSignupBusy) {
 		w.Header().Set("Retry-After", "60")

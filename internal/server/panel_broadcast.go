@@ -105,12 +105,21 @@ func (rt *Router) getBroadcast(w http.ResponseWriter, r *http.Request, id int64)
 // broadcastAudience reports how many recipients an audience resolves to right now,
 // so the operator sees the size before committing rather than after.
 func (rt *Router) broadcastAudience(w http.ResponseWriter, r *http.Request) {
-	n, err := rt.mgr.AudiencePreview(r.URL.Query().Get("audience"))
+	// The bot's recipients may be none at all while it is off; the accounts the
+	// external system writes to are counted beside them.
+	n := 0
+	if set, err := rt.mgr.Settings(); err == nil && set.TGUserBotEnabled && strings.TrimSpace(set.TGUserBotToken) != "" {
+		if n, err = rt.mgr.AudiencePreview(r.URL.Query().Get("audience")); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
+	}
+	h, err := rt.mgr.AudienceHookPreview(r.URL.Query().Get("audience"))
 	if err != nil {
 		writeManagerErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"count": n})
+	writeJSON(w, http.StatusOK, map[string]any{"count": n, "hook_users": h})
 }
 
 // createBroadcast validates, snapshots the audience, stores the attachment, and only
@@ -133,7 +142,7 @@ func (rt *Router) createBroadcast(w http.ResponseWriter, r *http.Request) {
 		if err := saveBroadcastMedia(rt.dataDir, created.ID, file); err != nil {
 			// The row exists but has no attachment, and it is still paused — cancel
 			// it so nothing half-formed can be resumed into going out.
-			_ = rt.mgr.SetBroadcastStatus(created.ID, model.BroadcastCancelled)
+			rt.mgr.AbandonBroadcast(created.ID)
 			writeErrDetail(w, http.StatusInternalServerError, "err.attachmentSaveFailed", "не удалось сохранить вложение: ", err.Error())
 			return
 		}
@@ -142,11 +151,13 @@ func (rt *Router) createBroadcast(w http.ResponseWriter, r *http.Request) {
 		// Same reasoning as the save-media failure above: a row left paused with an
 		// attachment on disk is never swept (the sweep only looks at finished runs),
 		// so an abandoned create would leak up to 20 MB into the backed-up data dir.
-		_ = rt.mgr.SetBroadcastStatus(created.ID, model.BroadcastCancelled)
+		rt.mgr.AbandonBroadcast(created.ID)
 		writeManagerErr(w, err)
 		return
 	}
-	created.Status = model.BroadcastRunning
+	if b, err := rt.mgr.GetBroadcast(created.ID); err == nil {
+		created = b
+	}
 	writeJSON(w, http.StatusOK, created)
 }
 

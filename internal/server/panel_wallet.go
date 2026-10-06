@@ -61,6 +61,22 @@ func (rt *Router) setUserAutoRenew(w http.ResponseWriter, r *http.Request, id in
 	writeOK(w)
 }
 
+// setUserMailing switches mailings for a user — the operator's hand on the same
+// switch the bot shows them.
+func (rt *Router) setUserMailing(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		On bool `json:"on"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetUserMailing(r.Context(), id, req.On); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
 func (rt *Router) listPromos(w http.ResponseWriter, _ *http.Request) {
 	list, err := rt.mgr.ListPromos()
 	if err != nil {

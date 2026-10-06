@@ -87,6 +87,10 @@ type Manager struct {
 	done      chan struct{}
 	wg        sync.WaitGroup
 	closeOnce sync.Once
+	// broadcastHooks holds, from CreateBroadcast to StartBroadcast, the accounts a
+	// broadcast goes to through the external system: the audience snapshot, as the
+	// bot's own recipient list is.
+	broadcastHooks sync.Map // broadcast id → []model.User
 	// structuralPending marks the next queued reload as a full restart (config
 	// changed), vs a cheap live user-sync. Set by TriggerReconcile.
 	structuralPending atomic.Bool

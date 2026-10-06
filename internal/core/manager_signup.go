@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
 )
@@ -34,6 +35,7 @@ type SignupRequest struct {
 	Ref        string // an invite code ("r_<code>" or bare); an unknown one is ignored
 	Invite     string // the registration code, when sign-up is by invitation
 	IP         string // the client's address, for the rate limit; optional
+	Lang       string // ru | en: the language the account is written to in; optional
 }
 
 // Signup outcomes.
@@ -123,6 +125,10 @@ func (m *Manager) Signup(ctx context.Context, req SignupRequest) (SignupResult, 
 	if err != nil {
 		return SignupResult{}, err
 	}
+	req.Lang = strings.ToLower(strings.TrimSpace(req.Lang))
+	if req.Lang != "" && req.Lang != string(i18n.RU) && req.Lang != string(i18n.EN) {
+		return SignupResult{}, invalidCode("err.userLang", "язык — ru или en")
+	}
 	if req.TelegramID != 0 {
 		if strings.TrimSpace(req.ExternalID) != "" {
 			return SignupResult{}, invalidCode("err.signupOneID", "укажите external_id или telegram_id, не оба")
@@ -184,7 +190,7 @@ func (m *Manager) Signup(ctx context.Context, req SignupRequest) (SignupResult, 
 	source := NormalizeSource(req.Source)
 	refID := m.signupReferrer(set, req.Ref)
 	if moderation {
-		r, err := m.store.CreateWebRegistrationRequest(ext, name, source, refID, time.Now().Unix())
+		r, err := m.store.CreateWebRegistrationRequest(ext, name, source, req.Lang, refID, time.Now().Unix())
 		filed := err == nil
 		if errors.Is(err, store.ErrRegistrationPending) {
 			r, err = m.store.GetRegistrationRequestByExternal(ext)
@@ -207,6 +213,7 @@ func (m *Manager) Signup(ctx context.Context, req SignupRequest) (SignupResult, 
 	if err != nil {
 		return SignupResult{}, err
 	}
+	m.giveLang(u, req.Lang)
 	m.announceRegistration(ctx, u, ext, nil)
 	return SignupResult{Status: SignupCreated, User: u}, nil
 }
@@ -277,7 +284,14 @@ func (m *Manager) approveWebRequest(ctx context.Context, req *model.Registration
 		return err // another admin already decided it
 	}
 	if id, err := m.store.UserIDByExternalID(req.ExternalID); err != nil || id != 0 {
-		return err // they already have an account
+		if id != 0 {
+			// They already have an account: the request closes without one of its own.
+			m.EmitWebhook(model.WebhookRegistrationRejected, map[string]any{
+				"request_id": req.ID, "name": req.Name, "external_id": req.ExternalID,
+				"reason": "has_account", "user_id": id,
+			})
+		}
+		return err
 	}
 	u, err := m.createWebUser(ctx, req.ExternalID, req.Name, req.Source, req.ReferrerID)
 	if err != nil {
@@ -285,6 +299,20 @@ func (m *Manager) approveWebRequest(ctx context.Context, req *model.Registration
 		_ = m.store.RestoreRegistrationRequest(req)
 		return err
 	}
+	m.giveLang(u, req.Lang)
 	m.announceRegistration(ctx, u, req.ExternalID, req)
 	return nil
+}
+
+// giveLang sets a new account's language before its sign-up is announced, so the
+// event carries it.
+func (m *Manager) giveLang(u *model.User, lang string) {
+	if lang == "" {
+		return
+	}
+	if err := m.store.SetUserLang(u.ID, lang); err != nil {
+		logErr("signup: the language was not kept", "user", u.ID, "err", err)
+		return
+	}
+	u.Lang = lang
 }

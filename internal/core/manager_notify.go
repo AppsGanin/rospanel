@@ -37,11 +37,7 @@ func (m *Manager) botLang() i18n.Lang {
 // bot stored at first contact. The operator and the user are told the same fact in
 // different languages, which is the whole reason these two helpers are separate.
 func (m *Manager) userLang(chatID int64) i18n.Lang {
-	sub, err := m.store.SubscriberByChat(chatID)
-	if err != nil || sub == nil {
-		return i18n.Default
-	}
-	return i18n.Normalize(sub.Lang)
+	return i18n.Normalize(m.store.ChatLang(chatID))
 }
 
 // notifyAdminEvent broadcasts an HTML message (via the admin bot's notifier) to
@@ -257,7 +253,7 @@ func (m *Manager) notifyStatusTransitions(users []model.User) {
 					i18n.T(m.userLang(u.TgChatID), "notify.userExpired"))
 			}
 			m.auditNamed(ctx, u.ID, u.Name, model.EventUserExpired, map[string]any{"expire_at": u.ExpireAt})
-			m.EmitWebhook(model.WebhookUserExpired, userEventData(u))
+			m.EmitWebhook(model.WebhookUserExpired, m.userEventData(u))
 		case model.StatusLimited:
 			m.notifyAdminEvent(model.AdminEventLimited, fmt.Sprintf(
 				i18n.T(m.botLang(), "notify.adminLimited"), m.adminUser(u)))
@@ -268,7 +264,7 @@ func (m *Manager) notifyStatusTransitions(users []model.User) {
 			m.auditNamed(ctx, u.ID, u.Name, model.EventUserLimited, map[string]any{
 				"data_limit": u.DataLimit, "used": u.UsedUp + u.UsedDown,
 			})
-			m.EmitWebhook(model.WebhookUserLimited, userEventData(u))
+			m.EmitWebhook(model.WebhookUserLimited, m.userEventData(u))
 		case model.StatusDeviceLimited:
 			m.notifyAdminEvent(model.AdminEventDeviceLimited, fmt.Sprintf(
 				i18n.T(m.botLang(), "notify.adminDeviceLimited"),
@@ -281,7 +277,7 @@ func (m *Manager) notifyStatusTransitions(users []model.User) {
 			m.auditNamed(ctx, u.ID, u.Name, model.EventDeviceLimited, map[string]any{
 				"device_limit": u.DeviceLimit, "active_devices": u.ActiveDevices,
 			})
-			m.EmitWebhook(model.WebhookUserDeviceLimit, userEventData(u))
+			m.EmitWebhook(model.WebhookUserDeviceLimit, m.userEventData(u))
 		case model.StatusDisabled:
 			// No admin counterpart: an operator who just switched someone off does not
 			// need telling. The person on the other end does. No audit row or webhook

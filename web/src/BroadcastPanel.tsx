@@ -16,6 +16,7 @@ import {
 } from "./api";
 import { HtmlEditor } from "./HtmlEditor";
 import { AutoRules } from "./AutoRules";
+import { useMessageHooks } from "./messageHooks";
 import { useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { inPanelTz } from "./tz";
@@ -105,8 +106,12 @@ function fmtTime(unix: number): string {
   );
 }
 
-export function BroadcastPanel() {
+export function BroadcastPanel({ userBot }: { userBot: boolean }) {
   const { t } = useTranslation();
+  const hooks = useMessageHooks();
+  // The composer needs a way to deliver: the bot, or an external system on
+  // broadcast.sent. The automatic messages below have their own webhook.
+  const canCompose = userBot || hooks.broadcast;
   const [loaded, setLoaded] = useState(false);
   const [list, setList] = useState<Broadcast[]>([]);
   // The server returns the last 50 runs, each a multi-line row with a progress bar,
@@ -130,6 +135,7 @@ export function BroadcastPanel() {
   );
   const [media, setMedia] = useState<File | null>(null);
   const [reach, setReach] = useState<number | null>(null);
+  const [hookReach, setHookReach] = useState(0);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -161,7 +167,11 @@ export function BroadcastPanel() {
   useEffect(() => {
     let dropped = false;
     broadcastAudience(audience)
-      .then((r) => !dropped && setReach(r.count))
+      .then((r) => {
+        if (dropped) return;
+        setReach(r.count);
+        setHookReach(r.hook_users);
+      })
       .catch(() => !dropped && setReach(null));
     return () => {
       dropped = true;
@@ -190,7 +200,7 @@ export function BroadcastPanel() {
       body:
         reach === null
           ? t("bc.startBodyUnknown")
-          : t("bc.startBody", { count: reach }),
+          : t("bc.startBody", { count: reach + hookReach }),
       confirmLabel: t("bc.start"),
     });
     if (!ok) return;
@@ -237,6 +247,7 @@ export function BroadcastPanel() {
       {confirmNode}
       {/* The composer as bands, not as a stack of labelled form fields: who it goes
           to, what it says, what rides along, and the two ways to send it. */}
+      {canCompose && (
       <Panel
         title={t("bc.title")}
         aside={
@@ -267,7 +278,14 @@ export function BroadcastPanel() {
             {/* The count the operator is really deciding on. A sentence, not a
                 figure, so it takes the line under the picker rather than a chip. */}
             <p className="w-full text-[11px] text-ink-muted">
-              {reach === null ? t("bc.counting") : t("bc.reachNow", { count: reach })}
+              {reach === null
+                ? t("bc.counting")
+                : [
+                    userBot && t("bc.reachNow", { count: reach }),
+                    hooks.broadcast && t("bc.reachHook", { count: hookReach }),
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
             </p>
           </div>
 
@@ -294,6 +312,8 @@ export function BroadcastPanel() {
             </div>
           </div>
 
+          {/* Only the bot delivers a file: the external system gets its name. */}
+          {userBot && (
           <div className="border-t border-gray-100 px-3.5 py-3">
             <p className={cn(MICRO, "mb-1.5")}>{t("bc.attachment")}</p>
             {/* The native file input renders its own browser-locale label, which
@@ -325,6 +345,7 @@ export function BroadcastPanel() {
               {t("bc.attachmentHint")}
             </p>
           </div>
+          )}
 
           <div className="flex flex-col gap-2 border-t border-gray-100 px-3.5 py-3">
             <p className={MICRO}>{t("bc.buttons")}</p>
@@ -404,6 +425,7 @@ export function BroadcastPanel() {
           </div>
         </div>
       </Panel>
+      )}
 
       <AutoRules />
 
@@ -435,7 +457,9 @@ function BroadcastRow({
   // (polling stops once the run is done).
   const { t } = useTranslation();
   const done = b.sent + b.failed + b.blocked + b.skipped;
-  const pct = b.total > 0 ? Math.round((done / b.total) * 100) : 0;
+  // Nothing for the bot (it all went to the external system): full once done.
+  const pct =
+    b.total > 0 ? Math.round((done / b.total) * 100) : b.status === "done" ? 100 : 0;
   const st = statusMeta(b.status);
 
   return (
@@ -470,7 +494,9 @@ function BroadcastRow({
           />
         </span>
         <Mono className="shrink-0 text-[11px] text-ink-muted">
-          {t("bc.progress", { done, total: b.total, sent: b.sent })}
+          {b.total > 0 && t("bc.progress", { done, total: b.total, sent: b.sent })}
+          {b.total > 0 && b.hook_users > 0 && " · "}
+          {b.hook_users > 0 && t("bc.hookN", { count: b.hook_users })}
           {b.failed > 0 && ` · ${t("bc.failedN", { count: b.failed })}`}
           {b.blocked > 0 && ` · ${t("bc.blockedN", { count: b.blocked })}`}
           {b.skipped > 0 && ` · ${t("bc.skippedN", { count: b.skipped })}`}

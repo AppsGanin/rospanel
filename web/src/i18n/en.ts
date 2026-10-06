@@ -361,6 +361,8 @@ const en: Dict = {
     csrfRejected: "request rejected (CSRF)",
     deviceLimitNegative2: "the device limit cannot be negative",
     enableUserBotToMessage: "enable the client bot — the message goes through it",
+    attachmentNeedsBot: "only the Telegram bot delivers attachments — send text",
+    userLang: "the language is ru or en",
     expectJSON: "application/json expected",
     forbidden: "not enough permissions",
     fromAfterTo: "`from` cannot be later than `to`",
@@ -926,6 +928,7 @@ const en: Dict = {
       payment_refunded: "Refund",
       user_source: "Source",
       user_external_id: "External system ID",
+      user_mailing: "Mailings",
       user_auto_message: "Automatic message",
       promo_winback: "Win-back code",
       payment_created: "Order created",
@@ -965,6 +968,8 @@ const en: Dict = {
       superseded: "replaced by a newer order with the same promo code",
     },
     det: {
+      mailingOn: "on",
+      mailingOff: "off",
       planCancelled: "plan cancelled",
       byProvider: "returned by the payment system",
       notRecovered: "{{sum}} ₽ not recovered",
@@ -1708,6 +1713,8 @@ const en: Dict = {
     planAndLimits: "Tariff and limits",
     noteAndTags: "Note and tags",
     lastOnline: "Last online",
+    mailing: "Mailings",
+    lang: "Language",
     subLink: "Subscription link",
     happLink: "Encrypted Happ link",
     bannerDeviceLimit: "Device limit reached: {{active}} of {{limit}}. New connections are refused.",
@@ -1824,6 +1831,8 @@ const en: Dict = {
     removeAttachment: "Remove",
     attachFile: "Attach a file",
     messageSent: "Message sent",
+    messageSentHook: "Handed to the external system",
+    messageViaHook: "goes to the external system (user.message)",
     send: "Send",
   },
 
@@ -2224,6 +2233,7 @@ const en: Dict = {
     user_referred: "Signed up by invitation",
     referral_reward: "Invitation reward",
     promo_winback: "Win-back code",
+    promo_redeemed: "Promo code redeemed",
     registration_requested: "New sign-up request",
     user_limits_changed: "Limits or term changed",
     user_term_started: "Term from the first connection started",
@@ -2234,6 +2244,10 @@ const en: Dict = {
     payment_paid: "Paid",
     payment_cancelled: "Order cancelled",
     payment_refunded: "Money returned",
+    user_message: "Message from the operator",
+    user_auto_message: "Automatic message",
+    broadcast_sent: "Broadcast",
+    user_mailing: "Mailing subscription changed",
   },
 
   hooks: {
@@ -2258,6 +2272,7 @@ const en: Dict = {
       plan: "Plan",
       money: "Payments and balance",
       referral: "Invitations and promo codes",
+      messages: "Messages to the user",
       other: "Other",
     },
     test: "Test",
@@ -2554,6 +2569,7 @@ const en: Dict = {
   rules: {
     title: "Automatic messages",
     hint: "The bot writes on its own when someone reaches an event: once per occurrence, after the delay you set. A new rule does not write to people whose event is more than a week old.",
+    hookNote: "Those the bot does not reach get it through the user.auto_message webhook.",
     empty: "No automatic messages.",
     add: "Add",
     newTitle: "New automatic message",
@@ -2743,6 +2759,8 @@ const en: Dict = {
     counting: "Counting recipients…",
     reachNow:
       "Recipients right now: {{count}}. The list is frozen at launch.",
+    reachHook: "To the external system (broadcast.sent): {{count}}.",
+    hookN: "external system {{count}}",
     text: "Text",
     textPlaceholder:
       "For example: scheduled maintenance on 20 July, 03:00 to 05:00.",

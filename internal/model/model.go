@@ -216,6 +216,13 @@ type User struct {
 	// HookExpireStage is the last user.expiring stage (days ahead, HookExpireStages)
 	// sent for the term HookExpireAt holds; 0 = none yet.
 	HookExpireStage int `json:"-"`
+
+	// MailingOff is the account's own "no mailings" (the API, the operator, the bot's
+	// switch); its Telegram chat's opt-out says the same on its own. Lang is the
+	// language set for the account ("" = what Telegram reports). The views show both
+	// resolved, as mailing and lang.
+	MailingOff bool   `json:"-"`
+	Lang       string `json:"-"`
 }
 
 // The operator's legal documents, in Markdown: shown on the subscription page, in
@@ -377,6 +384,10 @@ const (
 	RefundByProvider = "provider" // the payment system refunded it, or a chargeback
 )
 
+// ExternalPayProvider is the order provider of money an external system takes itself
+// (Telegram Stars in its own bot, its own checkout) and confirms over the API.
+const ExternalPayProvider = "external"
+
 // RegistrationRequest is a moderated self-registration awaiting an admin decision.
 // No user exists yet — approval creates one and links ChatID; rejection just drops
 // the request.
@@ -392,6 +403,8 @@ type RegistrationRequest struct {
 	Source     string `json:"-"`
 	ReferrerID int64  `json:"-"`
 	CreatedAt  int64  `json:"created_at"`
+	// Lang is the language a sign-up over the API came with, given to the account.
+	Lang string `json:"-"`
 }
 
 // SupportGroup is a group the support bot has been added to — an option in the
@@ -527,6 +540,9 @@ type Broadcast struct {
 	Failed  int `json:"failed"`
 	Blocked int `json:"blocked"`
 	Skipped int `json:"skipped"`
+	// HookUsers is how many accounts it went to through the external system
+	// (broadcast.sent): those the bot does not reach.
+	HookUsers int `json:"hook_users"`
 }
 
 // Pending reports how many recipients are still waiting.
@@ -639,6 +655,8 @@ const (
 	WebhookUserReferred    = "user.referred"
 	WebhookReferralReward  = "referral.reward"
 	WebhookPromoWinback    = "promo.winback"
+	// A code the user entered took effect (data.kind: balance | days | percent | amount).
+	WebhookPromoRedeemed = "promo.redeemed"
 	// The term and the quota moved without a plan: the operator set limits or extended
 	// the term (user.limits_changed), a term waiting for the first connection started
 	// (user.term_started), the traffic was zeroed by hand or by the reset period
@@ -658,6 +676,16 @@ const (
 	WebhookPaymentRefunded       = "payment.refunded"  // money returned: to the balance, or by the payment system
 	// A moderated sign-up the operator turned down. Approval is user.registered.
 	WebhookRegistrationRejected = "registration.rejected"
+	// Words for the user: the operator wrote to them (user.message), an automatic
+	// message came due (user.auto_message), a broadcast went out (broadcast.sent —
+	// one per broadcast, naming the users the panel's bot does not reach). Each says
+	// whether the panel's bot delivered it to Telegram as well.
+	WebhookUserMessage     = "user.message"
+	WebhookUserAutoMessage = "user.auto_message"
+	WebhookBroadcastSent   = "broadcast.sent"
+	// Mailings switched on or off for the user — by the bot's switch, the operator or
+	// the API; data.mailing is the new state.
+	WebhookUserMailing = "user.mailing"
 )
 
 // WebhookEventCatalog is the stable key list the settings UI iterates over (display
@@ -688,6 +716,7 @@ var WebhookEventCatalog = []string{
 	WebhookUserReferred,
 	WebhookReferralReward,
 	WebhookPromoWinback,
+	WebhookPromoRedeemed,
 	WebhookUserLimitsChanged,
 	WebhookUserTermStarted,
 	WebhookUserTrafficReset,
@@ -697,6 +726,10 @@ var WebhookEventCatalog = []string{
 	WebhookPaymentPaid,
 	WebhookPaymentCancelled,
 	WebhookPaymentRefunded,
+	WebhookUserMessage,
+	WebhookUserAutoMessage,
+	WebhookBroadcastSent,
+	WebhookUserMailing,
 }
 
 // ValidWebhookEvent reports whether k is a known webhook event key.

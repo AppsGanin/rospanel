@@ -46,9 +46,13 @@ func (m *Manager) remindHooks(set *model.Settings, users []model.User) {
 			if err := m.store.SetHookExpire(u.ID, u.ExpireAt, stage); err != nil {
 				logErr("reminders: recording the expiry reminder failed", "user", u.ID, "err", err)
 			} else {
-				d := userEventData(u)
+				d := m.userEventData(u)
 				d["days_left"] = (u.ExpireAt - now + 86399) / 86400 // round up: "0 days" reads as expired
 				d["stage"] = stage
+				// What the bot's warning ends with: whether the balance renews the plan.
+				if r := m.Renewal(set, u); r.PriceKop > 0 {
+					d["auto_renew"], d["renew_price_kop"], d["balance_kop"] = r.On, r.PriceKop, r.BalanceKop
+				}
 				expiring = append(expiring, d)
 			}
 		}
@@ -75,7 +79,7 @@ func (m *Manager) remindHooks(set *model.Settings, users []model.User) {
 		if used >= u.DataLimit {
 			continue
 		}
-		d := userEventData(u)
+		d := m.userEventData(u)
 		d["used"] = used
 		d["percent"] = used * 100 / u.DataLimit
 		low = append(low, d)

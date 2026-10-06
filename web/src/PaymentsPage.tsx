@@ -612,7 +612,8 @@ export function PaymentsPage({
         user={detail}
         userBotEnabled={userBotEnabled}
         onOpenUser={openUser}
-        onChanged={() => {}}
+        // Read again, so a switch on the card shows what it was set to.
+        onChanged={() => detail && openUser(detail.id)}
         onClose={() => setDetail(null)}
       />
       <Modal
