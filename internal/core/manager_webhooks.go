@@ -212,7 +212,9 @@ func (m *Manager) EmitWebhookEach(event string, items []any) {
 	if len(hooks) == 0 {
 		return
 	}
-	ds := make([]store.WebhookDelivery, 0, len(items)*len(hooks))
+	// Sized by the items alone: append grows it per endpoint, and an allocation is never
+	// sized by a product of two lengths.
+	ds := make([]store.WebhookDelivery, 0, len(items))
 	for _, data := range items {
 		body, err := json.Marshal(webhookPayload{
 			ID: randomHex(16), Event: event, CreatedAt: time.Now().Unix(), Data: data,
