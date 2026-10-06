@@ -23,9 +23,12 @@ import (
 
 // SignupRequest is one website sign-up.
 type SignupRequest struct {
-	// ExternalID is the site's id for its client: an e-mail, an account number.
-	// Compared exactly, so a site normalises it first (an e-mail in lower case).
+	// ExternalID is the external system's id for its client: an e-mail, an account
+	// number. Compared exactly, so it is normalised first (an e-mail in lower case).
+	// TelegramID instead signs up a Telegram user, under the panel's rules for a
+	// Telegram (see signupTelegram). One of the two.
 	ExternalID string
+	TelegramID int64
 	Name       string // the panel's name for the account; the external id when empty
 	Source     string // where the client came from, as a /start tag is
 	Ref        string // an invite code ("r_<code>" or bare); an unknown one is ignored
@@ -56,7 +59,7 @@ const maxExternalIDLen = 254
 func cleanExternalID(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return "", invalidCode("err.externalIDRequired", "укажите external_id — id клиента на вашем сайте")
+		return "", invalidCode("err.externalIDRequired", "укажите external_id — id клиента во внешней системе — или telegram_id")
 	}
 	if len([]rune(s)) > maxExternalIDLen {
 		return "", invalidCode("err.externalIDTooLong", "external_id длиннее {{max}} символов", map[string]any{"max": maxExternalIDLen})
@@ -65,6 +68,35 @@ func cleanExternalID(s string) (string, error) {
 		return "", invalidCode("err.externalIDInvalid", "external_id содержит управляющие символы")
 	}
 	return s, nil
+}
+
+// SetUserExternalID gives an existing account its website id, or with "" takes it
+// away — how a site ties its own login to a client who came from the bot or the Mini
+// App, instead of a sign-up making them a second account. An id another account holds
+// is refused: whoever holds the id is that account on the site.
+func (m *Manager) SetUserExternalID(ctx context.Context, userID int64, raw string) error {
+	ext := strings.TrimSpace(raw)
+	if ext != "" {
+		var err error
+		if ext, err = cleanExternalID(ext); err != nil {
+			return err
+		}
+	}
+	u, err := m.store.GetUser(userID)
+	if err != nil {
+		return err
+	}
+	if m.store.UserExternalID(userID) == ext {
+		return nil
+	}
+	if err := m.store.SetUserExternalID(userID, ext); err != nil {
+		if errors.Is(err, store.ErrExternalIDTaken) {
+			return invalidCode("err.externalIDTaken", "этот external_id уже у другого пользователя")
+		}
+		return err
+	}
+	m.auditNamed(ctx, u.ID, u.Name, model.EventUserExternalID, map[string]any{"external_id": ext})
+	return nil
 }
 
 // signupAddrKey is the rate-limit key of a client address. An IPv6 client is counted
@@ -87,11 +119,17 @@ func signupAddrKey(s string) (string, error) {
 
 // Signup registers a website client, or finds the account they already have.
 func (m *Manager) Signup(ctx context.Context, req SignupRequest) (SignupResult, error) {
-	ext, err := cleanExternalID(req.ExternalID)
+	addrKey, err := signupAddrKey(req.IP)
 	if err != nil {
 		return SignupResult{}, err
 	}
-	addrKey, err := signupAddrKey(req.IP)
+	if req.TelegramID != 0 {
+		if strings.TrimSpace(req.ExternalID) != "" {
+			return SignupResult{}, invalidCode("err.signupOneID", "укажите external_id или telegram_id, не оба")
+		}
+		return m.signupTelegram(ctx, req, addrKey)
+	}
+	ext, err := cleanExternalID(req.ExternalID)
 	if err != nil {
 		return SignupResult{}, err
 	}
@@ -147,6 +185,7 @@ func (m *Manager) Signup(ctx context.Context, req SignupRequest) (SignupResult, 
 	refID := m.signupReferrer(set, req.Ref)
 	if moderation {
 		r, err := m.store.CreateWebRegistrationRequest(ext, name, source, refID, time.Now().Unix())
+		filed := err == nil
 		if errors.Is(err, store.ErrRegistrationPending) {
 			r, err = m.store.GetRegistrationRequestByExternal(ext)
 		}
@@ -157,13 +196,18 @@ func (m *Manager) Signup(ctx context.Context, req SignupRequest) (SignupResult, 
 			return SignupResult{}, errors.New("signup: the request vanished as it was filed")
 		}
 		m.notifyModeration(r.ID, r.Name, "")
+		if filed { // asking again while it waits files nothing new
+			m.EmitWebhook(model.WebhookRegistrationRequested, map[string]any{
+				"request_id": r.ID, "name": r.Name, "external_id": ext,
+			})
+		}
 		return SignupResult{Status: SignupPending, RequestID: r.ID}, nil
 	}
 	u, err := m.createWebUser(ctx, ext, name, source, refID)
 	if err != nil {
 		return SignupResult{}, err
 	}
-	m.announceRegistration(ctx, u, ext, false)
+	m.announceRegistration(ctx, u, ext, nil)
 	return SignupResult{Status: SignupCreated, User: u}, nil
 }
 
@@ -238,9 +282,9 @@ func (m *Manager) approveWebRequest(ctx context.Context, req *model.Registration
 	u, err := m.createWebUser(ctx, req.ExternalID, req.Name, req.Source, req.ReferrerID)
 	if err != nil {
 		// Back in the queue rather than lost: the client is still waiting.
-		_, _ = m.store.CreateWebRegistrationRequest(req.ExternalID, req.Name, req.Source, req.ReferrerID, req.CreatedAt)
+		_ = m.store.RestoreRegistrationRequest(req)
 		return err
 	}
-	m.announceRegistration(ctx, u, req.ExternalID, true)
+	m.announceRegistration(ctx, u, req.ExternalID, req)
 	return nil
 }

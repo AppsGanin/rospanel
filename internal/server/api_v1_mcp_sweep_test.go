@@ -690,6 +690,11 @@ func TestMCPUserWritesReachTheStore(t *testing.T) {
 		t.Errorf("patch_users_by_id: hold_seconds did not land: hold %d expire %d", rehold.HoldSeconds, rehold.ExpireAt)
 	}
 
+	// The website's id: a patch-only field, kept off the user row.
+	call("patch_users_by_id", map[string]any{"id": created.ID, "body": map[string]any{"external_id": "sweep@example.com"}})
+	if got := st.UserExternalID(created.ID); got != "sweep@example.com" {
+		t.Errorf("patch_users_by_id: external_id did not land: %q", got)
+	}
 	// And that an empty list clears the tags, since "omit" and "empty" differ here.
 	call("patch_users_by_id", map[string]any{"id": created.ID, "body": map[string]any{"tags": []any{}, "note": ""}})
 	cleared, err := st.GetUser(created.ID)
@@ -712,6 +717,10 @@ func TestMCPUserWritesReachTheStore(t *testing.T) {
 			switch name {
 			case "plan_id", "group_ids": // applied by their own tools, checked in the sweep
 				continue
+			case "external_id": // patch-only, checked above
+				if tool.Name == "patch_users_by_id" {
+					continue
+				}
 			}
 			if _, ok := fields[name]; !ok {
 				t.Errorf("%s accepts %q and nothing here proves it lands", tool.Name, name)

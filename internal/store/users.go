@@ -16,7 +16,7 @@ const userCols = `id, name, uuid, password, sub_token, enabled,
 	plan_id, trial_used, tg_link_code, tg_link_code_at, notified_status,
 	notified_expire_at, notified_quota_at, device_over_since, note, tags, wg_private_key,
 	abuse_action, abuse_until, abuse_prev_speed, abuse_warned_day, hold_seconds, awg_slot,
-	extra_devices, pack_data`
+	extra_devices, pack_data, hook_expire_at, hook_quota_at, hook_expire_stage`
 
 // Lookups by a column whose index is partial. SQLite uses a partial index only when
 // the query's own WHERE implies the index's, and to the planner "sub_token = ?" does
@@ -182,7 +182,7 @@ func (s *Store) ListUsers() ([]model.User, error) {
 //	ID, Name, Enabled, PlanID, DataLimit, ExpireAt, HoldSeconds,
 //	UsedUp, UsedDown, LastUp, LastDown, ResetPeriod, LastResetAt,
 //	DeviceLimit, DeviceOverSince, TgChatID,
-//	NotifiedStatus, NotifiedExpireAt, NotifiedQuotaAt,
+//	NotifiedStatus, NotifiedExpireAt, NotifiedQuotaAt, HookExpireAt, HookQuotaAt, HookExpireStage,
 //	ActiveDevices and Status (derived as ListUsers derives them).
 //
 // Credentials, keys, notes, tags and bot codes are left zero.
@@ -206,7 +206,7 @@ const userStatesByKeyMax = 1000
 const userStateCols = `id, name, enabled, plan_id, data_limit, expire_at, hold_seconds,
 	used_up, used_down, last_up, last_down, reset_period, last_reset_at,
 	device_limit, device_over_since, tg_chat_id,
-	notified_status, notified_expire_at, notified_quota_at`
+	notified_status, notified_expire_at, notified_quota_at, hook_expire_at, hook_quota_at, hook_expire_stage`
 
 // userStates reads user states. byKey counts the devices of the users read from their
 // own rows rather than from the window of everyone online.
@@ -225,7 +225,7 @@ func (s *Store) userStates(query string, byKey bool, args ...any) ([]model.User,
 		if err := rows.Scan(&u.ID, &u.Name, &enabled, &u.PlanID, &u.DataLimit, &u.ExpireAt, &u.HoldSeconds,
 			&u.UsedUp, &u.UsedDown, &u.LastUp, &u.LastDown, &u.ResetPeriod, &u.LastResetAt,
 			&u.DeviceLimit, &u.DeviceOverSince, &u.TgChatID,
-			&u.NotifiedStatus, &u.NotifiedExpireAt, &u.NotifiedQuotaAt); err != nil {
+			&u.NotifiedStatus, &u.NotifiedExpireAt, &u.NotifiedQuotaAt, &u.HookExpireAt, &u.HookQuotaAt, &u.HookExpireStage); err != nil {
 			return nil, err
 		}
 		u.Enabled = enabled != 0
@@ -268,7 +268,10 @@ const candidateMargin = 5
 //     is a candidate instead;
 //   - an expiry moments away, whose status the pass may see change;
 //   - an expiry inside the warning horizon that has not been warned about;
-//   - a quota warning due, or one to re-arm.
+//   - a quota warning due, or one to re-arm;
+//   - the same two for the webhook reminders (Reminders.Hook*), whose thresholds are
+//     their own — and only while they are on, or everyone in the horizon would be a
+//     candidate every pass.
 //
 // Everyone else the pass would read and skip: their status is the one already
 // notified, and neither warning applies. At 50,000 users reading them all was ~200 ms
@@ -276,7 +279,7 @@ const candidateMargin = 5
 // nobody. Anything that changes after this query and before the pass is seen by the
 // next pass, because an unnotified status stays unnotified.
 // TestEnforcementCandidatesMissNobody runs the pass both ways over random users.
-func (s *Store) EnforcementCandidates(now, expiringHorizon int64) ([]int64, error) {
+func (s *Store) EnforcementCandidates(now int64, r Reminders) ([]int64, error) {
 	return s.ids(`SELECT id FROM users
 		WHERE notified_status <> CASE
 		        WHEN enabled = 0 THEN 'disabled'
@@ -286,12 +289,28 @@ func (s *Store) EnforcementCandidates(now, expiringHorizon int64) ([]int64, erro
 		   OR (device_limit > 0 AND device_over_since <> 0 AND device_over_since <= ?)
 		   OR (expire_at > ? AND expire_at <= ?)
 		   OR (tg_chat_id <> 0 AND expire_at > ? AND expire_at <= ? AND notified_expire_at <> expire_at)
-		   OR ((data_limit > 0 AND (used_up + used_down) * 100 >= data_limit * ?) <> (notified_quota_at <> 0))`,
+		   OR ((data_limit > 0 AND (used_up + used_down) * 100 >= data_limit * ?) <> (notified_quota_at <> 0))
+		   OR (? > 0 AND enabled = 1 AND expire_at > ? AND expire_at <= ? AND (hook_expire_at <> expire_at
+		       OR hook_expire_stage = 0 OR CASE -- model.HookExpireStages, nearest first
+		         WHEN expire_at <= ? THEN 1 WHEN expire_at <= ? THEN 3 WHEN expire_at <= ? THEN 7 ELSE 14
+		       END < hook_expire_stage))
+		   OR (? > 0 AND (enabled = 1 AND data_limit > 0 AND (used_up + used_down) * 100 >= data_limit * ?) <> (hook_quota_at <> 0))`,
 		now,
 		now-model.DeviceLimitGrace+candidateMargin,
 		now-candidateMargin, now+candidateMargin,
-		now-candidateMargin, now+expiringHorizon+candidateMargin,
-		model.TrafficWarnPercent)
+		now-candidateMargin, now+r.Expiring+candidateMargin,
+		model.TrafficWarnPercent,
+		r.HookExpiring, now-candidateMargin, now+r.HookExpiring+candidateMargin,
+		now+86400+candidateMargin, now+3*86400+candidateMargin, now+7*86400+candidateMargin,
+		r.HookTrafficPercent, r.HookTrafficPercent)
+}
+
+// Reminders are the horizons and thresholds the enforcement pass warns at: the
+// Telegram expiry warning's, and the webhook reminders' (0 = off).
+type Reminders struct {
+	Expiring           int64 // seconds before expiry, the Telegram warning
+	HookExpiring       int64 // seconds before expiry, user.expiring
+	HookTrafficPercent int   // share of the quota spent, user.traffic_low
 }
 
 // ResetCandidates returns the ids of users whose quota may be due a reset: those with
@@ -1444,6 +1463,18 @@ func (s *Store) SetNotifiedQuotaAt(id, at int64) error {
 	return err
 }
 
+// SetHookExpire records the user.expiring stage that went out for a term (expireAt).
+func (s *Store) SetHookExpire(id, expireAt int64, stage int) error {
+	_, err := s.db.Exec(`UPDATE users SET hook_expire_at = ?, hook_expire_stage = ? WHERE id = ?`, expireAt, stage, id)
+	return err
+}
+
+// SetHookQuotaAt marks (at != 0) or re-arms (0) the user.traffic_low reminder.
+func (s *Store) SetHookQuotaAt(id, at int64) error {
+	_, err := s.db.Exec(`UPDATE users SET hook_quota_at = ? WHERE id = ?`, at, id)
+	return err
+}
+
 // SetNotifiedStatus records the status a user was last alerted about, so the
 // transition detector's comparison survives a panel restart (see the 0020 migration).
 func (s *Store) SetNotifiedStatus(id int64, status string) error {
@@ -1619,7 +1650,7 @@ func (s *Store) queryUsersOn(db *sql.DB, query string, args ...any) ([]model.Use
 			&u.PlanID, &trialUsed, &u.TgLinkCode, &u.TgLinkCodeAt, &u.NotifiedStatus,
 			&u.NotifiedExpireAt, &u.NotifiedQuotaAt, &u.DeviceOverSince, &u.Note, &tags, &u.WGPrivateKey,
 			&u.AbuseAction, &u.AbuseUntil, &u.AbusePrevSpeed, &u.AbuseWarnedDay, &u.HoldSeconds, &u.AWGSlot,
-			&u.ExtraDevices, &u.PackData,
+			&u.ExtraDevices, &u.PackData, &u.HookExpireAt, &u.HookQuotaAt, &u.HookExpireStage,
 		); err != nil {
 			return nil, err
 		}

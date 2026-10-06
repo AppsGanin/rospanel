@@ -91,6 +91,10 @@ func (m *Manager) sendWinback(set *model.Settings, c store.WinbackCandidate, now
 	m.auditNamed(context.Background(), u.ID, u.Name, model.EventWinbackSent, map[string]any{
 		"code": p.Code, "percent": p.Value, "expires_at": p.ExpiresAt,
 	})
+	// attached: the code is already on the user's next payment, nothing to enter.
+	m.emitUserWebhook(model.WebhookPromoWinback, u.ID, map[string]any{
+		"code": p.Code, "percent": p.Value, "expires_at": p.ExpiresAt, "attached": attached,
+	})
 	if !canTell {
 		return
 	}

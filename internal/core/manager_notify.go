@@ -228,6 +228,7 @@ func (m *Manager) notifyStatusTransitions(users []model.User) {
 	if serr == nil {
 		m.notifyExpiring(set, users)
 		m.notifyTrafficLow(set, users)
+		m.remindHooks(set, users)
 	}
 	for _, u := range users {
 		if u.NotifiedStatus == u.Status {

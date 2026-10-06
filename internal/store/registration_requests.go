@@ -57,6 +57,25 @@ func (s *Store) GetRegistrationRequestByExternal(externalID string) (*model.Regi
 	return r, err
 }
 
+// RestoreRegistrationRequest puts a claimed request back as it was — its id too — when
+// approving it failed after the claim: whoever was told that id (the 202 of POST
+// /v1/signup, registration.requested) still finds the request by it.
+func (s *Store) RestoreRegistrationRequest(r *model.RegistrationRequest) error {
+	var chat sql.NullInt64
+	if r.ChatID != 0 {
+		chat = sql.NullInt64{Int64: r.ChatID, Valid: true}
+	}
+	var ext sql.NullString
+	if r.ExternalID != "" {
+		ext = sql.NullString{String: r.ExternalID, Valid: true}
+	}
+	_, err := s.db.Exec(
+		`INSERT INTO registration_requests (id, chat_id, external_id, name, source, referrer_id, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+		r.ID, chat, ext, r.Name, r.Source, r.ReferrerID, r.CreatedAt)
+	return err
+}
+
 // ErrRegistrationPending means the chat already has a pending request.
 var ErrRegistrationPending = errors.New("registration already pending")
 

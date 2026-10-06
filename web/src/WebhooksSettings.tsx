@@ -10,7 +10,8 @@ import {
   type WebhookEventDef,
 } from "./api";
 import { fmtStamp } from "./format";
-import i18n, { slugKey, td } from "./i18n";
+import { WebhookEventGrid } from "./WebhookEventGrid";
+import i18n from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Button,
@@ -43,49 +44,6 @@ function lastDelivery(hook: Webhook): { text: string; failed: boolean } {
     hook.last_error || "",
   ].filter(Boolean);
   return { text: parts.join(" · "), failed: !ok };
-}
-
-// EventPicker is the chip grid for choosing subscribed events (none ticked = all
-// events). Chips rather than a column of boxes: what the operator does here is
-// glance at which ones are lit.
-function EventPicker({
-  catalog,
-  selected,
-  onToggle,
-}: {
-  catalog: WebhookEventDef[];
-  selected: Set<string>;
-  onToggle: (key: string) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {catalog.map((e) => {
-        const on = selected.has(e.key);
-        return (
-          <label
-            key={e.key}
-            title={e.key}
-            className={cn(
-              // relative: the sr-only input inside is absolutely positioned, and
-              // without an anchor the browser scrolls the page to wherever it lands.
-              "relative cursor-pointer select-none rounded-md border px-2 py-1 text-[11px] transition",
-              on
-                ? "accent-tint border-accent text-accent"
-                : "border-gray-300 text-ink-muted hover:border-gray-400",
-            )}
-          >
-            <input
-              type="checkbox"
-              className="sr-only"
-              checked={on}
-              onChange={() => onToggle(e.key)}
-            />
-            {td(`webhookEvent.${slugKey(e.key)}`)}
-          </label>
-        );
-      })}
-    </div>
-  );
 }
 
 // One line per endpoint: where it posts, how the last attempt went, whether it is
@@ -174,13 +132,6 @@ export function WebhooksSettings() {
   useEffect(() => {
     refresh();
   }, []);
-
-  const toggleDraft = (key: string) =>
-    setDraft((prev) => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
 
   const openAdd = () => {
     setUrl("");
@@ -282,12 +233,7 @@ export function WebhooksSettings() {
   // takes would only flicker.
   if (loading) return null;
 
-  const picker = (
-    <div>
-      <div className={cn(MICRO, "mb-1.5")}>{t("hooks.eventsLabel")}</div>
-      <EventPicker catalog={catalog} selected={draft} onToggle={toggleDraft} />
-    </div>
-  );
+  const picker = <WebhookEventGrid catalog={catalog} selected={draft} onChange={setDraft} />;
 
   return (
     <>
@@ -327,6 +273,7 @@ export function WebhooksSettings() {
       {/* A new endpoint: where to post, and what to post there. */}
       <Modal
         open={adding}
+        size="lg"
         onClose={() => setAdding(false)}
         title={t("hooks.add")}
         footer={
@@ -361,6 +308,7 @@ export function WebhooksSettings() {
           delivery one can fire by hand to see the receiver answer. */}
       <Modal
         open={!!editing}
+        size="lg"
         onClose={() => setEditing(null)}
         title={t("hooks.title")}
         subtitle={editing?.url}

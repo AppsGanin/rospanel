@@ -206,6 +206,32 @@ type User struct {
 	// (0 = not yet). Cleared once usage falls back under the threshold, which is what
 	// a quota reset or a plan change does — so the warning re-arms on its own.
 	NotifiedQuotaAt int64 `json:"-"`
+
+	// HookExpireAt and HookQuotaAt are the same two markers for the reminders an
+	// external system gets as webhooks (user.expiring, user.traffic_low), on the
+	// bot's thresholds but kept apart from its markers: the bot marks only users
+	// with a Telegram, and a site's users often have none.
+	HookExpireAt int64 `json:"-"`
+	HookQuotaAt  int64 `json:"-"`
+	// HookExpireStage is the last user.expiring stage (days ahead, HookExpireStages)
+	// sent for the term HookExpireAt holds; 0 = none yet.
+	HookExpireStage int `json:"-"`
+}
+
+// HookExpireStages are the days before a term ends that user.expiring goes out at,
+// each once per term — the external system decides which of them to act on.
+var HookExpireStages = []int{14, 7, 3, 1}
+
+// HookExpireStage is the stage a term with left seconds to go is at: the nearest of
+// HookExpireStages it is within, or 0 when it is further out than the first.
+func HookExpireStage(left int64) int {
+	stage := 0
+	for _, d := range HookExpireStages {
+		if left <= int64(d)*86400 {
+			stage = d
+		}
+	}
+	return stage
 }
 
 // TelegramLinkCodeTTL is how long a one-time Telegram bind code stays valid.
@@ -558,16 +584,55 @@ func (h Webhook) Subscribed(event string) bool {
 // Webhook event keys. Stable strings sent in the payload's "event" field and the
 // X-RosPanel-Event header; never renumbered/renamed once shipped.
 const (
-	WebhookUserCreated      = "user.created"        // created via panel or API
-	WebhookUserDeleted      = "user.deleted"        //
-	WebhookUserRegistered   = "user.registered"     // self-registered: the user bot, the Mini App or POST /v1/signup
-	WebhookUserExpired      = "user.expired"        // subscription lapsed
-	WebhookUserLimited      = "user.limited"        // traffic quota exhausted
-	WebhookUserDeviceLimit  = "user.device_limited" //
-	WebhookPaymentCreated   = "payment.created"     // order opened
-	WebhookPaymentPaid      = "payment.paid"        // order paid, plan applied
-	WebhookPaymentCancelled = "payment.cancelled"   //
-	WebhookPaymentRefunded  = "payment.refunded"    // money returned: to the balance, or by the payment system
+	WebhookUserCreated     = "user.created"        // created via panel or API
+	WebhookUserDeleted     = "user.deleted"        //
+	WebhookUserRegistered  = "user.registered"     // self-registered: the user bot, the Mini App or POST /v1/signup
+	WebhookUserExpired     = "user.expired"        // subscription lapsed
+	WebhookUserLimited     = "user.limited"        // traffic quota exhausted
+	WebhookUserDeviceLimit = "user.device_limited" //
+	WebhookUserExpiring    = "user.expiring"       // a term is 14, 7, 3 or 1 days from its end (HookExpireStages)
+	WebhookUserTrafficLow  = "user.traffic_low"    // TrafficWarnPercent of the quota spent
+	WebhookUserSubRotated  = "user.sub_rotated"    // subscription link reissued: the old one is dead
+	// A Telegram bound to the account, or taken off it — by the operator, the API, the
+	// bot, or another account the Telegram moved to.
+	WebhookUserTelegramLinked   = "user.telegram_linked"
+	WebhookUserTelegramUnlinked = "user.telegram_unlinked"
+	// Switched on or off by the operator (the panel, the API, a bulk action). A
+	// switch-off for blocklist traffic is user.abuse.
+	WebhookUserEnabled  = "user.enabled"
+	WebhookUserDisabled = "user.disabled"
+	// The blocklist measures: data.measure is warned | throttled | disabled | lifted.
+	WebhookUserAbuse = "user.abuse"
+	// The plan moved: set by the operator or the API, or bought as a change of plan
+	// (plan.changed); the paid term ended and the free plan took over
+	// (plan.downgraded); given up (plan.cancelled).
+	WebhookPlanChanged    = "plan.changed"
+	WebhookPlanDowngraded = "plan.downgraded"
+	WebhookPlanCancelled  = "plan.cancelled"
+	// Money and codes the user should hear about: an operator's balance correction,
+	// someone signing up by their invite, what an invited user's payment earned them,
+	// and a win-back code.
+	WebhookBalanceAdjusted = "balance.adjusted"
+	WebhookUserReferred    = "user.referred"
+	WebhookReferralReward  = "referral.reward"
+	WebhookPromoWinback    = "promo.winback"
+	// The term and the quota moved without a plan: the operator set limits or extended
+	// the term (user.limits_changed), a term waiting for the first connection started
+	// (user.term_started), the traffic was zeroed by hand or by the reset period
+	// (user.traffic_reset, data.auto).
+	WebhookUserLimitsChanged = "user.limits_changed"
+	WebhookUserTermStarted   = "user.term_started"
+	WebhookUserTrafficReset  = "user.traffic_reset"
+	// A device took a slot, or slots were released.
+	WebhookUserDeviceBound   = "user.device_bound"
+	WebhookUserDeviceUnbound = "user.device_unbound"
+	// A sign-up waits for the operator (moderation): from the bot, the Mini App or
+	// POST /v1/signup. The decision is user.registered or registration.rejected.
+	WebhookRegistrationRequested = "registration.requested"
+	WebhookPaymentCreated        = "payment.created"   // order opened
+	WebhookPaymentPaid           = "payment.paid"      // order paid, plan applied
+	WebhookPaymentCancelled      = "payment.cancelled" //
+	WebhookPaymentRefunded       = "payment.refunded"  // money returned: to the balance, or by the payment system
 	// A moderated sign-up the operator turned down. Approval is user.registered.
 	WebhookRegistrationRejected = "registration.rejected"
 )
@@ -580,10 +645,31 @@ var WebhookEventCatalog = []string{
 	WebhookUserCreated,
 	WebhookUserDeleted,
 	WebhookUserRegistered,
+	WebhookRegistrationRequested,
 	WebhookRegistrationRejected,
 	WebhookUserExpired,
 	WebhookUserLimited,
 	WebhookUserDeviceLimit,
+	WebhookUserExpiring,
+	WebhookUserTrafficLow,
+	WebhookUserSubRotated,
+	WebhookUserTelegramLinked,
+	WebhookUserTelegramUnlinked,
+	WebhookUserEnabled,
+	WebhookUserDisabled,
+	WebhookUserAbuse,
+	WebhookPlanChanged,
+	WebhookPlanDowngraded,
+	WebhookPlanCancelled,
+	WebhookBalanceAdjusted,
+	WebhookUserReferred,
+	WebhookReferralReward,
+	WebhookPromoWinback,
+	WebhookUserLimitsChanged,
+	WebhookUserTermStarted,
+	WebhookUserTrafficReset,
+	WebhookUserDeviceBound,
+	WebhookUserDeviceUnbound,
 	WebhookPaymentCreated,
 	WebhookPaymentPaid,
 	WebhookPaymentCancelled,

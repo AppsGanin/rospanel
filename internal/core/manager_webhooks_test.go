@@ -17,7 +17,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/store"
 )
 
-// TestWebhookDeliverySigned drives the full path: EmitWebhook → queue → worker →
+// TestWebhookDeliverySigned drives the full path: EmitWebhook → outbox → worker →
 // signed POST → the receiver verifies the HMAC signature. The receiver runs on
 // 127.0.0.1, which is only reachable because webhook delivery deliberately does
 // not apply the SSRF private-host guard.
@@ -49,7 +49,7 @@ func TestWebhookDeliverySigned(t *testing.T) {
 		t.Fatalf("create webhook: %v", err)
 	}
 
-	m := &Manager{store: st, webhookCh: make(chan webhookJob, 8)}
+	m := &Manager{store: st, webhookCh: make(chan webhookJob, 8), webhookKick: make(chan struct{}, 1)}
 	m.startWebhookWorkers()
 	m.EmitWebhook(model.WebhookUserCreated, map[string]any{"id": 7, "name": "alice"})
 
@@ -112,12 +112,91 @@ func TestWebhookNonSubscribed(t *testing.T) {
 	if _, err := st.CreateWebhook(srv.URL, []string{model.WebhookPaymentPaid}, true); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	m := &Manager{store: st, webhookCh: make(chan webhookJob, 8)}
+	m := &Manager{store: st, webhookCh: make(chan webhookJob, 8), webhookKick: make(chan struct{}, 1)}
 	m.startWebhookWorkers()
 	m.EmitWebhook(model.WebhookUserCreated, map[string]any{"id": 1})
 
 	time.Sleep(300 * time.Millisecond)
 	if n := hits.Load(); n != 0 {
 		t.Fatalf("endpoint was called %d times for an unsubscribed event", n)
+	}
+}
+
+// A bulk action's events all wait in the outbox, however many: the old in-memory
+// queue dropped everything past its 512 slots.
+func TestWebhookOutboxKeepsABulkWhole(t *testing.T) {
+	t.Parallel()
+	st, err := store.Open(filepath.Join(t.TempDir(), "bulk.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	for range 2 {
+		if _, err := st.CreateWebhook("https://hooks.example/x", nil, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := &Manager{store: st, webhookCh: make(chan webhookJob, 1)}
+	items := make([]any, 3000)
+	for i := range items {
+		items[i] = map[string]any{"id": i}
+	}
+	m.EmitWebhookEach(model.WebhookUserDisabled, items)
+	if n, _ := st.PendingWebhookDeliveries(); n != 6000 {
+		t.Fatalf("pending = %d, want 6000 (3000 events × 2 endpoints)", n)
+	}
+}
+
+// A failed delivery stays in the outbox, due again after the backoff; out of
+// attempts it goes. A delivery for an endpoint switched off meanwhile is dropped.
+func TestWebhookOutboxRetriesAndDrops(t *testing.T) {
+	t.Parallel()
+	st, err := store.Open(filepath.Join(t.TempDir(), "retry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	h, err := st.CreateWebhook(srv.URL, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &Manager{store: st, webhookCh: make(chan webhookJob, webhookBatch)}
+	m.EmitWebhook(model.WebhookUserCreated, map[string]any{"id": 1})
+	if m.dispatchWebhooks() {
+		t.Fatal("a batch of one reported more to come")
+	}
+	job := <-m.webhookCh
+	if job.attempt != 1 || job.outboxID == 0 {
+		t.Fatalf("job = %+v", job)
+	}
+	// Leased: not due again while it is being sent.
+	if m.dispatchWebhooks(); len(m.webhookCh) != 0 {
+		t.Fatal("a leased delivery was handed out twice")
+	}
+	m.deliverWebhook(job)
+	ds, _ := st.LeaseWebhookDeliveries(time.Now().Add(time.Hour).Unix(), 0, 10)
+	if len(ds) != 1 || ds[0].Attempt != 1 {
+		t.Fatalf("after a failure: %+v", ds)
+	}
+	job.attempt = webhookMaxAttempts
+	m.deliverWebhook(job)
+	if n, _ := st.PendingWebhookDeliveries(); n != 0 {
+		t.Fatalf("out of attempts, %d deliveries left", n)
+	}
+
+	m.EmitWebhook(model.WebhookUserCreated, map[string]any{"id": 2})
+	if err := st.UpdateWebhook(h.ID, h.URL, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	m.dispatchWebhooks()
+	if len(m.webhookCh) != 0 {
+		t.Fatal("a delivery went to a switched-off endpoint")
+	}
+	if n, _ := st.PendingWebhookDeliveries(); n != 0 {
+		t.Fatalf("the switched-off endpoint's delivery stayed: %d", n)
 	}
 }

@@ -338,7 +338,7 @@ func (m *Manager) CreateRegisteredUser(ctx context.Context, name string, trial b
 	if err != nil || u == nil {
 		return u, err
 	}
-	m.announceRegistration(ctx, u, "", false)
+	m.announceRegistration(ctx, u, "", nil)
 	return u, nil
 }
 
@@ -346,20 +346,26 @@ func (m *Manager) CreateRegisteredUser(ctx context.Context, name string, trial b
 // account: the journal row and user.registered, and — unless an operator just
 // approved it themselves — the admin alert. externalID is a website client's id,
 // carried in the event so the site can tell whose account it is.
-func (m *Manager) announceRegistration(ctx context.Context, u *model.User, externalID string, moderated bool) {
+func (m *Manager) announceRegistration(ctx context.Context, u *model.User, externalID string, req *model.RegistrationRequest) {
 	plan := m.PlanName(u.PlanID)
 	details := map[string]any{"plan": plan}
-	if moderated {
+	data := userEventData(*u)
+	if req != nil {
+		// Approved: the event names the request the 202 or registration.requested
+		// handed out, and the Telegram it was filed from.
 		details["moderation"] = true
+		data["moderated"], data["request_id"] = true, req.ID
 	} else {
 		lang := m.botLang()
 		m.notifyAdminEvent(model.AdminEventRegistered,
 			i18n.T(lang, "notify.registered", escHTML(u.Name))+planLine(lang, plan))
 	}
-	data := userEventData(*u)
 	if externalID != "" {
 		details["external_id"] = externalID
 		data["external_id"] = externalID
+	}
+	if u.TgChatID != 0 {
+		data["telegram_id"] = u.TgChatID
 	}
 	m.audit(ctx, u.ID, model.EventUserRegistered, details)
 	m.EmitWebhook(model.WebhookUserRegistered, data)
@@ -392,6 +398,9 @@ func (m *Manager) RequestRegistration(ctx context.Context, chatID int64, name st
 	// requests tab is the authoritative surface regardless (and the only one when
 	// the admin bot is off or its registration notifications are disabled).
 	m.notifyModeration(req.ID, req.Name, "")
+	m.EmitWebhook(model.WebhookRegistrationRequested, map[string]any{
+		"request_id": req.ID, "name": req.Name, "telegram_id": chatID,
+	})
 	return true, nil
 }
 
@@ -440,19 +449,22 @@ func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) e
 	if err != nil {
 		// Creation failed after the request was claimed — put the request back so it's
 		// retryable instead of vanishing (the applicant keeps waiting otherwise).
-		_, _ = m.store.CreateRegistrationRequest(req.ChatID, req.Name, req.CreatedAt)
+		_ = m.store.RestoreRegistrationRequest(req)
 		return err
 	}
 	if err := m.store.SetUserTelegramChat(u.ID, req.ChatID); err != nil {
 		// Account created but the chat couldn't be linked: drop the orphan and restore
 		// the request rather than leave an unreachable active account behind.
 		_ = m.store.DeleteUser(u.ID)
-		_, _ = m.store.CreateRegistrationRequest(req.ChatID, req.Name, req.CreatedAt)
+		_ = m.store.RestoreRegistrationRequest(req)
 		return err
 	}
 	_ = m.store.MarkChatTrial(req.ChatID)
 	m.AttachReferrer(ctx, u.ID, req.ChatID)
-	m.announceRegistration(ctx, u, "", true)
+	u.TgChatID = req.ChatID
+	m.announceRegistration(ctx, u, "", req)
+	// The same Telegram a bot or Mini App sign-up links, approved here instead.
+	m.emitTelegramWebhook(model.WebhookUserTelegramLinked, *u, req.ChatID)
 	// Gated with the other user-facing notices: an operator who switched them all off
 	// should not still have the bot writing to people.
 	m.notifyRegistrationDecision(req.ChatID, "notify.regApproved")
@@ -863,6 +875,12 @@ func (m *Manager) auditPlan(ctx context.Context, userID int64, userName, action,
 	m.auditNamed(ctx, userID, userName, action, map[string]any{
 		"plan": newPlan, "prev_plan": prevPlan, "expire_at": expire,
 	})
+	switch action {
+	case model.EventPlanChanged:
+		m.emitUserWebhook(model.WebhookPlanChanged, userID, map[string]any{"plan": newPlan, "prev_plan": prevPlan})
+	case model.EventPlanDowngraded:
+		m.emitUserWebhook(model.WebhookPlanDowngraded, userID, map[string]any{"plan": newPlan, "prev_plan": prevPlan})
+	}
 }
 
 // isPlanRenewal reports whether applying planID to the user is a renewal of their
@@ -1036,6 +1054,7 @@ func (m *Manager) cancelUserPlan(ctx context.Context, userID int64, lapse bool) 
 			m.audit(ctx, userID, model.EventPlanCancelled, map[string]any{
 				"plan": cancelled, "moved_to": free.Name,
 			})
+			m.emitUserWebhook(model.WebhookPlanCancelled, userID, map[string]any{"prev_plan": cancelled, "plan": free.Name})
 			return nil
 		}
 	}
@@ -1073,6 +1092,7 @@ func (m *Manager) cancelUserPlan(ctx context.Context, userID int64, lapse bool) 
 	}
 	m.afterPlanWrite(groupsChanged)
 	m.audit(ctx, userID, model.EventPlanCancelled, map[string]any{"plan": cancelled})
+	m.emitUserWebhook(model.WebhookPlanCancelled, userID, map[string]any{"prev_plan": cancelled, "plan": ""})
 	return nil
 }
 
