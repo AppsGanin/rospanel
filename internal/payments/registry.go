@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
+	"sync/atomic"
 )
 
 // The provider registry. Every payment provider is one Descriptor: its display
@@ -140,12 +142,32 @@ var descriptors = []Descriptor{
 	starsDescriptor(),
 }
 
-// All returns every known provider, in display order.
-func All() []Descriptor { return descriptors }
+// extra is where providers beyond the built-in ones come from: the active plugins
+// that provide a payment method (internal/plugin). Read on every lookup, so a plugin
+// switched on or off is offered — or not — at once.
+var extra atomic.Pointer[func() []Descriptor]
+
+// SetExtra registers the source of additional providers. Their keys must not clash
+// with the built-in ones (plugins use "plugin.<id>").
+func SetExtra(fn func() []Descriptor) { extra.Store(&fn) }
+
+// All returns every known provider, in display order: the built-in ones, then the
+// plugins'.
+func All() []Descriptor {
+	fn := extra.Load()
+	if fn == nil {
+		return descriptors
+	}
+	more := (*fn)()
+	if len(more) == 0 {
+		return descriptors
+	}
+	return append(slices.Clone(descriptors), more...)
+}
 
 // Get looks up a provider by key.
 func Get(key string) (Descriptor, bool) {
-	for _, d := range descriptors {
+	for _, d := range All() {
 		if d.Key == key {
 			return d, true
 		}

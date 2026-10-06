@@ -364,7 +364,12 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			decoy.ServeHTTP(w, r)
 			return
 		}
-		leaf, _ := firstSegment(rest)
+		leaf, after := firstSegment(rest)
+		if leaf == "x" { // /<paySecret>/x/<plugin id>/… — a plugin's onHttp
+			rt.handlePluginHTTP(w, r, after, decoy)
+			rt.writes.Add(1) // it may have changed users through panel.api
+			return
+		}
 		handlePaymentWebhook(rt, w, r, leaf)
 		rt.writes.Add(1) // a confirmed payment moves a user's plan and term
 		return

@@ -30,6 +30,7 @@ import {
   Button,
   CenterLoader,
   Checkbox,
+  Code,
   cn,
   EmptyState,
   Modal,
@@ -260,6 +261,18 @@ function PluginRow({
           onChange={toggle}
         />
       </div>
+
+      {p.status === "active" && p.http_url && (
+        <div>
+          <p className="mb-1 text-[11px] text-ink-muted">{t("plugins.httpUrl")}</p>
+          <Code block copy>
+            {p.http_url}
+          </Code>
+        </div>
+      )}
+      {p.status === "active" && p.payment_key && (
+        <p className="text-[11px] text-ink-muted">{t("plugins.paymentHint")}</p>
+      )}
 
       <div className="flex flex-wrap gap-1.5">
         {hasSettings && (

@@ -3371,6 +3371,9 @@ export interface PluginInfo {
   sha256: string
   db_bytes: number
   missing_setup?: string[]
+  http_url?: string
+  payment_key?: string
+  payment_webhook?: string
 }
 
 export interface PluginInspection {

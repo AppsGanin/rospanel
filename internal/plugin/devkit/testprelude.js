@@ -87,6 +87,13 @@
 		}),
 	});
 
+	globalThis.crypto = Object.freeze({
+		hash: (alg, data, enc) => call("crypto.hash", { alg, data, enc: enc || "hex" }),
+		hmac: (alg, key, data, enc) => call("crypto.hmac", { alg, key, data, enc: enc || "hex" }),
+		sign: (alg, pem, data) => call("crypto.sign", { alg, pem, data }),
+		jwt: (alg, pem, claims, header) => call("crypto.jwt", { alg, pem, claims, header: header || null }),
+	});
+
 	const line = (...a) => call("log", { msg: a.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" ") });
 	globalThis.console = Object.freeze({ log: line, info: line, warn: line, error: line, debug: line });
 

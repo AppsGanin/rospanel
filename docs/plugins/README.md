@@ -75,6 +75,8 @@ reads. `main.js` cannot `import` other files.
 | `settings` | The form the operator fills in. `kind`: `text`, `secret`, `bool`, `number`, `textarea`, `select` (with `options`). `optional`, `default`, `help`, `placeholder`. A `secret` is stored encrypted and never shown again. |
 | `provides.events` | Event names: the same as the webhooks' (see `docs/api.md`). The plugin must export `onEvent`. |
 | `provides.cron` | Jobs: `name` is an exported function, `schedule` a five-field cron expression in the panel's time zone, at most once a minute. |
+| `provides.payment` | `{"label": …, "note": …}`: a payment method. The plugin exports `payment.create`, `payment.status`, `payment.webhook` — see below. |
+| `provides.http` | `true`: the plugin answers requests at its own address. It exports `onHttp`. |
 | `db_quota_mb` | The database size limit, 100 by default, up to 1024. |
 | `memory_mb` | The JavaScript heap limit, 32 by default, up to 128. |
 
@@ -101,6 +103,50 @@ export function sync() { /* a cron job */ }
 - Keep state in `panel.kv` or `panel.db`: the panel may restart the plugin between
   any two calls.
 
+## A payment method
+
+```js
+export const payment = {
+  create({ amount_rub, order_id, description, return_url, webhook_url, email }) {
+    return { provider_id: "inv-1", pay_url: "https://pay.example/inv-1" };
+  },
+  status(provider_id) {
+    return { status: "paid", amount_kopecks: 15000, currency: "RUB" };
+  },
+  webhook({ body, headers }) {          // headers are lower-case
+    return { provider_id: "inv-1", status: "paid", amount_kopecks: 15000, currency: "RUB" };
+  },
+};
+```
+
+The method appears in **Settings → Payments** as `plugin.<id>`, and the operator switches it
+on like any other. The panel opens the order, sends the payer to `pay_url`, routes the payment
+system's callbacks (`webhook_url`) to `payment.webhook`, polls `payment.status` when a callback
+is missed, and grants the plan.
+
+- `status` is `paid`, `pending`, `cancelled` or `refunded`.
+- A `paid` or `refunded` answer must carry `amount_kopecks` and `currency`: the panel grants
+  the plan only when they match the order.
+- `payment.webhook` must prove the callback is real — check its signature, or, when the
+  payment system signs nothing, ask its API with `status` and report that instead of the body.
+- [examples/plugins/lava](../../examples/plugins/lava) is a complete one.
+
+## Requests from the internet
+
+With `"http": true` the plugin answers at `https://<panel>/<callback path>/x/<id>/…` (its card in
+the panel shows the address): for a shop that calls you after a sale, a form on a site, an OAuth
+callback.
+
+```js
+export function onHttp({ method, path, query, headers, body, ip }) {
+  return { status: 200, headers: { "Content-Type": "application/json" }, body: "{}" };
+}
+```
+
+The plugin checks who is calling (a signature, a token in its settings). Bodies are up to 1 MB
+each way; the answer cannot set cookies and is served sandboxed. See
+[examples/plugins/shop-webhook](../../examples/plugins/shop-webhook).
+
 ## The panel API
 
 `rospanel.d.ts` — written by `plugin new` — is the full reference, with types your
@@ -123,7 +169,7 @@ editor picks up.
 | | |
 |---|---|
 | Memory | `memory_mb` (32 MB). Past it the call throws `out of memory`. |
-| Time | 10 s for an event, 60 s for a cron job. Past it the call throws `interrupted`. |
+| Time | 10 s for an event or a request, 15 s for a payment call, 60 s for a cron job. Past it the call throws `interrupted`. |
 | Database | `db_quota_mb`; at most 10 000 rows or 4 MB per query. |
 | HTTP | 4 MB per answer, 30 s, 5 redirects within `net`. |
 | `panel.api` | 1 MB per request, 4 MB per answer. |
@@ -151,7 +197,8 @@ test("greets a new user", () => {
 
 `plugin.call(export, arg)`, `plugin.event(name, data)`, `plugin.cron(name)` call the
 plugin; `plugin.kv` and `plugin.db` read and seed its storage; `mock.http` and
-`mock.api` answer what it asks for — anything unmocked is refused. Mocks are reset
+`mock.api` answer what it asks for — anything unmocked is refused; `crypto.hmac` and friends sign
+what a test sends, as a payment system would. Mocks are reset
 before each test; the database is not. `dev.config.json` holds the settings `test`
 and `dev` run with.
 

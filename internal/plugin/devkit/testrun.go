@@ -149,6 +149,8 @@ func (h *Harness) testHost(log io.Writer) jsvm.Host {
 				return nil, fmt.Errorf("plugin.%s is not available in tests", a.Op)
 			}
 			return h.Host.DevOp(ctx, h.ID, a.Op, a.Arg)
+		case "crypto.hash", "crypto.hmac", "crypto.sign", "crypto.verify", "crypto.jwt", "crypto.random", "crypto.uuid":
+			return plugin.Crypto(op, arg)
 		case "log":
 			if log != nil {
 				var a struct {

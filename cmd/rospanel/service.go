@@ -30,6 +30,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/http80"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/netinfo"
+	"github.com/AppsGanin/rospanel/internal/payments"
 	"github.com/AppsGanin/rospanel/internal/plugin"
 	"github.com/AppsGanin/rospanel/internal/proxyproto"
 	"github.com/AppsGanin/rospanel/internal/server"
@@ -867,9 +868,12 @@ func startPlugins(runBG func(string, func(context.Context)), rt *server.Router, 
 		Fetch:        plugin.NewFetcher(),
 		Notify:       mgr.NotifyPluginPaused,
 		Stopped:      mgr.DropPluginDeliveries,
+		PublicURL:    mgr.PaymentWebhookURL,
 		Logger:       slog.Default(),
 	})
 	rt.SetPlugins(host)
+	// A plugin's payment method is one more provider in the registry.
+	payments.SetExtra(host.PaymentDescriptors)
 	st.OnCheckpoint(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

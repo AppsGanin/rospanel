@@ -308,3 +308,13 @@ func jwt(alg, pemText string, claims, header map[string]any) (string, error) {
 	}
 	return input + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
+
+// Crypto runs one crypto.* operation outside a plugin — the author tools give
+// test.js the same functions, to sign the callbacks a test feeds a plugin.
+func Crypto(op string, arg []byte) ([]byte, error) {
+	res, err := cryptoOp(op, arg)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(res)
+}

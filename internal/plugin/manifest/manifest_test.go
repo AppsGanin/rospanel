@@ -60,15 +60,22 @@ func allPoints(t *testing.T) {
 	t.Cleanup(func() { Available = saved })
 }
 
+// Exactly the points the panel does not call yet are refused — whatever stage the
+// list has reached.
 func TestUnavailablePointsAreRefused(t *testing.T) {
 	m, err := Parse([]byte(full))
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = m.Validate("4.4.0")
-	if err == nil || !strings.Contains(err.Error(), "provides.payment: not available") ||
-		strings.Contains(err.Error(), "provides.events: not available") {
-		t.Fatalf("got %v", err)
+	msg := ""
+	if err := m.Validate("4.4.0"); err != nil {
+		msg = err.Error()
+	}
+	for _, point := range m.declared() {
+		refused := strings.Contains(msg, "provides."+point+": not available")
+		if refused == Available[point] {
+			t.Errorf("%s: available=%v, refused=%v", point, Available[point], refused)
+		}
 	}
 }
 

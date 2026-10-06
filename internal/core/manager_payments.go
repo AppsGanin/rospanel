@@ -304,6 +304,10 @@ func (m *Manager) ConfirmStarsPayment(payload, currency string, total int64, raw
 	return err
 }
 
+// EnsureCallbackSecret makes the public callback segment exist — what a plugin
+// with onHttp or a payment method is reached under, as a provider is.
+func (m *Manager) EnsureCallbackSecret() error { return m.ensureWebhookSecret() }
+
 func (m *Manager) ensureWebhookSecret() error {
 	set, err := m.Settings()
 	if err != nil {

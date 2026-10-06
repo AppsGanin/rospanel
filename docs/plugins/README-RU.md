@@ -75,6 +75,8 @@ README.md, icon.svg    показываются в панели
 | `settings` | Форма, которую заполняет оператор. `kind`: `text`, `secret`, `bool`, `number`, `textarea`, `select` (с `options`). Ещё `optional`, `default`, `help`, `placeholder`. `secret` хранится зашифрованным и больше не показывается. |
 | `provides.events` | Имена событий, те же, что у вебхуков (см. `docs/api.md`). Плагин должен экспортировать `onEvent`. |
 | `provides.cron` | Задачи: `name` — экспортируемая функция, `schedule` — cron из пяти полей в часовом поясе панели, не чаще раза в минуту. |
+| `provides.payment` | `{"label": …, "note": …}`: способ оплаты. Плагин экспортирует `payment.create`, `payment.status`, `payment.webhook` — см. ниже. |
+| `provides.http` | `true`: плагин отвечает на запросы по своему адресу. Экспортирует `onHttp`. |
 | `db_quota_mb` | Лимит размера базы, по умолчанию 100, до 1024. |
 | `memory_mb` | Лимит памяти JavaScript, по умолчанию 32, до 128. |
 
@@ -101,6 +103,50 @@ export function sync() { /* задача по расписанию */ }
 - Храните состояние в `panel.kv` или `panel.db`: панель может перезапустить плагин
   между любыми двумя вызовами.
 
+## Способ оплаты
+
+```js
+export const payment = {
+  create({ amount_rub, order_id, description, return_url, webhook_url, email }) {
+    return { provider_id: "inv-1", pay_url: "https://pay.example/inv-1" };
+  },
+  status(provider_id) {
+    return { status: "paid", amount_kopecks: 15000, currency: "RUB" };
+  },
+  webhook({ body, headers }) {          // имена заголовков в нижнем регистре
+    return { provider_id: "inv-1", status: "paid", amount_kopecks: 15000, currency: "RUB" };
+  },
+};
+```
+
+Способ оплаты появляется в **Настройки → Оплата** как `plugin.<id>` и включается оператором
+как любой другой. Панель создаёт заказ, отправляет плательщика на `pay_url`, направляет
+уведомления платёжной системы (`webhook_url`) в `payment.webhook`, опрашивает `payment.status`,
+если уведомление потерялось, и выдаёт тариф.
+
+- `status` — `paid`, `pending`, `cancelled` или `refunded`.
+- Ответ `paid` или `refunded` обязан содержать `amount_kopecks` и `currency`: панель выдаёт тариф,
+  только когда они совпадают с заказом.
+- `payment.webhook` должен убедиться, что уведомление настоящее: проверить подпись, а если
+  платёжная система ничего не подписывает — спросить её API через `status` и вернуть это, а не тело.
+- Полный пример — [examples/plugins/lava](../../examples/plugins/lava).
+
+## Запросы из интернета
+
+С `"http": true` плагин отвечает по адресу `https://<панель>/<путь уведомлений>/x/<id>/…` (адрес
+показан в карточке плагина): для магазина, который зовёт вас после продажи, формы на сайте,
+OAuth-колбэка.
+
+```js
+export function onHttp({ method, path, query, headers, body, ip }) {
+  return { status: 200, headers: { "Content-Type": "application/json" }, body: "{}" };
+}
+```
+
+Кто звонит, проверяет сам плагин (подпись, токен из настроек). Тело до 1 МБ в обе стороны; ответ
+не может ставить cookie и отдаётся в песочнице. Пример —
+[examples/plugins/shop-webhook](../../examples/plugins/shop-webhook).
+
 ## API панели
 
 Полный справочник с типами для редактора — `rospanel.d.ts`, его кладёт `plugin new`.
@@ -122,7 +168,7 @@ export function sync() { /* задача по расписанию */ }
 | | |
 |---|---|
 | Память | `memory_mb` (32 МБ). Сверх лимита вызов бросает `out of memory`. |
-| Время | 10 с на событие, 60 с на задачу cron. Дольше — вызов бросает `interrupted`. |
+| Время | 10 с на событие или запрос, 15 с на вызов платёжки, 60 с на задачу cron. Дольше — вызов бросает `interrupted`. |
 | База | `db_quota_mb`; не больше 10 000 строк или 4 МБ на запрос. |
 | HTTP | 4 МБ на ответ, 30 с, 5 редиректов в пределах `net`. |
 | `panel.api` | 1 МБ на запрос, 4 МБ на ответ. |
@@ -151,7 +197,8 @@ test("приветствует нового пользователя", () => {
 
 `plugin.call(export, arg)`, `plugin.event(name, data)`, `plugin.cron(name)` вызывают
 плагин; `plugin.kv` и `plugin.db` читают и наполняют его хранилище; `mock.http` и
-`mock.api` отвечают на его запросы — всё, что не замокано, отклоняется. Моки
+`mock.api` отвечают на его запросы — всё, что не замокано, отклоняется; `crypto.hmac` и соседи
+подписывают то, что тест отправляет плагину, как это сделала бы платёжная система. Моки
 сбрасываются перед каждым тестом, база — нет. Настройки для `test` и `dev` лежат в
 `dev.config.json`.
 

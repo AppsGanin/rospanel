@@ -185,7 +185,7 @@ const (
 // that is not here yet is refused: a plugin that installs, switches on and then
 // silently never runs is worse than one the panel turns away with the reason.
 // Each stage of docs/plugins-design.md adds its points here.
-var Available = map[string]bool{"events": true, "cron": true}
+var Available = map[string]bool{"events": true, "cron": true, "payment": true, "http": true}
 
 // declared lists the points a manifest uses, by their provides key.
 func (m *Manifest) declared() []string {

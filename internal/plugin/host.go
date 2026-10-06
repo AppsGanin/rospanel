@@ -71,6 +71,9 @@ type Deps struct {
 	Notify       func(pluginID, message string) // tells the admins a plugin was paused
 	Stopped      func(pluginID string)          // a plugin stopped taking events: drop its queue
 	Logger       *slog.Logger
+	// PublicURL is the panel's public callback URL for a path under its secret
+	// segment ("x/<id>", "plugin.<id>"), "" while the panel has no host or secret.
+	PublicURL func(path string) string
 	// NoBreaker keeps failing plugins running: the author tools, where a test makes a
 	// plugin fail on purpose. Never set in a panel.
 	NoBreaker bool
@@ -634,6 +637,11 @@ type Info struct {
 	SHA256       string             `json:"sha256"`
 	DBBytes      int64              `json:"db_bytes"`
 	MissingSetup []string           `json:"missing_setup,omitempty"`
+	// HTTPURL is where onHttp answers; PaymentKey the provider key of its payment
+	// method and PaymentWebhook the callback URL to give the payment system.
+	HTTPURL        string `json:"http_url,omitempty"`
+	PaymentKey     string `json:"payment_key,omitempty"`
+	PaymentWebhook string `json:"payment_webhook,omitempty"`
 }
 
 func (inst *instance) info() *Info {
@@ -658,6 +666,18 @@ func (inst *instance) info() *Info {
 	}
 	if st, err := os.Stat(inst.host.dbPath(inst.id)); err == nil {
 		in.DBBytes = st.Size()
+	}
+	if m != nil {
+		pub := inst.host.deps.PublicURL
+		if m.Provides.HTTP && pub != nil {
+			in.HTTPURL = pub("x/" + inst.id)
+		}
+		if m.Provides.Payment != nil {
+			in.PaymentKey = PaymentKeyPrefix + inst.id
+			if pub != nil {
+				in.PaymentWebhook = pub(in.PaymentKey)
+			}
+		}
 	}
 	return in
 }

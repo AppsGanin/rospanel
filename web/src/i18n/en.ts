@@ -2328,6 +2328,8 @@ const en: Dict = {
     logsEmpty: "No lines",
     codeTitle: "Code of \"{{name}}\"",
     db: "database {{size}}",
+    httpUrl: "Address for incoming requests",
+    paymentHint: "The payment method is switched on in Settings → Payments, like any other.",
     point: {
       events: "Reacts to events: {{list}}",
       cron: "Runs on a schedule",

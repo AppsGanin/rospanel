@@ -182,6 +182,9 @@ declare const mock: {
   reset(): void;
 };
 
+/** panel.crypto's functions, to sign what a test sends the plugin. */
+declare const crypto: Pick<PanelCrypto, "hash" | "hmac" | "sign" | "jwt">;
+
 declare const plugin: {
   /** Calls an export of main.js ("onEvent", "payment.create", …). */
   call<T = any>(name: string, arg?: unknown): T;

@@ -1,0 +1,20 @@
+{
+  "id": "lava",
+  "version": "1.0.0",
+  "api": 1,
+  "panel": ">=4.4.0",
+  "name": {"ru": "Lava", "en": "Lava"},
+  "description": {"ru": "Оплата картой и СБП через Lava Business (api.lava.ru).", "en": "Card and SBP payments through Lava Business (api.lava.ru)."},
+  "author": "RosPanel",
+  "license": "MIT",
+  "net": ["api.lava.ru"],
+  "settings": [
+    {"key": "shop_id", "kind": "text", "label": {"ru": "ID проекта (shopId)", "en": "Project ID (shopId)"}},
+    {"key": "secret_key", "kind": "secret", "label": {"ru": "Секретный ключ", "en": "Secret key"}},
+    {"key": "webhook_key", "kind": "secret", "label": {"ru": "Дополнительный ключ (для вебхуков)", "en": "Additional key (for webhooks)"}},
+    {"key": "lifetime", "kind": "number", "label": {"ru": "Срок жизни счёта, минут", "en": "Invoice lifetime, minutes"}, "default": "60"}
+  ],
+  "provides": {
+    "payment": {"label": "Lava", "note": {"ru": "Карты и СБП", "en": "Cards and SBP"}}
+  }
+}

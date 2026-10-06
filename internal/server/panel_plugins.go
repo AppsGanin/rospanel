@@ -241,6 +241,7 @@ func (rt *Router) pluginAction(fn func(*plugin.Host, context.Context, string) (*
 			writePluginErr(w, err)
 			return
 		}
+		rt.ensurePluginCallbacks(info)
 		writeJSON(w, http.StatusOK, info)
 	}
 }
@@ -317,5 +318,59 @@ func writePluginErr(w http.ResponseWriter, err error) {
 		writeErrDetail(w, http.StatusBadRequest, "err.pluginInvalid", "пакет не подходит: ", err.Error())
 	default:
 		writeErrDetail(w, http.StatusUnprocessableEntity, "err.pluginFailed", "плагин не запустился: ", err.Error())
+	}
+}
+
+// handlePluginHTTP serves /<callback secret>/x/<plugin id>/<path> with the plugin's
+// onHttp. An id that is not an active plugin accepting requests gets the decoy, like
+// any unknown path behind this segment.
+func (rt *Router) handlePluginHTTP(w http.ResponseWriter, r *http.Request, rest string, decoy http.Handler) {
+	id, path := firstSegment(rest)
+	if rt.plugins == nil || !rt.plugins.ServesHTTP(id) {
+		decoy.ServeHTTP(w, r)
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, plugin.MaxHTTPBody+1))
+	if err != nil || len(body) > plugin.MaxHTTPBody {
+		http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+	req := plugin.HTTPRequest{
+		Method: r.Method, Path: path, Query: map[string]string{}, Headers: map[string]string{},
+		Body: string(body), IP: clientIP(r),
+	}
+	for k, v := range r.URL.Query() {
+		req.Query[k] = strings.Join(v, ",")
+	}
+	for k, v := range r.Header {
+		if strings.EqualFold(k, "Cookie") { // the panel's own session never reaches a plugin
+			continue
+		}
+		req.Headers[strings.ToLower(k)] = strings.Join(v, ", ")
+	}
+	resp, err := rt.plugins.ServeHTTP(r.Context(), id, req)
+	if err != nil {
+		http.Error(w, "the plugin failed to answer", http.StatusBadGateway)
+		return
+	}
+	plugin.WriteHTTP(w, resp)
+}
+
+// ensurePluginCallbacks makes the public callback segment exist once a plugin that
+// is reached through it — onHttp or a payment method — is switched on, and fills
+// in the URLs the operator gives the outside service.
+func (rt *Router) ensurePluginCallbacks(info *plugin.Info) {
+	if info == nil || info.Manifest == nil || info.Status != "active" {
+		return
+	}
+	if !info.Manifest.Provides.HTTP && info.Manifest.Provides.Payment == nil {
+		return
+	}
+	if err := rt.mgr.EnsureCallbackSecret(); err != nil {
+		return
+	}
+	rt.setPaySecret(rt.mgr.PaymentWebhookSecret())
+	if fresh, err := rt.plugins.Get(info.ID); err == nil {
+		*info = *fresh
 	}
 }
