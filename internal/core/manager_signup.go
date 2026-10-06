@@ -195,7 +195,7 @@ func (m *Manager) Signup(ctx context.Context, req SignupRequest) (SignupResult, 
 		if r == nil {
 			return SignupResult{}, errors.New("signup: the request vanished as it was filed")
 		}
-		m.notifyModeration(r.ID, r.Name, "")
+		m.notifyModeration(*r)
 		if filed { // asking again while it waits files nothing new
 			m.EmitWebhook(model.WebhookRegistrationRequested, map[string]any{
 				"request_id": r.ID, "name": r.Name, "external_id": ext,

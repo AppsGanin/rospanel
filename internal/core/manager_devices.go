@@ -129,7 +129,7 @@ func (m *Manager) reportDeviceRefusal(
 	// they already asked to hear about — someone has more devices than they may.
 	m.notifyAdminEvent(model.AdminEventDeviceLimited, fmt.Sprintf(
 		i18n.T(m.botLang(), "notify.adminDeviceRefused"),
-		escHTML(u.Name), escHTML(deviceLabel(d)), count, capacity))
+		m.adminUser(u), escHTML(deviceLabel(d)), count, capacity))
 	m.notifyUserEvent(set, u, model.UserNotifyDeviceLimited, fmt.Sprintf(
 		i18n.T(m.userLang(u.TgChatID), "notify.userDeviceRefused"), count, capacity))
 	// A new install turned away, as opposed to the status: what was refused, so the

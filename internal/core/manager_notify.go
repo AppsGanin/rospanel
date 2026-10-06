@@ -251,7 +251,7 @@ func (m *Manager) notifyStatusTransitions(users []model.User) {
 		switch u.Status {
 		case model.StatusExpired:
 			m.notifyAdminEvent(model.AdminEventExpired, fmt.Sprintf(
-				i18n.T(m.botLang(), "notify.adminExpired"), escHTML(u.Name)))
+				i18n.T(m.botLang(), "notify.adminExpired"), m.adminUser(u)))
 			if serr == nil {
 				m.notifyUserEvent(set, u, model.UserNotifyExpired,
 					i18n.T(m.userLang(u.TgChatID), "notify.userExpired"))
@@ -260,7 +260,7 @@ func (m *Manager) notifyStatusTransitions(users []model.User) {
 			m.EmitWebhook(model.WebhookUserExpired, userEventData(u))
 		case model.StatusLimited:
 			m.notifyAdminEvent(model.AdminEventLimited, fmt.Sprintf(
-				i18n.T(m.botLang(), "notify.adminLimited"), escHTML(u.Name)))
+				i18n.T(m.botLang(), "notify.adminLimited"), m.adminUser(u)))
 			if serr == nil {
 				m.notifyUserEvent(set, u, model.UserNotifyLimited,
 					i18n.T(m.userLang(u.TgChatID), "notify.userLimited"))
@@ -272,7 +272,7 @@ func (m *Manager) notifyStatusTransitions(users []model.User) {
 		case model.StatusDeviceLimited:
 			m.notifyAdminEvent(model.AdminEventDeviceLimited, fmt.Sprintf(
 				i18n.T(m.botLang(), "notify.adminDeviceLimited"),
-				escHTML(u.Name), u.ActiveDevices, u.DeviceLimit))
+				m.adminUser(u), u.ActiveDevices, u.DeviceLimit))
 			if serr == nil {
 				m.notifyUserEvent(set, u, model.UserNotifyDeviceLimited, fmt.Sprintf(
 					i18n.T(m.userLang(u.TgChatID), "notify.userDeviceLimited"),

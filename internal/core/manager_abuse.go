@@ -261,7 +261,7 @@ func (m *Manager) alertAbuse(hits []store.AbuseHit) {
 func (m *Manager) notifyAbuse(u model.User, total int64, matches []store.AbuseMatch) {
 	lang := m.botLang()
 	var b strings.Builder
-	b.WriteString(i18n.T(lang, "notify.abuse", escHTML(u.Name), total))
+	b.WriteString(i18n.T(lang, "notify.abuse", m.adminUser(u), total))
 	for _, mt := range matches {
 		fmt.Fprintf(&b, "\n• %s — %s (%d)",
 			escHTML(mt.Domain), escHTML(i18n.T(lang, abuse.Category(mt.Category).TitleKey())), mt.Count)

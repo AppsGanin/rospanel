@@ -29,27 +29,28 @@ func (rt *Router) getTelegram(w http.ResponseWriter, r *http.Request) {
 	}
 	userEvents, expiringDays := rt.mgr.UserNotifyPrefs()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"enabled":            set.TGBotEnabled,
-		"token":              set.TGBotToken,
-		"backup_cron":        set.TGBackupCron,
-		"lang":               set.BotLang(),
-		"proxy":              set.TGProxy,
-		"proxy_mode":         set.TGProxyModeOr(),
-		"chat_ids":           chats,
-		"link_code":          set.TGLinkCode,
-		"bot_username":       botUsername(r.Context(), set.TGBotToken, set.TelegramProxyURL()),
-		"user_enabled":       set.TGUserBotEnabled,
-		"user_token":         set.TGUserBotToken,
-		"user_reg_enabled":   set.TGUserRegEnabled,
-		"user_reg_mode":      set.RegMode(),
-		"user_reg_code":      set.TGUserRegCode,
-		"user_bot_username":  botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL()),
-		"user_miniapp_url":   sub.MiniAppURL(set),
-		"user_tg_bind":       set.SubTGBind,
-		"user_tg_rebind":     set.SubTGRebind,
-		"admin_events":       rt.mgr.AdminEventPrefs(),
-		"user_events":        userEvents,
-		"user_expiring_days": expiringDays,
+		"enabled":             set.TGBotEnabled,
+		"token":               set.TGBotToken,
+		"backup_cron":         set.TGBackupCron,
+		"lang":                set.BotLang(),
+		"proxy":               set.TGProxy,
+		"proxy_mode":          set.TGProxyModeOr(),
+		"chat_ids":            chats,
+		"link_code":           set.TGLinkCode,
+		"bot_username":        botUsername(r.Context(), set.TGBotToken, set.TelegramProxyURL()),
+		"user_enabled":        set.TGUserBotEnabled,
+		"user_token":          set.TGUserBotToken,
+		"user_reg_enabled":    set.TGUserRegEnabled,
+		"user_reg_mode":       set.RegMode(),
+		"user_reg_code":       set.TGUserRegCode,
+		"user_bot_username":   botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL()),
+		"user_miniapp_url":    sub.MiniAppURL(set),
+		"user_tg_bind":        set.SubTGBind,
+		"user_tg_rebind":      set.SubTGRebind,
+		"user_mailing_switch": set.TGMailingSwitch,
+		"admin_events":        rt.mgr.AdminEventPrefs(),
+		"user_events":         userEvents,
+		"user_expiring_days":  expiringDays,
 
 		"support_enabled":      set.TGSupportEnabled,
 		"support_token":        set.TGSupportBotToken,
@@ -82,10 +83,12 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 		UserRegCode *string `json:"user_reg_code"`
 		// The subscription page's Telegram button: binding, and moving to another
 		// Telegram.
-		UserTGBind   *bool           `json:"user_tg_bind"`
-		UserTGRebind *bool           `json:"user_tg_rebind"`
-		AdminEvents  map[string]bool `json:"admin_events"`
-		UserEvents   map[string]bool `json:"user_events"`
+		UserTGBind   *bool `json:"user_tg_bind"`
+		UserTGRebind *bool `json:"user_tg_rebind"`
+		// UserMailingSwitch shows the bot's broadcast on/off button.
+		UserMailingSwitch *bool           `json:"user_mailing_switch"`
+		AdminEvents       map[string]bool `json:"admin_events"`
+		UserEvents        map[string]bool `json:"user_events"`
 		// UserExpiringDays is a pointer like the rest: absent means "leave it", and
 		// zero is a value the operator can never have meant.
 		UserExpiringDays *int `json:"user_expiring_days"`
@@ -164,6 +167,12 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 	if err := rt.mgr.SaveTelegramConfig(cfg); err != nil {
 		writeManagerErr(w, err)
 		return
+	}
+	if req.UserMailingSwitch != nil {
+		if err := rt.mgr.Store().SetTGMailingSwitch(*req.UserMailingSwitch); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
 	}
 	if req.UserTGBind != nil || req.UserTGRebind != nil {
 		if err := rt.mgr.Store().SetSubTGBinding(or(req.UserTGBind, cur.SubTGBind), or(req.UserTGRebind, cur.SubTGRebind)); err != nil {

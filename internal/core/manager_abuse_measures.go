@@ -83,7 +83,7 @@ func (m *Manager) applyAbuseMeasure(set *model.Settings, userID int64, day strin
 		m.emitUserWebhook(model.WebhookUserAbuse, u.ID, map[string]any{"measure": "disabled", "until": until})
 		m.notifyAbuseUser(set, *u, i18n.T(m.userLang(u.TgChatID), "notify.userAbuseDisabled", a.Hours))
 		m.notifyAdminEvent(model.AdminEventAbuse,
-			i18n.T(m.botLang(), "notify.abuseDisabled", escHTML(u.Name), total, a.Hours))
+			i18n.T(m.botLang(), "notify.abuseDisabled", m.adminUser(*u), total, a.Hours))
 
 	case a.ThrottleMin > 0 && total >= int64(a.ThrottleMin):
 		if u.AbuseAction != "" {
@@ -116,7 +116,7 @@ func (m *Manager) applyAbuseMeasure(set *model.Settings, userID int64, day strin
 		m.notifyAbuseUser(set, *u, i18n.T(m.userLang(u.TgChatID), "notify.userAbuseThrottled",
 			speedLabel(m.userLang(u.TgChatID), a.ThrottleKbps), a.Hours))
 		m.notifyAdminEvent(model.AdminEventAbuse,
-			i18n.T(m.botLang(), "notify.abuseThrottled", escHTML(u.Name), total,
+			i18n.T(m.botLang(), "notify.abuseThrottled", m.adminUser(*u), total,
 				speedLabel(m.botLang(), a.ThrottleKbps), a.Hours))
 
 	case a.WarnMin > 0 && total >= int64(a.WarnMin):
@@ -184,7 +184,7 @@ func (m *Manager) liftAbuseMeasure(ctx context.Context, set *model.Settings, u m
 	m.emitUserWebhook(model.WebhookUserAbuse, u.ID, map[string]any{"measure": "lifted", "was": u.AbuseAction})
 	if why == "expired" {
 		m.notifyAbuseUser(set, u, i18n.T(m.userLang(u.TgChatID), "notify.userAbuseLifted"))
-		m.notifyAdminEvent(model.AdminEventAbuse, i18n.T(m.botLang(), "notify.abuseLifted", escHTML(u.Name)))
+		m.notifyAdminEvent(model.AdminEventAbuse, i18n.T(m.botLang(), "notify.abuseLifted", m.adminUser(u)))
 	}
 }
 

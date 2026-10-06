@@ -1135,6 +1135,10 @@ const en: Dict = {
     approved: "Request approved",
     rejected: "Request rejected",
     site: "External system",
+    source: "Source: {{source}}",
+    referrer: "Invited by: {{name}} (#{{id}})",
+    firstSeen: "First in the bot: {{when}}",
+    blacklisted: "On the blacklist: {{reason}}",
   },
 
   audit: {
@@ -3303,6 +3307,8 @@ const en: Dict = {
     pageBindHint: "A “Link Telegram” button on the subscription page for an account without one.",
     pageRebind: "Changing Telegram from the subscription page",
     pageRebindHint: "A “Change Telegram” button for a linked account: the bot asks to confirm, tells the old Telegram and reissues the subscription link.",
+    mailingSwitch: "Broadcast button in the bot",
+    mailingSwitchHint: "“Broadcasts: on/off” in the bot’s welcome and menu. Off — no button; everyone keeps their current setting.",
     regOff: "Closed",
     regOpen: "Open — active immediately",
     regModeration: "Moderated (an admin approves)",

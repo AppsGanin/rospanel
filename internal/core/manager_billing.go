@@ -358,7 +358,7 @@ func (m *Manager) announceRegistration(ctx context.Context, u *model.User, exter
 	} else {
 		lang := m.botLang()
 		m.notifyAdminEvent(model.AdminEventRegistered,
-			i18n.T(lang, "notify.registered", escHTML(u.Name))+planLine(lang, plan))
+			i18n.T(lang, "notify.registered", m.adminUser(*u))+planLine(lang, plan))
 	}
 	if externalID != "" {
 		details["external_id"] = externalID
@@ -397,7 +397,7 @@ func (m *Manager) RequestRegistration(ctx context.Context, chatID int64, name st
 	// Best-effort admin-bot ping with approve/reject buttons. The panel's sign-up
 	// requests tab is the authoritative surface regardless (and the only one when
 	// the admin bot is off or its registration notifications are disabled).
-	m.notifyModeration(req.ID, req.Name, "")
+	m.notifyModeration(*req)
 	m.EmitWebhook(model.WebhookRegistrationRequested, map[string]any{
 		"request_id": req.ID, "name": req.Name, "telegram_id": chatID,
 	})
@@ -1190,7 +1190,7 @@ func (m *Manager) manualOrder(ctx context.Context, lang i18n.Lang, d store.Order
 	m.supersedePromoOrders(ctx, d.UserID, d.PromoID, order.ID)
 	adminLang := m.botLang()
 	m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.manualOrder",
-		order.ID, escHTML(order.UserName), escHTML(orderSubject(adminLang, order)), order.AmountRub))
+		order.ID, m.adminUserByID(order.UserID, order.UserName), escHTML(orderSubject(adminLang, order)), order.AmountRub))
 	m.audit(ctx, d.UserID, model.EventPaymentCreated, orderAudit(order, "manual"))
 	m.EmitWebhook(model.WebhookPaymentCreated, order)
 	return order, manualOrderMessage(lang, order, subject, set), nil

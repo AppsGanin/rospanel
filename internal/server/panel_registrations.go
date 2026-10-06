@@ -22,7 +22,7 @@ func (rt *Router) listRegistrations(w http.ResponseWriter, _ *http.Request) {
 	if set, err := rt.mgr.Settings(); err == nil && set != nil {
 		moderation = set.RegMode() == model.RegModeration
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"moderation": moderation, "requests": reqs})
+	writeJSON(w, http.StatusOK, map[string]any{"moderation": moderation, "requests": rt.registrationViews(reqs)})
 }
 
 // approveRegistration creates the account for a pending request and links its chat.

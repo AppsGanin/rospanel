@@ -322,13 +322,6 @@ func (s *UserService) handleMessage(ctx context.Context, client *Client, m *Mess
 		s.handleStart(ctx, client, set, chatID, args)
 		return
 	}
-	// Handled before the pending-state machine so an explicit command always wins:
-	// someone half-way through registration must still be able to open this, and
-	// doing so must not eat the step they were on.
-	if cmd == "/mailing" {
-		s.showMailing(ctx, client, chatID, 0)
-		return
-	}
 	pending := s.takePending(chatID)
 	if u, ok := s.findLinkedUser(chatID); ok {
 		switch pending {
@@ -410,17 +403,22 @@ func (s *UserService) handleStart(ctx context.Context, client *Client, set *mode
 }
 
 func (s *UserService) sendWelcome(ctx context.Context, client *Client, set *model.Settings, chatID int64) {
+	text, rows := s.welcomeScreen(set, chatID)
+	s.sendMenu(ctx, client, chatID, text, rows)
+}
+
+// welcomeScreen is the screen of a chat with no account: the welcome and its
+// keyboard, the mailing switch included — broadcasts reach this audience too.
+func (s *UserService) welcomeScreen(set *model.Settings, chatID int64) (string, [][]InlineButton) {
 	lang := s.lang(chatID)
 	if !set.RegistrationOpen() {
-		s.sendMenu(ctx, client, chatID,
-			i18n.T(lang, "user.regClosedWelcome"),
-			supportOnlyRows(set, lang))
-		return
+		return i18n.T(lang, "user.regClosedWelcome"),
+			append(supportOnlyRows(set, lang), s.mailingRows(set, chatID, lang)...)
 	}
 	// A request already waiting: say so, and no "sign up" to press again.
 	if set.RegMode() == model.RegModeration && s.panel.RegistrationPending(chatID) {
-		s.sendMenu(ctx, client, chatID, i18n.T(lang, "user.requestPending"), supportOnlyRows(set, lang))
-		return
+		return i18n.T(lang, "user.requestPending"),
+			append(supportOnlyRows(set, lang), s.mailingRows(set, chatID, lang)...)
 	}
 	hint := i18n.T(lang, "user.hintOpen")
 	switch set.RegMode() {
@@ -433,7 +431,7 @@ func (s *UserService) sendWelcome(ctx context.Context, client *Client, set *mode
 	if line := s.legalAcceptLine(set, lang); line != "" {
 		text += "\n\n" + line
 	}
-	s.sendMenu(ctx, client, chatID, text, welcomeRows(set, lang))
+	return text, append(welcomeRows(set, lang), s.mailingRows(set, chatID, lang)...)
 }
 
 // welcomeRows is the pre-registration keyboard. Support is offered here too: someone
@@ -488,7 +486,19 @@ func (s *UserService) handleCallback(ctx context.Context, client *Client, cb *Ca
 	// belongs to everyone in the audience, registered or not, and tapping it must not
 	// drop a registration step in progress.
 	if on, ok := strings.CutPrefix(cb.Data, "vu:mail:"); ok {
-		s.setMailing(ctx, client, chatID, msgID, on == "on")
+		// An old message's button still works while the switch is shown; hidden, a
+		// press only redraws the screen without it.
+		switch {
+		case set.TGMailingSwitch:
+			s.setMailing(ctx, client, chatID, msgID, set, on == "on")
+		default:
+			if u, ok := s.findLinkedUser(chatID); ok {
+				s.editUserMenu(ctx, client, chatID, msgID, set, u)
+				return
+			}
+			text, rows := s.welcomeScreen(set, chatID)
+			s.edit(ctx, client, chatID, msgID, text, rows)
+		}
 		return
 	}
 	s.clearPending(chatID)
@@ -1331,55 +1341,53 @@ func userStartLinkCode(arg string) string {
 	return ""
 }
 
-// Broadcast opt-out. Kept as its own command rather than a button under every
-// broadcast: the alternative to a findable opt-out isn't a captive audience, it's
-// people blocking the bot — and a block is irreversible and silently kills payment
+// Broadcast opt-out: a switch on the bot's first screen — the welcome, or the
+// account menu — that shows the state and flips it in place. A findable opt-out is
+// what keeps people from blocking the bot instead, and a block silently kills payment
 // confirmations and support replies along with the newsletter.
 
-// mailingCard renders the current state and the button that flips it.
-func mailingCard(optOut bool, lang i18n.Lang) (string, [][]InlineButton) {
-	if optOut {
-		return i18n.T(lang, "user.mailingOff"),
-			[][]InlineButton{{{Text: i18n.T(lang, "user.btnSubscribe"), CallbackData: "vu:mail:on"}}}
+// mailingRows is the switch as a keyboard row, or none while the operator hides it
+// (Settings → Telegram); an opt-out made before stays in force either way.
+func (s *UserService) mailingRows(set *model.Settings, chatID int64, lang i18n.Lang) [][]InlineButton {
+	if !set.TGMailingSwitch {
+		return nil
 	}
-	return i18n.T(lang, "user.mailingOn"),
-		[][]InlineButton{{{Text: i18n.T(lang, "user.btnUnsubscribe"), CallbackData: "vu:mail:off"}}}
+	return [][]InlineButton{s.mailingRow(chatID, lang)}
 }
 
-// showMailing displays the toggle. msgID 0 sends a new message; otherwise the card
-// is edited in place, like the rest of the bot's screens.
-func (s *UserService) showMailing(ctx context.Context, client *Client, chatID, msgID int64) {
-	lang := s.lang(chatID)
+// mailingRow is the switch: the current state, and a tap flips it.
+func (s *UserService) mailingRow(chatID int64, lang i18n.Lang) []InlineButton {
 	optOut := false
 	if sub, err := s.store.SubscriberByChat(chatID); err != nil {
 		log.Printf("telegram user: mailing state for %d: %v", chatID, err)
 	} else if sub != nil {
 		optOut = sub.OptOut
 	}
-	text, rows := mailingCard(optOut, lang)
-	if msgID == 0 {
-		s.sendMenu(ctx, client, chatID, text, rows)
-		return
+	if optOut {
+		return []InlineButton{{Text: i18n.T(lang, "user.btnMailingOff"), CallbackData: "vu:mail:on"}}
 	}
-	s.edit(ctx, client, chatID, msgID, text, rows)
+	return []InlineButton{{Text: i18n.T(lang, "user.btnMailingOn"), CallbackData: "vu:mail:off"}}
 }
 
-func (s *UserService) setMailing(ctx context.Context, client *Client, chatID, msgID int64, on bool) {
+// setMailing flips the switch and redraws the screen it sits on.
+func (s *UserService) setMailing(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, on bool) {
 	if err := s.store.SetSubscriberOptOut(chatID, !on, time.Now().Unix()); err != nil {
 		log.Printf("telegram user: set mailing for %d: %v", chatID, err)
 		return
 	}
-	s.showMailing(ctx, client, chatID, msgID)
+	if u, ok := s.findLinkedUser(chatID); ok {
+		s.editUserMenu(ctx, client, chatID, msgID, set, u)
+		return
+	}
+	text, rows := s.welcomeScreen(set, chatID)
+	s.edit(ctx, client, chatID, msgID, text, rows)
 }
 
-// userBotCommands is the command menu published to Telegram. One entry, not three:
-// the card it opens shows the current state and the single button that flips it, so
-// naming each direction as its own command only made the menu longer without telling
-// anyone anything the card doesn't.
+// userBotCommands is the command menu published to Telegram: /start alone — the
+// mailing switch lives on the screen it opens.
 func userBotCommands(lang i18n.Lang) []BotCommand {
 	return []BotCommand{
 		{Command: "start", Description: i18n.T(lang, "user.cmdStart")},
-		{Command: "mailing", Description: i18n.T(lang, "user.cmdMailing")},
 	}
 }
 
@@ -1446,8 +1454,11 @@ func (s *UserService) publishMenuButton(ctx context.Context, client *Client) boo
 		log.Printf("telegram user: read the menu button: %v", err)
 		return false
 	}
+	label := i18n.T(i18n.Normalize(set.BotLang()), "user.menuApp")
 	if cur.Type == "web_app" && cur.WebApp != nil {
-		if cur.WebApp.URL == url {
+		// Ours as it stands — the address and the label (a release renaming it must
+		// reach the bots already running).
+		if cur.WebApp.URL == url && cur.Text == label {
 			return true
 		}
 		// Ours is the address last set, or anything under this panel's subscription
@@ -1458,7 +1469,7 @@ func (s *UserService) publishMenuButton(ctx context.Context, client *Client) boo
 			return true
 		}
 	}
-	if err := client.SetChatMenuButton(ctx, i18n.T(i18n.Normalize(set.BotLang()), "user.menuApp"), url); err != nil {
+	if err := client.SetChatMenuButton(ctx, label, url); err != nil {
 		log.Printf("telegram user: set the menu button: %v", err)
 		return false
 	}
