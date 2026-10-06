@@ -346,6 +346,7 @@ func (rt *Router) apiMux() http.Handler {
 	// added here starts receiving user and payment data.
 	hf("GET /v1/webhooks", rt.apiListWebhooks)
 	hf("GET /v1/webhooks/events", rt.apiWebhookEvents)
+	hf("GET /v1/legal", rt.apiLegal)
 	nodeAudit("POST /v1/webhooks", "apiWebhookAdded", rt.apiCreateWebhook)
 	nodeAudit("POST /v1/webhooks/{id}", "apiWebhookChanged", idFn(rt.apiUpdateWebhook))
 	nodeAudit("DELETE /v1/webhooks/{id}", "apiWebhookDeleted", idFn(rt.apiDeleteWebhook))

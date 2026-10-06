@@ -97,6 +97,12 @@ func writeCoded(w http.ResponseWriter, code string, args map[string]any, msg str
 // failure it writes a 4xx and returns false, so handlers can
 // `if !decodeJSON(w, r, &req) { return }`.
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	return decodeJSONLimit(w, r, dst, maxJSONBody)
+}
+
+// decodeJSONLimit is decodeJSON for the rare body that is text an operator writes at
+// length (the legal documents), with a limit of its own.
+func decodeJSONLimit(w http.ResponseWriter, r *http.Request, dst any, limit int64) bool {
 	// Require application/json, INCLUDING when Content-Type is absent — the SPA's
 	// fetch wrapper always sets it, and a missing header would otherwise slip past
 	// this check and let the cross-site "<form enctype=text/plain>" trick smuggle a
@@ -109,7 +115,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	// here rather than via a server-wide ReadTimeout, which would also kill the
 	// long-lived SSE streams — those never go through decodeJSON.
 	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(30 * time.Second))
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(dst); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit)).Decode(dst); err != nil {
 		writeErrCode(w, http.StatusBadRequest, "err.badRequestBody", "неверное тело запроса")
 		return false
 	}

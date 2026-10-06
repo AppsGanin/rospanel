@@ -191,6 +191,8 @@ var errEN = map[string]string{
 	"err.laneDupID":                "duplicate lane id “{{id}}”",
 	"err.laneNoName":               "lane “{{id}}” has no name",
 	"err.laneTooMany":              "too many lanes: {{max}} at most",
+	"err.legalKind":                "unknown document {{value}}",
+	"err.legalTooLong":             "the document is longer than {{max}} characters (now {{count}})",
 	"err.loginCharset":             "username: 3–32 characters, Latin letters, digits, dot, hyphen or underscore",
 	"err.logoDeleteFailed":         "could not delete the logo",
 	"err.logoFileMissing":          "the logo file was not found",

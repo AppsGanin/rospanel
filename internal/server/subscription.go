@@ -49,6 +49,9 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 	if set, err := rt.mgr.Store().GetSettings(); err == nil && sub.IsMiniAppPath(set, token) {
 		handleMiniApp(rt, w, r, leaf)
 		return
+	} else if err == nil && sub.IsLegalPath(set, token) {
+		rt.serveLegal(w, r, set, leaf)
+		return
 	}
 	u, err := rt.mgr.Store().GetUserBySubToken(token)
 	if err != nil {

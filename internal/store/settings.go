@@ -128,7 +128,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       auto_update_cron, auto_update_nodes, auto_update_last_at, auto_update_last,
 		       blacklist_enabled, blacklist_url, blacklist_synced_at, blacklist_error,
 		       traffic_packs, plan_change, miniapp_path, tg_menu_url, sub_tg_bind, sub_tg_rebind,
-		       sub_page_url, sub_show_clash
+		       sub_page_url, sub_show_clash, legal_path
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -185,7 +185,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&st.AutoUpdateCron, &autoUpdateNodes, &st.AutoUpdateLastAt, &st.AutoUpdateLast,
 		&blacklistEn, &st.BlacklistURL, &st.BlacklistSyncedAt, &st.BlacklistError,
 		&trafficPacksJSON, &planChange, &st.MiniAppPath, &st.TGMenuURL, &subTGBind, &subTGRebind,
-		&st.SubPageURL, &subShowClash,
+		&st.SubPageURL, &subShowClash, &st.LegalPath,
 	)
 	if err != nil {
 		return nil, err

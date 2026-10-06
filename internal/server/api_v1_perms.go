@@ -23,6 +23,7 @@ var apiRoutePerms = map[string][]string{
 	"GET /v1/docs":         {},
 
 	"GET /v1/health":              {},
+	"GET /v1/legal":               {}, // public documents: any key may read them
 	"GET /v1/health/report":       {model.PermServersView},
 	"GET /v1/system":              {model.PermStatsView, model.PermUsersView, model.PermServersView},
 	"GET /v1/system/auto-update":  {model.PermUpdate},

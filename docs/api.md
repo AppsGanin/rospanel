@@ -459,7 +459,8 @@ that signs people in by their subscription link finds them with `?sub_token=`.
 `GET /v1/users/{id}/subscription` has everything the subscription page shows — status,
 traffic, term, `sub_url`, one-tap imports per app (`apps`), every config (`links`), the Clash
 download (`clash_url`), devices, the payment block (`billing`), the operator's colours
-(`brand`) and `tg_link` — the user bot's link that binds the account to the Telegram it is
+(`brand`), `terms_url` / `privacy_url` (the operator's documents, while they have text — `GET /v1/legal`
+has the text itself) and `tg_link` — the user bot's link that binds the account to the Telegram it is
 opened in (moves it there when `tg_linked`; absent while the switches in Settings → Telegram
 offer nothing, and good for 15 minutes) — worded in `?lang`; the actions go through the
 endpoints above. It keeps the subscription settings the page keeps: `links` is empty while
@@ -467,6 +468,12 @@ the page would list no configs (`show_configs` off, or a required HWID — a raw
 bypass the device cap), `clash_url` is absent while the page's Clash button is off or under a
 required HWID, the Happ button is the encrypted link when that is on, and `maintenance` is the
 panel's maintenance mode.
+
+**Legal documents** — `GET /v1/legal` (any key) returns the operator's user agreement and privacy
+policy, written in *Settings → Branding → Documents*: `{"terms": {...}, "privacy": {...}}`, each
+with `markdown`, `html` (rendered; raw HTML in the source is dropped), `url` (its public page, ""
+while the document is empty) and `updated_at` (0 = never set). Show them on your own pages, or link
+the `url`.
 
 **Sign-up from an external system** — `POST /v1/signup` with `{"external_id": "ann@example.com"}`
 registers a client by the external system's own id under the rules the user bot keeps: closed

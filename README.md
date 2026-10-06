@@ -662,6 +662,10 @@ app imports, configs, devices, offers and the Telegram bind link (`tg_link`). Se
 *Settings → Subscriptions → Your own subscription page* (`https://example.com/cabinet?sub={token}`)
 and a browser opening a subscription link goes there; apps fetch the subscription as before.
 
+**User agreement and privacy policy** — written in Markdown in *Settings → Branding → Documents*,
+with a preview. Linked at the foot of the subscription page, in the bot's welcome and menu, and in
+`GET /v1/users/{id}/subscription`; the full text is `GET /v1/legal`.
+
 **Connecting an assistant** takes one URL and no local install. Create a key in
 *Settings → API* (ticking what it may do), take the base address from the same page, and paste:
 

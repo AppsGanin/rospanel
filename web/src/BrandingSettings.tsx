@@ -7,6 +7,7 @@ import {
   type ThemeColors,
 } from "./api";
 import { useBrand } from "./brand";
+import { useLegalDocs } from "./LegalDocs";
 import { useAction } from "./hooks";
 import { notifySuccess } from "./notify";
 import {
@@ -104,6 +105,7 @@ export function BrandingSettings() {
   const [init, setInit] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const { isBusy, run } = useAction();
+  const legal = useLegalDocs();
 
   // Seed local fields from the loaded branding once.
   useEffect(() => {
@@ -122,12 +124,14 @@ export function BrandingSettings() {
 
   const resetAll = () => setTheme(brand.default_theme);
 
-  const dirty =
+  const brandDirty =
     name !== savedName || JSON.stringify(theme) !== JSON.stringify(savedTheme);
+  const dirty = brandDirty || legal.dirty;
 
   const cancel = () => {
     setName(savedName);
     setTheme(savedTheme);
+    legal.cancel();
   };
 
   const save = () =>
@@ -142,10 +146,13 @@ export function BrandingSettings() {
           bg: fix("bg"),
           surface: fix("surface"),
         };
-        await saveBranding(name.trim(), clean);
-        await brand.refresh();
-        setSavedName(name.trim());
-        setSavedTheme(clean);
+        if (brandDirty) {
+          await saveBranding(name.trim(), clean);
+          await brand.refresh();
+          setSavedName(name.trim());
+          setSavedTheme(clean);
+        }
+        await legal.save();
         notifySuccess(t("brand.saved"));
       },
       { key: "brand" },
@@ -281,6 +288,8 @@ export function BrandingSettings() {
           />
         ))}
       </Panel>
+
+      {legal.panel}
 
       <SaveBar
         dirty={dirty}

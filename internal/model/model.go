@@ -218,6 +218,29 @@ type User struct {
 	HookExpireStage int `json:"-"`
 }
 
+// The operator's legal documents, in Markdown: shown on the subscription page, in
+// the user bot and over the API. An empty one is not shown anywhere.
+const (
+	LegalTerms   = "terms"   // user agreement
+	LegalPrivacy = "privacy" // privacy policy
+)
+
+// LegalKinds lists the documents, in the order they are shown.
+var LegalKinds = []string{LegalTerms, LegalPrivacy}
+
+// ValidLegalKind reports whether k names a legal document.
+func ValidLegalKind(k string) bool { return k == LegalTerms || k == LegalPrivacy }
+
+// MaxLegalDocLen bounds a document: room for any agreement, not for a dump.
+const MaxLegalDocLen = 200_000
+
+// LegalDoc is one document: its Markdown and when it last changed (0 = never set).
+type LegalDoc struct {
+	Kind      string `json:"kind"`
+	Body      string `json:"markdown"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
 // HookExpireStages are the days before a term ends that user.expiring goes out at,
 // each once per term — the external system decides which of them to act on.
 var HookExpireStages = []int{14, 7, 3, 1}
@@ -1177,7 +1200,10 @@ type Settings struct {
 	// MiniAppPath is the Mini App's random address segment; TGMenuURL the address the
 	// user bot's menu button was last set to.
 	MiniAppPath string `json:"-"`
-	TGMenuURL   string `json:"-"`
+	// LegalPath is the random address segment the legal documents are served under
+	// (see LegalDoc); "" until the first is saved.
+	LegalPath string `json:"-"`
+	TGMenuURL string `json:"-"`
 	// SubTGBind offers binding Telegram on the subscription page to an account that
 	// has none; SubTGRebind moving a linked account to another Telegram (the bot
 	// refuses the move when it is off).
