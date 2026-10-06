@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -139,13 +140,12 @@ func runEnforcement(t *testing.T, now int64, seed func(*testing.T, *store.Store,
 	}
 	m.notifyStatusTransitions(users)
 
-	close(m.webhookCh)
-	for job := range m.webhookCh {
+	for _, job := range takeWebhooks(t, st) {
 		var p struct {
 			Event string `json:"event"`
 			Data  any    `json:"data"`
 		}
-		if err := json.Unmarshal(job.body, &p); err != nil {
+		if err := json.Unmarshal(job.Body, &p); err != nil {
 			t.Fatal(err)
 		}
 		d, _ := json.Marshal(p.Data)
@@ -166,8 +166,8 @@ func runEnforcement(t *testing.T, now int64, seed func(*testing.T, *store.Store,
 	}
 	for _, u := range after {
 		// Times written "now" by the pass are compared by whether they were set.
-		run.Rows = append(run.Rows, fmt.Sprintf("%d %s notified=%s expireWarned=%v quotaWarned=%v used=%d/%d base=%d/%d reset=%v",
-			u.ID, u.Name, u.NotifiedStatus, u.NotifiedExpireAt != 0, u.NotifiedQuotaAt != 0,
+		run.Rows = append(run.Rows, fmt.Sprintf("%d %s notified=%s expireWarned=%v quotaWarned=%v hooks=%d/%v used=%d/%d base=%d/%d reset=%v",
+			u.ID, u.Name, u.NotifiedStatus, u.NotifiedExpireAt != 0, u.NotifiedQuotaAt != 0, u.HookExpireAt, u.HookQuotaAt != 0,
 			u.UsedUp, u.UsedDown, u.LastUp, u.LastDown, u.LastResetAt > now-86400))
 	}
 	return run
@@ -247,7 +247,8 @@ func seedRandomUsers(n int) func(*testing.T, *store.Store, int64) {
 			t.Fatal(err)
 		}
 		if _, err := st.CreateWebhook("https://hooks.example/x",
-			[]string{model.WebhookUserExpired, model.WebhookUserLimited, model.WebhookUserDeviceLimit}, true); err != nil {
+			[]string{model.WebhookUserExpired, model.WebhookUserLimited, model.WebhookUserDeviceLimit,
+				model.WebhookUserExpiring, model.WebhookUserTrafficLow}, true); err != nil {
 			t.Fatal(err)
 		}
 		rng := rand.New(rand.NewPCG(20260915, uint64(n)))
@@ -261,7 +262,8 @@ func seedRandomUsers(n int) func(*testing.T, *store.Store, int64) {
 		var crowded []pending
 		for i := range n {
 			name := fmt.Sprintf("r%d", i)
-			expire := pick(0, 0, now-day, now-60, now+60, now+2*day, now+3*day-60, now+3*day+60, now+10*day)
+			expire := pick(0, 0, now-day, now-60, now+60, now+day-60, now+day+60, now+2*day, now+3*day-60,
+				now+3*day+60, now+7*day-60, now+7*day+60, now+10*day, now+14*day-60, now+14*day+60, now+20*day)
 			limit := pick(0, 0, 1000)
 			devices := int(pick(0, 0, 1, 2))
 			u, err := st.CreateUser(name, "uuid-"+name, "pw", "tok-"+name, limit, expire, devices)
@@ -303,6 +305,20 @@ func seedRandomUsers(n int) func(*testing.T, *store.Store, int64) {
 			}
 			if pick(0, 1) == 1 {
 				if err := st.SetNotifiedQuotaAt(u.ID, now-100); err != nil {
+					t.Fatal(err)
+				}
+			}
+			switch pick(0, 1, 2) {
+			case 1:
+				err = st.SetHookExpire(u.ID, expire, int(pick(0, 1, 3, 7, 14)))
+			case 2:
+				err = st.SetHookExpire(u.ID, 12345, 14)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pick(0, 1) == 1 {
+				if err := st.SetHookQuotaAt(u.ID, now-100); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -391,5 +407,12 @@ func TestEnforcementCandidatesMissNobody(t *testing.T) {
 	if len(whole.Admin) < 10 || len(whole.User) < 10 || len(whole.Webhooks) < 5 || len(whole.Events) < 10 {
 		t.Fatalf("random users reached too few paths: %d alerts, %d messages, %d webhooks, %d events",
 			len(whole.Admin), len(whole.User), len(whole.Webhooks), len(whole.Events))
+	}
+	reminders := map[string]int{}
+	for _, w := range whole.Webhooks {
+		reminders[strings.SplitN(w, " ", 2)[0]]++
+	}
+	if reminders[model.WebhookUserExpiring] < 3 || reminders[model.WebhookUserTrafficLow] < 1 {
+		t.Fatalf("random users reached too few webhook reminders: %v", reminders)
 	}
 }

@@ -251,11 +251,12 @@ func (m *Manager) now() time.Time {
 func (m *Manager) enforcementUsers() ([]model.User, error) {
 	// The widest horizon a setting allows when the settings cannot be read: a superset
 	// is harmless, and the expiry warnings are skipped without settings anyway.
-	horizon := int64(30 * 86400)
+	r := store.Reminders{Expiring: 30 * 86400}
 	if set, err := m.store.GetSettings(); err == nil {
-		horizon = int64(set.ExpiringDays()) * 86400
+		r.Expiring = int64(set.ExpiringDays()) * 86400
+		r.HookExpiring, r.HookTrafficPercent = m.hookReminders(set)
 	}
-	ids, err := m.store.EnforcementCandidates(m.now().Unix(), horizon)
+	ids, err := m.store.EnforcementCandidates(m.now().Unix(), r)
 	if err != nil {
 		return nil, err
 	}

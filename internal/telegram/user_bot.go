@@ -417,6 +417,11 @@ func (s *UserService) sendWelcome(ctx context.Context, client *Client, set *mode
 			supportOnlyRows(set, lang))
 		return
 	}
+	// A request already waiting: say so, and no "sign up" to press again.
+	if set.RegMode() == model.RegModeration && s.panel.RegistrationPending(chatID) {
+		s.sendMenu(ctx, client, chatID, i18n.T(lang, "user.requestPending"), supportOnlyRows(set, lang))
+		return
+	}
 	hint := i18n.T(lang, "user.hintOpen")
 	switch set.RegMode() {
 	case model.RegModeration:
@@ -510,7 +515,11 @@ func (s *UserService) handleCallback(ctx context.Context, client *Client, cb *Ca
 		}
 		// Name is taken automatically from the Telegram profile (first name, or the
 		// numeric Telegram id when it's empty) — no manual entry needed.
-		s.edit(ctx, client, chatID, msgID, i18n.T(lang, "user.creatingAccount"), [][]InlineButton{})
+		creating := "user.creatingAccount"
+		if set.RegMode() == model.RegModeration {
+			creating = "user.sendingRequest" // no account yet: a request for the operator
+		}
+		s.edit(ctx, client, chatID, msgID, i18n.T(lang, creating), [][]InlineButton{})
 		s.doRegister(ctx, client, chatID, set, tgDisplayName(cb.From, chatID))
 	case "vu:cancel":
 		s.clearPending(chatID)
@@ -708,6 +717,14 @@ func (s *UserService) linkByCode(ctx context.Context, client *Client, set *model
 		_ = s.store.SetSubscriberUser(oldChat, 0)
 	}
 	log.Printf("telegram user: user %d linked to chat %d via link code", u.ID, chatID)
+	// The account this chat held loses it: the store detached it in the same write.
+	if here {
+		s.panel.AuditTelegramDetached(ctx, cur.ID, chatID)
+	}
+	// Moved off another Telegram: that one is gone from the account.
+	if oldChat != 0 {
+		s.panel.AuditTelegramDetached(ctx, u.ID, oldChat)
+	}
 	s.panel.AuditTelegramLinked(ctx, u.ID, actorFromCtxName(ctx))
 	// Taken from another Telegram: the subscription link is reissued, so a link that
 	// leaked — the way someone else got to move the account — works no more, here or

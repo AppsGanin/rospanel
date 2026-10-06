@@ -102,6 +102,10 @@ func (m *Manager) AdmitDevice(ctx context.Context, u model.User, set *model.Sett
 			"hwid": d.HWID, "os": d.OS, "model": d.Model,
 			"devices": adm.Count, "device_limit": capacity,
 		})
+		bound := userEventData(u)
+		bound["device"] = map[string]any{"hwid": d.HWID, "os": d.OS, "model": d.Model}
+		bound["devices"], bound["device_limit"] = adm.Count, capacity
+		m.EmitWebhook(model.WebhookUserDeviceBound, bound)
 	case !adm.Allowed:
 		m.reportDeviceRefusal(ctx, u, set, d, capacity, adm.Count)
 	}
@@ -128,7 +132,13 @@ func (m *Manager) reportDeviceRefusal(
 		escHTML(u.Name), escHTML(deviceLabel(d)), count, capacity))
 	m.notifyUserEvent(set, u, model.UserNotifyDeviceLimited, fmt.Sprintf(
 		i18n.T(m.userLang(u.TgChatID), "notify.userDeviceRefused"), count, capacity))
-	m.EmitWebhook(model.WebhookUserDeviceLimit, userEventData(u))
+	// A new install turned away, as opposed to the status: what was refused, so the
+	// user can be told which device and why.
+	d2 := userEventData(u)
+	d2["refused"] = true
+	d2["device"] = map[string]any{"hwid": d.HWID, "os": d.OS, "model": d.Model}
+	d2["devices"], d2["device_limit"] = count, capacity
+	m.EmitWebhook(model.WebhookUserDeviceLimit, d2)
 }
 
 // UserDevices lists the devices bound to a user (the user card's Devices list).
@@ -155,6 +165,7 @@ func (m *Manager) UnbindDevice(ctx context.Context, userID int64, hwid string) (
 		return ok, err
 	}
 	m.audit(ctx, userID, model.EventDeviceUnbound, map[string]any{"hwid": hwid})
+	m.emitUserWebhook(model.WebhookUserDeviceUnbound, userID, map[string]any{"hwid": hwid, "devices": 1})
 	return true, nil
 }
 
@@ -166,6 +177,7 @@ func (m *Manager) UnbindAllDevices(ctx context.Context, userID int64) (int64, er
 		return n, err
 	}
 	m.audit(ctx, userID, model.EventDeviceUnbound, map[string]any{"devices": n})
+	m.emitUserWebhook(model.WebhookUserDeviceUnbound, userID, map[string]any{"devices": n})
 	return n, nil
 }
 

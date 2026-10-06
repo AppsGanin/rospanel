@@ -180,7 +180,7 @@ export function RouteGrid({
 
 // Box is one compact check: ticked, part-ticked (a section with some of its methods),
 // or empty.
-function Box({
+export function Box({
   checked,
   partial,
   disabled,

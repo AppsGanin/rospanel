@@ -71,6 +71,10 @@ type (
 		// note or an empty tag list clears the field; a missing one leaves it alone.
 		Note *string   `json:"note,omitempty"` // up to model.MaxUserNoteLen characters
 		Tags *[]string `json:"tags,omitempty"` // normalised: lower-cased, sorted, no commas
+		// ExternalID ties the account to the website's own id for the client (as
+		// POST /v1/signup does for a new one); "" takes it away. One account per id: an
+		// id another account holds is refused.
+		ExternalID *string `json:"external_id,omitempty"`
 	}
 	apiBulkReq struct {
 		IDs    []int64 `json:"ids"`
@@ -983,16 +987,9 @@ func (rt *Router) apiPatchUser(w http.ResponseWriter, r *http.Request, id int64)
 		writeAPIManagerErr(w, err)
 		return
 	}
-	if req.Name != nil {
-		name := strings.TrimSpace(*req.Name)
-		if name == "" {
-			writeAPIErr(w, http.StatusBadRequest, "bad_request", "name cannot be empty")
-			return
-		}
-		if err := rt.mgr.RenameUser(r.Context(), id, name); err != nil {
-			writeAPIManagerErr(w, err)
-			return
-		}
+	if req.Name != nil && strings.TrimSpace(*req.Name) == "" {
+		writeAPIErr(w, http.StatusBadRequest, "bad_request", "name cannot be empty")
+		return
 	}
 	// Every number is judged before the first write: a PATCH sets limits, speed and
 	// the plan in turn, and a bad value in a later field must not leave the earlier
@@ -1026,6 +1023,20 @@ func (rt *Router) apiPatchUser(w http.ResponseWriter, r *http.Request, id int64)
 			return
 		}
 	}
+	// The first write, being the one field refused for another account's sake: a
+	// taken id must leave the rest of the PATCH unapplied.
+	if req.ExternalID != nil {
+		if err := rt.mgr.SetUserExternalID(r.Context(), id, *req.ExternalID); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
+	if req.Name != nil {
+		if err := rt.mgr.RenameUser(r.Context(), id, strings.TrimSpace(*req.Name)); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
 	// Unspecified fields keep the user's current value. The term is written only when
 	// the request names it: a PATCH of the quota alone must not post back the expiry
 	// read a moment ago, which a first connection may have replaced since.
@@ -1044,7 +1055,7 @@ func (rt *Router) apiPatchUser(w http.ResponseWriter, r *http.Request, id int64)
 		}
 		// expire_at 0 is documented as "never": a term waiting for the first connection
 		// would contradict it, so it goes too — unless hold_seconds sets a new one.
-		if *req.ExpireAt == 0 && req.HoldSeconds == nil {
+		if *req.ExpireAt == 0 && req.HoldSeconds == nil && cur.HoldSeconds != 0 {
 			if err := rt.mgr.SetUserHold(r.Context(), id, 0); err != nil {
 				writeAPIManagerErr(w, err)
 				return

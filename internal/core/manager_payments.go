@@ -592,10 +592,11 @@ func (m *Manager) afterOrderPaid(ctx context.Context, order *model.PaymentOrder,
 		// The journal and the webhook report what the order is now, not a plan bought.
 		order.Kind = model.OrderTopup
 	}
-	m.notifyReferral(set, res)
+	m.notifyReferral(set, res, order)
 	order.Status = "paid"
 	m.audit(ctx, order.UserID, model.EventPaymentPaid, orderAudit(order, provider))
 	m.EmitWebhook(model.WebhookPaymentPaid, order)
+	m.emitChangeBought(order) // an undelivered change was turned into a top-up above
 }
 
 // paymentOrderMaxAge bounds how long a pending provider order is polled before

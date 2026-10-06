@@ -179,6 +179,7 @@ var en = map[string]string{
 	"user.hintInvite":           "Press “Sign up” and enter the invite code from your administrator.",
 	"user.enterInvite":          "🔑 Enter the invite code:",
 	"user.creatingAccount":      "✨ Creating your account…",
+	"user.sendingRequest":       "✨ Sending your request…",
 	"user.emptyName":            "The name can't be empty. Send a name again.",
 	"user.requestPending":       "⏳ Your request is already under review. Wait for the administrator's reply.",
 	"user.tooManySignups":       "There are too many sign-ups right now. Try again in a minute.",

@@ -120,6 +120,9 @@ func (s *Store) UpdateWebhook(id int64, url string, events []string, enabled boo
 // DeleteWebhook removes an endpoint.
 func (s *Store) DeleteWebhook(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM webhooks WHERE id = ?`, id)
+	if err == nil {
+		_, err = s.db.Exec(`DELETE FROM webhook_outbox WHERE hook_id = ?`, id)
+	}
 	return err
 }
 

@@ -465,6 +465,7 @@ func (m *Manager) BuyFromBalance(ctx context.Context, userID int64, p Purchase, 
 	m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.paidBalance",
 		order.ID, escHTML(u.Name), escHTML(orderSubject(adminLang, order)), kopText(q.BalanceKop)))
 	m.EmitWebhook(model.WebhookPaymentPaid, order)
+	m.emitChangeBought(order)
 	return order, nil
 }
 

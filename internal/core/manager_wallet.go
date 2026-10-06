@@ -459,6 +459,7 @@ func (m *Manager) AdjustBalance(ctx context.Context, userID, deltaKop int64, not
 	m.auditNamed(ctx, u.ID, u.Name, model.EventBalanceAdjusted, map[string]any{
 		"amount_kop": deltaKop, "balance_kop": bal, "note": note,
 	})
+	m.emitUserWebhook(model.WebhookBalanceAdjusted, u.ID, map[string]any{"amount_kop": deltaKop, "balance_kop": bal})
 	if deltaKop > 0 {
 		if set, err := m.Settings(); err == nil {
 			m.notifyUserEvent(set, *u, model.UserNotifyPayment,
@@ -631,6 +632,7 @@ func (m *Manager) referred(ctx context.Context, userID, ref int64) {
 		return
 	}
 	m.auditNamed(ctx, u.ID, u.Name, model.EventUserReferred, map[string]any{"referrer_id": ref})
+	m.emitUserWebhook(model.WebhookUserReferred, u.ID, map[string]any{"referrer_id": ref})
 	if r, err := m.store.GetUser(ref); err == nil {
 		if set, err := m.Settings(); err == nil {
 			m.notifyUserEvent(set, *r, model.UserNotifyPayment,
@@ -640,9 +642,15 @@ func (m *Manager) referred(ctx context.Context, userID, ref int64) {
 }
 
 // notifyReferral tells a referrer what an invited user's payment earned them.
-func (m *Manager) notifyReferral(set *model.Settings, res store.ConfirmResult) {
+func (m *Manager) notifyReferral(set *model.Settings, res store.ConfirmResult, order *model.PaymentOrder) {
 	if res.RefUserID == 0 {
 		return
+	}
+	if res.RefKop > 0 || res.RefDays > 0 {
+		m.emitUserWebhook(model.WebhookReferralReward, res.RefUserID, map[string]any{
+			"referred_user_id": order.UserID, "order_id": order.ID,
+			"reward_kop": res.RefKop, "reward_days": res.RefDays, "banked": res.RefBanked,
+		})
 	}
 	r, err := m.store.GetUser(res.RefUserID)
 	if err != nil {

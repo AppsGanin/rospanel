@@ -316,10 +316,11 @@ type Manager struct {
 	connGuardMu     sync.Mutex
 	connGuardLimits connguard.Limits
 
-	// webhookCh is the outbound-webhook delivery queue drained by a small worker
-	// pool (see webhooks.go). Buffered so an event emit never blocks the caller;
-	// a full queue drops the delivery with a log rather than stalling the panel.
-	webhookCh chan webhookJob
+	// webhookCh hands deliveries leased from the outbox table to the worker pool
+	// (see webhooks.go); webhookKick wakes the dispatcher when an event is stored. A
+	// manager without webhookCh sends no webhooks at all.
+	webhookCh   chan webhookJob
+	webhookKick chan struct{}
 
 	operaDir string            // dir holding the opera-proxy helper binary
 	operaSup *opera.Supervisor // runs/restarts the opera-proxy helper
@@ -453,7 +454,8 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		siteNotice:     newNotice(time.Hour),
 		operaDir:       operaDir,
 		operaSup:       opera.New(filepath.Join(operaDir, "opera-proxy")),
-		webhookCh:      make(chan webhookJob, webhookQueueSize),
+		webhookCh:      make(chan webhookJob, webhookWorkers),
+		webhookKick:    make(chan struct{}, 1),
 		nodes:          newNodeRegistry(),
 		probes:         newProbeRegistry(),
 		checks:         newCheckRegistry(),

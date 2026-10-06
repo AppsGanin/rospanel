@@ -18,6 +18,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/google/uuid"
 )
 
@@ -119,6 +120,7 @@ func (m *Manager) SetUserEnabled(ctx context.Context, id int64, enabled bool) er
 		func() error { return m.store.SetUserEnabled(id, enabled) })
 	if err == nil {
 		m.audit(ctx, id, enabledAction(enabled), nil)
+		m.emitUserWebhook(enabledWebhook(enabled), id, nil)
 		if enabled {
 			// Switched back on by hand while the panel had them off for blocklist
 			// traffic: the operator's call stands, and the panel must not "lift" it later.
@@ -126,6 +128,14 @@ func (m *Manager) SetUserEnabled(ctx context.Context, id int64, enabled bool) er
 		}
 	}
 	return err
+}
+
+// enabledWebhook maps the on/off flag to its webhook event.
+func enabledWebhook(enabled bool) string {
+	if enabled {
+		return model.WebhookUserEnabled
+	}
+	return model.WebhookUserDisabled
 }
 
 // enabledAction maps the on/off flag to its audit action key.
@@ -244,6 +254,7 @@ func (m *Manager) ResetTraffic(ctx context.Context, id int64) error {
 		func() error { return m.store.ResetTraffic(id, up, down, time.Now().Unix()) })
 	if err == nil {
 		m.audit(ctx, id, model.EventTrafficReset, map[string]any{"used_before": used})
+		m.emitUserWebhook(model.WebhookUserTrafficReset, id, map[string]any{"auto": false, "used_before": used})
 	}
 	return err
 }
@@ -291,6 +302,7 @@ func (m *Manager) SetUserLimits(ctx context.Context, id, dataLimit, expireAt int
 		m.audit(ctx, id, model.EventUserLimits, map[string]any{
 			"data_limit": dataLimit, "expire_at": expireAt, "device_limit": deviceLimit,
 		})
+		m.emitUserWebhook(model.WebhookUserLimitsChanged, id, nil)
 	}
 	return err
 }
@@ -320,6 +332,7 @@ func (m *Manager) SetUserQuota(ctx context.Context, id, dataLimit int64, deviceL
 		func() error { return m.store.SetUserQuota(id, dataLimit, deviceLimit) })
 	if err == nil {
 		m.audit(ctx, id, model.EventUserLimits, map[string]any{"data_limit": dataLimit, "device_limit": deviceLimit})
+		m.emitUserWebhook(model.WebhookUserLimitsChanged, id, nil)
 	}
 	return err
 }
@@ -366,6 +379,7 @@ func (m *Manager) SetUserLimitsSeen(ctx context.Context, id, dataLimit, expireAt
 		details = map[string]any{"data_limit": dataLimit, "hold_seconds": holdSeconds, "device_limit": deviceLimit}
 	}
 	m.audit(ctx, id, model.EventUserLimits, details)
+	m.emitUserWebhook(model.WebhookUserLimitsChanged, id, nil)
 	return nil
 }
 
@@ -397,6 +411,7 @@ func (m *Manager) SetUserHold(ctx context.Context, id, seconds int64) error {
 		details = map[string]any{"data_limit": u.DataLimit, "device_limit": u.DeviceLimit, "expire_at": u.ExpireAt}
 	}
 	m.audit(ctx, id, model.EventUserLimits, details)
+	m.emitUserWebhook(model.WebhookUserLimitsChanged, id, nil)
 	return nil
 }
 
@@ -416,9 +431,8 @@ func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string
 	}
 	// A bound, because nothing upstream provides one: the id list arrives straight off a
 	// JSON decode from the panel, /v1 and the post_users_bulk MCP tool. Every id costs a
-	// row read, and a delete costs a webhook delivery per subscriber on a 512-slot queue
-	// that drops when full — so an unbounded list quietly loses the very notifications it
-	// generates, and holds the single DB connection for as long as it takes.
+	// row read and a webhook delivery per subscriber, and an unbounded list holds the
+	// single DB connection for as long as it takes.
 	if len(ids) > maxBulkUsers {
 		return 0, invalidCode("err.tooManyUsersSelected",
 			"за один раз можно обработать не больше {{max}} пользователей",
@@ -438,7 +452,19 @@ func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string
 		if err == nil {
 			// SQLite counts MATCHED rows, so `affected` includes users already in the
 			// target state. Audit only the ones this actually flipped.
-			m.auditBulk(ctx, changedEnabled(before, enable), enabledAction(enable), nil)
+			flipped := changedEnabled(before, enable)
+			m.auditBulk(ctx, flipped, enabledAction(enable), nil)
+			// Read back, so each payload carries the status the switch left (a user
+			// switched off reads "disabled", not the "active" of the snapshot).
+			ids := make([]int64, 0, len(flipped))
+			for id := range flipped {
+				ids = append(ids, id)
+			}
+			items := make([]any, 0, len(ids))
+			for _, u := range m.snapshotUsers(ids) {
+				items = append(items, userEventData(u))
+			}
+			m.EmitWebhookEach(enabledWebhook(enable), items)
 		}
 	case "delete":
 		affected, err = m.store.DeleteUsers(ids)
@@ -459,6 +485,7 @@ func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string
 		reset := m.bulkResetTraffic(ids)
 		affected = int64(len(reset))
 		m.auditBulk(ctx, pick(names(before), reset), model.EventTrafficReset, nil)
+		m.emitUsersWebhook(model.WebhookUserTrafficReset, reset, map[string]any{"auto": false})
 	case "extend":
 		if days <= 0 {
 			return 0, invalidCode("err.extendDaysRequired", "укажите число дней для продления")
@@ -484,6 +511,14 @@ func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string
 				"hold_seconds": hold, "extended_days": days, "bulk": true,
 			})
 		}
+		changed := make([]int64, 0, len(extended)+len(held))
+		for id := range extended {
+			changed = append(changed, id)
+		}
+		for id := range held {
+			changed = append(changed, id)
+		}
+		m.emitUsersWebhook(model.WebhookUserLimitsChanged, changed, map[string]any{"extended_days": days})
 	default:
 		return 0, invalidCode("err.unknownAction", "неизвестное действие {{value}}", map[string]any{"value": action})
 	}
@@ -651,20 +686,52 @@ func (m *Manager) RotateSubToken(ctx context.Context, id int64) (*model.User, er
 		logErr("devices: release on rotate failed", "user", id, "err", err)
 	} else if n > 0 {
 		m.audit(ctx, id, model.EventDeviceUnbound, map[string]any{"devices": n, "reason": "sub_rotated"})
+		m.emitUserWebhook(model.WebhookUserDeviceUnbound, id, map[string]any{"devices": n, "reason": "sub_rotated"})
 	}
 	logInfo("sub token rotated", "id", id)
 	m.TriggerUserSync()
 	m.audit(ctx, id, model.EventSubRotated, nil)
+	d := userEventData(*u)
+	if set, err := m.store.GetSettings(); err == nil {
+		d["sub_url"] = sub.URL(set, u.SubToken)
+	}
+	m.EmitWebhook(model.WebhookUserSubRotated, d)
 	return u, nil
 }
 
 // UnlinkUserTelegram detaches a VPN user's Telegram chat.
 func (m *Manager) UnlinkUserTelegram(ctx context.Context, id int64) error {
+	u, err := m.store.GetUser(id)
+	if err != nil {
+		return err
+	}
 	if err := m.store.ClearUserTelegramChat(id); err != nil {
 		return err
 	}
 	m.audit(ctx, id, model.EventTelegramUnlink, nil)
+	if u.TgChatID != 0 {
+		m.emitTelegramWebhook(model.WebhookUserTelegramUnlinked, *u, u.TgChatID)
+	}
 	return nil
+}
+
+// AuditTelegramDetached records an account losing a Telegram in the bot: the chat
+// moved to another account (one Telegram holds at most one), or the account moved to
+// another Telegram.
+func (m *Manager) AuditTelegramDetached(ctx context.Context, id, chatID int64) {
+	u, err := m.store.GetUser(id)
+	if err != nil {
+		return
+	}
+	m.auditNamed(ctx, u.ID, u.Name, model.EventTelegramUnlink, map[string]any{"chat_id": chatID, "reason": "moved"})
+	m.emitTelegramWebhook(model.WebhookUserTelegramUnlinked, *u, chatID)
+}
+
+// emitTelegramWebhook tells an outside system which Telegram an account gained or lost.
+func (m *Manager) emitTelegramWebhook(event string, u model.User, chatID int64) {
+	d := userEventData(u)
+	d["telegram_id"] = chatID
+	m.EmitWebhook(event, d)
 }
 
 // LinkUserTelegram binds a Telegram chat to a user — for an outside bot that knows
@@ -698,6 +765,8 @@ func (m *Manager) LinkUserTelegram(ctx context.Context, id, chatID int64) error 
 		return err
 	}
 	m.audit(ctx, id, model.EventTelegramLinked, map[string]any{"chat_id": chatID})
+	u.TgChatID = chatID
+	m.emitTelegramWebhook(model.WebhookUserTelegramLinked, *u, chatID)
 	return nil
 }
 
@@ -705,6 +774,9 @@ func (m *Manager) LinkUserTelegram(ctx context.Context, id, chatID int64) error 
 // itself happens in the user bot, which owns the one-time code).
 func (m *Manager) AuditTelegramLinked(ctx context.Context, id int64, username string) {
 	m.audit(ctx, id, model.EventTelegramLinked, map[string]any{"username": username})
+	if u, err := m.store.GetUser(id); err == nil {
+		m.emitTelegramWebhook(model.WebhookUserTelegramLinked, *u, u.TgChatID)
+	}
 }
 
 // GenerateUserTgLinkCode issues a fresh one-time code for binding a VPN user to
@@ -785,17 +857,20 @@ func (m *Manager) applyResets(users []model.User, now int64, counter func(int64)
 	ctx := context.Background()
 	reset := 0
 	loc := m.loc()
+	var resetIDs []int64
 	for _, u := range users {
 		if resetDue(u.ResetPeriod, u.LastResetAt, now, loc) {
 			up, down := counter(u.ID)
 			if err := m.store.ResetUserQuota(u.ID, now, up, down); err == nil {
 				reset++
+				resetIDs = append(resetIDs, u.ID)
 				m.auditNamed(ctx, u.ID, u.Name, model.EventQuotaReset, map[string]any{
 					"period": u.ResetPeriod, "used_before": u.UsedUp + u.UsedDown,
 				})
 			}
 		}
 	}
+	m.emitUsersWebhook(model.WebhookUserTrafficReset, resetIDs, map[string]any{"auto": true})
 	if reset > 0 {
 		logInfo("quota reset", "count", reset)
 		m.TriggerUserSync() // re-enabled users must re-enter the config
@@ -856,10 +931,13 @@ func scaleQuota(bytes int64, coef float64) int64 {
 // that it started and when it now ends. The journal is the only place an operator can
 // see the moment: the users list just shows a date from then on.
 func (m *Manager) noteTermsStarted(started []store.TermStart) {
+	ids := make([]int64, 0, len(started))
 	for _, t := range started {
 		logInfo("user term started on first connection", "user", t.UserID, "expire", t.ExpireAt)
 		m.audit(context.Background(), t.UserID, model.EventTermStarted, map[string]any{
 			"expire_at": t.ExpireAt, "hold_seconds": t.HoldSeconds,
 		})
+		ids = append(ids, t.UserID)
 	}
+	m.emitUsersWebhook(model.WebhookUserTermStarted, ids, nil)
 }

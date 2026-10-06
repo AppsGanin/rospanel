@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -85,5 +86,54 @@ func TestAPISignup(t *testing.T) {
 
 	if rec := apiDo(t, h, http.MethodPost, base+"/v1/users", k.RawKey, `{"name":"free-for-all"}`); rec.Code != http.StatusForbidden {
 		t.Fatalf("a sign-up key created a user directly: %d", rec.Code)
+	}
+}
+
+// A client the bot signed up gets the website's id by PATCH: a later sign-up with it
+// is that account again, not a second one with a second trial; an id another
+// account holds is refused before anything else in the PATCH is applied.
+func TestAPIPatchExternalID(t *testing.T) {
+	t.Parallel()
+	h, mgr, st := nodeAPITestServer(t)
+	base, key := apiFixture(t, h, st)
+	botUser, _ := mgr.CreateUser(t.Context(), "from-bot", 0, 0)
+	other, _ := mgr.CreateUser(t.Context(), "other", 0, 0)
+	patch := func(id int64, body string) (int, string) {
+		rec := apiDo(t, h, http.MethodPatch, base+"/v1/users/"+itoa64(id), key, body)
+		return rec.Code, rec.Body.String()
+	}
+	if code, body := patch(botUser.ID, `{"external_id":" ann@example.com "}`); code != http.StatusOK ||
+		!strings.Contains(body, `"external_id":"ann@example.com"`) {
+		t.Fatalf("link: %d %s", code, body)
+	}
+	if rec := apiGet(t, h, base+"/v1/users?external_id=ann@example.com", key); !strings.Contains(rec.Body.String(), `"name":"from-bot"`) {
+		t.Fatalf("lookup: %s", rec.Body.String())
+	}
+	if err := st.SetTelegramUserBot(false, "", model.RegOpen, ""); err != nil {
+		t.Fatal(err)
+	}
+	rec := apiDo(t, h, http.MethodPost, base+"/v1/signup", key, `{"external_id":"ann@example.com"}`)
+	if !strings.Contains(rec.Body.String(), `"status":"existing"`) || !strings.Contains(rec.Body.String(), `"user_id":`+itoa64(botUser.ID)) {
+		t.Fatalf("sign-up after the link made another account: %s", rec.Body.String())
+	}
+	if code, body := patch(other.ID, `{"external_id":"ann@example.com","name":"renamed"}`); code != http.StatusBadRequest ||
+		!strings.Contains(body, "externalIDTaken") {
+		t.Fatalf("taken id: %d %s", code, body)
+	}
+	if u, _ := st.GetUser(other.ID); u.Name != "other" {
+		t.Errorf("the refused PATCH still renamed the user to %q", u.Name)
+	}
+	// A PATCH refused for another field writes no id either.
+	if code, body := patch(other.ID, `{"external_id":"bob@example.com","data_limit":-1}`); code != http.StatusBadRequest {
+		t.Fatalf("bad data_limit: %d %s", code, body)
+	}
+	if got := st.UserExternalID(other.ID); got != "" {
+		t.Errorf("a refused PATCH still set external_id %q", got)
+	}
+	if code, body := patch(botUser.ID, `{"external_id":""}`); code != http.StatusOK || strings.Contains(body, "ann@example.com") {
+		t.Fatalf("clear: %d %s", code, body)
+	}
+	if code, body := patch(other.ID, `{"external_id":"ann@example.com"}`); code != http.StatusOK {
+		t.Fatalf("a freed id is free: %d %s", code, body)
 	}
 }

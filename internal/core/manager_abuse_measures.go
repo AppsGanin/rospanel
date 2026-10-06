@@ -80,6 +80,7 @@ func (m *Manager) applyAbuseMeasure(set *model.Settings, userID int64, day strin
 		}
 		m.auditNamed(ctx, u.ID, u.Name, model.EventAbuseDisabled,
 			map[string]any{"matches": total, "day": day, "until": until, "hours": a.Hours})
+		m.emitUserWebhook(model.WebhookUserAbuse, u.ID, map[string]any{"measure": "disabled", "until": until})
 		m.notifyAbuseUser(set, *u, i18n.T(m.userLang(u.TgChatID), "notify.userAbuseDisabled", a.Hours))
 		m.notifyAdminEvent(model.AdminEventAbuse,
 			i18n.T(m.botLang(), "notify.abuseDisabled", escHTML(u.Name), total, a.Hours))
@@ -110,6 +111,8 @@ func (m *Manager) applyAbuseMeasure(set *model.Settings, userID int64, day strin
 		m.auditNamed(ctx, u.ID, u.Name, model.EventAbuseThrottled,
 			map[string]any{"matches": total, "day": day, "until": until, "hours": a.Hours,
 				"speed_limit": a.ThrottleKbps, "was": u.SpeedLimit})
+		m.emitUserWebhook(model.WebhookUserAbuse, u.ID, map[string]any{
+			"measure": "throttled", "until": until, "speed_limit": a.ThrottleKbps})
 		m.notifyAbuseUser(set, *u, i18n.T(m.userLang(u.TgChatID), "notify.userAbuseThrottled",
 			speedLabel(m.userLang(u.TgChatID), a.ThrottleKbps), a.Hours))
 		m.notifyAdminEvent(model.AdminEventAbuse,
@@ -125,6 +128,7 @@ func (m *Manager) applyAbuseMeasure(set *model.Settings, userID int64, day strin
 			return
 		}
 		m.auditNamed(ctx, u.ID, u.Name, model.EventAbuseWarned, map[string]any{"matches": total, "day": day})
+		m.emitUserWebhook(model.WebhookUserAbuse, u.ID, map[string]any{"measure": "warned"})
 		m.notifyAbuseUser(set, *u, i18n.T(m.userLang(u.TgChatID), "notify.userAbuseWarned"))
 	}
 }
@@ -177,6 +181,7 @@ func (m *Manager) liftAbuseMeasure(ctx context.Context, set *model.Settings, u m
 	}
 	logInfo("abuse: measure lifted", "user", u.ID, "measure", u.AbuseAction, "why", why)
 	m.auditNamed(ctx, u.ID, u.Name, model.EventAbuseLifted, map[string]any{"measure": u.AbuseAction, "why": why})
+	m.emitUserWebhook(model.WebhookUserAbuse, u.ID, map[string]any{"measure": "lifted", "was": u.AbuseAction})
 	if why == "expired" {
 		m.notifyAbuseUser(set, u, i18n.T(m.userLang(u.TgChatID), "notify.userAbuseLifted"))
 		m.notifyAdminEvent(model.AdminEventAbuse, i18n.T(m.botLang(), "notify.abuseLifted", escHTML(u.Name)))
@@ -195,6 +200,7 @@ func (m *Manager) overruleAbuseMeasure(ctx context.Context, u *model.User, measu
 		return
 	}
 	m.auditNamed(ctx, u.ID, u.Name, model.EventAbuseLifted, map[string]any{"measure": measure, "why": "overruled"})
+	m.emitUserWebhook(model.WebhookUserAbuse, u.ID, map[string]any{"measure": "lifted", "was": measure})
 }
 
 // notifyAbuseUser tells the user what was done to them, through their own bot.

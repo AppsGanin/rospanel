@@ -106,10 +106,11 @@ type Panel interface {
 	SetAdminLoginNotifier(fn func(a core.LoginAlert))
 	RevokeAdminSessions(ctx context.Context, adminID int64) (username string, n int64, err error)
 
-	// Audit hooks for the actions the bots perform directly on the store.
-	// (Unlinking is deliberately absent: it is an operator action in the panel, not
-	// something a user can do to themselves from the bot.)
+	// Audit hooks for the actions the bots perform directly on the store. A user
+	// cannot unlink themselves from the bot; an account only loses its Telegram there
+	// when the chat moves to another account (AuditTelegramDetached).
 	AuditTelegramLinked(ctx context.Context, id int64, username string)
+	AuditTelegramDetached(ctx context.Context, id, chatID int64)
 }
 
 // pollTimeout is the long-poll window (seconds). A change to the bot token or

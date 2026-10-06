@@ -650,15 +650,17 @@ a URL and there is nothing to install anywhere. The key's methods decide which t
 the assistant gets: for a look-only assistant, tick "Read only". More in
 [docs/api.md](docs/api.md).
 
-**Sign-up from your own website** — `POST /v1/signup` registers a client by your site's id (an
-e-mail, an account number) under the bot's rules: closed registration, the invite code,
-moderation, a rate limit, one account and one trial per id. Tick the site's key for this method,
-not for creating users.
+**Sign-up from an external system** — `POST /v1/signup` registers a client by their id in the
+external system (an e-mail, an account number) under the bot's rules: closed registration, the
+invite code, moderation, a rate limit, one account and one trial per id. Tick the external
+system's key for this method, not for creating users. A client who already has an account gets
+the id through `PATCH /v1/users/{id}`. Your own bot signs up by `telegram_id`, under the built-in
+bot's rules: one trial per Telegram, the shared blacklist, the Telegram linked at once.
 
 **Your own subscription page** — `GET /v1/users/{id}/subscription` is the page as data: figures,
 app imports, configs, devices, offers and the Telegram bind link (`tg_link`). Set
 *Settings → Subscriptions → Your own subscription page* (`https://example.com/cabinet?sub={token}`)
-and a browser opening a subscription link goes to your site; apps fetch the subscription as before.
+and a browser opening a subscription link goes there; apps fetch the subscription as before.
 
 **Connecting an assistant** takes one URL and no local install. Create a key in
 *Settings → API* (ticking what it may do), take the base address from the same page, and paste:
