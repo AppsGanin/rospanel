@@ -359,6 +359,9 @@ func (rt *Router) panelMux() http.Handler {
 	// so it is the servers' like the rest of a server card.
 	canServersManage("POST /api/settings/decoy", rt.setDecoyTemplate)
 	canSettingsManage("POST /api/settings/subscription", rt.saveSubSettings)
+	canSettingsView("GET /api/settings/legal", rt.getLegal)
+	canSettingsManage("POST /api/settings/legal", rt.saveLegal)
+	canSettingsView("POST /api/settings/legal/preview", rt.previewLegal)
 	canSettingsView("GET /api/settings/sub-rules", rt.getSubRules)
 	canSettingsManage("POST /api/settings/sub-rules", rt.saveSubRules)
 	canSettingsView("GET /api/settings/sub-templates", rt.getSubTemplates)

@@ -778,6 +778,15 @@
           transform: rotate(360deg);
         }
       }
+      .legal {
+        margin: 18px 0 6px;
+        text-align: center;
+        font-size: 0.82rem;
+      }
+      .legal a {
+        color: inherit;
+        text-decoration: none;
+      }
       .muted {
         color: var(--muted);
         font-size: 0.85rem;
@@ -1358,6 +1367,12 @@
         {{end}}
       </section>
       {{end}}
+      {{end}}
+
+      {{if .Access.Legal}}
+      <p class="muted legal">
+        {{range $i, $l := .Access.Legal}}{{if $i}} · {{end}}<a href="{{$l.URL}}" target="_blank" rel="noopener">{{$l.Title}}</a>{{end}}
+      </p>
       {{end}}
 
     <div

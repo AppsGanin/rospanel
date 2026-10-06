@@ -306,3 +306,16 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* The legal documents' preview (Settings → Branding): the server's Markdown
+   rendering, given back the structure Tailwind's reset takes from headings and lists. */
+.legal-preview h1 { font-size: 1.25rem; font-weight: 700; margin: 0.9em 0 0.4em; }
+.legal-preview h2 { font-size: 1.1rem; font-weight: 700; margin: 0.9em 0 0.4em; }
+.legal-preview h3 { font-size: 1rem; font-weight: 700; margin: 0.8em 0 0.3em; }
+.legal-preview p, .legal-preview ul, .legal-preview ol, .legal-preview table { margin: 0 0 0.75em; }
+.legal-preview ul { list-style: disc; padding-left: 1.4em; }
+.legal-preview ol { list-style: decimal; padding-left: 1.4em; }
+.legal-preview a { color: var(--color-accent, #0d4cd3); text-decoration: underline; }
+.legal-preview blockquote { border-left: 3px solid currentColor; opacity: 0.8; padding-left: 0.8em; margin: 0 0 0.75em; }
+.legal-preview th, .legal-preview td { border: 1px solid rgba(127, 127, 127, 0.3); padding: 4px 8px; }
+.legal-preview > :first-child { margin-top: 0; }

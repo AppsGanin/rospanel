@@ -458,6 +458,9 @@ func apiSpecRoutes() []oaRoute {
 		{method: "POST", path: "/v1/users/{id}/groups", tag: "Users", summary: "Set a user's group membership",
 			req: t(oaUserGroupsReq{}), reqRequired: []string{"group_ids"}},
 
+		{method: "GET", path: "/v1/legal", tag: "Settings",
+			summary: "The user agreement and privacy policy: Markdown, rendered HTML, public page and date (an empty one has no page)",
+			resp:    t(apiLegalResp{})},
 		{method: "GET", path: "/v1/webhooks", tag: "Webhooks", summary: "List webhook endpoints",
 			resp: t(model.Webhook{}), list: true},
 		{method: "GET", path: "/v1/webhooks/events", tag: "Webhooks", summary: "Event keys a webhook can subscribe to",

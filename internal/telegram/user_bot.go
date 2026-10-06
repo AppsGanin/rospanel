@@ -429,7 +429,11 @@ func (s *UserService) sendWelcome(ctx context.Context, client *Client, set *mode
 	case model.RegInvite:
 		hint = i18n.T(lang, "user.hintInvite")
 	}
-	s.sendMenu(ctx, client, chatID, i18n.T(lang, "user.welcome")+"\n\n"+hint, welcomeRows(set, lang))
+	text := i18n.T(lang, "user.welcome") + "\n\n" + hint
+	if line := s.legalAcceptLine(set, lang); line != "" {
+		text += "\n\n" + line
+	}
+	s.sendMenu(ctx, client, chatID, text, welcomeRows(set, lang))
 }
 
 // welcomeRows is the pre-registration keyboard. Support is offered here too: someone
@@ -952,6 +956,8 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 	switch cb.Data {
 	case "vu:menu":
 		s.editUserMenu(ctx, client, chatID, msgID, set, u)
+	case "vu:legal":
+		s.showLegal(ctx, client, chatID, msgID, set)
 	case "vu:plans":
 		s.showPlans(ctx, client, chatID, msgID, set, u)
 	// "vu:unlink"/"vu:unlinkyes" are gone. Old menus still carrying those buttons

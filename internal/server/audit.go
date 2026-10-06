@@ -78,6 +78,8 @@ var auditActions = map[string]auditRoute{
 	"POST /api/settings/secret":                set("secretPath"),
 	"POST /api/settings/decoy":                 set("decoy"),
 	"POST /api/settings/subscription":          set("subscriptions"),
+	"POST /api/settings/legal":                 set("legal"),
+	"POST /api/settings/legal/preview":         skip, // renders Markdown, changes nothing
 	"POST /api/settings/sub-rules":             set("subscriptions"),
 	"POST /api/settings/sub-templates":         set("subscriptions"),
 	"POST /api/settings/sub-dpi":               set("subscriptions"),

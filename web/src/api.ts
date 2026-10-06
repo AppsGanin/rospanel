@@ -1381,6 +1381,27 @@ export interface BrandingInfo {
 }
 
 export const getBranding = () => api<BrandingInfo>('api/branding')
+// One legal document (Settings → Branding → Documents): its Markdown, the HTML its
+// page shows, the public page ("" while empty) and when it last changed (0 = never).
+export interface LegalView {
+  markdown: string
+  html: string
+  url: string
+  updated_at: number
+}
+export type LegalKind = 'terms' | 'privacy'
+export const getLegal = () => api<Record<LegalKind, LegalView>>('api/settings/legal')
+export const saveLegal = (docs: Partial<Record<LegalKind, string>>) =>
+  api<Record<LegalKind, LegalView>>('api/settings/legal', {
+    method: 'POST',
+    body: JSON.stringify(docs),
+  })
+export const previewLegal = (markdown: string) =>
+  api<{ html: string }>('api/settings/legal/preview', {
+    method: 'POST',
+    body: JSON.stringify({ markdown }),
+  })
+
 export const saveBranding = (panelName: string, theme: ThemeColors) =>
   api<BrandingInfo>('api/settings/branding', {
     method: 'POST',

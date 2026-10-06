@@ -188,6 +188,7 @@ func (rt *Router) apiUserSubscription(w http.ResponseWriter, r *http.Request, id
 	view.RefCode, _ = rt.mgr.RefCode(u.ID)
 	view.TGLink = rt.buildAccess(r, *u, set).TGLink
 	view.TGLinked = u.TgChatID != 0
+	view.TermsURL, view.PrivacyURL = rt.legalLinks(set)
 	writeAPIData(w, http.StatusOK, view)
 }
 

@@ -51,6 +51,10 @@ type View struct {
 	// minutes: fetch the view again rather than keep the link.
 	TGLink   string `json:"tg_link,omitempty"`
 	TGLinked bool   `json:"tg_linked"`
+	// TermsURL and PrivacyURL are the operator's user agreement and privacy policy
+	// (GET /v1/legal has their text); absent while a document is empty.
+	TermsURL   string `json:"terms_url,omitempty"`
+	PrivacyURL string `json:"privacy_url,omitempty"`
 }
 
 // ViewTexts are a View's figures in words.
