@@ -674,6 +674,9 @@ func (m *Manager) SaveSubSettings(st *model.Settings) error {
 	if strings.EqualFold(st.SubPath, cur.PanelSecretPath) {
 		return invalidCode("err.subPathSameAsPanel", "путь подписки не может совпадать с секретным путём панели")
 	}
+	if st.SubPageURL != "" && model.SubPageLoops(st.SubPageURL, cur.Host, st.SubPathOr()) {
+		return invalidCode("err.subPageLoop", "своя страница подписки не может быть ссылкой подписки этой панели")
+	}
 	return m.store.SetSubSettings(st)
 }
 

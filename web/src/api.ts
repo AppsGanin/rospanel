@@ -1029,6 +1029,8 @@ export interface SubSettings {
   // link of every lane). On by default; off leaves the page offering the
   // subscription link and the client buttons only.
   sub_show_configs: boolean
+  // The page's "Download Clash config" button. On by default.
+  sub_show_clash: boolean
   // The page's Happ button adds the subscription through an encrypted happ://crypt4/
   // link, so Happ never shows the address. Off by default.
   sub_happ_crypt: boolean

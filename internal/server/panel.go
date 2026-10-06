@@ -446,6 +446,7 @@ func (rt *Router) panelMux() http.Handler {
 	canUsersView("GET /api/users/page", rt.listUsersPage)
 	canUsersOrGroupsView("GET /api/users/brief", rt.listUsersBrief)
 	canUsersView("GET /api/users/{id}", withID(rt.getUser))
+	canUsersView("GET /api/users/{id}/sub-page", withID(rt.openSubPage))
 	canUsersManage("POST /api/users", rt.createUser)
 	canUsersManageOrDelete("POST /api/users/bulk", rt.bulkUsers) // per action, see bulkUsers
 	canUsersDelete("DELETE /api/users/{id}", withID(rt.deleteUser))

@@ -576,7 +576,9 @@ export function UserDetail({
               variant="filled"
               color="brand"
               title={t('userDetail.subLink')}
-              href={user.sub_url}
+              // Through the panel, which signs a fresh preview link at the click: with
+              // the operator's own subscription page set, the plain link would go there.
+              href={`api/users/${user.id}/sub-page`}
               target="_blank"
             >
               <IconExternal />

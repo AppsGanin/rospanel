@@ -457,12 +457,16 @@ invite code, `POST /v1/users/{id}/referrer` with `{"ref_code": "r_…"}` (with o
 `GET /v1/users/{id}/wallet` (`ref_link` too, while the panel's user bot is on). A cabinet
 that signs people in by their subscription link finds them with `?sub_token=`.
 `GET /v1/users/{id}/subscription` has everything the subscription page shows — status,
-traffic, term, `sub_url`, one-tap imports per app (`apps`), every config (`links`; list them
-only when `show_configs`), devices, the payment block (`billing`), the operator's colours
+traffic, term, `sub_url`, one-tap imports per app (`apps`), every config (`links`), the Clash
+download (`clash_url`), devices, the payment block (`billing`), the operator's colours
 (`brand`) and `tg_link` — the user bot's link that binds the account to the Telegram it is
 opened in (moves it there when `tg_linked`; absent while the switches in Settings → Telegram
 offer nothing, and good for 15 minutes) — worded in `?lang`; the actions go through the
-endpoints above.
+endpoints above. It keeps the subscription settings the page keeps: `links` is empty while
+the page would list no configs (`show_configs` off, or a required HWID — a raw link would
+bypass the device cap), `clash_url` is absent while the page's Clash button is off or under a
+required HWID, the Happ button is the encrypted link when that is on, and `maintenance` is the
+panel's maintenance mode.
 
 **Sign-up from your website** — `POST /v1/signup` with `{"external_id": "ann@example.com"}`
 registers a client by your site's own id under the rules the user bot keeps: closed
@@ -754,7 +758,10 @@ plain address. `sub_page_url` is your own subscription page: a browser opening a
 link is redirected there (`302`), `{token}` replaced by the user's token — e.g.
 `https://example.com/cabinet?sub={token}`, then `GET /v1/users?sub_token=` finds the user. Apps
 fetching the subscription, and `?format=` downloads, are not redirected; `""` brings back the
-panel's page. `trusted_nets` are the IPs and networks the panel never bans on its own —
+panel's page. A link to this panel's own subscription path is refused (`err.subPageLoop`) and not
+followed under any name the panel is reached by; an unknown token is never redirected; and the
+user card's "open the subscription page" button opens the panel's own page through an hour-long
+signed link. `trusted_nets` are the IPs and networks the panel never bans on its own —
 not for guessing the SOCKS/HTTP password, not for scanning the panel, not under the source
 policy (a refusal is still journaled). Sending it replaces the whole list; entries are
 stored as prefixes (`198.51.100.7/24` becomes `198.51.100.0/24`), networks wider than an

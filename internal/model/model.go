@@ -3,6 +3,7 @@ package model
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -866,6 +867,9 @@ type Settings struct {
 	// subscription link, the QR and the client buttons, which is what an operator
 	// selling access usually wants handed out.
 	SubShowConfigs bool `json:"-"`
+	// SubShowClash offers the page's "Download Clash config" button (default on).
+	// Clash clients fetch ?format=clash either way.
+	SubShowClash bool `json:"-"`
 	// SubHappCrypt makes the page's Happ button add the subscription through an
 	// encrypted happ://crypt4/ link instead of the plain address, so Happ never shows
 	// the address to the person using it. Off by default: an older Happ that does not
@@ -1560,6 +1564,21 @@ func ValidSubPageURL(raw string) bool {
 	}
 	u, err := url.Parse(strings.ReplaceAll(raw, SubPageToken, "t"))
 	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.User == nil
+}
+
+// SubPageLoops reports whether raw sends the browser back to a subscription link of
+// this very panel — which would redirect it again, forever.
+func SubPageLoops(raw, host, subPath string) bool {
+	u, err := url.Parse(strings.ReplaceAll(raw, SubPageToken, "t"))
+	if err != nil || host == "" {
+		return false
+	}
+	h := host
+	if hh, _, err := net.SplitHostPort(host); err == nil {
+		h = hh
+	}
+	return strings.EqualFold(u.Hostname(), h) &&
+		strings.HasPrefix(strings.ToLower(u.Path), "/"+strings.ToLower(subPath)+"/")
 }
 
 // RealitySID returns the primary (first) REALITY shortId — the one embedded in

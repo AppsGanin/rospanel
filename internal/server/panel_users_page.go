@@ -17,6 +17,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/AppsGanin/rospanel/internal/sub"
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
 )
@@ -682,6 +683,33 @@ func (rt *Router) getUser(w http.ResponseWriter, r *http.Request, id int64) {
 	v.BlacklistReason, v.Blacklisted = rt.mgr.Blacklisted(u.TgChatID)
 	v.Source = rt.mgr.UserSource(u.ID)
 	writeJSON(w, http.StatusOK, v)
+}
+
+// openSubPage answers the user card's "open the subscription page" button: a redirect
+// to the user's page, signed afresh at the click while the operator's own page is set
+// so it opens the panel's (see sub_preview.go) — a link signed when the card loaded
+// would have run out on a card left open for an hour.
+func (rt *Router) openSubPage(w http.ResponseWriter, r *http.Request, id int64) {
+	u, err := rt.mgr.Store().GetUser(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeErrCode(w, http.StatusNotFound, "err.userNotFound", "пользователь не найден")
+		return
+	}
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	set, err := rt.mgr.Store().GetSettings()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	to := subPreviewURL(set, u.SubToken, time.Now())
+	if to == "" {
+		to = sub.URL(set, u.SubToken)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, to, http.StatusFound)
 }
 
 // userBrief is a user as a picker names them.
