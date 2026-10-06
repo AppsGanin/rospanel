@@ -26,10 +26,17 @@ type View struct {
 
 	SubURL string    `json:"sub_url"`
 	Apps   []ViewApp `json:"apps"` // one-tap import into each client
-	// Links are every config the user may use, on every server. ShowConfigs is the
-	// operator's choice whether the page lists them (the apps import them anyway).
+	// Links are every config the user may use, on every server — only while the page
+	// would list them (ShowConfigs): the operator's switch, and never under a required
+	// HWID, where a raw link would bypass the device cap. The apps import them anyway.
 	Links       []ViewLink `json:"links"`
 	ShowConfigs bool       `json:"show_configs"`
+	// ClashURL downloads the Clash config, as the page's button does; absent while the
+	// button is switched off, and under a required HWID, where the download is refused.
+	ClashURL string `json:"clash_url,omitempty"`
+	// Maintenance is the panel's maintenance mode: the subscription answers "service
+	// unavailable" until it ends, and a page should say so.
+	Maintenance bool `json:"maintenance"`
 	// RefCode is the user's invite code while the referral programme runs, for a bot
 	// that builds its own ?start=r_<code> link.
 	RefCode string     `json:"ref_code,omitempty"`
@@ -95,10 +102,11 @@ type ViewBrand struct {
 	Surface string `json:"surface"`
 }
 
-// PageView builds the View of the user's page. Unlike the browser page it always
-// carries the configs: its caller holds an API key, not just the subscription link.
+// PageView builds the View of the user's page, under the same settings as the
+// browser page: what that page would not show, the view leaves out.
 func PageView(u model.User, local *model.Settings, servers []Server, billing Billing, devices Devices, lang i18n.Lang) (View, error) {
-	d, err := buildPageData(u, local, servers, billing, devices, true, lang)
+	showDownload := !(local.HWIDEnabled && local.HWIDRequire) // as servePage decides it
+	d, err := buildPageData(u, local, servers, billing, devices, showDownload, lang)
 	if err != nil {
 		return View{}, err
 	}
@@ -107,7 +115,7 @@ func PageView(u model.User, local *model.Settings, servers []Server, billing Bil
 		UsedBytes: u.UsedUp + u.UsedDown, LimitBytes: u.DataLimit, UsedPct: d.UsedPct,
 		ExpireAt: u.ExpireAt, HoldSeconds: u.HoldSeconds,
 		Texts:  ViewTexts{Used: d.Used, Limit: d.Limit, Expire: d.Expire, Reset: d.ResetText, LastSeen: d.LastSeen},
-		SubURL: d.SubURL, ShowConfigs: local.SubShowConfigs,
+		SubURL: d.SubURL, ShowConfigs: d.ShowConfigs, Maintenance: local.MaintenanceMode,
 		Apps: []ViewApp{}, Links: []ViewLink{}, AWG: []ViewAWG{}, Turn: []ViewTurn{},
 		Brand:   ViewBrand{Name: d.BrandName, Accent: d.Brand, Text: d.Ink, Muted: d.Muted, Bg: d.Bg, Surface: d.Surface},
 		Devices: devices,
@@ -118,8 +126,13 @@ func PageView(u model.User, local *model.Settings, servers []Server, billing Bil
 	for _, a := range d.DeepLinks {
 		v.Apps = append(v.Apps, ViewApp{Name: a.Label, Platforms: a.Platform, URL: string(a.Href)})
 	}
-	for _, l := range d.Links {
-		v.Links = append(v.Links, ViewLink{Name: l.Proto, URL: l.URL})
+	if d.ShowDownload {
+		v.ClashURL = d.SubURL + "?format=clash&dl=1"
+	}
+	if d.ShowConfigs {
+		for _, l := range d.Links {
+			v.Links = append(v.Links, ViewLink{Name: l.Proto, URL: l.URL})
+		}
 	}
 	for _, a := range d.AWG {
 		v.AWG = append(v.AWG, ViewAWG{Name: a.Label, ConfURL: a.ConfURL, QRURL: a.QRURL})

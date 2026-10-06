@@ -731,7 +731,7 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 		// with a browser Accept header, copy the links and use them from any number of
 		// devices, with no slot consumed and the HWID roster none the wiser.
 		ShowConfigs:  local.SubShowConfigs && showDownload,
-		ShowDownload: showDownload,
+		ShowDownload: showDownload && local.SubShowClash,
 	}
 	if u.DataLimit > 0 {
 		data.HasLimit = true

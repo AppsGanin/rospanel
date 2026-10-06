@@ -175,6 +175,10 @@ func (rt *Router) apiPatchSettings(w http.ResponseWriter, r *http.Request) {
 			writeAPIErr(w, http.StatusBadRequest, "bad_request", "sub_page_url: an absolute http(s) address")
 			return
 		}
+		if cur, err := rt.mgr.Store().GetSettings(); err == nil && model.SubPageLoops(strings.TrimSpace(*req.SubPageURL), cur.Host, cur.SubPathOr()) {
+			writeAPIErr(w, http.StatusBadRequest, "bad_request", "sub_page_url: points back at this panel's subscription links")
+			return
+		}
 	}
 	if req.TrustedNets != nil {
 		if _, err := model.NormalizeTrustedNets(*req.TrustedNets); err != nil {

@@ -74,7 +74,13 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		if isBrowser(r) && r.URL.Query().Get("format") == "" {
 			// The operator draws the page on their own site: the browser goes there,
 			// while apps keep fetching the subscription from this very address.
-			if to := set.SubPageRedirect(u.SubToken); to != "" {
+			// An operator's signed preview link (from the user card) opens the
+			// panel's own page instead.
+			// One that points back at this panel under the name it was reached by
+			// (an IP, another domain) is not followed: it would redirect forever.
+			if to := set.SubPageRedirect(u.SubToken); to != "" &&
+				!validSubPreview(u.SubToken, r.URL.Query().Get("preview"), time.Now()) &&
+				!model.SubPageLoops(set.SubPageURL, r.Host, set.SubPathOr()) {
 				w.Header().Set("Cache-Control", "no-store")
 				http.Redirect(w, r, to, http.StatusFound)
 				return
