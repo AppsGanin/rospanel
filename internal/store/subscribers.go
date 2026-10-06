@@ -127,3 +127,11 @@ func (s *Store) SetSubscriberUser(chatID, userID int64) error {
 	_, err := s.db.Exec(`UPDATE tg_subscribers SET user_id = ? WHERE chat_id = ?`, uid, chatID)
 	return err
 }
+
+// SubscriberOrigin is where a chat came from before it had an account: the /start
+// tag it arrived with and who invited it (0 = nobody).
+func (s *Store) SubscriberOrigin(chatID int64) (source string, refUserID int64) {
+	_ = s.rdb.QueryRow(`SELECT source, ref_user_id FROM tg_subscribers WHERE chat_id = ?`, chatID).
+		Scan(&source, &refUserID)
+	return source, refUserID
+}

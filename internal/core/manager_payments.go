@@ -50,8 +50,9 @@ func (m *Manager) SetAdminNotifier(fn func(html string)) {
 }
 
 // SetAdminModerationNotifier registers a callback (the admin bot) that posts a
-// signup awaiting moderation, with approve/reject buttons. Passing nil clears it.
-func (m *Manager) SetAdminModerationNotifier(fn func(reqID int64, name, plan string)) {
+// signup awaiting moderation, with approve/reject buttons: who is asking and the
+// lines that tell them apart, both HTML ready to send. Passing nil clears it.
+func (m *Manager) SetAdminModerationNotifier(fn func(reqID int64, who, details string)) {
 	m.notifyMu.Lock()
 	m.adminModerate = fn
 	m.notifyMu.Unlock()
@@ -59,12 +60,13 @@ func (m *Manager) SetAdminModerationNotifier(fn func(reqID int64, name, plan str
 
 // notifyModeration best-effort pings the admin bot about a pending request. It's not
 // a delivery guarantee — the panel queue is the authoritative surface.
-func (m *Manager) notifyModeration(reqID int64, name, plan string) {
+func (m *Manager) notifyModeration(r model.RegistrationRequest) {
 	m.notifyMu.Lock()
 	fn := m.adminModerate
 	m.notifyMu.Unlock()
 	if fn != nil {
-		fn(reqID, name, plan)
+		who, details := m.moderationPrompt(r)
+		fn(r.ID, who, details)
 	}
 }
 
@@ -289,8 +291,12 @@ func (m *Manager) ConfirmStarsPayment(payload, currency string, total int64, raw
 	if err != nil {
 		// Every failure here is stars the user paid and did not get what they paid
 		// for: nothing retries it and nothing else will tell the operator.
+		who := "—"
+		if o, e := m.store.GetPaymentOrder(rec.OrderID); e == nil && o != nil {
+			who = m.adminUserByID(o.UserID, o.UserName)
+		}
 		m.notifyAdminEvent(model.AdminEventPayment, i18n.T(m.botLang(), "notify.starsNotApplied",
-			rec.OrderID, total, escHTML(payload), escHTML(rec.Error)))
+			rec.OrderID, who, total, escHTML(payload), escHTML(rec.Error)))
 	}
 	return err
 }
@@ -436,7 +442,7 @@ func (m *Manager) startProviderOrder(ctx context.Context, lang i18n.Lang, d stor
 		// generic message to the end user.
 		logErr("payment: create failed", "provider", provider, "order", order.ID, "err", err)
 		m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.payNotCreated",
-			order.ID, escHTML(m.methodLabel(adminLang, provider))))
+			order.ID, m.adminUserByID(order.UserID, order.UserName), escHTML(m.methodLabel(adminLang, provider))))
 		return nil, invalidCode("err.paymentCreateFailed", "не удалось создать платёж — попробуйте другой способ или позже")
 	}
 	if err := m.store.SetPaymentOrderProvider(order.ID, provider, providerID, payURL); err != nil {
@@ -445,7 +451,7 @@ func (m *Manager) startProviderOrder(ctx context.Context, lang i18n.Lang, d stor
 	order.Provider, order.ProviderID, order.PayURL = provider, providerID, payURL
 	m.supersedePromoOrders(ctx, d.UserID, d.PromoID, order.ID)
 	m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.payStarted",
-		order.ID, escHTML(order.UserName), escHTML(orderSubject(adminLang, order)), order.AmountRub,
+		order.ID, m.adminUserByID(order.UserID, order.UserName), escHTML(orderSubject(adminLang, order)), order.AmountRub,
 		escHTML(m.methodLabel(adminLang, provider))))
 	m.audit(ctx, d.UserID, model.EventPaymentCreated, orderAudit(order, provider))
 	m.EmitWebhook(model.WebhookPaymentCreated, order)
@@ -527,7 +533,7 @@ func (m *Manager) confirmProviderOrderOutcome(provider, providerID string, paid 
 		// legitimately larger sum).
 		if m.payNotice.should(strconv.FormatInt(order.ID, 10), time.Now()) {
 			m.notifyAdminEvent(model.AdminEventPayment, i18n.T(m.botLang(), "notify.payMismatch",
-				order.ID, escHTML(order.UserName), order.AmountRub,
+				order.ID, m.adminUserByID(order.UserID, order.UserName), order.AmountRub,
 				paid.AmountKopecks/100, paid.AmountKopecks%100, escHTML(paid.Currency)))
 		}
 		return model.WebhookOutcomeMismatch, order.ID, fmt.Errorf("payment amount does not match order %d", order.ID)
@@ -583,12 +589,12 @@ func (m *Manager) afterOrderPaid(ctx context.Context, order *model.PaymentOrder,
 	adminLang := m.botLang()
 	if !byHand {
 		m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.paid",
-			order.ID, escHTML(order.UserName), escHTML(orderSubject(adminLang, order)), order.AmountRub,
+			order.ID, m.adminUserByID(order.UserID, order.UserName), escHTML(orderSubject(adminLang, order)), order.AmountRub,
 			escHTML(m.methodLabel(adminLang, provider))))
 	}
 	if undelivered {
 		m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.payToBalance",
-			order.ID, escHTML(order.UserName), escHTML(order.PlanName)))
+			order.ID, m.adminUserByID(order.UserID, order.UserName), escHTML(order.PlanName)))
 		// The journal and the webhook report what the order is now, not a plan bought.
 		order.Kind = model.OrderTopup
 	}
@@ -703,7 +709,7 @@ func (m *Manager) cancelPendingOrder(o model.PaymentOrder, reason string) {
 			})
 			m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 				i18n.T(m.botLang(), "notify.payRefundedAfterDelivery"),
-				o.ID, escHTML(orderSubject(m.botLang(), &o)), o.AmountRub, escHTML(reason)))
+				o.ID, m.adminUserByID(o.UserID, o.UserName), escHTML(orderSubject(m.botLang(), &o)), o.AmountRub, escHTML(reason)))
 		}
 		return
 	}
@@ -789,7 +795,7 @@ func (m *Manager) handleProviderWebhook(key string, body []byte, h http.Header, 
 			// operator has to settle it.
 			if key == payments.ProviderYooMoney {
 				m.notifyAdminEvent(model.AdminEventPayment, i18n.T(m.botLang(), "notify.yoomoneyHeld",
-					o.ID, escHTML(o.UserName), o.AmountRub))
+					o.ID, m.adminUserByID(o.UserID, o.UserName), o.AmountRub))
 			}
 		}
 	}
@@ -939,7 +945,7 @@ func (m *Manager) providerRefunded(ctx context.Context, o *model.PaymentOrder) {
 	if after, err := m.store.GetPaymentOrder(o.ID); err == nil {
 		m.EmitWebhook(model.WebhookPaymentRefunded, after)
 	}
-	msg := i18n.T(lang, "notify.providerRefund", o.ID, escHTML(o.UserName),
+	msg := i18n.T(lang, "notify.providerRefund", o.ID, m.adminUserByID(o.UserID, o.UserName),
 		escHTML(orderSubject(lang, o)), o.AmountRub, escHTML(payments.Label(o.Provider)))
 	if len(done) > 0 {
 		msg += "\n" + strings.Join(done, "\n")

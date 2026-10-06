@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/AppsGanin/rospanel/internal/backup"
+	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
 )
@@ -17,8 +18,23 @@ import (
 // apiRegistrationsResp is the moderated signup queue. Moderation says whether the
 // panel is even in that mode — an empty queue means nothing on its own.
 type apiRegistrationsResp struct {
-	Moderation bool                        `json:"moderation"`
-	Requests   []model.RegistrationRequest `json:"requests"`
+	Moderation bool               `json:"moderation"`
+	Requests   []registrationView `json:"requests"`
+}
+
+// registrationView is a request with what tells its applicant apart: @username,
+// source, inviter, first seen, blacklist (see core.RegistrationInfo).
+type registrationView struct {
+	model.RegistrationRequest
+	Info core.RegistrationInfo `json:"info"`
+}
+
+func (rt *Router) registrationViews(reqs []model.RegistrationRequest) []registrationView {
+	out := make([]registrationView, 0, len(reqs))
+	for _, r := range reqs {
+		out = append(out, registrationView{RegistrationRequest: r, Info: rt.mgr.RegistrationInfoOf(r)})
+	}
+	return out
 }
 
 func (rt *Router) apiListRegistrations(w http.ResponseWriter, _ *http.Request) {
@@ -34,7 +50,7 @@ func (rt *Router) apiListRegistrations(w http.ResponseWriter, _ *http.Request) {
 	if set, err := rt.mgr.Settings(); err == nil && set != nil {
 		moderation = set.RegMode() == model.RegModeration
 	}
-	writeAPIData(w, http.StatusOK, apiRegistrationsResp{Moderation: moderation, Requests: reqs})
+	writeAPIData(w, http.StatusOK, apiRegistrationsResp{Moderation: moderation, Requests: rt.registrationViews(reqs)})
 }
 
 // apiApproveRegistration creates the account and links the applicant's Telegram chat.

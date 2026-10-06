@@ -1446,6 +1446,8 @@ export interface TelegramInfo {
   // default), and moving a linked one to another Telegram (off by default).
   user_tg_bind?: boolean
   user_tg_rebind?: boolean
+  // The bot's broadcast on/off button (shown by default).
+  user_mailing_switch?: boolean
   admin_events: Record<string, boolean> // admin notification categories (key→on)
   // What the USER bot tells the person themselves, and how many days ahead the
   // expiry warning goes out.
@@ -1501,6 +1503,7 @@ export const saveTelegram = (t: {
   user_reg_code: string
   user_tg_bind: boolean
   user_tg_rebind: boolean
+  user_mailing_switch: boolean
   admin_events: Record<string, boolean>
   user_events: Record<string, boolean>
   user_expiring_days: number
@@ -1680,6 +1683,17 @@ export interface RegistrationRequest {
   external_id?: string // the website's id for its client
   name: string
   created_at: number
+  // What tells the applicant apart from others of the same name.
+  info?: {
+    username?: string // Telegram @username, without the @
+    lang?: string
+    started_at?: number // first /start
+    source?: string
+    referrer_id?: number
+    referrer_name?: string
+    blacklisted?: boolean
+    blacklist_reason?: string
+  }
 }
 
 export const getRegistrations = () =>

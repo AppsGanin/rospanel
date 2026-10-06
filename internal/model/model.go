@@ -1209,6 +1209,8 @@ type Settings struct {
 	// refuses the move when it is off).
 	SubTGBind   bool `json:"-"`
 	SubTGRebind bool `json:"-"`
+	// TGMailingSwitch shows the user bot's broadcast on/off button (default on).
+	TGMailingSwitch bool `json:"-"`
 
 	// AutoUpdateCron is when the panel checks for a newer release and installs it (in
 	// the panel's timezone; "" = never); AutoUpdateNodes has the servers follow.

@@ -159,6 +159,8 @@ export function TelegramSettings() {
   const [userTgBind, setUserTgBind] = useState(true);
   // Off unless the operator opts in: whoever holds a page link could take the bot account.
   const [userTgRebind, setUserTgRebind] = useState(false);
+  // The bot's broadcast on/off button (shown by default).
+  const [userMailingSwitch, setUserMailingSwitch] = useState(true);
   const [adminEvents, setAdminEvents] = useState<AdminEvents>({});
   const [userEvents, setUserEvents] = useState<AdminEvents>({});
   const [expiringDays, setExpiringDays] = useState("3");
@@ -188,6 +190,7 @@ export function TelegramSettings() {
     userRegCode: "",
     userTgBind: true,
     userTgRebind: false,
+    userMailingSwitch: true,
     adminEvents: {} as AdminEvents,
     userEvents: {} as AdminEvents,
     expiringDays: "3",
@@ -214,6 +217,7 @@ export function TelegramSettings() {
         setUserRegCode(cfg.user_reg_code || "");
         setUserTgBind(cfg.user_tg_bind ?? true);
         setUserTgRebind(cfg.user_tg_rebind ?? false);
+        setUserMailingSwitch(cfg.user_mailing_switch ?? true);
         setAdminEvents(cfg.admin_events || {});
         setUserEvents(cfg.user_events || {});
         setExpiringDays(String(cfg.user_expiring_days || 3));
@@ -243,6 +247,7 @@ export function TelegramSettings() {
           userRegCode: cfg.user_reg_code || "",
           userTgBind: cfg.user_tg_bind ?? true,
           userTgRebind: cfg.user_tg_rebind ?? false,
+          userMailingSwitch: cfg.user_mailing_switch ?? true,
           adminEvents: cfg.admin_events || {},
           userEvents: cfg.user_events || {},
           expiringDays: String(cfg.user_expiring_days || 3),
@@ -307,6 +312,7 @@ export function TelegramSettings() {
     userRegCode.trim() !== saved.userRegCode.trim() ||
     userTgBind !== saved.userTgBind ||
     userTgRebind !== saved.userTgRebind ||
+    userMailingSwitch !== saved.userMailingSwitch ||
     !sameEvents(adminEvents, saved.adminEvents) ||
     !sameEvents(userEvents, saved.userEvents, USER_EVENTS) ||
     expiringDays !== saved.expiringDays ||
@@ -338,6 +344,7 @@ export function TelegramSettings() {
         user_reg_code: userRegCode.trim(),
         user_tg_bind: userTgBind,
         user_tg_rebind: userTgRebind,
+        user_mailing_switch: userMailingSwitch,
         admin_events: adminEvents,
         user_events: userEvents,
         user_expiring_days: Number(expiringDays) || 3,
@@ -359,6 +366,7 @@ export function TelegramSettings() {
         userRegCode: userRegCode.trim(),
         userTgBind,
         userTgRebind,
+        userMailingSwitch,
         adminEvents,
         userEvents,
         expiringDays,
@@ -393,6 +401,7 @@ export function TelegramSettings() {
     setUserRegCode(saved.userRegCode);
     setUserTgBind(saved.userTgBind);
     setUserTgRebind(saved.userTgRebind);
+    setUserMailingSwitch(saved.userMailingSwitch);
     setAdminEvents(saved.adminEvents);
     setUserEvents(saved.userEvents);
     setExpiringDays(saved.expiringDays);
@@ -746,6 +755,12 @@ export function TelegramSettings() {
           hint={t("tg.pageRebindHint")}
           checked={userTgRebind}
           onChange={setUserTgRebind}
+        />
+        <ToggleRow
+          label={t("tg.mailingSwitch")}
+          hint={t("tg.mailingSwitchHint")}
+          checked={userMailingSwitch}
+          onChange={setUserMailingSwitch}
         />
       </Panel>
 

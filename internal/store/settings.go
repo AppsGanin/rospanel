@@ -71,7 +71,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	var subShowConfigs, statusEn, maintenanceMode, probeDetect, watchdogEnabled int
 	var probeBlock int
 	var routingCfg, subRulesJSON, subDPIJSON string
-	var masterHideFull, masterHideOver, awgEn, hideOffline, subHappCrypt, subTGBind, subTGRebind, subShowClash int
+	var masterHideFull, masterHideOver, awgEn, hideOffline, subHappCrypt, subTGBind, subTGRebind, subShowClash, tgMailingSwitch int
 	var awgParamsJSON, connPolicyJSON string
 	var walletEn, refFirstOnly, winbackEn, autoUpdateNodes, blacklistEn, planChange int
 	var trafficPacksJSON string
@@ -128,7 +128,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       auto_update_cron, auto_update_nodes, auto_update_last_at, auto_update_last,
 		       blacklist_enabled, blacklist_url, blacklist_synced_at, blacklist_error,
 		       traffic_packs, plan_change, miniapp_path, tg_menu_url, sub_tg_bind, sub_tg_rebind,
-		       sub_page_url, sub_show_clash, legal_path
+		       sub_page_url, sub_show_clash, legal_path, tg_mailing_switch
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -185,7 +185,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&st.AutoUpdateCron, &autoUpdateNodes, &st.AutoUpdateLastAt, &st.AutoUpdateLast,
 		&blacklistEn, &st.BlacklistURL, &st.BlacklistSyncedAt, &st.BlacklistError,
 		&trafficPacksJSON, &planChange, &st.MiniAppPath, &st.TGMenuURL, &subTGBind, &subTGRebind,
-		&st.SubPageURL, &subShowClash, &st.LegalPath,
+		&st.SubPageURL, &subShowClash, &st.LegalPath, &tgMailingSwitch,
 	)
 	if err != nil {
 		return nil, err
@@ -200,6 +200,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	st.SubHideOffline = hideOffline != 0
 	st.SubTGBind, st.SubTGRebind = subTGBind != 0, subTGRebind != 0
 	st.SubShowClash = subShowClash != 0
+	st.TGMailingSwitch = tgMailingSwitch != 0
 	// A blank column (pre-0063, or never saved) reads as the feature off; so does a
 	// corrupt one — a policy nobody can parse must not start refusing connections.
 	st.ConnPolicy = model.DefaultConnPolicy()
@@ -513,6 +514,13 @@ func (s *Store) SetSubSettings(st *model.Settings) error {
 		model.OrderModeOr(st.SubOrderMode), boolToInt(st.SubHideOffline), boolToInt(st.SubHappCrypt),
 		st.SubPageURL, boolToInt(st.SubShowClash),
 	)
+	return err
+}
+
+// SetTGMailingSwitch stores whether the user bot shows its broadcast on/off button
+// (see migration 0109).
+func (s *Store) SetTGMailingSwitch(on bool) error {
+	_, err := s.db.Exec(`UPDATE settings SET tg_mailing_switch = ?, updated_at = unixepoch() WHERE id = 1`, boolToInt(on))
 	return err
 }
 

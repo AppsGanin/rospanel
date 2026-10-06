@@ -64,11 +64,46 @@ export function RegistrationsPanel({
             >
               {/* Amber, not green: a request is a thing waiting on the operator. */}
               <span className="size-2 shrink-0 rounded-full bg-warning" />
-              <span className="truncate text-[13px] font-semibold text-ink">
-                {r.name}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-xs text-ink-muted">
-                {r.external_id ? t("reg.site") : "Telegram"}
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                  <span className="truncate text-[13px] font-semibold text-ink">{r.name}</span>
+                  {r.info?.username && (
+                    <a
+                      href={`https://t.me/${r.info.username}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-accent hover:underline"
+                    >
+                      @{r.info.username}
+                    </a>
+                  )}
+                  <span className="text-xs text-ink-muted">
+                    {r.external_id ? t("reg.site") : "Telegram"}
+                  </span>
+                </span>
+                {(() => {
+                  const i = r.info;
+                  const parts = [
+                    i?.source ? t("reg.source", { source: i.source }) : "",
+                    i?.referrer_id
+                      ? t("reg.referrer", { name: i.referrer_name || "—", id: i.referrer_id })
+                      : "",
+                    i?.started_at ? t("reg.firstSeen", { when: fmtDateTime(i.started_at) }) : "",
+                  ].filter(Boolean);
+                  return (
+                    (parts.length > 0 || i?.blacklisted) && (
+                      <span className="truncate text-[11px] text-ink-muted">
+                        {parts.join(" · ")}
+                        {i?.blacklisted && (
+                          <span className="text-danger">
+                            {parts.length > 0 ? " · " : ""}
+                            {t("reg.blacklisted", { reason: i.blacklist_reason || "—" })}
+                          </span>
+                        )}
+                      </span>
+                    )
+                  );
+                })()}
               </span>
               <Mono className="min-w-0 shrink truncate text-[11px] text-ink-muted">
                 {r.external_id || r.chat_id}

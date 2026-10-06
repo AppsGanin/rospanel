@@ -99,7 +99,7 @@ type Panel interface {
 	SetUserNotifier(fn func(chatID int64, html string))
 	SetUserMessenger(fn func(chatID int64, html string, buttons []model.BroadcastButton) error)
 	SetAdminNotifier(fn func(html string))
-	SetAdminModerationNotifier(fn func(reqID int64, name, plan string))
+	SetAdminModerationNotifier(fn func(reqID int64, who, details string))
 	// A sign-in from a new address, and the button under it: end every session of
 	// that admin. The bot never touches admin_sessions itself — the panel records
 	// who pressed it.
@@ -207,8 +207,8 @@ func (s *Service) Run(ctx context.Context) {
 	s.panel.SetAdminNotifier(func(html string) {
 		q.submit(func(ctx context.Context) { s.sendAdminBroadcast(ctx, html) })
 	})
-	s.panel.SetAdminModerationNotifier(func(reqID int64, name, plan string) {
-		q.submit(func(ctx context.Context) { s.sendModerationPrompt(ctx, reqID, name, plan) })
+	s.panel.SetAdminModerationNotifier(func(reqID int64, who, details string) {
+		q.submit(func(ctx context.Context) { s.sendModerationPrompt(ctx, reqID, who, details) })
 	})
 	s.panel.SetAdminLoginNotifier(func(a core.LoginAlert) {
 		q.submit(func(ctx context.Context) { s.sendLoginAlert(ctx, a) })
@@ -246,16 +246,17 @@ func (s *Service) sendAdminBroadcast(ctx context.Context, html string) {
 	}
 }
 
-// sendModerationPrompt posts a signup awaiting moderation, with its buttons.
-func (s *Service) sendModerationPrompt(ctx context.Context, reqID int64, name, plan string) {
+// sendModerationPrompt posts a signup awaiting moderation, with its buttons. who and
+// details come from the panel as HTML, escaped there.
+func (s *Service) sendModerationPrompt(ctx context.Context, reqID int64, who, details string) {
 	set, err := s.store.GetSettings()
 	if err != nil || strings.TrimSpace(set.TGBotToken) == "" || !set.AdminEventEnabled(model.AdminEventRegistered) {
 		return
 	}
 	lang := s.lang()
-	msg := i18n.T(lang, "admin.regRequest", esc(name))
-	if plan != "" {
-		msg += "\n" + i18n.T(lang, "admin.planIs", esc(plan))
+	msg := i18n.T(lang, "admin.regRequest", who)
+	if details != "" {
+		msg += "\n" + details
 	}
 	msg += "\n\n" + i18n.T(lang, "admin.approveAccess")
 	rows := [][]InlineButton{{

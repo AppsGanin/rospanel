@@ -57,10 +57,12 @@ func (s *UserService) botName(ctx context.Context, client *Client) string {
 // menuRows is the account menu: the plain rows plus whatever the wallet offers.
 func (s *UserService) menuRows(set *model.Settings, u model.User, lang i18n.Lang) [][]InlineButton {
 	rows := userMenuRows(set, u, lang)
-	// Above the last row, the refresh button: the documents.
+	// Above the last row, the refresh button: the documents, then the mailing switch.
+	extraRows := s.mailingRows(set, u.TgChatID, lang)
 	if row := s.legalMenuRow(set, lang); row != nil {
-		rows = append(append(rows[:len(rows)-1:len(rows)-1], row), rows[len(rows)-1])
+		extraRows = append([][]InlineButton{row}, extraRows...)
 	}
+	rows = append(append(rows[:len(rows)-1:len(rows)-1], extraRows...), rows[len(rows)-1])
 	if !set.BillingEnabled {
 		return rows
 	}
