@@ -88,6 +88,7 @@ func VerifyInitData(initData, botToken string, now time.Time) (MiniAppUser, stri
 type MiniAppResult struct {
 	UserID int64
 	Reason string // "" = UserID is set; else sub.miniRegClosed | sub.miniRequested | sub.miniRefused | sub.miniBusy
+	Detail string // with sub.miniRefused: a plugin's own words, shown instead
 }
 
 // signupLimiter bounds self-registrations that no one else rate-limits: the Mini
@@ -154,6 +155,15 @@ func (m *Manager) MiniAppEnter(ctx context.Context, tu MiniAppUser, startParam s
 	// for it would mint a trial and move the chat off the account it belongs to.
 	if !errors.Is(err, sql.ErrNoRows) {
 		return MiniAppResult{}, err
+	}
+	// Asked outside the lock: a plugin may take its time, and an account it lets
+	// through is still made only once below.
+	if set.RegistrationOpen() && !m.restoresTelegram(chat) {
+		if ok, reason := m.SignupAllowed(ctx, model.SignupCheck{
+			Channel: "miniapp", TelegramID: chat, Username: tu.Username, Ref: strings.TrimPrefix(startParam, "ref_"), Lang: tu.Lang,
+		}); !ok {
+			return MiniAppResult{Reason: "sub.miniRefused", Detail: reason}, nil
+		}
 	}
 	// One registration at a time, checked again inside: two opens of the app at once
 	// must not make two accounts.

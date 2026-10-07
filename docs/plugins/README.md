@@ -77,6 +77,11 @@ reads. `main.js` cannot `import` other files.
 | `provides.cron` | Jobs: `name` is an exported function, `schedule` a five-field cron expression in the panel's time zone, at most once a minute. |
 | `provides.payment` | `{"label": …, "note": …}`: a payment method. The plugin exports `payment.create`, `payment.status`, `payment.webhook` — see below. |
 | `provides.http` | `true`: the plugin answers requests at its own address. It exports `onHttp`. |
+| `provides.hooks` | `beforeSignup`, `beforeDeviceBind`: the plugin takes part in these decisions — see below. |
+| `provides.bot` | `{"menu": true, "commands": [{"command", "description"}]}`: buttons and commands in the panel's user bot. |
+| `provides.price` | `true`: the plugin prices plans per user (`quotePrice`). Experimental. |
+| `provides.subscription` | `true`: the plugin rewrites what clients are served (`transformSubscription`). Experimental. |
+| `experimental` | The experimental points the plugin uses (`channel`, `price`, `subscription`): they may still change. |
 | `db_quota_mb` | The database size limit, 100 by default, up to 1024. |
 | `memory_mb` | The JavaScript heap limit, 32 by default, up to 128. |
 
@@ -163,6 +168,61 @@ an admin or a user.
 Examples: [email](../../examples/plugins/email) (a channel with user fields and a widget),
 [announcement](../../examples/plugins/announcement) (page blocks and a button).
 
+## Decisions
+
+The panel asks these before it acts. Each is answered within 0.3 s; an error, a timeout or a
+plugin busy with something else counts as "no objection", so a broken plugin never stops
+anyone signing up or paying. Inside them `panel.api` only reads.
+
+| Export | Asked | Answer |
+|---|---|---|
+| `beforeSignup(req)` | before a new account: the bot, the Mini App, `POST /v1/signup` (`channel` says which). An account that already exists is not asked about | `{allow, reason}` or `false` |
+| `beforeDeviceBind(req)` | before a device the user has not bound yet takes a slot (device limits on). A refusal is kept for a minute | `{allow, reason}` or `false` |
+| `quotePrice(req)` | while pricing a plan or its renewal for a user: `base_rub` is the panel's price after its period discount, before a promo code | `{price_rub, note}`, or `null` |
+
+- Several plugins are asked in their order; the first refusal wins.
+- `reason` and `note` are keys of the plugin's `i18n/` files (or plain text): the person reads them.
+- A price counts only from half of `base_rub` to `base_rub` — never more, never free; otherwise
+  it is ignored and the plugin's log says why. The order keeps the price it was opened with.
+  Prices are kept for a minute per user and plan.
+
+[examples/plugins/channel-gate](../../examples/plugins/channel-gate) lets only a channel's
+subscribers sign up through Telegram.
+
+## The bot
+
+```js
+export const bot = {
+  menu({ user, lang }) { return [{ text: "🎁 Bonus", data: "bonus" }]; },
+  onCallback({ user, data, lang }) { return { text: "Done", buttons: [{ text: "Site", url: "https://…" }] }; },
+  onCommand({ user, command, args, lang }) { return "Plain text"; },
+};
+```
+
+- `menu` adds buttons under the bot's own menu (asked within 0.3 s, kept for 5 minutes). A
+  press comes to `onCallback` with its `data` (up to about 20 bytes, so `px:<id>:<data>` fits
+  Telegram's 64).
+- `commands` are listed in the bot's command menu next to `/start`; `onCommand` answers them.
+  `args` is the text after the command.
+- An answer is plain text — the panel escapes it — with rows of buttons: `data` comes back to
+  `onCallback`, `url` opens an https page. The bot adds the way back to its menu. 3 s per answer;
+  past it the person sees "try later".
+- `user.id` is 0 for a Telegram without an account.
+
+## Subscriptions (experimental)
+
+```js
+export function transformSubscription({ user, format, links, config }) {
+  if (format === "links") return { links: links.map(l => l.replace(/#.*/, "#My VPN")) };
+  return null; // as it is
+}
+```
+
+`format` is `links` (share links), `clash` (`config` is the YAML text), `singbox` or `xray`
+(`config` is the JSON document). Return the same shape, or `null`. Every client refresh passes
+here, so an answer is kept for 5 minutes per user and input, and each plugin has 0.3 s; an answer
+in another shape, a link that is not a proxy link, or a failure serves the panel's own profile.
+
 ## The panel API
 
 `rospanel.d.ts` — written by `plugin new` — is the full reference, with types your
@@ -185,7 +245,7 @@ editor picks up.
 | | |
 |---|---|
 | Memory | `memory_mb` (32 MB). Past it the call throws `out of memory`. |
-| Time | 10 s for an event or a request, 15 s for a payment call, 60 s for a cron job. Past it the call throws `interrupted`. |
+| Time | 10 s for an event or a request, 15 s for a payment call, 60 s for a cron job, 3 s in the bot, 0.3 s for a decision or a subscription. Past it the call throws `interrupted`. |
 | Database | `db_quota_mb`; at most 10 000 rows or 4 MB per query. |
 | HTTP | 4 MB per answer, 30 s, 5 redirects within `net`. |
 | `panel.api` | 1 MB per request, 4 MB per answer. |

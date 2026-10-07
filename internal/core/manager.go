@@ -332,6 +332,8 @@ type Manager struct {
 	plugins    PluginEvents
 	// pluginBusy names the plugins a worker is delivering to right now (see
 	// deliverPluginEvent).
+	hooks        PluginHooks // plugins' decisions (manager_plugin_hooks.go), under pluginsMu
+	pbot         PluginBot   // plugins in the user bot, under pluginsMu
 	pluginBusyMu sync.Mutex
 	pluginBusy   map[string]bool
 

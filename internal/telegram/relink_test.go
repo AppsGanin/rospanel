@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
 )
@@ -24,13 +25,15 @@ type relinkPanel struct {
 	trial *bool
 }
 
-func (relinkPanel) Location() *time.Location                            { return time.UTC }
-func (relinkPanel) PlanName(int64) string                               { return "" }
-func (relinkPanel) AuditTelegramLinked(context.Context, int64, string)  {}
-func (relinkPanel) AuditTelegramDetached(context.Context, int64, int64) {}
-func (relinkPanel) RegistrationBlacklisted(int64) bool                  { return false }
-func (relinkPanel) AttachReferrer(context.Context, int64, int64)        {}
-func (relinkPanel) PromosOfferedTo(int64) bool                          { return false }
+func (relinkPanel) Location() *time.Location                                        { return time.UTC }
+func (relinkPanel) PlanName(int64) string                                           { return "" }
+func (relinkPanel) AuditTelegramLinked(context.Context, int64, string)              {}
+func (relinkPanel) AuditTelegramDetached(context.Context, int64, int64)             {}
+func (relinkPanel) RegistrationBlacklisted(int64) bool                              { return false }
+func (relinkPanel) AttachReferrer(context.Context, int64, int64)                    {}
+func (relinkPanel) PromosOfferedTo(int64) bool                                      { return false }
+func (relinkPanel) SignupAllowed(context.Context, model.SignupCheck) (bool, string) { return true, "" }
+func (relinkPanel) PluginBot() core.PluginBot                                       { return nil }
 func (p relinkPanel) RotateSubToken(_ context.Context, id int64) (*model.User, error) {
 	if err := p.st.SetSubToken(id, "rotated-token"); err != nil {
 		return nil, err

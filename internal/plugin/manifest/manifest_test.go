@@ -39,7 +39,7 @@ const full = `{
     "actions": [{"key": "receipt", "label": {"ru": "Выдать чек"}, "scope": "user", "perm": "users.manage", "confirm": true}],
     "widgets": [{"key": "revenue", "label": {"ru": "Чеки за неделю"}}],
     "sub_blocks": true,
-    "bot": {"menu": true, "commands": ["receipt"]},
+    "bot": {"menu": true, "commands": [{"command": "receipt", "description": "Receipt"}]},
     "price": true,
     "subscription": true
   },
@@ -162,7 +162,7 @@ func TestValidateRefuses(t *testing.T) {
 		{`{"provides": {"cron": [{"name": "a.b", "schedule": "* * * * *"}]}}`, "exported function"},
 		{`{"provides": {"payment": {}}}`, "payment.label"},
 		{`{"provides": {"actions": [{"key": "a", "label": "x", "scope": "everyone"}]}}`, "scope"},
-		{`{"provides": {"bot": {"commands": ["start"]}}}`, "not start"},
+		{`{"provides": {"bot": {"commands": [{"command": "start", "description": "x"}]}}}`, "not start"},
 		{`{"provides": {"bot": {}}}`, "menu, commands or both"},
 		{`{"experimental": []}`, `add "channel"`},
 		{`{"experimental": ["channel", "price", "subscription", "time-travel"]}`, "not an experimental point"},

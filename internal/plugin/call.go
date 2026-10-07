@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"sync"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -14,9 +15,13 @@ import (
 
 // callOpts shape what a call into a plugin may do.
 type callOpts struct {
-	readOnly bool   // a decision hook: panel.api is GET only (the panel may be holding a lock)
-	lang     string // the language panel.t defaults to
+	readOnly bool          // a decision hook: panel.api is GET only (the panel may be holding a lock)
+	lang     string        // the language panel.t defaults to
+	wait     time.Duration // >0: give up (ErrBusy) rather than wait longer for a busy plugin
 }
+
+// ErrBusy is a plugin still in another call when a decision could not wait for it.
+var ErrBusy = errors.New("plugin: busy")
 
 // Call invokes an export of an active plugin with arg (marshalled to JSON) and
 // returns its JSON result. It is the one way into a plugin: the breaker, the VM's
@@ -36,12 +41,31 @@ func (h *Host) call(ctx context.Context, id, export string, arg any, timeout tim
 			return nil, err
 		}
 	}
-	inst.mu.Lock()
+	if o.wait > 0 {
+		if !lockWithin(&inst.mu, o.wait) {
+			return nil, ErrBusy
+		}
+	} else {
+		inst.mu.Lock()
+	}
 	defer inst.mu.Unlock()
 	if inst.status != model.PluginActive {
 		return nil, ErrNotActive
 	}
 	return inst.invoke(ctx, export, raw, timeout, o)
+}
+
+// lockWithin takes mu if it comes free within d: a sign-up must not stand behind a
+// plugin's minute-long cron job.
+func lockWithin(mu *sync.Mutex, d time.Duration) bool {
+	deadline := time.Now().Add(d)
+	for !mu.TryLock() {
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	return true
 }
 
 // invoke runs one call with inst.mu held. It replaces a dead or bloated VM,

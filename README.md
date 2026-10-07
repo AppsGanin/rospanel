@@ -679,7 +679,9 @@ users, no traffic, and no page at all until you switch it on.
 #### 🧩 Plugins (beta)
 
 Community code inside the panel: notifications, integrations, your own logic on the panel's
-events and on a schedule. A plugin is one JavaScript file with a manifest; the panel runs it in
+events and on a schedule. A plugin can add a payment method, fields and buttons on a user's
+card, dashboard widgets, blocks on the subscription page, buttons and commands in the bot, and
+have a say in sign-ups, device binding and prices. A plugin is one JavaScript file with a manifest; the panel runs it in
 a WebAssembly sandbox with its own database and memory and time limits, so a broken plugin is
 paused, not the panel. Before installing, the operator sees what it asks for — the panel API
 permissions and the internet hosts — and can read its code; nothing beyond that is reachable.

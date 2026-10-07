@@ -169,10 +169,16 @@ type Widget struct {
 	Label Text   `json:"label"`
 }
 
-// Bot declares bot menu buttons and commands.
+// Bot declares the user bot's menu buttons and commands.
 type Bot struct {
-	Menu     bool     `json:"menu,omitempty"`
-	Commands []string `json:"commands,omitempty"`
+	Menu     bool         `json:"menu,omitempty"`
+	Commands []BotCommand `json:"commands,omitempty"`
+}
+
+// BotCommand is a /command the plugin answers, with its line in the command menu.
+type BotCommand struct {
+	Command     string `json:"command"`
+	Description Text   `json:"description"`
 }
 
 // Hook names.
@@ -188,6 +194,7 @@ const (
 var Available = map[string]bool{
 	"events": true, "cron": true, "payment": true, "http": true,
 	"user_fields": true, "actions": true, "widgets": true, "sub_blocks": true, "channel": true,
+	"hooks": true, "price": true, "bot": true, "subscription": true,
 }
 
 // declared lists the points a manifest uses, by their provides key.
@@ -473,10 +480,19 @@ func (m *Manifest) validateProvides(p *Problems) {
 		if len(pr.Bot.Commands) > maxListItems {
 			p.addf("provides.bot.commands: at most %d", maxListItems)
 		}
+		seen := map[string]bool{}
 		for i, c := range pr.Bot.Commands {
-			if !commandRe.MatchString(c) || c == "start" {
-				p.addf("provides.bot.commands[%d] %q: a-z, 0-9 and _, up to 32, not start", i, c)
+			if !commandRe.MatchString(c.Command) || c.Command == "start" {
+				p.addf("provides.bot.commands[%d] %q: a-z, 0-9 and _, up to 32, not start", i, c.Command)
 			}
+			if seen[c.Command] {
+				p.addf("provides.bot.commands[%d] %q: listed twice", i, c.Command)
+			}
+			seen[c.Command] = true
+			if c.Description.empty() {
+				p.addf("provides.bot.commands[%d].description: required", i)
+			}
+			checkText(p, fmt.Sprintf("provides.bot.commands[%d].description", i), c.Description, 200)
 		}
 		if !pr.Bot.Menu && len(pr.Bot.Commands) == 0 {
 			p.addf("provides.bot: declare menu, commands or both")

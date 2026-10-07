@@ -22,6 +22,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/plugin"
 	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/telegram"
 	qrcode "github.com/skip2/go-qrcode"
@@ -158,7 +159,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			if r.URL.Query().Get("dl") != "" {
 				w.Header().Set("Content-Disposition", `attachment; filename="clash.yaml"`)
 			}
-			_, _ = w.Write([]byte(body))
+			_, _ = w.Write([]byte(rt.pluginConfig(r.Context(), *u, plugin.SubClash, body)))
 		case "singbox", "sing-box":
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			// A template that fails here has already passed validation on save, so a
@@ -168,17 +169,17 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			if err != nil {
 				slog.Warn("subscription: sing-box template failed, serving the generated profile", "err", err)
 			}
-			_, _ = w.Write([]byte(body))
+			_, _ = w.Write([]byte(rt.pluginConfig(r.Context(), *u, plugin.SubSingBox, body)))
 		case model.SubActionXrayJSON, "xray", "json":
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			body, err := sub.XrayJSONWithTemplate(*u, allServers, set.SubDPI, set.SubTplXray)
 			if err != nil {
 				slog.Warn("subscription: xray template failed, serving the generated profile", "err", err)
 			}
-			_, _ = w.Write([]byte(body))
+			_, _ = w.Write([]byte(rt.pluginConfig(r.Context(), *u, plugin.SubXray, body)))
 		default:
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			links := sub.ShareLinksAll(*u, allServers)
+			links := rt.pluginLinks(r.Context(), *u, sub.ShareLinksAll(*u, allServers))
 			var body string
 			if set.SubBase64 {
 				body = sub.Base64Payload(links)
@@ -928,7 +929,12 @@ func (rt *Router) admitDevice(w http.ResponseWriter, r *http.Request, u model.Us
 	}
 	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
 	msg := i18n.T(lang, "sub.deviceRequired")
-	if d.HWID != "" {
+	switch {
+	case v.ByPlugin && v.Reason != "":
+		msg = v.Reason
+	case v.ByPlugin:
+		msg = i18n.T(lang, "sub.deviceRefused")
+	case d.HWID != "":
 		msg = fmt.Sprintf(i18n.T(lang, "sub.deviceLimitReached"), v.Count, v.Cap)
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -1522,6 +1528,9 @@ func handleMiniApp(rt *Router, w http.ResponseWriter, r *http.Request, leaf stri
 			}
 		}
 		out := map[string]string{"message": i18n.T(lang, res.Reason)}
+		if res.Detail != "" {
+			out["message"] = res.Detail
+		}
 		if name := botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL()); name != "" {
 			out["bot"] = "https://t.me/" + name
 		}

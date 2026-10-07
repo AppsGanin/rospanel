@@ -884,6 +884,8 @@ func startPlugins(runBG func(string, func(context.Context)), rt *server.Router, 
 			log.Printf("plugins: %v", err)
 		}
 		mgr.SetPluginEvents(host)
+		mgr.SetPluginHooks(host)
+		mgr.SetPluginBot(host)
 		tick(ctx, 15*time.Second, func() {
 			safeTick("plugins cron", func() { host.RunCron(ctx, time.Now().In(mgr.Location())) })
 		})

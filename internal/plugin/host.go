@@ -117,6 +117,9 @@ type Host struct {
 	cron           cronState
 	widgets        widgetCache
 	subs           subCache
+	decided        decisionCache
+	bot            botCache
+	subTransforms  transformCache
 	lastRelease    atomic.Int64 // unix nanos of the last memory release
 	releasePending atomic.Bool  // a release is scheduled
 }
@@ -149,6 +152,7 @@ type instance struct {
 type published struct {
 	status   string
 	manifest *manifest.Manifest
+	pkg      *manifest.Package // read-only once loaded: its strings, for answers given outside a call
 	sort     int
 }
 
@@ -323,7 +327,7 @@ func (inst *instance) ensureVM(ctx context.Context) error {
 func (inst *instance) publish() {
 	p := &published{status: inst.status, sort: inst.rec.Sort}
 	if inst.pkg != nil {
-		p.manifest = inst.pkg.Manifest
+		p.manifest, p.pkg = inst.pkg.Manifest, inst.pkg
 	}
 	inst.pub.Store(p)
 }

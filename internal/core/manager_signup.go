@@ -144,6 +144,13 @@ func (m *Manager) Signup(ctx context.Context, req SignupRequest) (SignupResult, 
 	if res, ok, err := m.signupExisting(ext); ok || err != nil {
 		return res, err
 	}
+	if set, err := m.Settings(); err == nil && set.RegistrationOpen() {
+		if err := m.signupRefused(ctx, model.SignupCheck{
+			Channel: "web", ExternalID: ext, IP: req.IP, Ref: req.Ref, Source: req.Source, Lang: req.Lang,
+		}); err != nil {
+			return SignupResult{}, err
+		}
+	}
 	m.signupMu.Lock()
 	defer m.signupMu.Unlock()
 	if res, ok, err := m.signupExisting(ext); ok || err != nil {

@@ -25,6 +25,13 @@ func (m *Manager) signupTelegram(ctx context.Context, req SignupRequest, addrKey
 	if res, ok, err := m.signupByChat(chat); ok || err != nil {
 		return res, err
 	}
+	if set, err := m.Settings(); err == nil && set.RegistrationOpen() && !m.restoresTelegram(chat) {
+		if err := m.signupRefused(ctx, model.SignupCheck{
+			Channel: "telegram", TelegramID: chat, IP: req.IP, Ref: req.Ref, Source: req.Source, Lang: req.Lang,
+		}); err != nil {
+			return SignupResult{}, err
+		}
+	}
 	// The lock the Mini App takes: one registration per Telegram at a time.
 	m.miniRegMu.Lock()
 	defer m.miniRegMu.Unlock()

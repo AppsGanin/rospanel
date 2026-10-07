@@ -67,6 +67,9 @@ type DeviceVerdict struct {
 	// message the refused client is shown. Both 0 when the feature is off.
 	Cap   int
 	Count int
+	// ByPlugin: a plugin refused the device, Reason (maybe "") in its words.
+	ByPlugin bool
+	Reason   string
 }
 
 // AdmitDevice decides whether one subscription fetch is served, binding the client
@@ -88,6 +91,9 @@ func (m *Manager) AdmitDevice(ctx context.Context, u model.User, set *model.Sett
 		return DeviceVerdict{Allow: !set.HWIDRequire}
 	}
 	capacity := set.DeviceCap(u)
+	if ok, reason := m.deviceAllowed(u, d, capacity); !ok {
+		return DeviceVerdict{Cap: capacity, Count: m.DeviceCount(u.ID), ByPlugin: true, Reason: reason}
+	}
 	adm, err := m.store.RegisterDevice(u.ID, d, capacity)
 	if err != nil {
 		// A storage failure must not lock a paying user out of their subscription:

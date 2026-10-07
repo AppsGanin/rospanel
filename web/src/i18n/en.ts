@@ -703,6 +703,7 @@ const en: Dict = {
     legalKind: "unknown document {{value}}",
     legalTooLong: "the document is longer than {{max}} characters (now {{count}})",
     signupBlacklisted: "this Telegram account is on the shared blacklist",
+    pluginDenied: "{{detail}}",
     signupOneID: "pass external_id or telegram_id, not both",
     signupBadInvite: "wrong invite code",
     referrerLate: "a referrer is set before the first payment",

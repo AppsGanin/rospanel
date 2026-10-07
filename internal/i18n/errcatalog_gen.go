@@ -277,6 +277,7 @@ var errEN = map[string]string{
 	"err.planUnavailable":          "the plan is unavailable",
 	"err.planUsedInBilling":        "the plan is referenced in the billing settings — pick a different one first",
 	"err.pluginConsent":            "the package changed after the review — upload it again",
+	"err.pluginDenied":             "{{detail}}",
 	"err.pluginExists":             "this plugin is already installed — update it instead",
 	"err.pluginFailed":             "the plugin did not start: {{detail}}",
 	"err.pluginInvalid":            "the package does not fit: {{detail}}",

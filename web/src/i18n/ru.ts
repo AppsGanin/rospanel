@@ -701,6 +701,7 @@ const ru = {
     legalKind: "неизвестный документ {{value}}",
     legalTooLong: "документ длиннее {{max}} символов (сейчас {{count}})",
     signupBlacklisted: "этот Telegram-аккаунт в общем чёрном списке",
+    pluginDenied: "{{detail}}",
     signupOneID: "укажите external_id или telegram_id, не оба",
     signupBadInvite: "неверный код-приглашение",
     referrerLate: "пригласившего указывают до первой оплаты",

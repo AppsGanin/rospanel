@@ -143,23 +143,95 @@ interface HTTPRequest {
   ip: string;
 }
 
-/** beforeSignup(req) */
+/**
+ * beforeSignup(req): a new account about to be made. channel: "web" is POST /v1/signup
+ * by external_id, "telegram" the same by telegram_id, "miniapp" and "bot" the
+ * panel's own Mini App and bot.
+ */
 interface SignupRequest {
-  channel: "telegram" | "web" | "miniapp" | "bot";
+  channel: "web" | "telegram" | "miniapp" | "bot";
   telegram_id?: number;
   username?: string;
+  external_id?: string;
   ip?: string;
-  email?: string;
   ref?: string;
   source?: string;
   lang?: string;
 }
 
-/** A decision hook's answer. reason is a key of the plugin's i18n files. */
+/** beforeDeviceBind(req): a device the user has not bound yet, about to take a slot. */
+interface DeviceRequest {
+  user_id: number;
+  device_os?: string;
+  device_model?: string;
+  user_agent?: string;
+  ip?: string;
+  /** Devices bound before this one. */
+  count: number;
+  /** The user's device limit, 0 = none. */
+  cap: number;
+  lang?: string;
+}
+
+/**
+ * A decision hook's answer (or a bare false). reason is a key of the plugin's i18n
+ * files, or plain text; the refused person reads it.
+ */
 interface Decision {
   allow: boolean;
   reason?: string;
 }
+
+/** quotePrice(req): a plan being priced for a user (experimental). */
+interface PriceRequest {
+  user_id: number;
+  plan_id: number;
+  plan: string;
+  periods: number;
+  devices: number;
+  /** The panel's price after its period discount, before a promo code. */
+  base_rub: number;
+  lang?: string;
+}
+
+/**
+ * quotePrice's answer: from half of base_rub to base_rub, or null for "no opinion".
+ * note (an i18n key or text) says why.
+ */
+interface PriceAnswer {
+  price_rub: number;
+  note?: string;
+}
+
+/** Who pressed a button or sent a command in the panel's bot. id is 0 without an account. */
+interface BotUser {
+  id: number;
+  name?: string;
+  telegram_id: number;
+  username?: string;
+}
+
+/** A bot button: data comes back to bot.onCallback, url opens a page (https only). */
+type BotButton = { text: string; data: string } | { text: string; url: string };
+
+/** What the bot shows: plain text (not HTML) and rows of buttons. A string is text alone. */
+type BotReply = string | { text: string; buttons?: (BotButton | BotButton[])[] };
+
+/** The bot export: menu adds buttons under the bot's menu, onCallback answers them. */
+interface PluginBot {
+  menu?(req: { user: BotUser; lang: string }): BotButton[];
+  onCallback?(req: { user: BotUser; data: string; lang: string }): BotReply;
+  onCommand?(req: { user: BotUser; command: string; args: string; lang: string }): BotReply;
+}
+
+/**
+ * transformSubscription(req) (experimental): what a client is served, to change.
+ * Return the same shape — {links} or {config} — or null to leave it as it is.
+ * config is a YAML text for "clash" and a JSON document for "singbox" and "xray".
+ */
+type SubscriptionRequest = {
+  user: { id: number; name: string; status: string; expire_at: number; plan_id: number; data_limit: number; used: number; telegram_id: number };
+} & ({ format: "links"; links: string[] } | { format: "clash"; config: string } | { format: "singbox" | "xray"; config: any });
 
 /** onAction(req): a button an admin pressed. user_ids is [] for a global one. */
 interface ActionRequest {

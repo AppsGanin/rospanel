@@ -1,0 +1,23 @@
+{
+  "id": "channel-gate",
+  "version": "1.0.0",
+  "api": 1,
+  "panel": ">=4.4.0",
+  "name": {"ru": "Регистрация для подписчиков канала", "en": "Sign-up for channel subscribers"},
+  "description": {
+    "ru": "Новый аккаунт через Telegram получает только подписчик вашего канала. В боте — кнопка «Проверить подписку» и команда /check.",
+    "en": "Only a subscriber of your channel gets a new account through Telegram. The bot gets a “Check subscription” button and a /check command."
+  },
+  "author": "RosPanel",
+  "license": "MIT",
+  "net": ["api.telegram.org"],
+  "settings": [
+    {"key": "bot_token", "kind": "secret", "label": {"ru": "Токен бота — администратора канала", "en": "Token of a bot that administers the channel"}},
+    {"key": "channel", "kind": "text", "label": {"ru": "Канал", "en": "Channel"}, "placeholder": "@my_channel"},
+    {"key": "web", "kind": "bool", "label": {"ru": "Пускать регистрации без Telegram (сайт)", "en": "Let sign-ups without Telegram through (website)"}, "default": "true"}
+  ],
+  "provides": {
+    "hooks": ["beforeSignup"],
+    "bot": {"menu": true, "commands": [{"command": "check", "description": {"ru": "Проверить подписку на канал", "en": "Check the channel subscription"}}]}
+  }
+}
