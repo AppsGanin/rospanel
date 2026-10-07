@@ -720,8 +720,11 @@ function LogsDialog({ plugin, onClose }: { plugin: PluginInfo; onClose: () => vo
   const [lines, setLines] = useState<PluginLogLine[] | null>(null);
   const load = () =>
     getPluginLogs(plugin.id)
-      .then((r) => setLines(r.lines))
-      .catch((e) => notifyError(errMessage(e)));
+      .then((r) => setLines(r.lines ?? []))
+      .catch((e) => {
+        setLines([]);
+        notifyError(errMessage(e));
+      });
   // biome-ignore lint/correctness/useExhaustiveDependencies: once per opened plugin
   useEffect(() => {
     load();

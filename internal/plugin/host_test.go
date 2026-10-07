@@ -666,3 +666,16 @@ export function cronRuns() { return [panel.kv.get("runs") || 0, nightlyRuns]; }
 		t.Fatalf("runs: %s", got)
 	}
 }
+
+// An empty log is an empty list: the panel's log dialog reads null as "loading".
+func TestEmptyLogIsAList(t *testing.T) {
+	h := newHarness(t)
+	h.install(pkg(t, `{"id": "quiet", "version": "1.0.0", "api": 1, "name": "Quiet"}`, `export {};`, nil))
+	lines, err := h.host.Logs("quiet")
+	if err != nil || lines == nil {
+		t.Fatalf("%#v %v", lines, err)
+	}
+	if b, _ := json.Marshal(map[string]any{"lines": lines}); string(b) != `{"lines":[]}` {
+		t.Fatalf("%s", b)
+	}
+}

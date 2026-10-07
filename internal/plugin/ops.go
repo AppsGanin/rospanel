@@ -363,7 +363,7 @@ func (r *ring) lines() []LogLine {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.full {
-		return append([]LogLine(nil), r.buf[:r.next]...)
+		return append([]LogLine{}, r.buf[:r.next]...) // [] when empty, never null
 	}
-	return append(append([]LogLine(nil), r.buf[r.next:]...), r.buf[:r.next]...)
+	return append(append([]LogLine{}, r.buf[r.next:]...), r.buf[:r.next]...)
 }
