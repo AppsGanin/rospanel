@@ -461,6 +461,7 @@ invite code, `POST /v1/users/{id}/referrer` with `{"ref_code": "r_…"}` (with o
 `GET /v1/users/{id}/wallet` (`ref_link` too, while the panel's user bot is on). A cabinet
 that signs people in by their subscription link finds them with `?sub_token=`.
 `GET /v1/users/{id}/subscription` has everything the subscription page shows — status,
+`blocks` (what plugins add to the page: `{type: text|markdown|notice|button, text, label, url}`),
 traffic, term, `sub_url`, one-tap imports per app (`apps`), every config (`links`), the Clash
 download (`clash_url`), devices, the payment block (`billing`), the operator's colours
 (`brand`), `terms_url` / `privacy_url` (the operator's documents, while they have text — `GET /v1/legal`

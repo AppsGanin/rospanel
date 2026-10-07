@@ -179,6 +179,9 @@ var auditActions = map[string]auditRoute{
 	"POST /api/plugins/{id}/disable":  act(model.AuditPluginDisabled),
 	"POST /api/plugins/{id}/config":   act(model.AuditPluginConfigured),
 	"DELETE /api/plugins/{id}":        act(model.AuditPluginUninstalled),
+	// A plugin's button: what it did is the plugin's (its panel.api calls are
+	// journaled under its name); that this admin pressed it is recorded here.
+	"POST /api/plugin-actions/{plugin}/{key}": act(model.AuditPluginAction),
 
 	// Nodes: each is a managed server with its own lifecycle. One section-style
 	// action; the node is the target. regen-join mints a fresh install credential.

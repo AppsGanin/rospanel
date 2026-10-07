@@ -1,10 +1,12 @@
 package server
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/plugin"
 	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/telegram"
 )
@@ -21,6 +23,11 @@ func (rt *Router) buildAccess(r *http.Request, u model.User, set *model.Settings
 	if privacy != "" {
 		a.Legal = append(a.Legal, sub.LegalLink{Title: sub.LegalTitle(model.LegalPrivacy, lang), URL: privacy})
 	}
+	for _, b := range rt.pluginBlocks(r.Context(), u, lang) {
+		if blk, ok := sub.NewBlock(b.Type, b.Text, b.Label, b.URL); ok {
+			a.Blocks = append(a.Blocks, blk)
+		}
+	}
 	linked := u.TgChatID != 0
 	if !set.TGUserBotEnabled || (linked && !set.SubTGRebind) || (!linked && !set.SubTGBind) {
 		return a
@@ -35,4 +42,17 @@ func (rt *Router) buildAccess(r *http.Request, u model.User, set *model.Settings
 	}
 	a.TGLink, a.TGLinked = telegram.UserDeepLink(bot, code), linked
 	return a
+}
+
+// pluginBlocks asks the plugins what to add to this user's page (each within a
+// fraction of a second, cached for minutes — see plugin.Host.SubBlocks).
+func (rt *Router) pluginBlocks(ctx context.Context, u model.User, lang i18n.Lang) []plugin.SubBlock {
+	if rt.plugins == nil {
+		return nil
+	}
+	user := map[string]any{
+		"id": u.ID, "name": u.Name, "status": u.Status, "expire_at": u.ExpireAt, "plan_id": u.PlanID,
+		"data_limit": u.DataLimit, "used": u.UsedUp + u.UsedDown, "telegram_id": u.TgChatID,
+	}
+	return rt.plugins.SubBlocks(ctx, user, string(lang))
 }

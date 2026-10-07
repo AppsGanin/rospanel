@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/plugin/manifest"
 )
 
@@ -50,9 +51,12 @@ func (s *stormMeter) note(now time.Time) bool {
 	return s.hot >= stormMinutes-1 && s.count > stormRate
 }
 
-// EventSubscribers lists the active plugins subscribed to event, in order.
+// EventSubscribers lists the active plugins subscribed to event, in order: those
+// that list it, and the delivery channels for the events that carry a message.
 func (h *Host) EventSubscribers(event string) []string {
-	return h.Active(func(m *manifest.Manifest) bool { return slices.Contains(m.Provides.Events, event) })
+	return h.Active(func(m *manifest.Manifest) bool {
+		return slices.Contains(m.Provides.Events, event) || m.Provides.Channel != nil && slices.Contains(channelEvents, event)
+	})
 }
 
 // DeliverEvent calls a plugin's onEvent with a stored webhook payload. gone is
@@ -68,9 +72,111 @@ func (h *Host) DeliverEvent(ctx context.Context, id string, body []byte) (gone b
 		inst.mu.Unlock()
 		return true, errors.New("plugin paused: event storm")
 	}
-	_, err = h.call(ctx, id, "onEvent", json.RawMessage(body), EventTimeout, callOpts{})
+	p := inst.pub.Load()
+	if p == nil || p.manifest == nil || p.status != model.PluginActive {
+		return true, ErrNotActive
+	}
+	var ev struct {
+		Event string `json:"event"`
+	}
+	_ = json.Unmarshal(body, &ev)
+	if slices.Contains(p.manifest.Provides.Events, ev.Event) {
+		_, err = h.call(ctx, id, "onEvent", json.RawMessage(body), EventTimeout, callOpts{})
+	}
+	if err == nil && p.manifest.Provides.Channel != nil && slices.Contains(channelEvents, ev.Event) {
+		if msg := channelMessage(body); msg != nil {
+			_, err = h.call(ctx, id, "channel.send", msg, ChannelTimeout, callOpts{})
+		}
+	}
 	if errors.Is(err, ErrNotActive) || errors.Is(err, ErrNotFound) {
 		return true, err
 	}
 	return false, err
+}
+
+// ChannelTimeout bounds one channel.send.
+const ChannelTimeout = 15 * time.Second
+
+// channelEvents carry something to tell a user: what a delivery channel takes.
+var channelEvents = []string{
+	model.WebhookUserMessage, model.WebhookUserAutoMessage, model.WebhookBroadcastSent,
+	model.WebhookUserExpiring, model.WebhookUserTrafficLow,
+}
+
+// ChannelMessage is what channel.send receives: one message, for the users the
+// panel's own bot did not reach.
+type ChannelMessage struct {
+	EventID string           `json:"event_id"` // for idempotency, as onEvent's e.id
+	Kind    string           `json:"kind"`     // message | auto_message | broadcast | notice
+	Notice  string           `json:"notice,omitempty"`
+	Text    string           `json:"text,omitempty"` // Telegram HTML
+	Buttons json.RawMessage  `json:"buttons,omitempty"`
+	Users   []map[string]any `json:"users"`
+	Data    json.RawMessage  `json:"data"` // the event's own payload
+}
+
+// channelMessage turns a stored event into a channel message, or nil when there is
+// nobody to deliver it to: the bot delivered it already, or (a reminder) the user
+// has a Telegram the bot warns through.
+func channelMessage(body []byte) *ChannelMessage {
+	var ev struct {
+		ID    string          `json:"id"`
+		Event string          `json:"event"`
+		Data  json.RawMessage `json:"data"`
+	}
+	if json.Unmarshal(body, &ev) != nil {
+		return nil
+	}
+	var d map[string]any
+	if json.Unmarshal(ev.Data, &d) != nil {
+		return nil
+	}
+	msg := &ChannelMessage{EventID: ev.ID, Data: ev.Data}
+	if b, err := json.Marshal(d["buttons"]); err == nil && d["buttons"] != nil {
+		msg.Buttons = b
+	}
+	msg.Text, _ = d["text"].(string)
+	userOf := func(d map[string]any) map[string]any {
+		u := map[string]any{}
+		for _, k := range []string{"id", "name", "external_id", "telegram_id", "lang", "mailing"} {
+			if v, ok := d[k]; ok {
+				u[k] = v
+			}
+		}
+		return u
+	}
+	switch ev.Event {
+	case model.WebhookUserMessage, model.WebhookUserAutoMessage:
+		if sent, _ := d["telegram_sent"].(bool); sent {
+			return nil
+		}
+		msg.Kind = "message"
+		if ev.Event == model.WebhookUserAutoMessage {
+			msg.Kind = "auto_message"
+		}
+		msg.Users = []map[string]any{userOf(d)}
+	case model.WebhookBroadcastSent:
+		msg.Kind = "broadcast"
+		list, _ := d["users"].([]any)
+		for _, x := range list {
+			if u, ok := x.(map[string]any); ok {
+				msg.Users = append(msg.Users, u)
+			}
+		}
+		if len(msg.Users) == 0 {
+			return nil
+		}
+	case model.WebhookUserExpiring, model.WebhookUserTrafficLow:
+		if tg, _ := d["telegram_id"].(float64); tg != 0 {
+			return nil
+		}
+		msg.Kind, msg.Notice = "notice", "expiring"
+		if ev.Event == model.WebhookUserTrafficLow {
+			msg.Notice = "traffic_low"
+		}
+		msg.Users = []map[string]any{userOf(d)}
+	default:
+		return nil
+	}
+	return msg
 }

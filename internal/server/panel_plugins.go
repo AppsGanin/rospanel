@@ -374,3 +374,70 @@ func (rt *Router) ensurePluginCallbacks(info *plugin.Info) {
 		*info = *fresh
 	}
 }
+
+// panelLang is the admin's language for what plugins label themselves with.
+func panelLang(r *http.Request) string {
+	if l := r.URL.Query().Get("lang"); l == "en" || l == "ru" {
+		return l
+	}
+	return "ru"
+}
+
+func (rt *Router) listPluginActions(w http.ResponseWriter, r *http.Request) {
+	if rt.plugins == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"actions": []any{}})
+		return
+	}
+	held := callerPerms(r)
+	actions := rt.plugins.Actions(panelLang(r), func(p string) bool { return held.Has(p) })
+	if actions == nil {
+		actions = []plugin.ActionInfo{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"actions": actions})
+}
+
+func (rt *Router) runPluginAction(w http.ResponseWriter, r *http.Request) {
+	h := rt.pluginHost(w)
+	if h == nil {
+		return
+	}
+	var req struct {
+		UserIDs []int64 `json:"user_ids"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	held := callerPerms(r)
+	res, _, err := h.RunAction(r.Context(), r.PathValue("plugin"), r.PathValue("key"), req.UserIDs,
+		func(p string) bool { return held.Has(p) })
+	switch {
+	case errors.Is(err, plugin.ErrForbidden):
+		writeErrCode(w, http.StatusForbidden, "err.forbidden", "недостаточно прав")
+	case errors.Is(err, plugin.ErrNoAction), errors.Is(err, plugin.ErrNotActive), errors.Is(err, plugin.ErrNotFound):
+		writeErrCode(w, http.StatusNotFound, "err.pluginNotFound", "плагин не установлен")
+	case err != nil:
+		writePluginErr(w, err)
+	default:
+		writeJSON(w, http.StatusOK, res)
+	}
+}
+
+func (rt *Router) pluginWidgets(w http.ResponseWriter, r *http.Request) {
+	widgets := []plugin.Widget{}
+	if rt.plugins != nil {
+		if ws := rt.plugins.Widgets(r.Context(), panelLang(r)); ws != nil {
+			widgets = ws
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"widgets": widgets})
+}
+
+func (rt *Router) userPluginFields(w http.ResponseWriter, r *http.Request, id int64) {
+	blocks := []plugin.PluginFields{}
+	if rt.plugins != nil {
+		if fs := rt.plugins.UserFields(r.Context(), id, panelLang(r)); fs != nil {
+			blocks = fs
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"plugins": blocks})
+}

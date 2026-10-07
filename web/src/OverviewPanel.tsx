@@ -1,3 +1,4 @@
+import { PluginWidgets } from "./PluginSurfaces";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -501,6 +502,8 @@ export function OverviewPanel() {
       {/* Without a fleet there is no left column to fill, so the attention panel takes
           the width and the three read-outs sit side by side instead of stretching one
           sparkline across the screen. Same panels, placed by how many there are. */}
+      <PluginWidgets />
+
       {!showServers && attentionPanel}
 
       <div

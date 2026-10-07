@@ -115,6 +115,8 @@ type Host struct {
 	closed  bool
 
 	cron           cronState
+	widgets        widgetCache
+	subs           subCache
 	lastRelease    atomic.Int64 // unix nanos of the last memory release
 	releasePending atomic.Bool  // a release is scheduled
 }

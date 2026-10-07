@@ -592,6 +592,12 @@ func (rt *Router) panelMux() http.Handler {
 	canPluginsManage("POST /api/plugins/{id}/disable", rt.pluginAction((*plugin.Host).Disable))
 	canPluginsManage("POST /api/plugins/{id}/config", rt.configurePlugin)
 	canPluginsManage("DELETE /api/plugins/{id}", rt.uninstallPlugin)
+	// What plugins add to the panel's own screens. A button is gated by its own
+	// permission inside the handler — each declares one — so the route takes any.
+	on(model.AllPerms()...)("GET /api/plugin-actions", rt.listPluginActions)
+	on(model.AllPerms()...)("POST /api/plugin-actions/{plugin}/{key}", rt.runPluginAction)
+	on(model.PermStatsView, model.PermPluginsView)("GET /api/plugin-widgets", rt.pluginWidgets)
+	on(model.PermUsersView)("GET /api/users/{id}/plugin-fields", withID(rt.userPluginFields))
 	canWebhooks("GET /api/webhooks", rt.listWebhooks)
 	canWebhooks("POST /api/webhooks", rt.createWebhook)
 	canWebhooks("POST /api/webhooks/{id}", withID(rt.updateWebhook))

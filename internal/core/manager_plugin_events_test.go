@@ -202,3 +202,16 @@ func TestBusyPluginDoesNotHoldBothWorkers(t *testing.T) {
 		t.Fatalf("%d deliveries left over", len(ds))
 	}
 }
+
+// The work that builds an event (reminders, broadcasts' recipient lists) runs when
+// a plugin takes it, not only a webhook.
+func TestWebhookWantedCountsPlugins(t *testing.T) {
+	m, _ := pluginEventsManager(t)
+	if m.webhookWanted(model.WebhookUserExpiring) {
+		t.Fatal("wanted with no subscriber")
+	}
+	m.SetPluginEvents(&fakePlugins{subs: map[string][]string{model.WebhookUserExpiring: {"mail"}}})
+	if !m.webhookWanted(model.WebhookUserExpiring) {
+		t.Fatal("a plugin subscriber does not count")
+	}
+}

@@ -147,6 +147,22 @@ export function onHttp({ method, path, query, headers, body, ip }) {
 не может ставить cookie и отдаётся в песочнице. Пример —
 [examples/plugins/shop-webhook](../../examples/plugins/shop-webhook).
 
+## Экраны панели
+
+Всё это панель рисует сама из простых значений — плагин никогда не показывает свой HTML
+ни админу, ни пользователю.
+
+| `provides` | Экспорт | Что показывает |
+|---|---|---|
+| `user_fields: [{key, label}]` | `userFields(userId)` → `{key: value}` | значения в карточке пользователя (ответ за 0,3 с) |
+| `actions: [{key, label, scope, perm, confirm}]` | `onAction({key, user_ids})` → `{ok, message}` | кнопки: `user` в карточке, `users` для выбранных в списке, `global` на карточке плагина. Видят и нажимают только админы с правом `perm` (по умолчанию `users.manage`); каждое нажатие — в журнале панели |
+| `widgets: [{key, label}]` | `widget(key)` → `{type: "stat"\|"table"\|"list", …}` | плитки на обзоре, кэш на минуту |
+| `sub_blocks: true` | `subBlocks({user, lang})` → `[{type, text, label, url}]` | блоки наверху страницы подписки (`text`, `notice`, `markdown` без сырого HTML, `button` на https); ответ за 0,3 с, кэш на 5 минут на пользователя. Своя страница получает их как `blocks` в `GET /v1/users/{id}/subscription` |
+| `channel: {label}` | `channel.send(msg)` | доставляет сообщения, рассылки и напоминания тем, до кого не дотягивается бот панели — см. `ChannelMessage` в `rospanel.d.ts`. Экспериментально: добавьте `"channel"` в `experimental` |
+
+Примеры: [email](../../examples/plugins/email) (канал, поля в карточке и виджет),
+[announcement](../../examples/plugins/announcement) (блоки на странице и кнопка).
+
 ## API панели
 
 Полный справочник с типами для редактора — `rospanel.d.ts`, его кладёт `plugin new`.

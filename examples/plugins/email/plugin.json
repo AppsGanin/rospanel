@@ -1,0 +1,24 @@
+{
+  "id": "email",
+  "version": "1.0.0",
+  "api": 1,
+  "panel": ">=4.4.0",
+  "name": {"ru": "Письма через Resend", "en": "E-mail through Resend"},
+  "description": {
+    "ru": "Доставляет пользователям без Telegram сообщения, рассылки и напоминания письмом. Адрес — external_id пользователя, если это e-mail.",
+    "en": "Delivers messages, broadcasts and reminders by e-mail to users without Telegram. The address is the user's external_id when it is an e-mail."
+  },
+  "author": "RosPanel",
+  "license": "MIT",
+  "net": ["api.resend.com"],
+  "settings": [
+    {"key": "api_key", "kind": "secret", "label": {"ru": "API-ключ Resend", "en": "Resend API key"}},
+    {"key": "from", "kind": "text", "label": {"ru": "Отправитель", "en": "Sender"}, "placeholder": "VPN <no-reply@example.com>"}
+  ],
+  "provides": {
+    "channel": {"label": {"ru": "E-mail", "en": "E-mail"}},
+    "user_fields": [{"key": "email", "label": {"ru": "E-mail", "en": "E-mail"}}, {"key": "last", "label": {"ru": "Последнее письмо", "en": "Last e-mail"}}],
+    "widgets": [{"key": "sent", "label": {"ru": "Писем за 7 дней", "en": "E-mails in 7 days"}}]
+  },
+  "experimental": ["channel"]
+}

@@ -24,6 +24,7 @@ import {
 import { fmtBytes, fmtStamp } from "./format";
 import i18n, { td } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { forgetPluginActions, PluginActionButtons } from "./PluginSurfaces";
 import { useCan } from "./role";
 import {
   Badge,
@@ -227,7 +228,10 @@ function PluginRow({
     }
   };
 
-  const toggle = (on: boolean) => run(() => (on ? enablePlugin(p.id) : disablePlugin(p.id)));
+  const toggle = (on: boolean) => {
+    forgetPluginActions();
+    return run(() => (on ? enablePlugin(p.id) : disablePlugin(p.id)));
+  };
 
   return (
     <div className="flex flex-col gap-2 px-3.5 py-3">
@@ -280,6 +284,7 @@ function PluginRow({
             {t("plugins.settings")}
           </Button>
         )}
+        {p.status === "active" && <PluginActionButtons scope="global" plugin={p.id} />}
         <Button size="xs" variant="light" color="gray" onClick={onLogs}>
           {t("plugins.logs")}
         </Button>

@@ -223,6 +223,9 @@
         color: var(--muted);
         margin: 0.5rem 0;
       }
+      .plugin-block p { margin: 0 0 0.5em; }
+      .plugin-block p:last-child { margin: 0; }
+      .plugin-block.notice { border-left: 3px solid var(--brand); }
       .card {
         background: var(--surface);
         border: 1px solid var(--line);
@@ -1006,6 +1009,10 @@
       {{end}}
 
       <section class="pane" data-pane="sub">
+        {{range .Access.Blocks}}
+        {{if eq .Type "button"}}<a class="btn alt" style="margin: 0 0 12px" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Label}}</a>
+        {{else}}<div class="card plugin-block{{if eq .Type "notice"}} notice{{end}}" style="margin-bottom: 12px">{{.HTML}}</div>{{end}}
+        {{end}}
         {{if .DeepLinks}}
         <button class="btn" style="margin: 0 0 12px" onclick="openWizard()">{{.L.WzOpen}}</button>
         {{end}}

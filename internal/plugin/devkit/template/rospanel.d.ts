@@ -161,6 +161,43 @@ interface Decision {
   reason?: string;
 }
 
+/** onAction(req): a button an admin pressed. user_ids is [] for a global one. */
+interface ActionRequest {
+  key: string;
+  user_ids: number[];
+}
+
+/** What the admin sees after pressing it. */
+interface ActionResult {
+  ok?: boolean;
+  message?: string;
+}
+
+/** widget(key) returns one of these. */
+type WidgetData =
+  | { type: "stat"; value: string | number; hint?: string }
+  | { type: "table"; columns: string[]; rows: (string | number)[][] }
+  | { type: "list"; items: (string | number)[] };
+
+/** subBlocks(req) returns up to 10 of these. Buttons go to https only. */
+type SubBlock =
+  | { type: "text" | "notice" | "markdown"; text: string }
+  | { type: "button"; label: string; url: string };
+
+/** channel.send(msg): one message for the users the panel's bot did not reach. */
+interface ChannelMessage {
+  /** The event's id: with a user's id, what makes a retry deliver nobody twice. */
+  event_id: string;
+  kind: "message" | "auto_message" | "broadcast" | "notice";
+  /** For a notice: "expiring" or "traffic_low" (the figures are in data). */
+  notice?: string;
+  /** Telegram HTML. */
+  text?: string;
+  buttons?: { text: string; url: string }[];
+  users: { id: number; name?: string; external_id?: string; telegram_id?: number; lang?: string; mailing?: boolean }[];
+  data: any;
+}
+
 // ---- The test runner (`rospanel plugin test`) — test.js only ------------------
 
 /** A test. The plugin's database and kv carry over from one test to the next; mocks do not. */

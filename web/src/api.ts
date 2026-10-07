@@ -3452,3 +3452,48 @@ export const getPluginLogs = (id: string) =>
 
 export const getPluginCode = (id: string) =>
   api<{ code: string }>(`api/plugins/${encodeURIComponent(id)}/code`)
+
+export interface PluginAction {
+  plugin: string
+  key: string
+  label: string
+  scope: 'user' | 'users' | 'global'
+  perm: Perm
+  confirm: boolean
+}
+
+export const listPluginActions = () =>
+  api<{ actions: PluginAction[] }>(`api/plugin-actions?lang=${i18n.language === 'en' ? 'en' : 'ru'}`)
+
+export const runPluginAction = (plugin: string, key: string, userIds: number[]) =>
+  api<{ ok: boolean; message: string }>(
+    `api/plugin-actions/${encodeURIComponent(plugin)}/${encodeURIComponent(key)}`,
+    { method: 'POST', body: JSON.stringify({ user_ids: userIds }) },
+  )
+
+export type PluginWidgetData =
+  | { type: 'stat'; value: string | number; hint?: string }
+  | { type: 'table'; columns: string[]; rows: (string | number)[][] }
+  | { type: 'list'; items: (string | number)[] }
+
+export interface PluginWidget {
+  plugin: string
+  key: string
+  label: string
+  data?: PluginWidgetData
+  error?: string
+}
+
+export const getPluginWidgets = () =>
+  api<{ widgets: PluginWidget[] }>(`api/plugin-widgets?lang=${i18n.language === 'en' ? 'en' : 'ru'}`)
+
+export interface PluginFieldsBlock {
+  plugin: string
+  name: string
+  fields: { key: string; label: string; value: string }[]
+}
+
+export const getUserPluginFields = (userId: number) =>
+  api<{ plugins: PluginFieldsBlock[] }>(
+    `api/users/${userId}/plugin-fields?lang=${i18n.language === 'en' ? 'en' : 'ru'}`,
+  )

@@ -1,3 +1,4 @@
+import { PluginActionButtons } from "./PluginSurfaces";
 import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -684,6 +685,7 @@ export function UsersPanel({
                   </Button>
                 </>
               )}
+              <PluginActionButtons scope="users" userIds={[...selected]} />
               {canDelete && (
                 <Button size="xs" variant="outline" color="red" disabled={pending !== null} onClick={() => setConfirmDelete(true)}>
                   {t("common.delete")}

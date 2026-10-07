@@ -147,6 +147,22 @@ The plugin checks who is calling (a signature, a token in its settings). Bodies 
 each way; the answer cannot set cookies and is served sandboxed. See
 [examples/plugins/shop-webhook](../../examples/plugins/shop-webhook).
 
+## Screens of the panel
+
+These are drawn by the panel from plain values — a plugin never puts HTML in front of
+an admin or a user.
+
+| `provides` | Export | Shows |
+|---|---|---|
+| `user_fields: [{key, label}]` | `userFields(userId)` → `{key: value}` | values on the user's card (asked within 0.3 s) |
+| `actions: [{key, label, scope, perm, confirm}]` | `onAction({key, user_ids})` → `{ok, message}` | buttons: `user` on the card, `users` for the users list's selection, `global` on the plugin's card. Only admins holding `perm` (`users.manage` by default) see and press them; every press is in the panel's journal |
+| `widgets: [{key, label}]` | `widget(key)` → `{type: "stat"\|"table"\|"list", …}` | dashboard tiles, cached for a minute |
+| `sub_blocks: true` | `subBlocks({user, lang})` → `[{type, text, label, url}]` | blocks at the top of the subscription page (`text`, `notice`, `markdown` without raw HTML, `button` to https); asked within 0.3 s and cached for 5 minutes per user. A page of your own gets them as `blocks` in `GET /v1/users/{id}/subscription` |
+| `channel: {label}` | `channel.send(msg)` | delivers messages, broadcasts and reminders to the users the panel's bot does not reach — see `ChannelMessage` in `rospanel.d.ts`. Experimental: list `"channel"` in `experimental` |
+
+Examples: [email](../../examples/plugins/email) (a channel with user fields and a widget),
+[announcement](../../examples/plugins/announcement) (page blocks and a button).
+
 ## The panel API
 
 `rospanel.d.ts` — written by `plugin new` — is the full reference, with types your
