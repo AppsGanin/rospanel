@@ -91,8 +91,7 @@ const (
 	AuditPluginDisabled    = "plugin.disabled"
 	AuditPluginConfigured  = "plugin.configured"
 	AuditPluginUninstalled = "plugin.uninstalled"
-	AuditPluginAction      = "plugin.action"  // an admin pressed a plugin's button
-	AuditPluginCatalog     = "plugin.catalog" // the catalog's address changed
+	AuditPluginAction      = "plugin.action" // an admin pressed a plugin's button
 
 	// Mass broadcasts. Kept as their own actions rather than folded into
 	// AuditSettings: "who sent a message to every user, and what was in it" is the
@@ -203,7 +202,6 @@ var AdminAuditCatalog = []AdminAuditEntry{
 	{AuditPluginConfigured, AuditCatPlugins},
 	{AuditPluginUninstalled, AuditCatPlugins},
 	{AuditPluginAction, AuditCatPlugins},
-	{AuditPluginCatalog, AuditCatPlugins},
 
 	{AuditBroadcastStarted, AuditCatBroadcast},
 	{AuditBroadcastChanged, AuditCatBroadcast},

@@ -171,16 +171,14 @@ var auditActions = map[string]auditRoute{
 	"POST /api/webhooks/{id}/test": skip, // a test delivery changes nothing
 
 	// Plugins: what code the panel runs. Inspecting only reads an upload.
-	"POST /api/plugins/inspect":         skip,
-	"POST /api/plugins/catalog/inspect": skip, // downloads a package to look at, installs nothing
-	"PUT /api/plugins/catalog":          act(model.AuditPluginCatalog),
-	"POST /api/plugins":                 act(model.AuditPluginInstalled),
-	"POST /api/plugins/{id}/update":     act(model.AuditPluginUpdated),
-	"POST /api/plugins/{id}/rollback":   act(model.AuditPluginRolledBack),
-	"POST /api/plugins/{id}/enable":     act(model.AuditPluginEnabled),
-	"POST /api/plugins/{id}/disable":    act(model.AuditPluginDisabled),
-	"POST /api/plugins/{id}/config":     act(model.AuditPluginConfigured),
-	"DELETE /api/plugins/{id}":          act(model.AuditPluginUninstalled),
+	"POST /api/plugins/inspect":       skip,
+	"POST /api/plugins":               act(model.AuditPluginInstalled),
+	"POST /api/plugins/{id}/update":   act(model.AuditPluginUpdated),
+	"POST /api/plugins/{id}/rollback": act(model.AuditPluginRolledBack),
+	"POST /api/plugins/{id}/enable":   act(model.AuditPluginEnabled),
+	"POST /api/plugins/{id}/disable":  act(model.AuditPluginDisabled),
+	"POST /api/plugins/{id}/config":   act(model.AuditPluginConfigured),
+	"DELETE /api/plugins/{id}":        act(model.AuditPluginUninstalled),
 	// A plugin's button: what it did is the plugin's (its panel.api calls are
 	// journaled under its name); that this admin pressed it is recorded here.
 	"POST /api/plugin-actions/{plugin}/{key}": act(model.AuditPluginAction),

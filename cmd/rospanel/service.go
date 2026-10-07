@@ -879,17 +879,6 @@ func startPlugins(runBG func(string, func(context.Context)), rt *server.Router, 
 		defer cancel()
 		host.CheckpointAll(ctx)
 	})
-	// New catalog versions of installed plugins, told to the operator once each. The
-	// catalog itself is fetched at most every catalog.RefreshEvery.
-	runBG("plugin updates", func(ctx context.Context) {
-		tick(ctx, time.Hour, func() {
-			safeTick("plugin updates", func() {
-				cctx, cancel := context.WithTimeout(ctx, time.Minute)
-				defer cancel()
-				rt.CheckPluginUpdates(cctx)
-			})
-		})
-	})
 	runBG("plugins", func(ctx context.Context) {
 		if err := host.Start(ctx); err != nil {
 			log.Printf("plugins: %v", err)

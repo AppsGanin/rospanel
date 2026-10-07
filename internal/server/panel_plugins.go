@@ -79,10 +79,6 @@ type pluginInspection struct {
 	// Added lists what an update asks for beyond the installed version.
 	AddedPerms []string `json:"added_perms,omitempty"`
 	AddedNet   []string `json:"added_net,omitempty"`
-	// FromCatalog: the package came from the catalog, matching its sha256 there;
-	// Verified: the catalog's maintainers reviewed this version's code.
-	FromCatalog bool `json:"from_catalog,omitempty"`
-	Verified    bool `json:"verified,omitempty"`
 }
 
 func (rt *Router) pluginHost(w http.ResponseWriter) *plugin.Host {
@@ -131,12 +127,12 @@ func (rt *Router) inspectPlugin(w http.ResponseWriter, r *http.Request) {
 		}
 		raw = b
 	}
-	rt.respondInspection(w, h, raw, nil)
+	rt.respondInspection(w, h, raw)
 }
 
 // respondInspection reads a package and answers with what the consent screen shows,
-// keeping the bytes for the install; adjust adds what the caller knows about it.
-func (rt *Router) respondInspection(w http.ResponseWriter, h *plugin.Host, raw []byte, adjust func(*pluginInspection)) {
+// keeping the bytes for the install.
+func (rt *Router) respondInspection(w http.ResponseWriter, h *plugin.Host, raw []byte) {
 	pkg, err := h.Inspect(raw)
 	if err != nil {
 		writeErrDetail(w, http.StatusBadRequest, "err.pluginInvalid", "пакет не подходит: ", err.Error())
@@ -163,9 +159,6 @@ func (rt *Router) respondInspection(w http.ResponseWriter, h *plugin.Host, raw [
 				out.AddedNet = append(out.AddedNet, n)
 			}
 		}
-	}
-	if adjust != nil {
-		adjust(&out)
 	}
 	rt.pluginUploads.put(pkg.SHA256, raw)
 	writeJSON(w, http.StatusOK, out)

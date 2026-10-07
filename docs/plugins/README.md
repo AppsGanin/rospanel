@@ -54,7 +54,7 @@ export function onEvent(e) {
    `blob`, `crypto`, `t`.
 5. **[Testing and debugging](testing.md)** — `test.js`, mocks, `dev`, `validate`, the log in
    the panel.
-6. **[Publishing and updates](publishing.md)** — versions, migrations, rollback, the catalog.
+6. **[Publishing and updates](publishing.md)** — versions, migrations, rollback, sharing a plugin.
 7. **[Limits, security and errors](troubleshooting.md)** — the sandbox, limits, pausing,
    common errors explained, questions.
 

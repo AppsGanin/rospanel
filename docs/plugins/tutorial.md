@@ -260,6 +260,6 @@ chat. The plugin's **Log** shows what it did and where it failed.
 
 - Buttons on a user's card, widgets, blocks on the subscription page, your own payment
   method, buttons in the bot — [extension points](exports.md).
-- Updates, migrations and publishing to the catalog — [publishing](publishing.md).
+- Updates, migrations and sharing a plugin — [publishing](publishing.md).
 - Limits and common errors explained — [limits and errors](troubleshooting.md).
 - More finished plugins — [examples/plugins](../../examples/plugins).

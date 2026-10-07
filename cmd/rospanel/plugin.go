@@ -7,11 +7,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"slices"
 	"strings"
-	"time"
 
-	"github.com/AppsGanin/rospanel/internal/plugin/catalog"
 	"github.com/AppsGanin/rospanel/internal/plugin/devkit"
 	"github.com/AppsGanin/rospanel/internal/plugin/manifest"
 	"github.com/AppsGanin/rospanel/internal/version"
@@ -27,11 +24,6 @@ const pluginUsage = `rospanel plugin — tools for plugin authors
   rospanel plugin dev <dir> [--panel <url> --key <api key>]
                                                try it by hand, reloading on save
                                                (--panel: panel.api goes to that panel's /v1)
-
-  For catalog maintainers:
-  rospanel plugin keygen <key file>            make the catalog's signing key
-  rospanel plugin index <catalog dir> --key <key file>
-                                               write index.json and index.json.sig
 
 Docs: docs/plugins in the RosPanel repository.`
 
@@ -57,10 +49,6 @@ func runPlugin(args []string) {
 		err = pluginTest(ctx, rest)
 	case "dev":
 		err = pluginDev(ctx, rest)
-	case "keygen":
-		err = pluginKeygen(rest)
-	case "index":
-		err = pluginIndex(rest)
 	case "help", "-h", "--help":
 		fmt.Println(pluginUsage)
 	default:
@@ -235,62 +223,4 @@ func pluginDev(ctx context.Context, args []string) error {
 		remote = &devkit.Remote{Base: *panelURL, Key: *key}
 	}
 	return devkit.Dev(ctx, dir, version.Version, remote, os.Stdin, os.Stdout)
-}
-
-// pluginKeygen writes a new catalog signing key; the public half is printed, to be
-// built into the panel (catalog.TrustedKeys).
-func pluginKeygen(args []string) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: rospanel plugin keygen <key file>")
-	}
-	if _, err := os.Stat(args[0]); err == nil {
-		return fmt.Errorf("%s exists: a key is never overwritten", args[0])
-	}
-	priv, pub, err := catalog.Keygen()
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(args[0], []byte(priv+"\n"), 0o600); err != nil {
-		return err
-	}
-	fmt.Printf("private key: %s (keep it secret)\npublic key:  %s\n", args[0], pub)
-	return nil
-}
-
-// pluginIndex builds and signs a catalog folder's index.
-func pluginIndex(args []string) error {
-	fs := flag.NewFlagSet("index", flag.ContinueOnError)
-	key := fs.String("key", "", "the signing key from `rospanel plugin keygen`")
-	dir, err := positional(fs, args)
-	if err != nil {
-		return err
-	}
-	if *key == "" {
-		return fmt.Errorf("--key is required")
-	}
-	priv, err := os.ReadFile(*key)
-	if err != nil {
-		return err
-	}
-	raw, err := catalog.Build(dir, time.Now())
-	if err != nil {
-		return err
-	}
-	sig, err := catalog.Sign(raw, string(priv))
-	if err != nil {
-		return err
-	}
-	pub, _ := catalog.PublicKey(string(priv))
-	if !slices.Contains(catalog.TrustedKeys, pub) {
-		fmt.Fprintln(os.Stderr, "warning: this panel does not trust the key; it will refuse the index")
-	}
-	if err := os.WriteFile(filepath.Join(dir, "index.json"), raw, 0o644); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(dir, "index.json.sig"), sig, 0o644); err != nil {
-		return err
-	}
-	idx, _ := catalog.Parse(raw)
-	fmt.Printf("%s: %d plugins, signed\n", filepath.Join(dir, "index.json"), len(idx.Plugins))
-	return nil
 }

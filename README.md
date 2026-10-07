@@ -685,8 +685,7 @@ have a say in sign-ups, device binding and prices, or restyle the subscription p
 a WebAssembly sandbox with its own database and memory and time limits, so a broken plugin is
 paused, not the panel. Before installing, the operator sees what it asks for — the panel API
 permissions and the internet hosts — and can read its code; nothing beyond that is reachable.
-*Settings → Plugins*: from a zip or from the signed community catalog, which also says when
-a new version is out. Authors get `rospanel plugin new | test | dev | pack` with no Node
+*Settings → Plugins*, from a zip or a link. Authors get `rospanel plugin new | test | dev | pack` with no Node
 needed; see [docs/plugins](docs/plugins/README.md) and [examples/plugins](examples/plugins).
 
 #### 🌍 Language (RU / EN)

@@ -1,12 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  type CatalogItem,
-  type CatalogState,
   configurePlugin,
-  getPluginCatalog,
-  inspectCatalogPlugin,
-  setPluginCatalogURL,
   disablePlugin,
   enablePlugin,
   getPluginCode,
@@ -112,44 +107,19 @@ export function PluginsPanel() {
   const { t } = useTranslation();
   const canManage = useCan("plugins.manage");
   const [plugins, setPlugins] = useState<PluginInfo[] | null>(null);
-  const [installing, setInstalling] = useState<{ update?: PluginInfo; review?: PluginInspection } | null>(null);
-  const [catalog, setCatalog] = useState<CatalogState | null>(null);
-  const [catalogBusy, setCatalogBusy] = useState(false);
+  const [installing, setInstalling] = useState<{ update?: PluginInfo } | null>(null);
   const [logsOf, setLogsOf] = useState<PluginInfo | null>(null);
   const [codeOf, setCodeOf] = useState<PluginInfo | null>(null);
   const [removing, setRemoving] = useState<PluginInfo | null>(null);
 
-  const loadCatalog = (refresh = false) => {
-    setCatalogBusy(true);
-    getPluginCatalog(refresh)
-      .then(setCatalog)
-      .catch((e) => notifyError(errMessage(e)))
-      .finally(() => setCatalogBusy(false));
-  };
-  const load = () => {
+  const load = () =>
     listPlugins()
       .then((r) => setPlugins(r.plugins))
       .catch((e) => notifyError(errMessage(e)));
-    loadCatalog();
-  };
   // biome-ignore lint/correctness/useExhaustiveDependencies: once, on mount
   useEffect(() => {
     load();
   }, []);
-
-  // A catalog install or update opens straight on the consent screen.
-  const fromCatalog = async (item: CatalogItem) => {
-    setCatalogBusy(true);
-    try {
-      const review = await inspectCatalogPlugin(item.id, item.latest?.version);
-      setInstalling({ review, update: plugins?.find((x) => x.id === item.id) });
-    } catch (e) {
-      notifyError(errMessage(e));
-    } finally {
-      setCatalogBusy(false);
-    }
-  };
-  const inCatalog = (id: string) => catalog?.plugins.find((c) => c.id === id);
 
   const replace = (p: PluginInfo) =>
     setPlugins((cur) => (cur ?? []).map((x) => (x.id === p.id ? p : x)));
@@ -190,26 +160,16 @@ export function PluginsPanel() {
                 onCode={() => setCodeOf(p)}
                 onUpdate={() => setInstalling({ update: p })}
                 onRemove={() => setRemoving(p)}
-                catalogItem={inCatalog(p.id)}
               />
             ))}
           </div>
         )}
       </Panel>
 
-      <CatalogPanel
-        state={catalog}
-        busy={catalogBusy}
-        canManage={canManage}
-        onRefresh={() => loadCatalog(true)}
-        onSaved={setCatalog}
-        onInstall={fromCatalog}
-      />
 
       {installing && (
         <InstallDialog
           update={installing.update}
-          initial={installing.review}
           onClose={() => setInstalling(null)}
           onDone={() => {
             setInstalling(null);
@@ -241,7 +201,6 @@ function PluginRow({
   onCode,
   onUpdate,
   onRemove,
-  catalogItem,
 }: {
   plugin: PluginInfo;
   canManage: boolean;
@@ -250,7 +209,6 @@ function PluginRow({
   onCode: () => void;
   onUpdate: () => void;
   onRemove: () => void;
-  catalogItem?: CatalogItem;
 }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
@@ -287,16 +245,6 @@ function PluginRow({
             <Badge color={status.color} size="xs">
               {td(status.key)}
             </Badge>
-            {catalogItem?.installed_verified && (
-              <Badge color="green" size="xs">
-                {t("plugins.verified")}
-              </Badge>
-            )}
-            {catalogItem?.update && catalogItem.latest && (
-              <Badge color="blue" size="xs">
-                {t("plugins.catalogUpdateAvailable", { v: catalogItem.latest.version })}
-              </Badge>
-            )}
           </div>
           {m?.description && <p className="mt-0.5 text-xs text-ink-muted">{pickText(m.description)}</p>}
           {p.status_error && (
@@ -505,12 +453,10 @@ function SettingsForm({
 // updates) it with the admin's password.
 function InstallDialog({
   update,
-  initial,
   onClose,
   onDone,
 }: {
   update?: PluginInfo;
-  initial?: PluginInspection;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -518,7 +464,7 @@ function InstallDialog({
   const fileRef = useRef<HTMLInputElement>(null);
   const [url, setURL] = useState("");
   const [checking, setChecking] = useState(false);
-  const [review, setReview] = useState<PluginInspection | null>(initial ?? null);
+  const [review, setReview] = useState<PluginInspection | null>(null);
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -645,13 +591,6 @@ function Consent({
             .join(" · ")}
         </p>
         {r.installed && <p className="mt-1 text-xs text-ink">{t("plugins.replaces", { v: r.installed })}</p>}
-        {r.from_catalog && (
-          <div className="mt-1.5">
-            <Badge color={r.verified ? "green" : "gray"} size="xs">
-              {r.verified ? t("plugins.verified") : t("plugins.notVerified")}
-            </Badge>
-          </div>
-        )}
       </div>
 
       <ConsentList title={t("plugins.asks")} empty={t("plugins.permsNone")}>
@@ -818,133 +757,5 @@ function RemoveDialog({ plugin, onClose, onDone }: { plugin: PluginInfo; onClose
         <p className="text-[11px] text-ink-muted">{t("plugins.db", { size: fmtBytes(plugin.db_bytes) })}</p>
       </div>
     </Modal>
-  );
-}
-
-// CatalogPanel lists the signed catalog: install, update, and the address (a mirror).
-function CatalogPanel({
-  state,
-  busy,
-  canManage,
-  onRefresh,
-  onSaved,
-  onInstall,
-}: {
-  state: CatalogState | null;
-  busy: boolean;
-  canManage: boolean;
-  onRefresh: () => void;
-  onSaved: (s: CatalogState) => void;
-  onInstall: (item: CatalogItem) => void;
-}) {
-  const { t } = useTranslation();
-  const [editing, setEditing] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const save = async () => {
-    if (editing === null) return;
-    setSaving(true);
-    try {
-      onSaved(await setPluginCatalogURL(editing.trim()));
-      setEditing(null);
-    } catch (e) {
-      notifyError(errMessage(e));
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <Panel
-      title={t("plugins.catalog")}
-      aside={
-        <div className="flex gap-2">
-          {canManage && (
-            <Button size="sm" variant="light" color="gray" onClick={() => setEditing(state?.custom ? state.url : "")}>
-              {t("plugins.catalogMirror")}
-            </Button>
-          )}
-          <Button size="sm" variant="light" loading={busy} onClick={onRefresh}>
-            {t("plugins.catalogRefresh")}
-          </Button>
-        </div>
-      }
-    >
-      <p className="border-b border-brand-600/10 px-3.5 py-3 text-xs text-ink-muted">
-        {t("plugins.catalogIntro")}
-        {state && state.fetched_at > 0 && ` · ${t("plugins.catalogFetched", { at: fmtStamp(state.fetched_at) })}`}
-      </p>
-      {state?.error && (
-        <p className="border-b border-brand-600/10 px-3.5 py-2 text-xs text-warning">
-          {t("plugins.catalogUnreachable", { error: state.error })}
-        </p>
-      )}
-      {state === null ? (
-        <CenterLoader />
-      ) : state.plugins.length === 0 ? (
-        <EmptyState title={t("plugins.catalogEmpty")} body="" />
-      ) : (
-        <div className="divide-y divide-brand-600/10">
-          {state.plugins.map((c) => (
-            <div key={c.id} className="flex items-start gap-3 px-3.5 py-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <span className="text-sm font-semibold text-ink">{pickText(c.name) || c.id}</span>
-                  {c.latest && <span className="text-xs text-ink-muted">{t("plugins.version", { v: c.latest.version })}</span>}
-                  {c.latest?.verified && (
-                    <Badge color="green" size="xs">
-                      {t("plugins.verified")}
-                    </Badge>
-                  )}
-                  {c.installed && (
-                    <Badge color="gray" size="xs">
-                      {t("plugins.catalogInstalled", { v: c.installed })}
-                    </Badge>
-                  )}
-                </div>
-                {c.description && <p className="mt-0.5 text-xs text-ink-muted">{pickText(c.description)}</p>}
-                <p className="mt-1 text-[11px] text-ink-muted">
-                  {[
-                    c.author && t("plugins.by", { author: c.author }),
-                    c.homepage,
-                    (!c.latest || c.newest !== c.latest.version) && t("plugins.catalogNeedsPanel", { v: c.newest }),
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-              </div>
-              {canManage && c.latest && (!c.installed || c.update) && (
-                <Button size="sm" variant="light" disabled={busy} onClick={() => onInstall(c)}>
-                  {c.installed ? t("plugins.catalogUpdate", { v: c.latest.version }) : t("plugins.install")}
-                </Button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-      {editing !== null && (
-        <Modal
-          open
-          onClose={() => setEditing(null)}
-          title={t("plugins.catalogMirror")}
-          footer={
-            <div className="flex justify-end gap-2">
-              <Button variant="light" color="gray" onClick={() => setEditing(null)}>
-                {t("common.cancel")}
-              </Button>
-              <Button loading={saving} onClick={save}>
-                {t("common.save")}
-              </Button>
-            </div>
-          }
-        >
-          <TextInput
-            label={t("plugins.catalogMirror")}
-            value={editing}
-            onChange={setEditing}
-            placeholder="https://…/index.json"
-          />
-          <p className="mt-2 text-xs text-ink-muted">{t("plugins.catalogMirrorHint")}</p>
-        </Modal>
-      )}
-    </Panel>
   );
 }
