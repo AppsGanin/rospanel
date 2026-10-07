@@ -837,6 +837,8 @@ type Access struct {
 	Legal []LegalLink
 	// Blocks are what plugins add at the top of the page (internal/plugin).
 	Blocks []Block
+	// ThemeCSS is the theme plugin's stylesheet, applied over the page's own.
+	ThemeCSS string
 }
 
 // Block is one block a plugin adds: a note, Markdown, a notice or a button. HTML is

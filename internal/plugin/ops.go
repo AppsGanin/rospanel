@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -91,6 +92,9 @@ func (inst *instance) op(ctx context.Context, op string, arg []byte, o callOpts)
 	if strings.HasPrefix(op, "crypto.") {
 		return cryptoOp(op, arg)
 	}
+	if strings.HasPrefix(op, "blob.") {
+		return inst.opBlob(op, arg)
+	}
 	return nil, fmt.Errorf("unknown operation %q", op)
 }
 
@@ -173,6 +177,7 @@ func (inst *instance) opAPI(ctx context.Context, arg []byte, o callOpts) (any, e
 		Method string          `json:"method"`
 		Path   string          `json:"path"`
 		Body   json.RawMessage `json:"body"`
+		Blob   bool            `json:"blob"`
 	}](arg)
 	if err != nil {
 		return nil, err
@@ -196,10 +201,26 @@ func (inst *instance) opAPI(ctx context.Context, arg []byte, o callOpts) (any, e
 	if len(body) > maxAPIBody {
 		return nil, fmt.Errorf("panel.api: body over %d KB", maxAPIBody>>10)
 	}
-	status, resp, err := call(ctx, APIRequest{
+	req := APIRequest{
 		Plugin: inst.id, Perms: inst.rec.GrantedPerms, ReadOnly: o.readOnly,
 		Method: method, Path: a.Path, Body: body,
-	})
+	}
+	if a.Blob {
+		name, w, err := inst.newBlob()
+		if err != nil {
+			return nil, err
+		}
+		req.Sink = w
+		status, _, err := call(ctx, req)
+		if cerr := w.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			return nil, err
+		}
+		return apiResult{Status: status, Body: blobHandle{Blob: name, Size: w.file.size}}, nil
+	}
+	status, resp, err := call(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -221,9 +242,18 @@ type FetchRequest struct {
 	Headers   map[string]string `json:"headers"`
 	Body      string            `json:"body"`
 	TimeoutMS int               `json:"timeout_ms"`
+	// Blob: the answer's body goes to a new blob instead of the heap. BodyBlob sends
+	// a blob as the body; Form sends multipart/form-data (fields and blob files).
+	Blob     bool       `json:"blob,omitempty"`
+	BodyBlob string     `json:"body_blob,omitempty"`
+	Form     []FormPart `json:"form,omitempty"`
 	// MaxBytes raises the answer limit for the panel's own downloads (a package);
-	// a plugin cannot set it.
-	MaxBytes int `json:"-"`
+	// a plugin cannot set it. BodyReader/BodySize (-1: unknown) stream a body, Sink
+	// receives the answer's body: both set by the host for blobs.
+	MaxBytes   int       `json:"-"`
+	BodyReader io.Reader `json:"-"`
+	BodySize   int64     `json:"-"`
+	Sink       io.Writer `json:"-"`
 }
 
 // FetchResponse is its answer.
@@ -247,7 +277,27 @@ func (inst *instance) opFetch(ctx context.Context, arg []byte) (any, error) {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(req.TimeoutMS)*time.Millisecond)
 		defer cancel()
 	}
-	return f.Fetch(ctx, inst.rec.GrantedNet, req)
+	done, err := inst.fetchBody(ctx, &req)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	if !req.Blob {
+		return f.Fetch(ctx, inst.rec.GrantedNet, req)
+	}
+	name, w, err := inst.newBlob()
+	if err != nil {
+		return nil, err
+	}
+	req.Sink, req.MaxBytes = w, maxBlob
+	resp, err := f.Fetch(ctx, inst.rec.GrantedNet, req)
+	if cerr := w.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"status": resp.Status, "headers": resp.Headers, "body": blobHandle{Blob: name, Size: w.file.size}}, nil
 }
 
 // --- the plugin's log ---

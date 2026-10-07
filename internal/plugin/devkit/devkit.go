@@ -77,6 +77,8 @@ func packaged(rel string) bool {
 		return strings.HasSuffix(file, ".sql")
 	case "i18n/":
 		return strings.HasSuffix(file, ".json")
+	case "theme/":
+		return file != "" && !strings.HasPrefix(file, ".")
 	}
 	return false
 }

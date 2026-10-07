@@ -19,6 +19,7 @@ const (
 	maxFetchResponse = 4 << 20
 	maxFetchTimeout  = 30 * time.Second
 	maxRedirects     = 5
+	maxBlobTransfer  = 5 * time.Minute
 )
 
 // HTTPFetcher is panel.http.fetch. A plugin reaches only the hosts its manifest
@@ -124,7 +125,7 @@ func (f *HTTPFetcher) Fetch(ctx context.Context, allow []string, req FetchReques
 		return nil, fmt.Errorf("fetch: %s is not in the plugin's net allowlist", u.Hostname())
 	}
 	if len(req.Body) > maxFetchBody {
-		return nil, fmt.Errorf("fetch: body over %d KB", maxFetchBody>>10)
+		return nil, fmt.Errorf("fetch: body over %d KB — send a blob", maxFetchBody>>10)
 	}
 	method := strings.ToUpper(req.Method)
 	if method == "" {
@@ -134,9 +135,18 @@ func (f *HTTPFetcher) Fetch(ctx context.Context, allow []string, req FetchReques
 	if req.Body != "" {
 		body = strings.NewReader(req.Body)
 	}
+	if req.BodyReader != nil {
+		body = req.BodyReader
+	}
 	hr, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
 		return nil, fmt.Errorf("fetch: %w", err)
+	}
+	if req.BodyReader != nil {
+		hr.ContentLength = req.BodySize
+		if req.BodySize < 0 {
+			hr.ContentLength = -1 // chunked
+		}
 	}
 	for k, v := range req.Headers {
 		hr.Header.Set(k, v)
@@ -146,6 +156,9 @@ func (f *HTTPFetcher) Fetch(ctx context.Context, allow []string, req FetchReques
 	}
 
 	client := *f.client
+	if req.BodyReader != nil || req.Sink != nil {
+		client.Timeout = maxBlobTransfer // a blob moves more than a JSON answer; the call's deadline still bounds it
+	}
 	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
 		if len(via) >= maxRedirects {
 			return errors.New("fetch: too many redirects")
@@ -163,6 +176,20 @@ func (f *HTTPFetcher) Fetch(ctx context.Context, allow []string, req FetchReques
 	limit := maxFetchResponse
 	if req.MaxBytes > 0 {
 		limit = req.MaxBytes
+	}
+	if req.Sink != nil {
+		n, err := io.Copy(req.Sink, io.LimitReader(resp.Body, int64(limit)+1))
+		if err != nil {
+			return nil, fmt.Errorf("fetch: reading the answer: %w", err)
+		}
+		if n > int64(limit) {
+			return nil, fmt.Errorf("fetch: answer over %d MB", limit>>20)
+		}
+		out := &FetchResponse{Status: resp.StatusCode, Headers: map[string]string{}}
+		for k, v := range resp.Header {
+			out.Headers[strings.ToLower(k)] = strings.Join(v, ", ")
+		}
+		return out, nil
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
 	if err != nil {

@@ -40,15 +40,41 @@ interface HTTPResponse {
   body: string;
 }
 
+/**
+ * Data kept by the panel outside the plugin's memory, for the length of one call
+ * (up to 256 MB each, 512 MB and 16 blobs per call). A handle from another call is dead.
+ */
+interface Blob {
+  blob: string;
+  size: number;
+}
+
+/** A form field: text, a blob sent as a file, or a blob with its file name and type. */
+type FormValue = string | number | boolean | Blob | { blob: Blob; filename?: string; type?: string };
+
 interface PanelHTTP {
   /**
    * Requests a URL whose host is in the manifest's "net". A body that is not a
-   * string is sent as JSON. Private and local addresses are never reachable.
+   * string is sent as JSON; a Blob is sent as it is; `form` sends
+   * multipart/form-data. `blob: true` puts the answer in a Blob. Private and local
+   * addresses are never reachable.
    */
   fetch(
     url: string,
-    opts?: { method?: string; headers?: Record<string, string>; body?: unknown; timeout_ms?: number },
+    opts?: { method?: string; headers?: Record<string, string>; body?: unknown; timeout_ms?: number; form?: Record<string, FormValue>; blob?: false },
   ): HTTPResponse;
+  fetch(
+    url: string,
+    opts: { method?: string; headers?: Record<string, string>; body?: unknown; timeout_ms?: number; form?: Record<string, FormValue>; blob: true },
+  ): { status: number; headers: Record<string, string>; body: Blob };
+}
+
+interface PanelBlob {
+  /** A blob from text or {base64}. */
+  from(data: Data): Blob;
+  hash(b: Blob, alg: HashAlg, enc?: Encoding): string;
+  /** The blob as text (UTF-8) or base64 — up to 4 MB, into the plugin's memory. */
+  text(b: Blob, enc?: "base64"): string;
 }
 
 type HashAlg = "md5" | "sha1" | "sha256" | "sha512";
@@ -83,11 +109,14 @@ interface Panel {
   readonly db: PanelDB;
   readonly http: PanelHTTP;
   readonly crypto: PanelCrypto;
+  readonly blob: PanelBlob;
   /**
    * Calls the panel's REST API (/v1, see /v1/docs) with the permissions in the
-   * manifest. Inside a decision hook only GET is allowed.
+   * manifest. Inside a decision hook only GET is allowed. `{blob: true}` puts the
+   * answer's body in a Blob (an export too big for the plugin's memory).
    */
-  api<T = any>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown): APIResponse<T>;
+  api<T = any>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown, opts?: { blob?: false }): APIResponse<T>;
+  api(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body: unknown, opts: { blob: true }): APIResponse<Blob>;
   readonly users: {
     get<T = any>(id: number | string): APIResponse<T>;
     list<T = any>(query?: string): APIResponse<T>;

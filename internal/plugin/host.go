@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -51,6 +52,9 @@ type APIRequest struct {
 	Method   string
 	Path     string
 	Body     []byte
+	// Sink, when set, receives the answer's body instead of the returned bytes
+	// (panel.api with {blob: true}).
+	Sink io.Writer
 }
 
 // APICaller serves panel.api: the /v1 handler in-process, as the plugin.
@@ -137,6 +141,7 @@ type instance struct {
 	vm     *jsvm.VM
 	vmBase uint32 // the VM's memory right after loading
 	db     *pdb.DB
+	blobs  *blobSet // the running call's panel.blob files
 	fails  int
 	status string
 	errMsg string
@@ -177,6 +182,8 @@ func (h *Host) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Blobs of calls a crash or a kill cut short.
+	_ = os.RemoveAll(filepath.Join(h.deps.DataDir, "plugins", ".blobs"))
 	for _, rec := range recs {
 		inst := h.add(rec)
 		if rec.Enabled {

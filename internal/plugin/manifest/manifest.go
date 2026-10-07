@@ -129,6 +129,7 @@ type Provides struct {
 	Bot          *Bot        `json:"bot,omitempty"`
 	Price        bool        `json:"price,omitempty"`
 	Subscription bool        `json:"subscription,omitempty"`
+	Theme        bool        `json:"theme,omitempty"` // theme/theme.css restyles the subscription page
 }
 
 // CronJob runs the export of the same name on a schedule.
@@ -194,7 +195,7 @@ const (
 var Available = map[string]bool{
 	"events": true, "cron": true, "payment": true, "http": true,
 	"user_fields": true, "actions": true, "widgets": true, "sub_blocks": true, "channel": true,
-	"hooks": true, "price": true, "bot": true, "subscription": true,
+	"hooks": true, "price": true, "bot": true, "subscription": true, "theme": true,
 }
 
 // declared lists the points a manifest uses, by their provides key.
@@ -219,6 +220,7 @@ func (m *Manifest) declared() []string {
 	add(pr.Bot != nil, "bot")
 	add(pr.Price, "price")
 	add(pr.Subscription, "subscription")
+	add(pr.Theme, "theme")
 	return out
 }
 

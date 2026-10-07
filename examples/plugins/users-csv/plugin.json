@@ -1,0 +1,23 @@
+{
+  "id": "users-csv",
+  "version": "1.0.0",
+  "api": 1,
+  "panel": ">=4.4.0",
+  "name": {"ru": "Пользователи в CSV — в Telegram", "en": "Users as CSV to Telegram"},
+  "description": {
+    "ru": "Раз в неделю присылает в ваш чат Telegram файл CSV со всеми пользователями: имя, статус, трафик, окончание подписки.",
+    "en": "Once a week sends your Telegram chat a CSV file of all users: name, status, traffic, end of subscription."
+  },
+  "author": "RosPanel",
+  "license": "MIT",
+  "permissions": ["users.view"],
+  "net": ["api.telegram.org"],
+  "settings": [
+    {"key": "bot_token", "kind": "secret", "label": {"ru": "Токен бота", "en": "Bot token"}},
+    {"key": "chat_id", "kind": "text", "label": {"ru": "ID чата", "en": "Chat ID"}}
+  ],
+  "provides": {
+    "cron": [{"name": "weekly", "schedule": "0 9 * * 1"}],
+    "actions": [{"key": "send", "label": {"ru": "Прислать сейчас", "en": "Send now"}, "scope": "global", "perm": "users.view"}]
+  }
+}

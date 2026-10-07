@@ -1,0 +1,14 @@
+{
+  "id": "theme-night",
+  "version": "1.0.1",
+  "api": 1,
+  "panel": ">=4.4.0",
+  "name": {"ru": "Тема «Ночь» для страницы подписки", "en": "“Night” theme for the subscription page"},
+  "description": {
+    "ru": "Тёмное оформление страницы подписки со звёздным фоном. Кнопки и цвет бренда — ваши.",
+    "en": "A dark look for the subscription page with a starry background. Buttons and the brand colour stay yours."
+  },
+  "author": "RosPanel",
+  "license": "MIT",
+  "provides": {"theme": true}
+}

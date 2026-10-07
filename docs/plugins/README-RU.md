@@ -33,6 +33,7 @@ plugin.json            манифест
 main.js                весь код, один ES-модуль (можно собрать бандлером)
 migrations/0001_*.sql  своя база плагина, применяются по порядку имён
 i18n/ru.json, en.json  строки для panel.t()
+theme/theme.css, …     тема страницы подписки, с картинками и шрифтами
 README.md, icon.svg    показываются в панели
 ```
 
@@ -81,6 +82,7 @@ README.md, icon.svg    показываются в панели
 | `provides.bot` | `{"menu": true, "commands": [{"command", "description"}]}`: кнопки и команды в пользовательском боте панели. |
 | `provides.price` | `true`: плагин назначает цену тарифа для пользователя (`quotePrice`). Экспериментально. |
 | `provides.subscription` | `true`: плагин меняет то, что получают клиенты (`transformSubscription`). Экспериментально. |
+| `provides.theme` | `true`: `theme/theme.css` меняет оформление страницы подписки — см. ниже. |
 | `experimental` | Экспериментальные точки, которые использует плагин (`channel`, `price`, `subscription`): они ещё могут измениться. |
 | `db_quota_mb` | Лимит размера базы, по умолчанию 100, до 1024. |
 | `memory_mb` | Лимит памяти JavaScript, по умолчанию 32, до 128. |
@@ -222,6 +224,39 @@ JSON-документ). Верните ту же форму или `null`. Че�
 клиентом, поэтому ответ помнится 5 минут на пользователя и вход, а у плагина 0,3 с; ответ другой
 формы, ссылка не на прокси или ошибка — и клиент получает профиль панели.
 
+## Тема
+
+```
+theme/theme.css     стили поверх стилей страницы
+theme/stars.svg     картинки (png, jpg, webp, gif, svg) и шрифты (woff2, woff), которые они используют
+```
+
+Страница остаётся панельной — оплата, устройства, Telegram продолжают работать, — а тема меняет
+её вид. Цвета страницы — CSS-переменные: `--brand`, `--bg`, `--surface`, `--ink`, `--muted`,
+`--on-brand`, `--success-fg`, `--warning-fg`, `--danger-fg`; их переопределение — основная часть
+темы. `url()` может указывать только на файл из `theme/` (или `data:image/`, `data:font/`), а
+`@import` запрещён: страница, которая грузит что-то извне, висит там, где этот хост заблокирован.
+До 50 файлов, 1 МБ каждый, 3 МБ вместе. Если включено несколько тем, действует первая по порядку.
+Пример — [examples/plugins/theme-night](../../examples/plugins/theme-night).
+
+## Большие данные: blob
+
+Blob — данные, которые панель держит вне памяти плагина на время одного вызова: выгрузка для
+отправки, скачиваемый файл.
+
+```js
+const csv = panel.blob.from(text);                                   // или {base64}
+panel.http.fetch(url, { method: "PUT", body: csv });                   // отправляется как есть
+panel.http.fetch(url, { method: "POST", form: {                        // multipart/form-data
+  chat_id: "42", document: { blob: csv, filename: "users.csv", type: "text/csv" } } });
+const file = panel.http.fetch(url, { blob: true }).body;               // ответ — в blob
+const big = panel.api("GET", "/v1/…", null, { blob: true }).body;      // то же для API
+panel.blob.hash(file, "sha256"); panel.blob.text(file);                // text: до 4 МБ
+```
+
+До 256 МБ на blob, 16 blob и 512 МБ на вызов; ссылка, сохранённая до другого вызова, уже
+недействительна. Пример — [examples/plugins/users-csv](../../examples/plugins/users-csv).
+
 ## API панели
 
 Полный справочник с типами для редактора — `rospanel.d.ts`, его кладёт `plugin new`.
@@ -234,6 +269,7 @@ JSON-документ). Верните ту же форму или `null`. Че�
 | `panel.api(method, path, body)` | REST API панели (`/v1`, см. `/v1/docs`) с правами плагина. Изменения попадают в журнал панели от имени плагина. |
 | `panel.users.get/list/update` | Сокращения для `panel.api`. |
 | `panel.http.fetch(url, opts)` | Запросы к хостам из `net`. Приватные и локальные адреса недоступны никогда. |
+| `panel.blob.*` | `from`, `hash`, `text` — см. выше. |
 | `panel.crypto.*` | `hash`, `hmac` (md5, sha1, sha256, sha512), `sign`/`verify` (RS256, RS512, ES256, Ed25519), `jwt`, `randomHex`, `randomUUID`. |
 | `panel.t(key, params, lang)` | Строки из `i18n/`. |
 | `panel.log.*`, `console.*` | Лог плагина в панели. |

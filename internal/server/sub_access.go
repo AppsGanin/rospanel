@@ -7,6 +7,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/plugin"
+	"github.com/AppsGanin/rospanel/internal/plugin/manifest"
 	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/telegram"
 )
@@ -22,6 +23,11 @@ func (rt *Router) buildAccess(r *http.Request, u model.User, set *model.Settings
 	}
 	if privacy != "" {
 		a.Legal = append(a.Legal, sub.LegalLink{Title: sub.LegalTitle(model.LegalPrivacy, lang), URL: privacy})
+	}
+	if rt.plugins != nil {
+		if t, ok := rt.plugins.Theme(); ok {
+			a.ThemeCSS = sub.URL(set, u.SubToken) + "/theme/" + manifest.ThemeCSS + "?v=" + t.Version
+		}
 	}
 	for _, b := range rt.pluginBlocks(r.Context(), u, lang) {
 		if blk, ok := sub.NewBlock(b.Type, b.Text, b.Label, b.URL); ok {

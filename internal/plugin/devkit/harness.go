@@ -193,7 +193,17 @@ func (h *Harness) record(c Call) {
 
 // Fetch serves panel.http.fetch: a mock when one matches, the allowlist always.
 func (h *Harness) Fetch(ctx context.Context, allow []string, req plugin.FetchRequest) (*plugin.FetchResponse, error) {
-	h.record(Call{Kind: "http", Method: strings.ToUpper(req.Method), URL: req.URL, Body: req.Body})
+	recorded := req.Body
+	if req.BodyReader != nil && !h.RealHTTP {
+		// A blob or a form: what was sent is what the test checks (the first MB of it).
+		b, err := io.ReadAll(req.BodyReader)
+		if err != nil {
+			return nil, err
+		}
+		recorded = string(b[:min(len(b), 1<<20)])
+		req.BodyReader, req.BodySize = bytes.NewReader(b), int64(len(b))
+	}
+	h.record(Call{Kind: "http", Method: strings.ToUpper(req.Method), URL: req.URL, Body: recorded})
 	h.mu.Lock()
 	var hit *plugin.FetchResponse
 	for _, m := range h.http {
@@ -209,6 +219,12 @@ func (h *Harness) Fetch(ctx context.Context, allow []string, req plugin.FetchReq
 		// panel would refuse.
 		if err := plugin.Allowed(req.URL, allow); err != nil {
 			return nil, err
+		}
+		if req.Sink != nil {
+			if _, err := io.WriteString(req.Sink, hit.Body); err != nil {
+				return nil, err
+			}
+			hit.Body = ""
 		}
 		return hit, nil
 	}
@@ -232,6 +248,10 @@ func (h *Harness) serveAPI(ctx context.Context, req plugin.APIRequest) (int, []b
 	}
 	h.mu.Unlock()
 	if hit != nil {
+		if req.Sink != nil {
+			_, err := req.Sink.Write(hit.body)
+			return hit.status, nil, err
+		}
 		return hit.status, hit.body, nil
 	}
 	if h.Remote != nil {
@@ -261,6 +281,10 @@ func (r *Remote) call(ctx context.Context, req plugin.APIRequest) (int, []byte, 
 		return 0, nil, err
 	}
 	defer resp.Body.Close()
+	if req.Sink != nil {
+		_, err := io.Copy(req.Sink, resp.Body)
+		return resp.StatusCode, nil, err
+	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	return resp.StatusCode, b, err
 }

@@ -114,3 +114,28 @@ func TestFetchRequestAndRedirects(t *testing.T) {
 		}
 	}
 }
+
+// A blob body streams out with its length, and an answer streams into a sink.
+func TestFetchStreamsBlobs(t *testing.T) {
+	var gotLen int64
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotLen, got = r.ContentLength, string(b)
+		_, _ = io.WriteString(w, strings.Repeat("z", 5<<20)) // past the 4 MB a heap answer may have
+	}))
+	defer srv.Close()
+	f := NewFetcher()
+	f.denied = func(netip.Addr) bool { return false }
+	host := strings.TrimPrefix(srv.URL, "http://")
+	var sink strings.Builder
+	resp, err := f.Fetch(context.Background(), []string{host}, FetchRequest{
+		URL: srv.URL, Method: "PUT", BodyReader: strings.NewReader("blob!"), BodySize: 5, Sink: &sink, MaxBytes: 8 << 20,
+	})
+	if err != nil || resp.Status != 200 || sink.Len() != 5<<20 || resp.Body != "" {
+		t.Fatalf("%+v %v (sink %d)", resp, err, sink.Len())
+	}
+	if gotLen != 5 || got != "blob!" {
+		t.Fatalf("server got %d %q", gotLen, got)
+	}
+}

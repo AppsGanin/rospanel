@@ -97,6 +97,7 @@ function points(m: PluginManifest): string[] {
   if (p.bot) out.push(i18n.t("plugins.point.bot"));
   if (p.price) out.push(i18n.t("plugins.point.price"));
   if (p.subscription) out.push(i18n.t("plugins.point.subscription"));
+  if (p.theme) out.push(i18n.t("plugins.point.theme"));
   return out;
 }
 

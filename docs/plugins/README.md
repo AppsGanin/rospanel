@@ -33,6 +33,7 @@ plugin.json            the manifest
 main.js                all the code, one ES module (a bundler may build it)
 migrations/0001_*.sql  the plugin's own database, applied in name order
 i18n/ru.json, en.json  strings for panel.t()
+theme/theme.css, …     a theme of the subscription page, with its images and fonts
 README.md, icon.svg    shown in the panel
 ```
 
@@ -81,6 +82,7 @@ reads. `main.js` cannot `import` other files.
 | `provides.bot` | `{"menu": true, "commands": [{"command", "description"}]}`: buttons and commands in the panel's user bot. |
 | `provides.price` | `true`: the plugin prices plans per user (`quotePrice`). Experimental. |
 | `provides.subscription` | `true`: the plugin rewrites what clients are served (`transformSubscription`). Experimental. |
+| `provides.theme` | `true`: `theme/theme.css` restyles the subscription page — see below. |
 | `experimental` | The experimental points the plugin uses (`channel`, `price`, `subscription`): they may still change. |
 | `db_quota_mb` | The database size limit, 100 by default, up to 1024. |
 | `memory_mb` | The JavaScript heap limit, 32 by default, up to 128. |
@@ -223,6 +225,39 @@ export function transformSubscription({ user, format, links, config }) {
 here, so an answer is kept for 5 minutes per user and input, and each plugin has 0.3 s; an answer
 in another shape, a link that is not a proxy link, or a failure serves the panel's own profile.
 
+## A theme
+
+```
+theme/theme.css     the stylesheet, applied over the page's own
+theme/stars.svg     images (png, jpg, webp, gif, svg) and fonts (woff2, woff) it uses
+```
+
+The page stays the panel's — payments, devices, Telegram all keep working — and the theme
+changes how it looks. Its colours are CSS variables: `--brand`, `--bg`, `--surface`, `--ink`,
+`--muted`, `--on-brand`, `--success-fg`, `--warning-fg`, `--danger-fg`; overriding them is most
+of a theme. `url()` may name only a file of `theme/` (or a `data:image/`, `data:font/` URI) and
+`@import` is refused: a page that loads from elsewhere hangs where that host is blocked. Up to 50
+files, 1 MB each, 3 MB together. With several themes switched on, the first in order applies.
+See [examples/plugins/theme-night](../../examples/plugins/theme-night).
+
+## Big data: blobs
+
+A blob is data the panel keeps outside the plugin's memory for the length of one call: an
+export to upload, a file to download.
+
+```js
+const csv = panel.blob.from(text);                                   // or {base64}
+panel.http.fetch(url, { method: "PUT", body: csv });                   // sent as it is
+panel.http.fetch(url, { method: "POST", form: {                        // multipart/form-data
+  chat_id: "42", document: { blob: csv, filename: "users.csv", type: "text/csv" } } });
+const file = panel.http.fetch(url, { blob: true }).body;               // the answer as a blob
+const big = panel.api("GET", "/v1/…", null, { blob: true }).body;      // the same for the API
+panel.blob.hash(file, "sha256"); panel.blob.text(file);                // text: up to 4 MB
+```
+
+Up to 256 MB a blob, 16 blobs and 512 MB a call; a handle kept for another call is dead. See
+[examples/plugins/users-csv](../../examples/plugins/users-csv).
+
 ## The panel API
 
 `rospanel.d.ts` — written by `plugin new` — is the full reference, with types your
@@ -236,6 +271,7 @@ editor picks up.
 | `panel.api(method, path, body)` | The panel's REST API (`/v1`, see `/v1/docs`) with the plugin's permissions. Changes are recorded in the panel's journal under the plugin's name. |
 | `panel.users.get/list/update` | Shortcuts for `panel.api`. |
 | `panel.http.fetch(url, opts)` | Requests to the hosts in `net`. Private and local addresses are never reachable. |
+| `panel.blob.*` | `from`, `hash`, `text` — see above. |
 | `panel.crypto.*` | `hash`, `hmac` (md5, sha1, sha256, sha512), `sign`/`verify` (RS256, RS512, ES256, Ed25519), `jwt`, `randomHex`, `randomUUID`. |
 | `panel.t(key, params, lang)` | Strings from `i18n/`. |
 | `panel.log.*`, `console.*` | The plugin's log in the panel. |

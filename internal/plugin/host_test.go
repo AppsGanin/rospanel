@@ -13,6 +13,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -97,10 +98,22 @@ type harness struct {
 type fakeFetcher struct{ h *harness }
 
 func (f fakeFetcher) Fetch(_ context.Context, allow []string, req FetchRequest) (*FetchResponse, error) {
+	if req.BodyReader != nil {
+		b, err := io.ReadAll(req.BodyReader)
+		if err != nil {
+			return nil, err
+		}
+		req.Body = string(b)
+	}
 	f.h.apiMu.Lock()
 	f.h.fetchs = append(f.h.fetchs, req)
 	f.h.apiMu.Unlock()
-	return &FetchResponse{Status: 200, Body: "allow=" + strings.Join(allow, ",") + " " + req.Method + " " + req.Body}, nil
+	body := "allow=" + strings.Join(allow, ",") + " " + req.Method + " " + req.Body
+	if req.Sink != nil {
+		_, err := io.WriteString(req.Sink, body)
+		return &FetchResponse{Status: 200}, err
+	}
+	return &FetchResponse{Status: 200, Body: body}, nil
 }
 
 func newHarness(t *testing.T) *harness {
@@ -114,6 +127,10 @@ func newHarness(t *testing.T) *harness {
 			h.apiMu.Unlock()
 			if req.Path == "/v1/text" {
 				return 200, []byte("plain"), nil
+			}
+			if req.Sink != nil {
+				_, err := req.Sink.Write([]byte(`{"id": 12, "name": "bob"}`))
+				return 200, nil, err
 			}
 			return 200, []byte(`{"id": 12, "name": "bob"}`), nil
 		},

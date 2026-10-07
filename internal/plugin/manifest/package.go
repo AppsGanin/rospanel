@@ -38,8 +38,9 @@ type Package struct {
 	Migrations []pdb.Migration
 	I18n       map[string]map[string]string // lang → key → text
 	Readme     string
-	Icon       []byte // SVG
-	SHA256     string // of the zip as uploaded
+	Icon       []byte            // SVG
+	Theme      map[string][]byte // theme/ files by name (theme.go)
+	SHA256     string            // of the zip as uploaded
 	Raw        []byte
 }
 
@@ -135,10 +136,13 @@ func Read(raw []byte, panelVersion string) (*Package, error) {
 			} else {
 				pkg.I18n[lang] = dict
 			}
+		case strings.HasPrefix(name, themeFilePrefix):
+			pkg.readTheme(&p, name, b)
 		default:
-			p.addf("%s: not part of a plugin package (plugin.json, main.js, migrations/NNNN*.sql, i18n/<lang>.json, README.md, icon.svg, LICENSE, CHANGELOG.md)", name)
+			p.addf("%s: not part of a plugin package (plugin.json, main.js, migrations/NNNN*.sql, i18n/<lang>.json, theme/*, README.md, icon.svg, LICENSE, CHANGELOG.md)", name)
 		}
 	}
+	pkg.checkTheme(&p)
 	if len(pkg.Migrations) > maxMigrs {
 		p.addf("migrations: at most %d", maxMigrs)
 	}
@@ -223,10 +227,10 @@ func commonFolder(entries []*zip.File) string {
 
 // Translate looks a key up in the package's dictionaries: lang, then English, then
 // Russian, then the key itself. {name} placeholders are filled from params.
-func (p *Package) Translate(lang, key string, params map[string]string) string {
+func (pkg *Package) Translate(lang, key string, params map[string]string) string {
 	s := key
 	for _, l := range []string{lang, "en", "ru"} {
-		if v, ok := p.I18n[l][key]; ok {
+		if v, ok := pkg.I18n[l][key]; ok {
 			s = v
 			break
 		}

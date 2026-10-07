@@ -9,6 +9,7 @@
 
 	const call = (op, arg) => JSON.parse(host(op, JSON.stringify(arg === undefined ? null : arg)));
 	const str = (v) => (typeof v === "string" ? v : JSON.stringify(v));
+	const isBlob = (v) => v !== null && typeof v === "object" && typeof v.blob === "string" && typeof v.size === "number";
 
 	const log = (level) => (msg, fields) => {
 		call("log", { level, msg: str(msg), fields: fields === undefined ? null : fields });
@@ -66,22 +67,46 @@
 
 		// panel.api("GET", "/v1/users/12") → {status, body}. body is parsed JSON when the
 		// answer is JSON, the text otherwise.
-		api(method, path, body) {
-			return call("api", { method: String(method), path: String(path), body: body === undefined ? null : body });
+		// opts.blob: the answer's body becomes a blob (a backup, an export).
+		api(method, path, body, opts) {
+			return call("api", { method: String(method), path: String(path), body: body === undefined ? null : body, blob: !!(opts && opts.blob) });
 		},
 
 		http: Object.freeze({
 			// panel.http.fetch(url, {method, headers, body, timeout_ms}) → {status, headers, body}.
 			// body: a string is sent as is, anything else as JSON. The answer's body is text.
+			// A blob body is sent as is; opts.form sends multipart/form-data, a blob field as
+			// a file ({blob, filename, type} names it); opts.blob puts the answer in a blob.
 			fetch(url, opts) {
 				const o = opts || {};
 				let body = o.body;
+				let bodyBlob = "";
 				const headers = Object.assign({}, o.headers || {});
-				if (body !== undefined && body !== null && typeof body !== "string") {
+				if (isBlob(body)) {
+					bodyBlob = body.blob;
+					body = "";
+				} else if (body !== undefined && body !== null && typeof body !== "string") {
 					body = JSON.stringify(body);
 					if (!Object.keys(headers).some((h) => h.toLowerCase() === "content-type")) headers["Content-Type"] = "application/json";
 				}
-				return call("http.fetch", { url: String(url), method: o.method || "GET", headers, body: body == null ? "" : body, timeout_ms: o.timeout_ms || 0 });
+				const form = o.form
+					? Object.keys(o.form).map((name) => {
+							const v = o.form[name];
+							if (isBlob(v)) return { name, blob: v.blob };
+							if (v && typeof v === "object" && isBlob(v.blob)) return { name, blob: v.blob.blob, filename: v.filename || "", type: v.type || "" };
+							return { name, value: str(v) };
+						})
+					: undefined;
+				return call("http.fetch", {
+					url: String(url),
+					method: o.method || "GET",
+					headers,
+					body: body == null ? "" : body,
+					body_blob: bodyBlob,
+					form,
+					blob: !!o.blob,
+					timeout_ms: o.timeout_ms || 0,
+				});
 			},
 		}),
 
@@ -93,6 +118,13 @@
 			jwt: (alg, pem, claims, header) => call("crypto.jwt", { alg, pem, claims, header: header || null }),
 			randomHex: (n) => call("crypto.random", { n: n || 16 }),
 			randomUUID: () => call("crypto.uuid"),
+		}),
+
+		// Big data the host keeps outside the heap, for the length of one call.
+		blob: Object.freeze({
+			from: (data) => call("blob.from", { data }),
+			hash: (b, alg, enc) => call("blob.hash", { blob: b.blob, alg, enc: enc || "hex" }),
+			text: (b, enc) => call("blob.text", { blob: b.blob, enc: enc || "" }),
 		}),
 
 		t(key, params, lang) {

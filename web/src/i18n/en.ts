@@ -2371,6 +2371,7 @@ const en: Dict = {
       bot: "Adds bot buttons and commands",
       price: "Changes the price at checkout",
       subscription: "Changes subscription configs",
+      theme: "Restyles the subscription page",
     },
   },
 

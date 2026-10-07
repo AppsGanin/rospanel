@@ -70,9 +70,12 @@ func WriteWithManifest(dataDir string, m Manifest, w io.Writer) error {
 		// LocalBackupDir is skipped for a sharper reason: it holds previous archives,
 		// so including it would nest every backup inside the next one and blow the
 		// size up geometrically.
-		// cache/ holds the plugin engine's compiled code, rebuilt on the next start.
+		// cache/ holds the plugin engine's compiled code, rebuilt on the next start;
+		// plugins/.blobs a running plugin call's temporary files — the backup a
+		// plugin is fetching is being written there while this walks.
 		if info.IsDir() && (path == filepath.Join(dataDir, "bin") ||
 			path == filepath.Join(dataDir, "cache") ||
+			path == filepath.Join(dataDir, "plugins", ".blobs") ||
 			path == filepath.Join(dataDir, "geo") ||
 			path == filepath.Join(dataDir, "opera") ||
 			path == filepath.Join(dataDir, "logs") ||

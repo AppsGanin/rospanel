@@ -310,8 +310,33 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			_, _ = w.Write(b)
 			return
 		}
+		if name, ok := strings.CutPrefix(leaf, "theme/"); ok {
+			rt.serveThemeFile(w, r, name)
+			return
+		}
 		rt.currentDecoy().ServeHTTP(w, r)
 	}
+}
+
+// serveThemeFile serves a file of the page's theme plugin. Inert whatever it is: an
+// SVG opened on its own runs no script (sandbox), and nothing is sniffed into
+// something else. The URL changes with the package (?v=), so it caches for a day.
+func (rt *Router) serveThemeFile(w http.ResponseWriter, r *http.Request, name string) {
+	if rt.plugins == nil {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	b, ct, ok := rt.plugins.ThemeFile(name)
+	if !ok {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", ct)
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Security-Policy", "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox")
+	h.Set("Cache-Control", "private, max-age=86400")
+	_, _ = w.Write(b)
 }
 
 // handleSubApp serves the redirect page for one client deep link, chosen by its

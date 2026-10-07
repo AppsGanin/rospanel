@@ -79,6 +79,7 @@ func (inst *instance) invoke(ctx context.Context, export string, arg []byte, tim
 	if inst.db != nil {
 		inst.db.EndCall()
 	}
+	inst.dropBlobs()
 	if inst.vm != nil {
 		grown := float64(inst.vm.Memory()) - float64(inst.vmBase)
 		if limit := float64(inst.pkg.Manifest.Memory()); grown > recycleAt*limit {
