@@ -3386,7 +3386,52 @@ export interface PluginInspection {
   installed?: string
   added_perms?: Perm[]
   added_net?: string[]
+  // from_catalog: the package matched the signed catalog; verified: its code was reviewed.
+  from_catalog?: boolean
+  verified?: boolean
 }
+
+export interface CatalogVersion {
+  version: string
+  panel?: string
+  sha256: string
+  size: number
+  perms?: Perm[]
+  net?: string[]
+  verified?: boolean
+  published_at?: number
+}
+
+export interface CatalogItem {
+  id: string
+  name: PluginText
+  description?: PluginText
+  author?: string
+  homepage?: string
+  // latest runs on this panel; newest may need a newer one.
+  latest?: CatalogVersion
+  newest: string
+  installed?: string
+  installed_verified?: boolean
+  update?: boolean
+}
+
+export interface CatalogState {
+  url: string
+  custom: boolean
+  fetched_at: number
+  error?: string
+  plugins: CatalogItem[]
+}
+
+export const getPluginCatalog = (refresh = false) =>
+  api<CatalogState>(`api/plugins/catalog${refresh ? '?refresh=1' : ''}`)
+
+export const setPluginCatalogURL = (url: string) =>
+  api<CatalogState>('api/plugins/catalog', { method: 'PUT', body: JSON.stringify({ url }) })
+
+export const inspectCatalogPlugin = (id: string, version?: string) =>
+  api<PluginInspection>('api/plugins/catalog/inspect', { method: 'POST', body: JSON.stringify({ id, version }) })
 
 export interface PluginLogLine {
   at: number

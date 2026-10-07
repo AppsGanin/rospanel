@@ -550,6 +550,19 @@ func checkHost(h string) string {
 	return ""
 }
 
+// VersionLess reports whether version a is older than b (X.Y.Z).
+func VersionLess(a, b string) bool { return versionLess(a, b) }
+
+// PanelAllows reports whether a manifest's "panel" requirement (">=X.Y.Z", or none)
+// is met by panelVersion.
+func PanelAllows(require, panelVersion string) bool {
+	min, ok := strings.CutPrefix(strings.TrimSpace(require), ">=")
+	if !ok || panelVersion == "" {
+		return true
+	}
+	return !versionLess(panelVersion, strings.TrimSpace(min))
+}
+
 // versionLess compares strict X.Y.Z versions (a pre-release suffix on the panel's
 // own version is ignored).
 func versionLess(a, b string) bool {

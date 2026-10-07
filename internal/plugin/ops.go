@@ -221,6 +221,9 @@ type FetchRequest struct {
 	Headers   map[string]string `json:"headers"`
 	Body      string            `json:"body"`
 	TimeoutMS int               `json:"timeout_ms"`
+	// MaxBytes raises the answer limit for the panel's own downloads (a package);
+	// a plugin cannot set it.
+	MaxBytes int `json:"-"`
 }
 
 // FetchResponse is its answer.

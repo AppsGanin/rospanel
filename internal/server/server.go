@@ -44,6 +44,7 @@ type Router struct {
 	plugins  *plugin.Host // installed plugins (internal/plugin); set once before serving
 	// pluginUploads holds inspected packages between the consent screen and the install.
 	pluginUploads pluginUploads
+	pluginCatalog pluginCatalog // the plugin catalog (panel_plugin_catalog.go)
 	assets        http.Handler
 	indexRaw      []byte // index.html before <base href> injection
 	limiter       *loginLimiter

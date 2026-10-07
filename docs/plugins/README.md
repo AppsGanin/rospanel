@@ -291,6 +291,19 @@ the previous version and a copy of the database taken before the new migrations:
 
 An update asking for more permissions or hosts shows the operator the difference.
 
+## The catalog
+
+The panel lists the community catalog under **Settings → Plugins → Catalog**: install and
+update from there go through the same consent screen as a zip. The catalog's index is signed
+with a key built into the panel, and a package is installed only if its sha256 is the one in
+the index. "Reviewed" marks a version whose code the catalog's maintainers read. The panel tells
+the operator about a new version once and never updates by itself.
+
+To publish a plugin, open a pull request in
+[rospanel-plugins](https://github.com/AppsGanin/rospanel-plugins) with
+`plugins/<id>/<id>-<version>.zip` and a link to its source. Where GitHub is unreachable, an
+operator can point the panel at a mirror — a copy of that folder; the signature is the same.
+
 ## How the panel treats a plugin
 
 - It runs in a WebAssembly sandbox: no files, no processes, no network except through

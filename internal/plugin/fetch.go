@@ -160,12 +160,16 @@ func (f *HTTPFetcher) Fetch(ctx context.Context, allow []string, req FetchReques
 		return nil, fmt.Errorf("fetch: %w", err)
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, maxFetchResponse+1))
+	limit := maxFetchResponse
+	if req.MaxBytes > 0 {
+		limit = req.MaxBytes
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
 	if err != nil {
 		return nil, fmt.Errorf("fetch: reading the answer: %w", err)
 	}
-	if len(b) > maxFetchResponse {
-		return nil, fmt.Errorf("fetch: answer over %d MB", maxFetchResponse>>20)
+	if len(b) > limit {
+		return nil, fmt.Errorf("fetch: answer over %d MB", limit>>20)
 	}
 	out := &FetchResponse{Status: resp.StatusCode, Headers: map[string]string{}, Body: string(b)}
 	for k, v := range resp.Header {

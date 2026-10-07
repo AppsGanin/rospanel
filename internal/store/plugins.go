@@ -115,3 +115,37 @@ func splitList(s string) []string {
 	}
 	return strings.Split(s, ",")
 }
+
+// PluginCatalogURL is the catalog index the panel reads; "" for the official one.
+func (s *Store) PluginCatalogURL() (string, error) {
+	var u string
+	err := s.db.QueryRow(`SELECT url FROM plugin_catalog WHERE id = 1`).Scan(&u)
+	return u, err
+}
+
+// SetPluginCatalogURL sets the catalog index ("" = the official one).
+func (s *Store) SetPluginCatalogURL(u string) error {
+	_, err := s.db.Exec(`UPDATE plugin_catalog SET url = ? WHERE id = 1`, u)
+	return err
+}
+
+// PluginUpdatesNotified is {plugin: version} of the new versions already announced.
+func (s *Store) PluginUpdatesNotified() (map[string]string, error) {
+	var raw string
+	if err := s.db.QueryRow(`SELECT notified FROM plugin_catalog WHERE id = 1`).Scan(&raw); err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	_ = json.Unmarshal([]byte(raw), &out)
+	return out, nil
+}
+
+// SetPluginUpdatesNotified records the new versions announced.
+func (s *Store) SetPluginUpdatesNotified(m map[string]string) error {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE plugin_catalog SET notified = ? WHERE id = 1`, string(b))
+	return err
+}

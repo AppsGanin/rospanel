@@ -455,6 +455,7 @@ var ru = map[string]string{
 	"notify.trafficPeriodDay":    "сутки",
 	"notify.nodeAWGDown":         "⚠️ <b>Туннель AmneziaWG не поднят</b>\n%s\nЛейн для этого сервера включён, значит его пользователи через него не подключатся.",
 	"notify.nodeAWGBack":         "✅ <b>Туннель AmneziaWG снова работает</b>\n%s",
+	"notify.pluginUpdate":        "🆕 <b>Плагин %s: в каталоге версия %s → %s</b>.\nОбновить — Настройки → Плагины → Каталог.",
 	"notify.pluginPaused":        "⏸ <b>Плагин %s остановлен</b>\n%s\nВключите его снова в Настройках → Плагины, когда причина устранена.",
 	"notify.nodeBack":            "✅ <b>Связь с сервером восстановлена</b>",
 	"notify.nodeXrayCrashed":     "⚠️ <b>Xray аварийно завершился</b>\n%s\nАгент перезапускает процесс автоматически.",
