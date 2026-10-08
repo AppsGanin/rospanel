@@ -201,18 +201,19 @@ export function PluginStudio({
           </div>
         </div>
         {view && (
-          <div className="order-last w-full sm:order-none sm:w-auto">
-            <SegmentedControl data={tabs} value={tab} onChange={(v) => setTab(v as Tab)} nav size="xs" />
+          // One height with the buttons beside it (h-8, a small button's).
+          <div className="order-last w-full sm:order-none sm:w-auto [&>div]:h-8 [&_button]:py-0">
+            <SegmentedControl data={tabs} value={tab} onChange={(v) => setTab(v as Tab)} nav />
           </div>
         )}
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="light" color="gray" loading={checking} onClick={runCheck}>
+          <Button size="sm" className="h-8" variant="light" color="gray" loading={checking} onClick={runCheck}>
             {t("studio.check")}
           </Button>
           <Dropdown
             width={220}
             trigger={
-              <Button size="sm" variant="light" color="gray">
+              <Button size="sm" className="h-8" variant="light" color="gray">
                 {t("studio.download")}
               </Button>
             }
@@ -220,7 +221,7 @@ export function PluginStudio({
             <DropdownItem href={pluginDraftDownloadURL(draftId, "package")}>{t("studio.downloadPackage")}</DropdownItem>
             <DropdownItem href={pluginDraftDownloadURL(draftId, "sources")}>{t("studio.downloadSources")}</DropdownItem>
           </Dropdown>
-          <Button size="sm" loading={installing} onClick={install}>
+          <Button size="sm" className="h-8" loading={installing} onClick={install}>
             {t("studio.install")}
           </Button>
         </div>
