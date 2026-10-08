@@ -179,6 +179,15 @@ var auditActions = map[string]auditRoute{
 	"POST /api/plugins/{id}/disable":  act(model.AuditPluginDisabled),
 	"POST /api/plugins/{id}/config":   act(model.AuditPluginConfigured),
 	"DELETE /api/plugins/{id}":        act(model.AuditPluginUninstalled),
+	// A draft changes nothing the panel runs until it is installed — through the
+	// install above, which is audited.
+	"POST /api/plugin-drafts":              skip,
+	"PUT /api/plugin-drafts/{id}":          skip,
+	"DELETE /api/plugin-drafts/{id}":       skip,
+	"POST /api/plugin-drafts/{id}/check":   skip,
+	"POST /api/plugin-drafts/{id}/test":    skip,
+	"POST /api/plugin-drafts/{id}/run":     skip,
+	"POST /api/plugin-drafts/{id}/inspect": skip,
 	// A plugin's button: what it did is the plugin's (its panel.api calls are
 	// journaled under its name); that this admin pressed it is recorded here.
 	"POST /api/plugin-actions/{plugin}/{key}": act(model.AuditPluginAction),

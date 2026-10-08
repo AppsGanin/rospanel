@@ -17,6 +17,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/plugin"
+	"github.com/AppsGanin/rospanel/internal/plugin/jsvm"
 )
 
 // Harness runs one plugin on the real host, against a temporary directory, with
@@ -28,8 +29,9 @@ type Harness struct {
 
 	mu    sync.Mutex
 	http  []httpMock
-	api   []apiMock
+	mocks []apiMock
 	calls []Call
+	api   plugin.APICaller // answers what no mock does (Options.API)
 
 	// Remote, when set, answers panel.api for real (dev against a panel).
 	Remote *Remote
@@ -68,6 +70,11 @@ type Options struct {
 	Settings     map[string]string
 	PanelVersion string
 	Log          io.Writer // the plugin's log lines as they come; nil discards
+	// Engine, when set, is a running panel's: its compiled guest is reused.
+	Engine *jsvm.Engine
+	// API, when set, answers panel.api calls no mock answers (a trial run in the
+	// panel), in place of the "add a mock" refusal.
+	API plugin.APICaller
 }
 
 // Start installs and enables the package on a fresh host under a temporary
@@ -77,14 +84,14 @@ func Start(ctx context.Context, raw []byte, o Options) (*Harness, error) {
 	if err != nil {
 		return nil, err
 	}
-	h := &Harness{dir: dir, fetcher: plugin.NewFetcher()}
+	h := &Harness{dir: dir, fetcher: plugin.NewFetcher(), api: o.API}
 	lg := slog.New(slog.DiscardHandler)
 	if o.Log != nil {
 		lg = slog.New(slog.NewTextHandler(o.Log, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	}
 	h.Host = plugin.New(plugin.Deps{
 		Store: newMemStore(), DataDir: dir, PanelVersion: o.PanelVersion,
-		API: h.serveAPI, Fetch: h, Logger: lg, NoBreaker: true,
+		API: h.serveAPI, Fetch: h, Logger: lg, NoBreaker: true, Engine: o.Engine,
 	})
 	if err := h.load(ctx, raw, o.Settings, false); err != nil {
 		h.Close()
@@ -170,14 +177,17 @@ func (h *Harness) mockHTTP(prefix string, resp plugin.FetchResponse) {
 func (h *Harness) mockAPI(method, path string, status int, body []byte) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.api = append([]apiMock{{strings.ToUpper(method), path, status, body}}, h.api...)
+	h.mocks = append([]apiMock{{strings.ToUpper(method), path, status, body}}, h.mocks...)
 }
 
 func (h *Harness) resetMocks() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.http, h.api, h.calls = nil, nil, nil
+	h.http, h.mocks, h.calls = nil, nil, nil
 }
+
+// Calls lists the requests the plugin made: to the internet and to panel.api.
+func (h *Harness) Calls() []Call { return h.recorded() }
 
 func (h *Harness) recorded() []Call {
 	h.mu.Lock()
@@ -240,9 +250,9 @@ func (h *Harness) serveAPI(ctx context.Context, req plugin.APIRequest) (int, []b
 	h.record(Call{Kind: "api", Method: req.Method, URL: req.Path, Body: string(req.Body)})
 	h.mu.Lock()
 	var hit *apiMock
-	for i, m := range h.api {
+	for i, m := range h.mocks {
 		if m.method == req.Method && (m.path == req.Path || (strings.HasSuffix(m.path, "*") && strings.HasPrefix(req.Path, strings.TrimSuffix(m.path, "*")))) {
-			hit = &h.api[i]
+			hit = &h.mocks[i]
 			break
 		}
 	}
@@ -256,6 +266,9 @@ func (h *Harness) serveAPI(ctx context.Context, req plugin.APIRequest) (int, []b
 	}
 	if h.Remote != nil {
 		return h.Remote.call(ctx, req)
+	}
+	if h.api != nil {
+		return h.api(ctx, req)
 	}
 	body, _ := json.Marshal(map[string]string{
 		"error": fmt.Sprintf("panel.api is mocked here: add mock.api(%q, %q, {...}) to the test, or run dev with --panel and --key", req.Method, req.Path),

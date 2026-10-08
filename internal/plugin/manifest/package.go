@@ -152,6 +152,19 @@ func Read(raw []byte, panelVersion string) (*Package, error) {
 	return pkg, nil
 }
 
+// Unpack reads a zip's files safely — the same checks as Read, without asking
+// them to be a package: a plugin's sources carried to and from the panel.
+func Unpack(raw []byte) (map[string][]byte, error) {
+	if len(raw) > MaxPackage {
+		return nil, Problems{fmt.Sprintf("zip: larger than %d MB", MaxPackage>>20)}
+	}
+	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		return nil, Problems{"zip: not a zip archive: " + err.Error()}
+	}
+	return unpack(zr)
+}
+
 // unpack reads every file of the zip into memory, checking names and sizes as it
 // goes, and strips one common top-level folder.
 func unpack(zr *zip.Reader) (map[string][]byte, error) {

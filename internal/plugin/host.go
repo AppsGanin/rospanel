@@ -82,6 +82,9 @@ type Deps struct {
 	// NoBreaker keeps failing plugins running: the author tools, where a test makes a
 	// plugin fail on purpose. Never set in a panel.
 	NoBreaker bool
+	// Engine, when set, is shared with another host (the panel's, for a sandbox run
+	// of a draft): its compiled guest is reused and it is not closed with this host.
+	Engine *jsvm.Engine
 }
 
 // Call timeouts per kind of call.
@@ -124,6 +127,7 @@ type Host struct {
 	deps   Deps
 	log    *slog.Logger
 	engine *jsvm.Engine
+	shared bool // engine belongs to another host
 
 	mu      sync.RWMutex
 	plugins map[string]*instance
@@ -193,13 +197,21 @@ func New(deps Deps) *Host {
 	if lg == nil {
 		lg = slog.Default()
 	}
+	engine, shared := deps.Engine, deps.Engine != nil
+	if !shared {
+		engine = jsvm.NewEngine(jsvm.Options{CacheDir: filepath.Join(deps.DataDir, "cache", "wasm")})
+	}
 	return &Host{
 		deps:    deps,
 		log:     lg.With("component", "plugins"),
-		engine:  jsvm.NewEngine(jsvm.Options{CacheDir: filepath.Join(deps.DataDir, "cache", "wasm")}),
+		engine:  engine,
+		shared:  shared,
 		plugins: map[string]*instance{},
 	}
 }
+
+// Engine is the host's VM engine, for a sandbox host to share (Deps.Engine).
+func (h *Host) Engine() *jsvm.Engine { return h.engine }
 
 // Start loads every installed plugin and starts the enabled ones. A plugin that
 // fails to start is marked and logged; Start itself only fails on the store.
@@ -327,6 +339,9 @@ func (h *Host) Close(ctx context.Context) error {
 		inst.status = model.PluginDisabled // a call queued behind this one must not start a VM
 		inst.publish()
 		inst.mu.Unlock()
+	}
+	if h.shared {
+		return nil
 	}
 	return h.engine.Close(ctx)
 }
@@ -675,6 +690,15 @@ func (inst *instance) rollback(ctx context.Context) error {
 		return inst.start(ctx)
 	}
 	return nil
+}
+
+// Package is the installed plugin's package, to open in the panel's editor.
+func (h *Host) Package(id string) ([]byte, error) {
+	inst, err := h.get(id)
+	if err != nil {
+		return nil, err
+	}
+	return inst.pub.Load().rec.Package, nil
 }
 
 // PrevPermissions are what the version a rollback would restore was granted.

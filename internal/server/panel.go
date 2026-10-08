@@ -592,6 +592,19 @@ func (rt *Router) panelMux() http.Handler {
 	canPluginsManage("POST /api/plugins/{id}/disable", rt.pluginAction((*plugin.Host).Disable))
 	canPluginsManage("POST /api/plugins/{id}/config", rt.configurePlugin)
 	canPluginsManage("DELETE /api/plugins/{id}", rt.uninstallPlugin)
+	// Drafts (panel_plugin_drafts.go): plugins written here. Running one, even in the
+	// sandbox, is running code — so all of it is plugins.manage.
+	canPluginsManage("GET /api/plugin-drafts", rt.listPluginDrafts)
+	canPluginsManage("GET /api/plugin-drafts/types", rt.pluginDraftTypes)
+	canPluginsManage("POST /api/plugin-drafts", rt.createPluginDraft)
+	canPluginsManage("GET /api/plugin-drafts/{id}", withID(rt.getPluginDraft))
+	canPluginsManage("PUT /api/plugin-drafts/{id}", withID(rt.savePluginDraft))
+	canPluginsManage("DELETE /api/plugin-drafts/{id}", withID(rt.deletePluginDraft))
+	canPluginsManage("POST /api/plugin-drafts/{id}/check", withID(rt.checkPluginDraft))
+	canPluginsManage("POST /api/plugin-drafts/{id}/test", withID(rt.testPluginDraft))
+	canPluginsManage("POST /api/plugin-drafts/{id}/run", withID(rt.runPluginDraft))
+	canPluginsManage("GET /api/plugin-drafts/{id}/download", withID(rt.downloadPluginDraft))
+	canPluginsManage("POST /api/plugin-drafts/{id}/inspect", withID(rt.inspectPluginDraft))
 	// What plugins add to the panel's own screens. A button is gated by its own
 	// permission inside the handler — each declares one — so the route takes any.
 	on(model.AllPerms()...)("GET /api/plugin-actions", rt.listPluginActions)

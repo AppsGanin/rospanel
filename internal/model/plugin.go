@@ -99,3 +99,22 @@ type BotCommandInfo struct {
 	Command     string `json:"command"`
 	Description string `json:"description"`
 }
+
+// PluginDraft is a plugin being written in the panel.
+type PluginDraft struct {
+	ID        int64             `json:"id"`
+	Name      string            `json:"name"`
+	Mode      string            `json:"mode"` // builder | code
+	PluginID  string            `json:"plugin_id"`
+	Version   string            `json:"version"`
+	Files     map[string][]byte `json:"-"`
+	CreatedBy string            `json:"created_by"`
+	CreatedAt int64             `json:"created_at"`
+	UpdatedAt int64             `json:"updated_at"`
+}
+
+// Draft modes: the rule builder writes the files, or they are edited by hand.
+const (
+	DraftBuilder = "builder"
+	DraftCode    = "code"
+)

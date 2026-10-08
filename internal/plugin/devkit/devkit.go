@@ -28,17 +28,18 @@ var templateFS embed.FS
 
 var idRe = regexp.MustCompile(`^[a-z][a-z0-9-]{2,39}$`)
 
-// New writes a new plugin from the template into dir (which must not exist or be
-// empty). id names the plugin; panelVersion fills "panel": ">=…".
-func New(dir, id, panelVersion string) ([]string, error) {
+// Files are a plugin's sources by their slash-separated path: a directory read
+// into memory, or a draft the panel keeps.
+type Files map[string][]byte
+
+// TemplateFiles is the template for a new plugin: id names it, panelVersion fills
+// "panel": ">=…".
+func TemplateFiles(id, panelVersion string) (Files, error) {
 	if !idRe.MatchString(id) {
 		return nil, fmt.Errorf("id %q: 3-40 characters of a-z, 0-9 and -, starting with a letter", id)
 	}
-	if entries, err := os.ReadDir(dir); err == nil && len(entries) > 0 {
-		return nil, fmt.Errorf("%s is not empty", dir)
-	}
 	name := strings.ToUpper(id[:1]) + strings.ReplaceAll(id[1:], "-", " ")
-	var written []string
+	out := Files{}
 	err := fs.WalkDir(templateFS, "template", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
@@ -52,15 +53,41 @@ func New(dir, id, panelVersion string) ([]string, error) {
 			rel = strings.TrimSuffix(rel, ".tmpl")
 			b = []byte(strings.NewReplacer("{{ID}}", id, "{{NAME}}", name, "{{PANEL}}", panelVersion).Replace(string(b)))
 		}
+		out[rel] = b
+		return nil
+	})
+	return out, err
+}
+
+// TypesFile is rospanel.d.ts, the types of the panel API an editor completes from.
+func TypesFile() []byte {
+	b, _ := templateFS.ReadFile("template/rospanel.d.ts")
+	return b
+}
+
+// New writes a new plugin from the template into dir (which must not exist or be
+// empty).
+func New(dir, id, panelVersion string) ([]string, error) {
+	if entries, err := os.ReadDir(dir); err == nil && len(entries) > 0 {
+		return nil, fmt.Errorf("%s is not empty", dir)
+	}
+	files, err := TemplateFiles(id, panelVersion)
+	if err != nil {
+		return nil, err
+	}
+	var written []string
+	for rel, b := range files {
 		out := filepath.Join(dir, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
-			return err
+			return nil, err
+		}
+		if err := os.WriteFile(out, b, 0o644); err != nil {
+			return nil, err
 		}
 		written = append(written, rel)
-		return os.WriteFile(out, b, 0o644)
-	})
+	}
 	sort.Strings(written)
-	return written, err
+	return written, nil
 }
 
 // packaged reports whether a file of a plugin directory goes into the package.
@@ -83,10 +110,11 @@ func packaged(rel string) bool {
 	return false
 }
 
-// Pack zips a plugin directory. skipped lists the files left out.
-func Pack(dir string) (raw []byte, skipped []string, err error) {
-	var files []string
-	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+// ReadDir reads a plugin directory into Files, leaving out hidden directories,
+// node_modules and earlier packs.
+func ReadDir(dir string) (Files, error) {
+	files := Files{}
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -98,34 +126,51 @@ func Pack(dir string) (raw []byte, skipped []string, err error) {
 			}
 			return nil
 		}
-		switch {
-		case packaged(rel):
-			files = append(files, rel)
-		case strings.HasSuffix(rel, ".zip"): // an earlier pack's output
-		default:
-			skipped = append(skipped, rel)
+		if strings.HasSuffix(rel, ".zip") { // an earlier pack's output
+			return nil
 		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		files[rel] = b
 		return nil
 	})
+	return files, err
+}
+
+// Pack zips a plugin directory. skipped lists the files left out.
+func Pack(dir string) (raw []byte, skipped []string, err error) {
+	files, err := ReadDir(dir)
 	if err != nil {
 		return nil, nil, err
 	}
-	sort.Strings(files)
+	return PackFiles(files)
+}
+
+// PackFiles zips what goes into a package; skipped lists the rest (test.js, the
+// editor's files, sources a bundler built main.js from).
+func PackFiles(files Files) (raw []byte, skipped []string, err error) {
+	var names []string
+	for rel := range files {
+		if packaged(rel) {
+			names = append(names, rel)
+		} else {
+			skipped = append(skipped, rel)
+		}
+	}
+	sort.Strings(names)
+	sort.Strings(skipped)
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
-	for _, rel := range files {
-		b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
-		if err != nil {
-			return nil, nil, err
-		}
+	for _, rel := range names {
 		// No timestamp: the same sources make the same zip, so its sha256 — what the
-		// consent screen and a catalog pin — depends on the content only.
-		hdr := &zip.FileHeader{Name: rel, Method: zip.Deflate}
-		f, err := w.CreateHeader(hdr)
+		// consent screen pins — depends on the content only.
+		f, err := w.CreateHeader(&zip.FileHeader{Name: rel, Method: zip.Deflate})
 		if err != nil {
 			return nil, nil, err
 		}
-		if _, err := f.Write(b); err != nil {
+		if _, err := f.Write(files[rel]); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -133,6 +178,30 @@ func Pack(dir string) (raw []byte, skipped []string, err error) {
 		return nil, nil, err
 	}
 	return buf.Bytes(), skipped, nil
+}
+
+// ZipFiles zips every file as it is: the sources, to carry on with in an editor.
+func ZipFiles(files Files) ([]byte, error) {
+	names := make([]string, 0, len(files))
+	for rel := range files {
+		names = append(names, rel)
+	}
+	sort.Strings(names)
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	for _, rel := range names {
+		f, err := w.CreateHeader(&zip.FileHeader{Name: rel, Method: zip.Deflate})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := f.Write(files[rel]); err != nil {
+			return nil, err
+		}
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // ReadPackage loads what `validate`, `test` and `dev` work on: a directory (packed

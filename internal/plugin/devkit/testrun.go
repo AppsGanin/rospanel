@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -32,26 +30,55 @@ type TestResult struct {
 // host, the way the panel would make them, and mock.* answers what the plugin asks
 // of the panel and the internet.
 func RunTests(ctx context.Context, dir, panelVersion string, out io.Writer) (results []TestResult, err error) {
-	src, err := os.ReadFile(filepath.Join(dir, "test.js"))
-	if err != nil {
-		return nil, fmt.Errorf("test.js: %w", err)
-	}
-	raw, _, err := Pack(dir)
+	files, err := ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := ReadDevConfig(dir)
+	return RunTestFiles(ctx, files, TestOptions{PanelVersion: panelVersion, Out: out})
+}
+
+// TestOptions run a plugin's tests.
+type TestOptions struct {
+	PanelVersion string
+	Out          io.Writer    // the report and test.js's console; nil discards
+	Engine       *jsvm.Engine // a running panel's, to reuse its compiled guest
+	// NoReport leaves the ✓/✗ lines out of Out (the panel lists the results
+	// itself); test.js's own console output still goes there.
+	NoReport bool
+}
+
+// RunTestFiles is RunTests on sources in memory: test.js and dev.config.json among
+// them.
+func RunTestFiles(ctx context.Context, files Files, o TestOptions) (results []TestResult, err error) {
+	out := o.Out
+	if out == nil {
+		out = io.Discard
+	}
+	src, ok := files["test.js"]
+	if !ok {
+		return nil, errors.New("test.js: there is no test.js")
+	}
+	raw, _, err := PackFiles(files)
 	if err != nil {
 		return nil, err
 	}
-	h, err := Start(ctx, raw, Options{Settings: cfg.Settings, PanelVersion: panelVersion})
+	var cfg DevConfig
+	if b, ok := files["dev.config.json"]; ok {
+		if err := json.Unmarshal(b, &cfg); err != nil {
+			return nil, fmt.Errorf("dev.config.json: %w", err)
+		}
+	}
+	h, err := Start(ctx, raw, Options{Settings: cfg.Settings, PanelVersion: o.PanelVersion, Engine: o.Engine})
 	if err != nil {
 		return nil, err
 	}
 	defer h.Close()
 
-	engine := jsvm.NewEngine(jsvm.Options{})
-	defer engine.Close(ctx)
+	engine := o.Engine
+	if engine == nil {
+		engine = jsvm.NewEngine(jsvm.Options{})
+		defer engine.Close(ctx)
+	}
 	vm, err := engine.NewVM(ctx, jsvm.Limits{Memory: 64 << 20})
 	if err != nil {
 		return nil, err
@@ -75,6 +102,9 @@ func RunTests(ctx context.Context, dir, panelVersion string, out io.Writer) (res
 		return nil, err
 	}
 	for _, r := range results {
+		if o.NoReport {
+			break
+		}
 		if r.OK {
 			fmt.Fprintf(out, "  ✓ %s\n", r.Name)
 			continue
