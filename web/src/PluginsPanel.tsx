@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import {
   configurePlugin,
   disablePlugin,
@@ -34,10 +34,12 @@ import {
   Code,
   cn,
   EmptyState,
+  IconExport,
   Modal,
   Panel,
   PasswordInput,
   Select,
+  Spinner,
   Switch,
   Textarea,
   TextInput,
@@ -461,8 +463,6 @@ function InstallDialog({
   onDone: () => void;
 }) {
   const { t } = useTranslation();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [url, setURL] = useState("");
   const [checking, setChecking] = useState(false);
   const [review, setReview] = useState<PluginInspection | null>(null);
   const [password, setPassword] = useState("");
@@ -514,6 +514,13 @@ function InstallDialog({
       onClose={onClose}
       size="lg"
       title={update ? t("plugins.updateTitle") : t("plugins.installTitle")}
+      subtitle={
+        review
+          ? undefined
+          : update
+            ? t("plugins.updateFrom", { name: pickText(update.manifest?.name) || update.id, v: update.version })
+            : t("plugins.installNote")
+      }
       footer={
         review && (
           <div className="flex justify-end gap-2">
@@ -528,37 +535,119 @@ function InstallDialog({
       }
     >
       {!review ? (
-        <div className="flex flex-col gap-3">
-          <div>
-            <p className="mb-1 text-xs font-medium text-ink">{t("plugins.file")}</p>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".zip,application/zip"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.currentTarget.files?.[0];
-                if (f) inspect(() => inspectPluginFile(f));
-                e.currentTarget.value = "";
-              }}
-            />
-            <Button variant="light" loading={checking} onClick={() => fileRef.current?.click()}>
-              {t("plugins.chooseFile")}
-            </Button>
-          </div>
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
-              <TextInput label={t("plugins.url")} value={url} onChange={setURL} placeholder="https://…/plugin.zip" />
-            </div>
-            <Button variant="light" disabled={!url.trim()} loading={checking} onClick={() => inspect(() => inspectPluginURL(url.trim()))}>
-              {t("plugins.check")}
-            </Button>
-          </div>
-        </div>
+        <PackagePicker
+          checking={checking}
+          onFile={(f) => inspect(() => inspectPluginFile(f))}
+          onURL={(u) => inspect(() => inspectPluginURL(u))}
+        />
       ) : (
         <Consent review={review} password={password} onPassword={setPassword} />
       )}
     </Modal>
+  );
+}
+
+// PackagePicker is the first step: a zip dropped or chosen, or a link to one.
+function PackagePicker({
+  checking,
+  onFile,
+  onURL,
+}: {
+  checking: boolean;
+  onFile: (f: File) => void;
+  onURL: (url: string) => void;
+}) {
+  const { t } = useTranslation();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [url, setURL] = useState("");
+  const [over, setOver] = useState(false);
+
+  const take = (f: File | undefined) => {
+    if (!f || checking) return;
+    if (!/\.zip$/i.test(f.name)) {
+      notifyError(t("plugins.notZip"));
+      return;
+    }
+    onFile(f);
+  };
+  const link = url.trim();
+
+  return (
+    <div className="flex flex-col gap-4">
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".zip,application/zip"
+        className="hidden"
+        onChange={(e) => {
+          take(e.currentTarget.files?.[0]);
+          e.currentTarget.value = "";
+        }}
+      />
+      <button
+        type="button"
+        disabled={checking}
+        onClick={() => fileRef.current?.click()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!over) setOver(true);
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setOver(false);
+          take(e.dataTransfer.files?.[0]);
+        }}
+        className={cn(
+          "group flex w-full flex-col items-center justify-center gap-2.5 rounded-xl border-2 border-dashed px-6 py-9 text-center",
+          "transition duration-150 outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
+          over
+            ? "border-brand-500 bg-brand-50"
+            : "border-gray-300 bg-gray-50 hover:border-brand-400 hover:bg-brand-50/60",
+          checking && "cursor-wait",
+        )}
+      >
+        <span
+          className={cn(
+            "mb-1 flex size-12 items-center justify-center rounded-full bg-white text-brand-600 shadow-sm ring-1 ring-brand-100",
+            "transition duration-150 group-hover:-translate-y-0.5",
+            over && "-translate-y-1 scale-105",
+          )}
+        >
+          {checking ? <Spinner size={22} /> : <IconExport size={22} />}
+        </span>
+        <span className="text-sm font-semibold text-ink">
+          {checking ? t("plugins.checking") : over ? t("plugins.dropRelease") : t("plugins.dropTitle")}
+        </span>
+        <span className="text-xs text-ink-muted">
+          <Trans
+            i18nKey="plugins.dropHint"
+            components={{ code: <code className="rounded bg-white px-1 py-0.5 font-mono text-[11px] text-ink ring-1 ring-gray-200" /> }}
+          />
+        </span>
+      </button>
+
+      <div className="flex items-center gap-3 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
+        <span className="h-px flex-1 bg-gray-200" />
+        {t("plugins.orLink")}
+        <span className="h-px flex-1 bg-gray-200" />
+      </div>
+
+      <form
+        className="flex items-stretch gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (link && !checking) onURL(link);
+        }}
+      >
+        <div className="min-w-0 flex-1">
+          <TextInput value={url} onChange={setURL} placeholder="https://…/plugin.zip" className="h-full" />
+        </div>
+        <Button type="submit" size="sm" variant="light" disabled={!link || checking}>
+          {t("plugins.check")}
+        </Button>
+      </form>
+    </div>
   );
 }
 
