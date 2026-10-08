@@ -2307,6 +2307,7 @@ const en: Dict = {
     statusActive: "running",
     statusDisabled: "off",
     statusPaused: "paused",
+    retryAt: "The panel starts it again at {{at}}",
     statusError: "error",
     version: "version {{v}}",
     by: "by {{author}}",

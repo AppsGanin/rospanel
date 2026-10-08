@@ -2305,6 +2305,7 @@ const ru = {
     statusDisabled: "выключен",
     statusPaused: "остановлен",
     statusError: "ошибка",
+    retryAt: "Панель запустит его снова в {{at}}",
     version: "версия {{v}}",
     by: "автор: {{author}}",
     asks: "Доступ к панели",

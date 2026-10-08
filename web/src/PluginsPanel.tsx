@@ -79,23 +79,29 @@ export function permLabel(p: Perm): string {
 }
 
 // points lists in words what the manifest says the plugin plugs into.
-function points(m: PluginManifest): string[] {
+// points lists what a plugin hooks into, keyed as plugin.json's provides.
+function points(m: PluginManifest): { key: string; text: string }[] {
   const p = m.provides ?? {};
-  const out: string[] = [];
-  if (p.events?.length) out.push(i18n.t("plugins.point.events", { list: p.events.join(", ") }));
-  if (p.cron?.length) out.push(i18n.t("plugins.point.cron"));
-  if (p.payment) out.push(i18n.t("plugins.point.payment"));
-  if (p.http) out.push(i18n.t("plugins.point.http"));
-  if (p.hooks?.length) out.push(i18n.t("plugins.point.hooks"));
-  if (p.channel) out.push(i18n.t("plugins.point.channel"));
-  if (p.user_fields?.length) out.push(i18n.t("plugins.point.user_fields"));
-  if (p.actions?.length) out.push(i18n.t("plugins.point.actions"));
-  if (p.widgets?.length) out.push(i18n.t("plugins.point.widgets"));
-  if (p.sub_blocks) out.push(i18n.t("plugins.point.sub_blocks"));
-  if (p.bot) out.push(i18n.t("plugins.point.bot"));
-  if (p.price) out.push(i18n.t("plugins.point.price"));
-  if (p.subscription) out.push(i18n.t("plugins.point.subscription"));
-  if (p.theme) out.push(i18n.t("plugins.point.theme"));
+  const out: { key: string; text: string }[] = [];
+  type Point = "events" | "cron" | "payment" | "http" | "hooks" | "channel" | "user_fields" | "actions"
+    | "widgets" | "sub_blocks" | "bot" | "price" | "subscription" | "theme";
+  const add = (on: unknown, key: Point, text?: string) => {
+    if (on) out.push({ key, text: text ?? i18n.t(`plugins.point.${key}`) });
+  };
+  add(p.events?.length, "events", i18n.t("plugins.point.events", { list: p.events?.join(", ") }));
+  add(p.cron?.length, "cron");
+  add(p.payment, "payment");
+  add(p.http, "http");
+  add(p.hooks?.length, "hooks");
+  add(p.channel, "channel");
+  add(p.user_fields?.length, "user_fields");
+  add(p.actions?.length, "actions");
+  add(p.widgets?.length, "widgets");
+  add(p.sub_blocks, "sub_blocks");
+  add(p.bot, "bot");
+  add(p.price, "price");
+  add(p.subscription, "subscription");
+  add(p.theme, "theme");
   return out;
 }
 
@@ -283,6 +289,9 @@ function PluginRow({
           {m?.description && <p className="mt-0.5 text-xs text-ink-muted">{pickText(m.description)}</p>}
           {p.status_error && (
             <p className="mt-1 whitespace-pre-wrap break-words text-xs text-danger">{p.status_error}</p>
+          )}
+          {p.retry_at && p.status !== "active" && (
+            <p className="mt-1 text-xs text-ink-muted">{t("plugins.retryAt", { at: fmtStamp(p.retry_at) })}</p>
           )}
           {p.missing_setup && p.missing_setup.length > 0 && p.status !== "active" && (
             <p className="mt-1 text-xs text-warning">
@@ -651,16 +660,15 @@ function PackagePicker({
         }}
         className={cn(
           "group flex w-full flex-col items-center justify-center gap-2.5 rounded-xl border-2 border-dashed px-6 py-9 text-center",
-          "transition duration-150 outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
-          over
-            ? "border-brand-500 bg-brand-50"
-            : "border-gray-300 bg-gray-50 hover:border-brand-400 hover:bg-brand-50/60",
+          "transition duration-150 outline-none focus-visible:ring-2 focus-visible:ring-brand-500/25",
+          // accent-tint, not bg-brand-50: a fixed light blue that glares on a dark theme
+          over ? "accent-tint border-brand-500" : "accent-tint-hover border-gray-300 bg-gray-50 hover:border-brand-400",
           checking && "cursor-wait",
         )}
       >
         <span
           className={cn(
-            "mb-1 flex size-12 items-center justify-center rounded-full bg-white text-brand-600 shadow-sm ring-1 ring-brand-100",
+            "mb-1 flex size-12 items-center justify-center rounded-full bg-white text-accent shadow-sm ring-1 ring-gray-200",
             "transition duration-150 group-hover:-translate-y-0.5",
             over && "-translate-y-1 scale-105",
           )}
@@ -773,7 +781,14 @@ function Consent({
       {does.length > 0 && (
         <ConsentList title={t("plugins.does")} empty="">
           {does.map((d) => (
-            <li key={d}>{d}</li>
+            <li key={d.key} className="flex flex-wrap items-center gap-1.5">
+              {d.text}
+              {r.added_points?.includes(d.key) && (
+                <Badge color="orange" size="xs">
+                  {t("plugins.newInVersion")}
+                </Badge>
+              )}
+            </li>
           ))}
         </ConsentList>
       )}

@@ -647,7 +647,7 @@ export function TR({
     <tr
       className={cn(
         "border-t border-gray-100",
-        selected && "bg-brand-50/60",
+        selected && "accent-tint",
         className,
       )}
     >
@@ -794,7 +794,7 @@ function Field({ label, children }: { label?: string; children: ReactNode }) {
 const inputCls =
   "w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-[13px] text-ink outline-none " +
   "" +
-  "placeholder:text-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100";
+  "placeholder:text-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25";
 
 export function TextInput({
   label,
@@ -1000,7 +1000,7 @@ function popoverDrop(rect: DOMRect, want: number, gutter = 8, gap = 4) {
 
 const triggerBase =
   'flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white text-left text-ink ' +
-  'outline-none transition hover:border-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100'
+  'outline-none transition hover:border-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25'
 const triggerCls = triggerBase + ' px-3 py-1.5 text-[13px]'
 // The compact trigger is as tall as an IconButton, for a select that sits in a row of them.
 const triggerSmCls = triggerBase + ' h-8 px-2.5 text-xs'
@@ -1178,7 +1178,7 @@ export function TagsInput({
       <div
         ref={boxRef}
         onClick={() => inputRef.current?.focus()}
-        className="flex w-full cursor-text flex-wrap items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm transition focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-100"
+        className="flex w-full cursor-text flex-wrap items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm transition focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/25"
       >
         {value.map((v) => (
           <span

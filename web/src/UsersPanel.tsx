@@ -848,7 +848,7 @@ function UserRow({
       }}
       className={cn(
         "grid cursor-pointer items-center gap-3 border-b border-gray-100 px-5 py-[7px] transition last:border-0",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-100",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/25",
         checked
           ? "accent-tint"
           : limited

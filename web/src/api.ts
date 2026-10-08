@@ -3375,6 +3375,7 @@ export interface PluginInfo {
   http_url?: string
   payment_key?: string
   payment_webhook?: string
+  retry_at?: number
 }
 
 export interface PluginInspection {
@@ -3387,6 +3388,7 @@ export interface PluginInspection {
   installed?: string
   added_perms?: Perm[]
   added_net?: string[]
+  added_points?: string[]
 }
 
 export interface PluginLogLine {
