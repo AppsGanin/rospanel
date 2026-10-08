@@ -810,12 +810,15 @@ export function TextInput({
   autoComplete,
   name,
   nav,
+  ariaLabel,
 }: {
   label?: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   type?: string;
+  // The accessible name of a field shown without a label.
+  ariaLabel?: string;
   autoFocus?: boolean;
   mono?: boolean;
   disabled?: boolean;
@@ -850,6 +853,7 @@ export function TextInput({
         inputMode={inputMode}
         autoComplete={autoComplete}
         name={name}
+        aria-label={ariaLabel}
         onChange={(e) => onChange(e.currentTarget.value)}
       />
     </Field>
@@ -1625,10 +1629,13 @@ export function Switch({
   checked,
   onChange,
   disabled,
+  label,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
+  // The accessible name, for a switch with no visible label of its own.
+  label?: string;
 }) {
   const readOnly = useReadOnly();
   disabled = disabled || readOnly;
@@ -1637,6 +1644,7 @@ export function Switch({
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(

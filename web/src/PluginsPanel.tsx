@@ -43,6 +43,7 @@ import {
   Switch,
   Textarea,
   TextInput,
+  useConfirm,
 } from "./ui";
 
 // Plugins: what the operator installed, what each may do, and its switches. The
@@ -116,8 +117,11 @@ export function PluginsPanel() {
 
   const load = () =>
     listPlugins()
-      .then((r) => setPlugins(r.plugins))
-      .catch((e) => notifyError(errMessage(e)));
+      .then((r) => setPlugins(r.plugins ?? []))
+      .catch((e) => {
+        setPlugins((cur) => cur ?? []);
+        notifyError(errMessage(e));
+      });
   // biome-ignore lint/correctness/useExhaustiveDependencies: once, on mount
   useEffect(() => {
     load();
@@ -162,6 +166,7 @@ export function PluginsPanel() {
                 onCode={() => setCodeOf(p)}
                 onUpdate={() => setInstalling({ update: p })}
                 onRemove={() => setRemoving(p)}
+                onReload={load}
               />
             ))}
           </div>
@@ -175,6 +180,7 @@ export function PluginsPanel() {
           onClose={() => setInstalling(null)}
           onDone={() => {
             setInstalling(null);
+            forgetPluginActions();
             load();
           }}
         />
@@ -187,6 +193,7 @@ export function PluginsPanel() {
           onClose={() => setRemoving(null)}
           onDone={() => {
             setRemoving(null);
+            forgetPluginActions();
             load();
           }}
         />
@@ -203,6 +210,7 @@ function PluginRow({
   onCode,
   onUpdate,
   onRemove,
+  onReload,
 }: {
   plugin: PluginInfo;
   canManage: boolean;
@@ -211,8 +219,12 @@ function PluginRow({
   onCode: () => void;
   onUpdate: () => void;
   onRemove: () => void;
+  // onReload refetches the list: a failed switch or save can still have changed the
+  // plugin on the server (its status, its stored settings).
+  onReload: () => void;
 }) {
   const { t } = useTranslation();
+  const { confirm, confirmNode } = useConfirm();
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const m = p.manifest;
@@ -227,14 +239,34 @@ function PluginRow({
       if (ok) notifySuccess(ok(next));
     } catch (e) {
       notifyError(errMessage(e));
+      onReload();
     } finally {
       setBusy(false);
     }
   };
 
+  // The switch is what the operator chose (enabled); the badge is what runs. A plugin
+  // paused by the panel or failed to start is still switched on — turning it off is
+  // one click, and "start again" retries it.
   const toggle = (on: boolean) => {
     forgetPluginActions();
     return run(() => (on ? enablePlugin(p.id) : disablePlugin(p.id)));
+  };
+  const rollback = async () => {
+    if (
+      !(await confirm({
+        title: t("plugins.rollbackTitle", { v: p.prev_version }),
+        body: t("plugins.rollbackConfirm"),
+        danger: true,
+      }))
+    ) {
+      return;
+    }
+    forgetPluginActions();
+    await run(
+      () => rollbackPlugin(p.id),
+      (n) => t("plugins.rolledBack", { v: n.version }),
+    );
   };
 
   return (
@@ -264,9 +296,10 @@ function PluginRow({
           </p>
         </div>
         <Switch
-          checked={p.status === "active"}
+          checked={p.enabled}
           disabled={!canManage || busy}
           onChange={toggle}
+          label={t("plugins.enabledLabel", { name: pickText(m?.name) || p.id })}
         />
       </div>
 
@@ -283,16 +316,21 @@ function PluginRow({
       )}
 
       <div className="flex flex-wrap gap-1.5">
+        {canManage && p.enabled && p.status !== "active" && (
+          <Button size="xs" variant="light" loading={busy} onClick={() => toggle(true)}>
+            {t("plugins.startAgain")}
+          </Button>
+        )}
         {hasSettings && (
-          <Button size="xs" variant="light" color="gray" onClick={() => setOpen((v) => !v)}>
+          <Button size="xs" variant="light" color="gray" nav onClick={() => setOpen((v) => !v)}>
             {t("plugins.settings")}
           </Button>
         )}
         {p.status === "active" && <PluginActionButtons scope="global" plugin={p.id} />}
-        <Button size="xs" variant="light" color="gray" onClick={onLogs}>
+        <Button size="xs" variant="light" color="gray" nav onClick={onLogs}>
           {t("plugins.logs")}
         </Button>
-        <Button size="xs" variant="light" color="gray" onClick={onCode}>
+        <Button size="xs" variant="light" color="gray" nav onClick={onCode}>
           {t("plugins.code")}
         </Button>
         {canManage && (
@@ -306,12 +344,7 @@ function PluginRow({
                 variant="light"
                 color="gray"
                 loading={busy}
-                onClick={() =>
-                  run(
-                    () => rollbackPlugin(p.id),
-                    (n) => t("plugins.rolledBack", { v: n.version }),
-                  )
-                }
+                onClick={rollback}
               >
                 {t("plugins.rollback", { v: p.prev_version })}
               </Button>
@@ -325,6 +358,8 @@ function PluginRow({
 
       {open && m && (
         <SettingsForm
+          // A new package (update, rollback) brings its own fields: start the form over.
+          key={p.sha256}
           plugin={p}
           fields={m.settings ?? []}
           canManage={canManage}
@@ -332,8 +367,10 @@ function PluginRow({
             onChange(n);
             notifySuccess(t("plugins.saved"));
           }}
+          onFailed={onReload}
         />
       )}
+      {confirmNode}
     </div>
   );
 }
@@ -349,16 +386,26 @@ function SettingsForm({
   fields,
   canManage,
   onSaved,
+  onFailed,
 }: {
   plugin: PluginInfo;
   fields: PluginField[];
   canManage: boolean;
   onSaved: (p: PluginInfo) => void;
+  onFailed: () => void;
 }) {
   const { t } = useTranslation();
+  // What the form starts from is what it sends: a select shows its first option and
+  // a switch shows "off", so those are the values, not "" the server would drop.
   const initial = () => {
     const v: Record<string, string> = {};
-    for (const f of fields) v[f.key] = f.kind === "secret" ? "" : (plugin.config[f.key] ?? "");
+    for (const f of fields) {
+      const stored = plugin.config[f.key] ?? f.default ?? "";
+      if (f.kind === "secret") v[f.key] = "";
+      else if (f.kind === "bool") v[f.key] = stored === "1" || stored === "true" ? "true" : "false";
+      else if (f.kind === "select") v[f.key] = stored || f.options?.[0]?.value || "";
+      else v[f.key] = stored;
+    }
     return v;
   };
   const [values, setValues] = useState(initial);
@@ -377,6 +424,7 @@ function SettingsForm({
       });
     } catch (e) {
       notifyError(errMessage(e));
+      onFailed();
     } finally {
       setSaving(false);
     }
@@ -393,9 +441,10 @@ function SettingsForm({
             return (
               <label key={f.key} className="flex items-center gap-2 text-xs text-ink">
                 <Switch
-                  checked={values[f.key] === "1" || values[f.key] === "true"}
-                  onChange={(v) => set(f.key, v ? "1" : "")}
+                  checked={values[f.key] === "true"}
+                  onChange={(v) => set(f.key, v ? "true" : "false")}
                   disabled={!canManage}
+                  label={label}
                 />
                 {label}
                 {help && <span className="text-[11px] text-ink-muted">— {help}</span>}
@@ -409,7 +458,7 @@ function SettingsForm({
                 <Select
                   label={label}
                   data={opts}
-                  value={values[f.key] || opts[0]?.value || ""}
+                  value={values[f.key]}
                   onChange={(v) => set(f.key, v)}
                   disabled={!canManage}
                 />
@@ -489,8 +538,10 @@ function InstallDialog({
     setSaving(true);
     try {
       const name = pickText(review.manifest.name);
-      if (update) {
-        const n = await updatePlugin(update.id, review, password);
+      // A package whose id is already installed is an update, from either button.
+      const target = update?.id ?? (review.installed ? review.manifest.id : "");
+      if (target) {
+        const n = await updatePlugin(target, review, password);
         notifySuccess(t("plugins.updatedTo", { v: n.version }));
       } else {
         await installPlugin(review, password);
@@ -641,7 +692,13 @@ function PackagePicker({
         }}
       >
         <div className="min-w-0 flex-1">
-          <TextInput value={url} onChange={setURL} placeholder="https://…/plugin.zip" className="h-full" />
+          <TextInput
+            value={url}
+            onChange={setURL}
+            placeholder="https://…/plugin.zip"
+            ariaLabel={t("plugins.linkLabel")}
+            className="h-full"
+          />
         </div>
         <Button type="submit" size="sm" variant="light" disabled={!link || checking}>
           {t("plugins.check")}
@@ -746,12 +803,18 @@ function ConsentList({ title, empty, children }: { title: string; empty: string;
 function LogsDialog({ plugin, onClose }: { plugin: PluginInfo; onClose: () => void }) {
   const { t } = useTranslation();
   const [lines, setLines] = useState<PluginLogLine[] | null>(null);
+  const failed = useRef(false);
+  // Polled: a failed poll keeps what is shown and says so once, not every 5 s.
   const load = () =>
     getPluginLogs(plugin.id)
-      .then((r) => setLines(r.lines ?? []))
+      .then((r) => {
+        failed.current = false;
+        setLines(r.lines ?? []);
+      })
       .catch((e) => {
-        setLines([]);
-        notifyError(errMessage(e));
+        setLines((cur) => cur ?? []);
+        if (!failed.current) notifyError(errMessage(e));
+        failed.current = true;
       });
   // biome-ignore lint/correctness/useExhaustiveDependencies: once per opened plugin
   useEffect(() => {
@@ -789,14 +852,17 @@ function LogsDialog({ plugin, onClose }: { plugin: PluginInfo; onClose: () => vo
 function CodeDialog({ plugin, onClose }: { plugin: PluginInfo; onClose: () => void }) {
   const { t } = useTranslation();
   const [code, setCode] = useState<string | null>(null);
+  const [failed, setFailed] = useState("");
   useEffect(() => {
     getPluginCode(plugin.id)
-      .then((r) => setCode(r.code))
-      .catch((e) => notifyError(errMessage(e)));
+      .then((r) => setCode(r.code ?? ""))
+      .catch((e) => setFailed(errMessage(e)));
   }, [plugin.id]);
   return (
     <Modal open onClose={onClose} size="xl" title={t("plugins.codeTitle", { name: pickText(plugin.manifest?.name) || plugin.id })}>
-      {code === null ? (
+      {failed ? (
+        <p className="py-6 text-center text-xs text-danger">{failed}</p>
+      ) : code === null ? (
         <CenterLoader />
       ) : (
         <pre className="max-h-[65vh] overflow-auto rounded-lg bg-gray-50 p-3 font-mono text-[11px] leading-relaxed text-ink">

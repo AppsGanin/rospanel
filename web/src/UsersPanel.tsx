@@ -685,7 +685,12 @@ export function UsersPanel({
                   </Button>
                 </>
               )}
-              <PluginActionButtons scope="users" userIds={[...selected]} />
+              <PluginActionButtons
+                scope="users"
+                userIds={[...selected]}
+                disabled={pending !== null || selected.size > 1000}
+                onDone={refresh}
+              />
               {canDelete && (
                 <Button size="xs" variant="outline" color="red" disabled={pending !== null} onClick={() => setConfirmDelete(true)}>
                   {t("common.delete")}

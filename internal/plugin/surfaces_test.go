@@ -185,3 +185,26 @@ func TestChannelDelivery(t *testing.T) {
 		t.Fatalf("channel.send got %s", sent)
 	}
 }
+
+// A widget reaches the dashboard only in the shape its type promises: a list that
+// is not an array, or an object where text belongs, used to take the page down.
+func TestValidWidgetShapes(t *testing.T) {
+	for raw, want := range map[string]bool{
+		`{"type":"stat","value":7,"hint":"seven"}`:            true,
+		`{"type":"stat","value":"7"}`:                         true,
+		`{"type":"stat","value":{"a":1}}`:                     false,
+		`{"type":"stat","value":1,"hint":{"a":1}}`:            false,
+		`{"type":"list","items":["a",1,true,null]}`:           true,
+		`{"type":"list","items":"x"}`:                         false,
+		`{"type":"list","items":[{"a":1}]}`:                   false,
+		`{"type":"list"}`:                                     false,
+		`{"type":"table","columns":["a"],"rows":[["x"],[2]]}`: true,
+		`{"type":"table","columns":{},"rows":[]}`:             false,
+		`{"type":"table","columns":["a"],"rows":["x"]}`:       false,
+		`{"type":"chart"}`:                                    false,
+	} {
+		if got := validWidget(json.RawMessage(raw)); got != want {
+			t.Errorf("%s: %v, want %v", raw, got, want)
+		}
+	}
+}

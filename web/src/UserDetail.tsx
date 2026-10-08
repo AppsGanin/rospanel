@@ -1034,7 +1034,7 @@ export function UserDetail({
           </ReadOnly>
 
           {/* What plugins know about this account, and their buttons for it. */}
-          <UserPluginPanel userId={user.id} />
+          <UserPluginPanel userId={user.id} onChanged={onChanged} />
 
           {/* The balance, its ledger and the referral standing — billing's to see. */}
           {billingOn && canBillingView && <UserWallet userId={user.id} onOpenUser={onOpenUser} />}

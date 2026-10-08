@@ -271,6 +271,12 @@ func (rt *Router) configurePlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	info, err := h.SetConfig(r.Context(), r.PathValue("id"), req.Values)
+	var problems manifest.Problems
+	if errors.As(err, &problems) {
+		// A value the form refused, not the package: say so in those words.
+		writeErrDetail(w, http.StatusBadRequest, "err.pluginSettings", "настройки не подходят: ", err.Error())
+		return
+	}
 	if err != nil {
 		writePluginErr(w, err)
 		return
@@ -429,7 +435,8 @@ func (rt *Router) runPluginAction(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, plugin.ErrNoAction), errors.Is(err, plugin.ErrNotActive), errors.Is(err, plugin.ErrNotFound):
 		writeErrCode(w, http.StatusNotFound, "err.pluginNotFound", "плагин не установлен")
 	case err != nil:
-		writePluginErr(w, err)
+		// The plugin ran and failed (or refused the selection): not a start failure.
+		writeErrDetail(w, http.StatusUnprocessableEntity, "err.pluginActionFailed", "действие не выполнено: ", err.Error())
 	default:
 		writeJSON(w, http.StatusOK, res)
 	}

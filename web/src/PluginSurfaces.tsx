@@ -16,24 +16,34 @@ import { Button, Mono, Panel, useConfirm } from "./ui";
 // dashboard tiles. Everything a plugin returns is shown as text — a plugin never
 // gets to put markup in front of an admin.
 
-// The actions change only when plugins do; one request per page load is plenty.
-let actionsOnce: Promise<PluginAction[]> | null = null;
+// The actions change only when plugins do; one request per page load (and
+// language — the labels are the plugins' own) is plenty. A failed request is not
+// kept: the next screen asks again.
+let actionsOnce: { lang: string; list: Promise<PluginAction[]> } | null = null;
 function useActions(): PluginAction[] {
+  const { i18n } = useTranslation();
   const [actions, setActions] = useState<PluginAction[]>([]);
   useEffect(() => {
-    actionsOnce ??= listPluginActions()
-      .then((r) => r.actions)
-      .catch(() => []);
+    if (actionsOnce?.lang !== i18n.language) {
+      const list = listPluginActions()
+        .then((r) => r.actions ?? [])
+        .catch(() => {
+          actionsOnce = null;
+          return [];
+        });
+      actionsOnce = { lang: i18n.language, list };
+    }
     let live = true;
-    actionsOnce.then((a) => live && setActions(a));
+    actionsOnce.list.then((a) => live && setActions(a));
     return () => {
       live = false;
     };
-  }, []);
+  }, [i18n.language]);
   return actions;
 }
 
-// forgetPluginActions drops the cached list (after a plugin was switched on or off).
+// forgetPluginActions drops the cached list: after a plugin was switched on or off,
+// installed, updated, rolled back or removed.
 export function forgetPluginActions() {
   actionsOnce = null;
 }
@@ -46,11 +56,15 @@ export function PluginActionButtons({
   userIds = [],
   plugin,
   onDone,
+  disabled,
 }: {
   scope: PluginAction["scope"];
   userIds?: number[];
   plugin?: string;
   onDone?: () => void;
+  // disabled holds the buttons while the screen's own action runs, or for a
+  // selection the server would refuse.
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const actions = useActions().filter((a) => a.scope === scope && (!plugin || a.plugin === plugin));
@@ -59,7 +73,8 @@ export function PluginActionButtons({
   if (actions.length === 0) return null;
 
   const press = async (a: PluginAction) => {
-    if (a.confirm && !(await confirm({ title: a.label, body: t("plugins.actionConfirm", { count: userIds.length }) }))) {
+    const body = scope === "global" ? t("plugins.actionConfirmGlobal") : t("plugins.actionConfirm", { count: userIds.length });
+    if (a.confirm && !(await confirm({ title: a.label, body }))) {
       return;
     }
     const id = `${a.plugin}/${a.key}`;
@@ -86,7 +101,10 @@ export function PluginActionButtons({
           variant="outline"
           color="gray"
           loading={busy === `${a.plugin}/${a.key}`}
-          disabled={busy !== ""}
+          disabled={disabled || busy !== ""}
+          // The server lists only the buttons this admin may press, so they stay live
+          // in a read-only screen.
+          nav
           onClick={() => press(a)}
         >
           {a.label}
@@ -98,15 +116,22 @@ export function PluginActionButtons({
 }
 
 // UserPluginPanel is what plugins show on a user's card: their values and buttons.
-export function UserPluginPanel({ userId }: { userId: number }) {
+// onChanged refreshes the card after a button, which may have changed the account.
+export function UserPluginPanel({ userId, onChanged }: { userId: number; onChanged?: () => void }) {
   const { t } = useTranslation();
   const [blocks, setBlocks] = useState<PluginFieldsBlock[]>([]);
+  const [round, setRound] = useState(0);
   const hasButtons = useActions().some((a) => a.scope === "user");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: round refetches on purpose
   useEffect(() => {
+    let live = true; // a slow answer for the previous user must not fill this card
     getUserPluginFields(userId)
-      .then((r) => setBlocks(r.plugins))
-      .catch(() => setBlocks([]));
-  }, [userId]);
+      .then((r) => live && setBlocks(r.plugins ?? []))
+      .catch(() => live && setBlocks([]));
+    return () => {
+      live = false;
+    };
+  }, [userId, round]);
   if (blocks.length === 0 && !hasButtons) return null;
   return (
     <Panel title={t("plugins.title")} pad bodyClassName="flex flex-col gap-3">
@@ -125,7 +150,14 @@ export function UserPluginPanel({ userId }: { userId: number }) {
       ))}
       {hasButtons && (
         <div className="flex flex-wrap gap-1.5">
-          <PluginActionButtons scope="user" userIds={[userId]} />
+          <PluginActionButtons
+            scope="user"
+            userIds={[userId]}
+            onDone={() => {
+              setRound((n) => n + 1);
+              onChanged?.();
+            }}
+          />
         </div>
       )}
     </Panel>
@@ -139,7 +171,7 @@ export function PluginWidgets() {
   useEffect(() => {
     const load = () =>
       getPluginWidgets()
-        .then((r) => setWidgets(r.widgets))
+        .then((r) => setWidgets(r.widgets ?? []))
         .catch(() => {});
     load();
     const id = setInterval(load, 60_000);
@@ -150,7 +182,7 @@ export function PluginWidgets() {
     <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
       {widgets.map((w) => (
         <Panel key={`${w.plugin}/${w.key}`} title={w.label} pad>
-          {w.error || !w.data ? (
+          {w.error || !w.data || !widgetFits(w.data) ? (
             <p className="text-xs text-ink-muted">{t("plugins.widgetNoData")}</p>
           ) : (
             <WidgetBody data={w.data} />
@@ -159,6 +191,27 @@ export function PluginWidgets() {
       ))}
     </div>
   );
+}
+
+// widgetFits checks a plugin's widget has the shape its type promises. A plugin is
+// not trusted to: one list that is not an array would take the dashboard down.
+const scalar = (v: unknown) => v === null || ["string", "number", "boolean"].includes(typeof v);
+function widgetFits(d: NonNullable<PluginWidget["data"]>): boolean {
+  const o = d as unknown as Record<string, unknown>;
+  switch (d.type) {
+    case "stat":
+      return scalar(o.value) && (o.hint === undefined || typeof o.hint === "string");
+    case "list":
+      return Array.isArray(o.items) && o.items.every(scalar);
+    case "table":
+      return (
+        Array.isArray(o.columns) &&
+        o.columns.every(scalar) &&
+        Array.isArray(o.rows) &&
+        o.rows.every((r) => Array.isArray(r) && r.every(scalar))
+      );
+  }
+  return false;
 }
 
 function WidgetBody({ data }: { data: NonNullable<PluginWidget["data"]> }) {

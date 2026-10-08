@@ -265,18 +265,62 @@ func (h *Host) Widgets(ctx context.Context, lang string) []Widget {
 	return out
 }
 
-// validWidget accepts {type: stat|table|list, …} of a bounded size.
+// validWidget accepts {type: stat|table|list, …} of a bounded size, with the fields
+// its type needs in the shape the dashboard draws: a value that is a text or a number,
+// lists that are arrays of those. Anything else is "unknown widget", never passed on.
 func validWidget(raw json.RawMessage) bool {
 	if len(raw) > 64<<10 {
 		return false
 	}
 	var w struct {
-		Type string `json:"type"`
+		Type    string              `json:"type"`
+		Value   json.RawMessage     `json:"value"`
+		Hint    json.RawMessage     `json:"hint"`
+		Items   []json.RawMessage   `json:"items"`
+		Columns []json.RawMessage   `json:"columns"`
+		Rows    [][]json.RawMessage `json:"rows"`
 	}
 	if json.Unmarshal(raw, &w) != nil {
 		return false
 	}
-	return w.Type == "stat" || w.Type == "table" || w.Type == "list"
+	scalars := func(vs []json.RawMessage) bool {
+		for _, v := range vs {
+			if !scalarJSON(v) {
+				return false
+			}
+		}
+		return true
+	}
+	switch w.Type {
+	case "stat":
+		return scalarJSON(w.Value) && (len(w.Hint) == 0 || w.Hint[0] == '"')
+	case "list":
+		return w.Items != nil && scalars(w.Items)
+	case "table":
+		if w.Columns == nil || w.Rows == nil || !scalars(w.Columns) {
+			return false
+		}
+		for _, r := range w.Rows {
+			if !scalars(r) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// scalarJSON is a JSON string, number, boolean or null.
+func scalarJSON(v json.RawMessage) bool {
+	v = json.RawMessage(strings.TrimSpace(string(v)))
+	if len(v) == 0 {
+		return false
+	}
+	switch v[0] {
+	case '{', '[':
+		return false
+	}
+	return json.Valid(v)
 }
 
 // --- subscription page blocks ---
