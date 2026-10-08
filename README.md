@@ -685,7 +685,9 @@ have a say in sign-ups, device binding and prices, or restyle the subscription p
 a WebAssembly sandbox with its own database and memory and time limits, so a broken plugin is
 paused, not the panel. Before installing, the operator sees what it asks for — the panel API
 permissions and the internet hosts — and can read its code; nothing beyond that is reachable.
-*Settings → Plugins*, from a zip or a link. Authors get `rospanel plugin new | test | dev | pack` with no Node
+*Settings → Plugins*, from a zip or a link. A plugin can also be made right there: a rule builder
+("when this event comes and this holds, do that" — Telegram, Discord, HTTP, extend, tag) or a
+code editor, with tests and a trial run in a sandbox. Authors get `rospanel plugin new | test | dev | pack` with no Node
 needed; see [docs/plugins](docs/plugins/README.md) and [examples/plugins](examples/plugins).
 
 #### 🌍 Language (RU / EN)

@@ -33,7 +33,8 @@ rospanel plugin dev .           # a console that reloads on save
 rospanel plugin pack .          # my-plugin-0.1.0.zip
 ```
 
-Install the zip in the panel: **Settings → Plugins → Install**.
+Install the zip in the panel: **Settings → Plugins → Install**. Or write the plugin in the
+panel itself — see [the editor](editor.md).
 
 ```js
 // main.js — the panel calls what is exported
@@ -44,6 +45,8 @@ export function onEvent(e) {
 
 ## Documentation
 
+0. **[The plugin editor in the panel](editor.md)** — the rule builder, the code editor, tests and
+   a trial run, without leaving the panel.
 1. **[Your first plugin, step by step](tutorial.md)** — from `plugin new` to installing it,
    with Telegram notifications as the example.
 2. **[Manifest and package](manifest.md)** — all of `plugin.json`: permissions, hosts,

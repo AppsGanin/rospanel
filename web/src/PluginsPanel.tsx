@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import {
   configurePlugin,
+  createPluginDraft,
   disablePlugin,
   enablePlugin,
   getPluginCode,
@@ -24,6 +25,7 @@ import {
 import { fmtBytes, fmtStamp } from "./format";
 import i18n, { td } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { DraftsPanel } from "./PluginDrafts";
 import { forgetPluginActions, PluginActionButtons } from "./PluginSurfaces";
 import { useCan } from "./role";
 import {
@@ -45,6 +47,9 @@ import {
   TextInput,
   useConfirm,
 } from "./ui";
+
+// The studio (rule builder, code editor, tests) loads when a draft is opened.
+const PluginStudio = lazy(() => import("./PluginStudio").then((m) => ({ default: m.PluginStudio })));
 
 // Plugins: what the operator installed, what each may do, and its switches. The
 // consent screen is the important part — it is where the operator learns what a
@@ -116,7 +121,9 @@ export function PluginsPanel() {
   const { t } = useTranslation();
   const canManage = useCan("plugins.manage");
   const [plugins, setPlugins] = useState<PluginInfo[] | null>(null);
-  const [installing, setInstalling] = useState<{ update?: PluginInfo } | null>(null);
+  const [installing, setInstalling] = useState<{ update?: PluginInfo; review?: PluginInspection } | null>(null);
+  const [studio, setStudio] = useState<number | null>(null);
+  const [draftsKey, setDraftsKey] = useState(0);
   const [logsOf, setLogsOf] = useState<PluginInfo | null>(null);
   const [codeOf, setCodeOf] = useState<PluginInfo | null>(null);
   const [removing, setRemoving] = useState<PluginInfo | null>(null);
@@ -171,6 +178,15 @@ export function PluginsPanel() {
                 onLogs={() => setLogsOf(p)}
                 onCode={() => setCodeOf(p)}
                 onUpdate={() => setInstalling({ update: p })}
+                onEdit={async () => {
+                  try {
+                    const v = await createPluginDraft("installed", p.id);
+                    setDraftsKey((k) => k + 1);
+                    setStudio(v.draft.id);
+                  } catch (e) {
+                    notifyError(errMessage(e));
+                  }
+                }}
                 onRemove={() => setRemoving(p)}
                 onReload={load}
               />
@@ -180,9 +196,28 @@ export function PluginsPanel() {
       </Panel>
 
 
+      {canManage && <DraftsPanel key={draftsKey} onOpen={setStudio} />}
+
+      {studio !== null && (
+        <Suspense fallback={null}>
+          <PluginStudio
+            draftId={studio}
+            onClose={() => {
+              setStudio(null);
+              setDraftsKey((k) => k + 1);
+            }}
+            onInstall={(review) => {
+              const installed = (plugins ?? []).find((x) => x.id === review.manifest.id);
+              setInstalling({ review, update: installed });
+            }}
+          />
+        </Suspense>
+      )}
+
       {installing && (
         <InstallDialog
           update={installing.update}
+          initial={installing.review}
           onClose={() => setInstalling(null)}
           onDone={() => {
             setInstalling(null);
@@ -215,6 +250,7 @@ function PluginRow({
   onLogs,
   onCode,
   onUpdate,
+  onEdit,
   onRemove,
   onReload,
 }: {
@@ -224,6 +260,7 @@ function PluginRow({
   onLogs: () => void;
   onCode: () => void;
   onUpdate: () => void;
+  onEdit: () => void;
   onRemove: () => void;
   // onReload refetches the list: a failed switch or save can still have changed the
   // plugin on the server (its status, its stored settings).
@@ -346,6 +383,9 @@ function PluginRow({
           <>
             <Button size="xs" variant="light" color="gray" onClick={onUpdate}>
               {t("plugins.update")}
+            </Button>
+            <Button size="xs" variant="light" color="gray" onClick={onEdit}>
+              {t("studio.openInEditor")}
             </Button>
             {p.prev_version && (
               <Button
@@ -513,16 +553,19 @@ function SettingsForm({
 // updates) it with the admin's password.
 function InstallDialog({
   update,
+  initial,
   onClose,
   onDone,
 }: {
   update?: PluginInfo;
+  // initial: a package already read — a draft from the editor — straight to consent.
+  initial?: PluginInspection;
   onClose: () => void;
   onDone: () => void;
 }) {
   const { t } = useTranslation();
   const [checking, setChecking] = useState(false);
-  const [review, setReview] = useState<PluginInspection | null>(null);
+  const [review, setReview] = useState<PluginInspection | null>(initial ?? null);
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -562,7 +605,10 @@ function InstallDialog({
       // A refused password leaves the upload waiting on the server; anything past it
       // (a changed package, an expired upload, a failed start) spends it — start over.
       const code = (e as { code?: string }).code;
-      if (code !== "err.wrongPassword" && code !== "err.tooManyAttempts") setReview(null);
+      if (code !== "err.wrongPassword" && code !== "err.tooManyAttempts") {
+        if (initial) onClose();
+        else setReview(null);
+      }
     } finally {
       setSaving(false);
     }
@@ -584,7 +630,7 @@ function InstallDialog({
       footer={
         review && (
           <div className="flex justify-end gap-2">
-            <Button variant="light" color="gray" onClick={() => setReview(null)}>
+            <Button variant="light" color="gray" onClick={() => (initial ? onClose() : setReview(null))}>
               {t("common.back")}
             </Button>
             <Button loading={saving} disabled={!password} onClick={confirm}>

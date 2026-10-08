@@ -3456,6 +3456,150 @@ export const getPluginLogs = (id: string) =>
 export const getPluginCode = (id: string) =>
   api<{ code: string }>(`api/plugins/${encodeURIComponent(id)}/code`)
 
+// --- plugins written in the panel (drafts) ---
+
+export type DraftMode = 'builder' | 'code'
+
+export interface PluginDraft {
+  id: number
+  name: string
+  mode: DraftMode
+  plugin_id: string
+  version: string
+  created_by: string
+  created_at: number
+  updated_at: number
+}
+
+export interface DraftFile {
+  path: string
+  text?: string
+  base64?: string // a binary file (a theme's image)
+}
+
+export type RuleOp = 'eq' | 'ne' | 'contains' | 'gt' | 'lt' | 'empty' | 'not_empty'
+export type RuleActionType = 'telegram' | 'discord' | 'http' | 'extend' | 'enable' | 'disable' | 'tag' | 'untag' | 'log'
+
+export interface RuleCondition {
+  field: string
+  op: RuleOp
+  value?: string
+}
+
+export interface RuleAction {
+  type: RuleActionType
+  chat?: string
+  text?: string
+  url?: string
+  method?: string
+  body?: string
+  auth?: boolean
+  days?: number
+  tag?: string
+}
+
+export interface Rule {
+  name?: string
+  event?: string
+  schedule?: string
+  match?: 'all' | 'any'
+  conditions?: RuleCondition[]
+  actions: RuleAction[]
+}
+
+export interface RuleSpec {
+  id: string
+  version: string
+  name: string
+  description?: string
+  rules: Rule[]
+}
+
+export interface DraftView {
+  draft: PluginDraft
+  files: DraftFile[]
+  spec?: RuleSpec
+  problems?: string[]
+  events: string[]
+}
+
+export interface DraftCheck {
+  ok: boolean
+  problems?: string[]
+  manifest?: PluginManifest
+  exports?: string[]
+  skipped?: string[]
+  size: number
+}
+
+export interface DraftTestResult {
+  name: string
+  ok: boolean
+  error: string
+  stack: string
+}
+
+export interface DraftCall {
+  kind: 'http' | 'api'
+  method: string
+  url: string
+  body: string
+}
+
+export interface DraftRun {
+  result?: unknown
+  error?: string
+  logs: PluginLogLine[]
+  calls: DraftCall[]
+}
+
+const draftPath = (id: number, what = '') => `api/plugin-drafts/${id}${what ? `/${what}` : ''}`
+
+export const listPluginDrafts = () => api<{ drafts: PluginDraft[] }>('api/plugin-drafts')
+
+export const getPluginDraftTypes = () => apiText('api/plugin-drafts/types')
+
+export const createPluginDraft = (from: 'template' | 'builder' | 'installed', pluginId: string) =>
+  api<DraftView>('api/plugin-drafts', { method: 'POST', body: JSON.stringify({ from, plugin_id: pluginId }) })
+
+export const importPluginDraft = async (file: Blob): Promise<DraftView> => {
+  const res = await fetch('api/plugin-drafts', {
+    method: 'POST',
+    body: file,
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/zip', ...CSRF_HEADER },
+  })
+  if (res.status === 401) onUnauthorized?.()
+  const data = parseBody(await res.text(), res.status, res.ok)
+  if (!res.ok) throw apiError(data, res.status)
+  return data as unknown as DraftView
+}
+
+export const getPluginDraft = (id: number) => api<DraftView>(draftPath(id))
+
+export const savePluginDraft = (
+  id: number,
+  change: { name?: string; spec?: RuleSpec; files?: DraftFile[]; mode?: 'code' },
+) => api<DraftView>(draftPath(id), { method: 'PUT', body: JSON.stringify(change) })
+
+export const deletePluginDraft = (id: number) => api<{ ok: boolean }>(draftPath(id), { method: 'DELETE' })
+
+export const checkPluginDraft = (id: number) => api<DraftCheck>(draftPath(id, 'check'), { method: 'POST' })
+
+export const testPluginDraft = (id: number) =>
+  api<{ results: DraftTestResult[]; output: string; error?: string }>(draftPath(id, 'test'), { method: 'POST' })
+
+export const runPluginDraft = (
+  id: number,
+  req: { event?: string; data?: unknown; export?: string; arg?: unknown; real_http?: boolean; real_api?: boolean },
+) => api<DraftRun>(draftPath(id, 'run'), { method: 'POST', body: JSON.stringify(req) })
+
+export const inspectPluginDraft = (id: number) =>
+  api<PluginInspection>(draftPath(id, 'inspect'), { method: 'POST' })
+
+export const pluginDraftDownloadURL = (id: number, kind: 'package' | 'sources') =>
+  `${draftPath(id, 'download')}${kind === 'package' ? '?kind=package' : ''}`
+
 export interface PluginAction {
   plugin: string
   key: string

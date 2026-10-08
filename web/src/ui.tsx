@@ -2223,7 +2223,7 @@ export function SegmentedControl({
 
 /* ------------------------------------------------------------------ avatar */
 /* ------------------------------------------------------- overlay primitives */
-function useLockBody(open: boolean) {
+export function useLockBody(open: boolean) {
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -2246,7 +2246,7 @@ if (typeof window !== "undefined") {
     }
   });
 }
-function useEscape(onClose?: () => void, active = true) {
+export function useEscape(onClose?: () => void, active = true) {
   useEffect(() => {
     if (!active || !onClose) return;
     escapeStack.push(onClose);
