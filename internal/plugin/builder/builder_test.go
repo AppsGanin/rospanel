@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/AppsGanin/rospanel/internal/plugin/devkit"
+	"github.com/AppsGanin/rospanel/internal/plugin/jsvm"
 	"github.com/AppsGanin/rospanel/internal/plugin/manifest"
 )
 
@@ -191,6 +192,82 @@ test("the scheduled rule escapes values into its JSON body", () => {
 	for _, r := range res {
 		if !r.OK {
 			t.Errorf("%s: %s\n%s", r.Name, r.Error, r.Stack)
+		}
+	}
+}
+
+// main.js holds what the rules use: an action taken out takes its code with it.
+func TestMainHoldsOnlyWhatRulesUse(t *testing.T) {
+	spec := Spec{ID: "only", Version: "1.0.0", Name: "Only", Rules: []Rule{{
+		Event: "user.created", Actions: []Action{{Type: "enable"}},
+	}}}
+	files, err := Compile(spec, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := string(files["main.js"])
+	for _, gone := range []string{"function telegram", "function discord", "function request", "function fill", "function holds", `case "telegram"`, "function retag"} {
+		if strings.Contains(main, gone) {
+			t.Errorf("main.js has %q for rules that do not use it", gone)
+		}
+	}
+	for _, kept := range []string{`case "enable"`, "function userId", "function answered", "export function onEvent", "const matches = () => true"} {
+		if !strings.Contains(main, kept) {
+			t.Errorf("main.js lacks %q", kept)
+		}
+	}
+	spec.Rules[0].Actions = []Action{{Type: "telegram", Chat: "1", Text: "hi"}}
+	spec.Rules[0].Conditions = []Condition{{Field: "user.lang", Op: "eq", Value: "ru"}}
+	files, _ = Compile(spec, "")
+	main = string(files["main.js"])
+	if strings.Contains(main, `case "enable"`) || strings.Contains(main, "function userId") || !strings.Contains(main, "function telegram") || !strings.Contains(main, "function holds") {
+		t.Fatalf("after switching to telegram:\n%s", main)
+	}
+}
+
+// Every kind of action, on an event or a schedule, with conditions or without,
+// makes a plugin whose code runs: no part calls one that was left out.
+func TestEveryCombinationRuns(t *testing.T) {
+	samples := map[string]Action{
+		"telegram": {Type: "telegram", Chat: "{{user.telegram_id}}", Text: "hi {{user.name}}"},
+		"discord":  {Type: "discord", Text: "hi"},
+		"http":     {Type: "http", URL: "https://hooks.example.com/x", Auth: true},
+		"extend":   {Type: "extend", Days: 3},
+		"enable":   {Type: "enable"},
+		"disable":  {Type: "disable"},
+		"tag":      {Type: "tag", Tag: "t"},
+		"untag":    {Type: "untag", Tag: "t"},
+		"log":      {Type: "log", Text: "{{event}}"},
+	}
+	engine := jsvm.NewEngine(jsvm.Options{}) // compiled once, as the panel's is
+	defer engine.Close(context.Background())
+	for _, typ := range ActionTypes {
+		for _, scheduled := range []bool{false, true} {
+			if scheduled && slices.Contains(userActions, typ) {
+				continue
+			}
+			for _, conds := range []bool{false, true} {
+				r := Rule{Event: "user.created", Actions: []Action{samples[typ]}}
+				if scheduled {
+					r = Rule{Schedule: "0 9 * * *", Actions: []Action{samples[typ]}}
+				}
+				if conds {
+					r.Conditions = []Condition{{Field: "event", Op: "not_empty"}}
+				}
+				files, err := Compile(Spec{ID: "combo", Version: "1.0.0", Name: "Combo", Rules: []Rule{r}}, "")
+				if err != nil {
+					t.Fatalf("%s: %v", typ, err)
+				}
+				res, err := devkit.RunTestFiles(context.Background(), files, devkit.TestOptions{Engine: engine})
+				if err != nil {
+					t.Fatalf("%s scheduled=%v conds=%v: %v\n%s", typ, scheduled, conds, err, files["main.js"])
+				}
+				for _, x := range res {
+					if !x.OK {
+						t.Errorf("%s scheduled=%v conds=%v: %s: %s", typ, scheduled, conds, x.Name, x.Error)
+					}
+				}
+			}
 		}
 	}
 }

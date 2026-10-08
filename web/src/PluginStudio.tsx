@@ -416,6 +416,7 @@ function RuleCard({
 
       <div className="flex flex-col gap-4 px-4 py-4">
         <Step label={t("studio.when")}>
+          <div>
           <SegmentedControl
             size="xs"
             data={[
@@ -433,6 +434,7 @@ function RuleCard({
                 : set({ schedule: undefined, event: "user.created" })
             }
           />
+          </div>
           {scheduled ? (
             <CronPicker
               value={detectPreset(rule.schedule ?? "")}
@@ -531,12 +533,12 @@ function ConditionRow({
   const listId = useMemo(() => `fields-${Math.random().toString(36).slice(2)}`, []);
   const unary = cond.op === "empty" || cond.op === "not_empty";
   return (
-    <div className="grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[1.2fr_1fr_1.2fr_auto]">
+    <div className="grid grid-cols-[1fr_auto] items-center gap-2 sm:grid-cols-[1.2fr_1fr_1.2fr_auto]">
       <div className="col-span-2 sm:col-span-1">
         <input
           list={listId}
           aria-label={t("studio.field")}
-          className="h-9 w-full rounded-lg border border-gray-300 bg-white px-3 font-mono text-xs text-ink outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25"
+          className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 font-mono text-[13px] text-ink outline-none placeholder:text-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25"
           value={cond.field}
           onChange={(e) => onChange({ ...cond, field: e.target.value })}
         />
@@ -547,7 +549,6 @@ function ConditionRow({
         </datalist>
       </div>
       <Select
-        size="sm"
         value={cond.op}
         onChange={(v) => onChange({ ...cond, op: v as RuleOp })}
         data={OPS.map((o) => ({ value: o, label: t(`studio.op.${o}`) }))}
@@ -583,7 +584,6 @@ function ActionRow({
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           <Select
-            size="sm"
             value={a.type}
             onChange={(v) => onChange({ type: v as RuleActionType, ...defaultsFor(v as RuleActionType) })}
             data={types.map((x) => ({ value: x, label: t(`studio.action.${x}`) }))}
@@ -616,7 +616,6 @@ function ActionRow({
         <>
           <div className="grid grid-cols-[7rem_1fr] gap-2">
             <Select
-              size="sm"
               value={(a.method ?? "POST").toUpperCase()}
               onChange={(v) => set({ method: v })}
               data={["POST", "GET", "PUT", "PATCH", "DELETE"].map((m) => ({ value: m, label: m }))}
@@ -968,15 +967,17 @@ function RunView({
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-5">
-        <SegmentedControl
-          data={[
-            { value: "event", label: t("studio.runEvent") },
-            { value: "call", label: t("studio.runCall") },
-          ]}
-          value={kind}
-          onChange={(v) => setKind(v as "event" | "call")}
-          nav
-        />
+        <div>
+          <SegmentedControl
+            data={[
+              { value: "event", label: t("studio.runEvent") },
+              { value: "call", label: t("studio.runCall") },
+            ]}
+            value={kind}
+            onChange={(v) => setKind(v as "event" | "call")}
+            nav
+          />
+        </div>
         {kind === "event" ? (
           <>
             <Select
@@ -1055,7 +1056,7 @@ function JSONField({ label, value, onChange }: { label: string; value: string; o
   return (
     <div>
       <p className="mb-1 text-xs font-semibold text-ink">{label}</p>
-      <div className="h-44 overflow-hidden rounded-lg border border-gray-300">
+      <div className="h-56 overflow-hidden rounded-lg border border-gray-300">
         <Suspense fallback={<CenterLoader />}>
           <CodeEditor value={value} onChange={onChange} lang="json" />
         </Suspense>

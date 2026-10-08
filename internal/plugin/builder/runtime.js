@@ -1,9 +1,11 @@
+// @part head
 // Made by the RosPanel rule builder. RULES is what the builder edits; the code
-// below runs them. Edit it freely — once the code is changed by hand, the draft
-// stays in the code editor.
+// below runs them, and holds only what these rules use. Edit it freely — once the
+// code is changed by hand, the draft stays in the code editor.
 
 const RULES = __RULES__;
 
+// @part events
 const DAY = 24 * 60 * 60;
 
 /** @param {PanelEvent} e */
@@ -18,13 +20,6 @@ export function onEvent(e) {
   forgetOld();
 }
 
-function runScheduled(i) {
-  const rule = RULES[i];
-  const ctx = { event: "cron", data: {}, user: null, now: new Date().toISOString() };
-  if (!matches(rule, ctx)) return;
-  rule.actions.forEach((a) => act(a, ctx));
-}
-
 function context(e) {
   const data = e.data || {};
   let user = null;
@@ -33,6 +28,15 @@ function context(e) {
   return { event: e.event, data, user, now: new Date().toISOString() };
 }
 
+// @part scheduled
+function runScheduled(i) {
+  const rule = RULES[i];
+  const ctx = { event: "cron", data: {}, user: null, now: new Date().toISOString() };
+  if (!matches(rule, ctx)) return;
+  rule.actions.forEach((a) => act(a, ctx));
+}
+
+// @part text
 function get(obj, path) {
   return String(path)
     .split(".")
@@ -44,6 +48,7 @@ function text(v) {
   return typeof v === "object" ? JSON.stringify(v) : String(v);
 }
 
+// @part fill
 // fill puts values into {{path}} placeholders; escape, when given, formats each.
 function fill(template, ctx, escape) {
   return String(template || "").replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_, path) => {
@@ -52,8 +57,7 @@ function fill(template, ctx, escape) {
   });
 }
 
-const inJSON = (v) => JSON.stringify(v).slice(1, -1);
-
+// @part conditions
 function matches(rule, ctx) {
   const conds = rule.conditions || [];
   if (conds.length === 0) return true;
@@ -75,6 +79,10 @@ function holds(c, v) {
   return false;
 }
 
+// @part noconditions
+const matches = () => true; // no rule has conditions
+
+// @part act
 function act(a, ctx) {
   switch (a.type) {
     case "telegram": return telegram(a, ctx);
@@ -90,6 +98,7 @@ function act(a, ctx) {
   throw new Error("unknown action " + a.type);
 }
 
+// @part telegram
 function telegram(a, ctx) {
   const token = panel.config.telegram_token;
   if (!token) throw new Error("fill in the Telegram bot token in the plugin's settings");
@@ -102,6 +111,7 @@ function telegram(a, ctx) {
   answered("Telegram", res);
 }
 
+// @part discord
 function discord(a, ctx) {
   const hook = panel.config.discord_webhook || "";
   if (!hook.startsWith("https://discord.com/api/webhooks/")) {
@@ -109,6 +119,9 @@ function discord(a, ctx) {
   }
   answered("Discord", panel.http.fetch(hook, { method: "POST", body: { content: fill(a.text, ctx) } }));
 }
+
+// @part http
+const inJSON = (v) => JSON.stringify(v).slice(1, -1);
 
 function request(a, ctx) {
   const headers = { "Content-Type": "application/json" };
@@ -119,6 +132,7 @@ function request(a, ctx) {
   answered(url.split("?")[0], panel.http.fetch(url, { method, headers, body }));
 }
 
+// @part retag
 function retag(ctx, change) {
   const id = userId(ctx);
   const cur = panel.users.get(id);
@@ -127,12 +141,14 @@ function retag(ctx, change) {
   answered("tags", panel.users.update(id, { tags: change(tags) }));
 }
 
+// @part user
 function userId(ctx) {
   const id = ctx.user ? ctx.user.id : ctx.data.user_id;
   if (!id) throw new Error(`the ${ctx.event} event names no user`);
   return id;
 }
 
+// @part answered
 function answered(what, res) {
   if (res && res.status >= 300) {
     throw new Error(`${what} answered ${res.status}: ${text(res.body).slice(0, 200)}`);
@@ -140,6 +156,7 @@ function answered(what, res) {
   return res;
 }
 
+// @part once
 function once(key, fn) {
   if (panel.kv.get("done/" + key)) return;
   fn();
@@ -157,4 +174,3 @@ function forgetOld() {
     panel.kv.delete(key);
   }
 }
-

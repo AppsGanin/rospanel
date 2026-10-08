@@ -326,7 +326,7 @@ func Compile(s Spec, panelVersion string) (devkit.Files, error) {
 	if err != nil {
 		return nil, err
 	}
-	main := strings.Replace(runtimeJS, "__RULES__", string(rules), 1)
+	main := strings.Replace(mainFor(s, uses), "__RULES__", string(rules), 1)
 	for i, r := range s.Rules {
 		if r.Schedule != "" {
 			main += fmt.Sprintf("export function %s() { runScheduled(%d); }\n", cronExport(i), i)
@@ -341,6 +341,84 @@ func Compile(s Spec, panelVersion string) (devkit.Files, error) {
 		"README.md":       []byte(readme(s)),
 		SpecFile:          append(spec, '\n'),
 	}, nil
+}
+
+// mainFor puts main.js together from the parts of runtime.js these rules use: the
+// code shown is the code that runs, and an action taken out of the rules takes its
+// function with it.
+func mainFor(s Spec, uses map[string]bool) string {
+	parts := runtimeParts()
+	var events, scheduled, conds bool
+	for _, r := range s.Rules {
+		events = events || r.Event != ""
+		scheduled = scheduled || r.Schedule != ""
+		conds = conds || len(r.Conditions) > 0
+	}
+	userAct := slices.ContainsFunc(userActions, func(a string) bool { return uses[a] })
+	answers := uses["telegram"] || uses["discord"] || uses["http"] || userAct
+	fills := uses["telegram"] || uses["discord"] || uses["http"] || uses["log"]
+	var out []string
+	add := func(on bool, name string) {
+		if on {
+			out = append(out, parts[name])
+		}
+	}
+	add(true, "head")
+	add(events, "events")
+	add(scheduled, "scheduled")
+	add(fills || conds || answers, "text")
+	add(fills, "fill")
+	add(conds, "conditions")
+	add(!conds, "noconditions")
+	// act: a case for each kind of action the rules have.
+	var act []string
+	for _, line := range strings.Split(parts["act"], "\n") {
+		if t, ok := caseOf(line); ok && !uses[t] {
+			continue
+		}
+		act = append(act, line)
+	}
+	out = append(out, strings.Join(act, "\n"))
+	add(uses["telegram"], "telegram")
+	add(uses["discord"], "discord")
+	add(uses["http"], "http")
+	add(uses["tag"] || uses["untag"], "retag")
+	add(userAct, "user")
+	add(answers, "answered")
+	add(events, "once")
+	return strings.Join(out, "\n\n") + "\n"
+}
+
+// runtimeParts splits runtime.js at its "// @part name" lines.
+func runtimeParts() map[string]string {
+	parts := map[string]string{}
+	var name string
+	var cur []string
+	flush := func() {
+		if name != "" {
+			parts[name] = strings.TrimSpace(strings.Join(cur, "\n"))
+		}
+	}
+	for _, line := range strings.Split(runtimeJS, "\n") {
+		if n, ok := strings.CutPrefix(line, "// @part "); ok {
+			flush()
+			name, cur = strings.TrimSpace(n), nil
+			continue
+		}
+		cur = append(cur, line)
+	}
+	flush()
+	return parts
+}
+
+// caseOf reads the action a `case "x":` line of act handles.
+func caseOf(line string) (string, bool) {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(line), `case "`)
+	if !ok {
+		return "", false
+	}
+	t, _, ok := strings.Cut(rest, `"`)
+	return t, ok
 }
 
 // SpecFile keeps the rules beside the code they made: a draft opened again in the
