@@ -10,12 +10,16 @@ Common rules for all of them:
 
 - **Argument and answer are JSON.** A function gets one argument and may return any JSON
   value; `undefined` and functions in the answer are dropped.
-- **One call at a time.** While the plugin runs one call, the next waits. So a heavy cron job
-  delays this plugin's events — but decisions (sign-up, price) and the bot menu do not wait:
-  a busy plugin counts as having no objection.
+- **One call at a time.** Calls into a plugin are served in the order they come; while it
+  runs one, the next waits. A call that waits longer than its own time ends as busy. So a
+  heavy cron job delays this plugin's events — but decisions (sign-up, price) and the bot menu
+  do not wait: a busy plugin counts as having no objection.
 - **Time is limited.** Past the limit the call is cut with `interrupted`.
-- **Errors are counted.** After 10 errors in a row the panel pauses the plugin and tells the
-  operator.
+- **Failures pause the plugin.** After 10 failed calls in a row the panel pauses it and
+  retries it itself ([details](troubleshooting.md#when-the-panel-pauses-a-plugin)). Failures
+  of `onHttp` and of the payment `webhook` are logged but not counted.
+- **Points need permissions.** Each point below names the permission it needs; a manifest
+  without it fails validation.
 - **Memory does not survive between calls.** Globals live as long as the VM, and the panel
   may replace it at any moment: after a settings change, when memory grows, after an error.
   Keep state in `panel.kv` or `panel.db`.
@@ -31,7 +35,7 @@ Common rules for all of them:
 | `onAction` | an admin pressed the plugin's button | 30 s |
 | `widget` | the dashboard is opened | 2 s |
 | `subBlocks` | the subscription page is opened | 0.3 s |
-| `channel.send` | a message the bot did not deliver | 10 s |
+| `channel.send` | a message the bot did not deliver | 15 s |
 | `beforeSignup`, `beforeDeviceBind`, `quotePrice` | a panel decision | 0.3 s |
 | `bot.menu` | the user bot's menu | 0.3 s |
 | `bot.onCallback`, `bot.onCommand` | a press or a command in the bot | 3 s |
@@ -53,6 +57,7 @@ and prepare data.
 ## Events — onEvent
 
 ```json
+"permissions": ["users.view", "billing.view"],
 "provides": {"events": ["user.created", "payment.paid"]}
 ```
 
@@ -64,6 +69,8 @@ export function onEvent(e) {
 }
 ```
 
+- **Permissions.** `users.view`; events of `payment.`, `plan.`, `balance.`, `referral.` and
+  `promo.` also `billing.view`; `node.*` events need none.
 - **Format and fields.** `e.data` is what the panel's webhooks carry. The full list of events
   and their fields is in "Events" of [docs/api.md](../api.md#events).
 - **At-least-once delivery.** The same event may come twice. Use `e.id` or a unique key in
@@ -109,6 +116,7 @@ export function sync() { /* … */ }
 ## A payment method — payment
 
 ```json
+"permissions": ["payments.manage"],
 "provides": {"payment": {"label": {"ru": "Оплата картой (Lava)", "en": "Card (Lava)"}, "note": "…"}}
 ```
 
@@ -137,6 +145,12 @@ on like any other.
 | `status` | `provider_id` (a string) | `{status, amount_kopecks, currency}` |
 | `webhook` | `{body, headers}` — the callback's body as a string and its headers | `{provider_id, status, amount_kopecks, currency}` |
 
+- **Callback address:** `https://<panel>/<secret path>/plugin.<id>` — this is `webhook_url`
+  in `create`, and it is shown on the payment method's card. It is empty until the panel has
+  a domain. If the payment system takes the address with the invoice, pass it there, and the
+  operator has nothing to enter in its dashboard. If not, the operator copies the address
+  from the card into the dashboard.
+- **Permission:** `payments.manage`.
 - **Statuses:** `paid`, `pending`, `cancelled`, `refunded`.
 - **The amount is required.** `paid` and `refunded` must carry `amount_kopecks` and
   `currency`. The plan is granted only when the amount and currency match the order.
@@ -146,7 +160,8 @@ on like any other.
 - **Missed callbacks.** If no callback comes, the panel itself polls `status` for open orders.
 - **Errors.** An exception in `create` shows the payer an error. In `webhook` the callback is
   rejected and goes into the payment callback journal; the panel still answers the payment
-  system `200 ok`, and polling `status` confirms the order later.
+  system `200 ok`, and polling `status` confirms the order later. A failed `webhook` is logged
+  but does not count toward pausing the plugin.
 
 A complete example — [examples/plugins/lava](../../examples/plugins/lava).
 
@@ -170,15 +185,20 @@ export function onHttp({ method, path, query, headers, body, ip }) {
 - **Safety:**
   - The answer is served with `Content-Security-Policy: sandbox`, `nosniff` and `no-store`:
     a plugin's page cannot run script as the panel.
-  - `Set-Cookie` and security headers in the answer are dropped; the request's cookies are
-    not passed to the plugin.
+  - `Set-Cookie`, security and CORS headers, `Clear-Site-Data`, `Refresh`, `Link` and
+    `Service-Worker-Allowed` in the answer are dropped; the request's cookies are not passed
+    to the plugin.
+  - An answer without `Content-Type`, or with a JavaScript one, is served as `text/plain`.
 - **Checking the caller is the plugin's job:** a signature, a token from its settings.
+- **Errors** are logged but do not count toward pausing the plugin: refusing forged requests
+  is its job.
 
 An example — [examples/plugins/shop-webhook](../../examples/plugins/shop-webhook).
 
 ## A user's card — userFields
 
 ```json
+"permissions": ["users.view"],
 "provides": {"user_fields": [{"key": "email", "label": "E-mail"}, {"key": "ltv", "label": {"ru": "Выручка", "en": "LTV"}}]}
 ```
 
@@ -192,6 +212,9 @@ export function userFields(userId) {
 Gets the user's id (a number) and returns `{key: value}`. Only keys from the manifest are
 shown, values as text up to 1000 characters. If the plugin does not answer within 0.3 s or
 fails, its block simply does not appear.
+
+- **Permission:** `users.view`.
+- **Who sees it.** Admins holding every permission the plugin was granted.
 
 ## Admin buttons — onAction
 
@@ -216,7 +239,8 @@ export function onAction({ key, user_ids }) {
 | `users` | in the users list's bulk actions | 1 to 1000 ids |
 | `global` | on the plugin's card | `[]` |
 
-- **Who sees the button.** Only admins holding `perm` (`users.manage` by default).
+- **Who sees the button.** Admins holding `perm` (`users.manage` by default) and every
+  permission the plugin was granted.
 - **Confirmation.** `confirm: true` asks "are you sure?" first.
 - **The answer.** `message` is shown as a toast. `ok: false` shows it as an error, and so
   does an exception.
@@ -238,11 +262,13 @@ export function widget(key) {
 ```
 
 The answer is up to 64 KB and cached for a minute. If the plugin does not answer within 2 s,
-the widget shows "no data".
+the widget shows "no data". Widgets are shown to admins holding every permission the plugin
+was granted.
 
 ## The subscription page — subBlocks
 
 ```json
+"permissions": ["users.view"],
 "provides": {"sub_blocks": true}
 ```
 
@@ -259,14 +285,16 @@ export function subBlocks({ user, lang }) {
 
 - **Blocks.** Up to 10: `text`, `notice` (highlighted), `markdown` (no raw HTML), `button`
   (`https://` only). Text up to 1000 characters.
+- **Permission:** `users.view`.
 - **Time and cache.** The answer is awaited for up to 0.3 s and cached for 5 minutes per user
-  and language.
+  and language. A plugin whose `subBlocks` failed is not called again for 30 s.
 - **An own page.** An operator with their own page gets the same blocks as `blocks` in
   `GET /v1/users/{id}/subscription`.
 
 ## A delivery channel — channel (experimental)
 
 ```json
+"permissions": ["users.view"],
 "provides": {"channel": {"label": "E-mail"}}, "experimental": ["channel"]
 ```
 
@@ -282,7 +310,9 @@ export const channel = {
 - **What comes in.** The channel gets messages, broadcasts and reminders (`user.expiring`,
   `user.traffic_low`) for those the panel's bot did not reach: the user has no Telegram, has
   blocked the bot, or the bot is off.
+- **Permission:** `users.view`.
 - **Format.** `text` is Telegram HTML.
+- **Time.** 15 s per `send`.
 - **Retries.** Delivery is retried like events. To send nothing twice, remember `event_id`
   together with the user's id.
 
@@ -292,6 +322,7 @@ The `ChannelMessage` type is in `rospanel.d.ts`; an example —
 ## Decisions — beforeSignup, beforeDeviceBind, quotePrice
 
 ```json
+"permissions": ["users.view", "billing.manage"],
 "provides": {"hooks": ["beforeSignup", "beforeDeviceBind"], "price": true}, "experimental": ["price"]
 ```
 
@@ -315,6 +346,7 @@ export function quotePrice(req) {
 
 Common rules:
 
+- **Permissions.** `hooks` need `users.view`, `price` needs `billing.manage`.
 - **No objection by default.** An error, a timeout (0.3 s) or a busy plugin means "no
   objection": a broken plugin never stops anyone signing up or paying.
 - **Read-only.** Inside decisions `panel.api` only reads (GET).
@@ -339,6 +371,7 @@ An example — [examples/plugins/channel-gate](../../examples/plugins/channel-ga
 ## The user bot — bot
 
 ```json
+"permissions": ["users.view"],
 "provides": {"bot": {"menu": true, "commands": [{"command": "bonus", "description": {"ru": "Бонус дня", "en": "Daily bonus"}}]}}
 ```
 
@@ -356,12 +389,15 @@ export const bot = {
 };
 ```
 
+- **Permission:** `users.view`.
 - **`user`.** `{id, name, telegram_id, username}`; `id` is 0 when this Telegram has no
   account.
 - **`menu`.** The buttons go under the built-in menu buttons, up to 6 per plugin. The answer
-  is awaited for up to 0.3 s and cached for 5 minutes.
+  is awaited for up to 0.3 s and cached for 5 minutes. Inside `menu` `panel.api` only reads
+  (GET). A `menu` that failed is not called again for 30 s.
 - **A press.** It comes to `onCallback` with the button's `data`. `px:<id>:<data>` must fit in
-  64 bytes, so keep `data` short.
+  64 bytes, so keep `data` short. `data` comes from the user's Telegram client: check it like
+  any input.
 - **Commands.** They go into the bot's command menu next to `/start` and come to `onCommand`;
   `args` is the text after the command.
 - **The answer.** A string or `{text, buttons}`: plain text (the panel escapes it), and
@@ -374,6 +410,7 @@ export const bot = {
 ## Subscription configs — transformSubscription (experimental)
 
 ```json
+"permissions": ["users.manage"],
 "provides": {"subscription": true}, "experimental": ["subscription"]
 ```
 
@@ -385,6 +422,7 @@ export function transformSubscription({ user, format, links, config }) {
 }
 ```
 
+- **Permission:** `users.manage`.
 - **Formats.** `links` — an array of share links, `clash` — `config` as a YAML string,
   `singbox` and `xray` — `config` as a JSON object (Xray's may be an array).
 - **The answer.** The same shape, or `null`.
@@ -394,8 +432,10 @@ export function transformSubscription({ user, format, links, config }) {
   - Clash stays a text with `proxies:`, sing-box has non-empty `outbounds`.
   - If the check fails, the client gets the panel's profile, and the plugin's log gets a
     warning.
+- **Read-only.** Inside it `panel.api` only reads (GET).
 - **Load.** Every subscription refresh passes here. The answer is cached for 5 minutes per
-  user, format and input; refreshes with an unchanged input do not call the plugin.
+  user, format and input; refreshes with an unchanged input do not call the plugin. A plugin
+  whose transform failed is not called again for 30 s: clients get the panel's profile.
 
 ## The subscription page theme — theme
 
@@ -421,8 +461,9 @@ body { background-image: url(bg.webp); }
   (`.btn`, `.btn.alt` …) can be styled too, but they may change between versions.
 - **Nothing from elsewhere.**
   - `url()` may name only a file of `theme/`, or `data:image/…`, `data:font/…`.
-  - `@import`, `image-set(`, `expression(`, `javascript:`, addresses with a scheme (`://`)
-    or `//`, and backslash escapes are refused.
+  - `@import`, `image-set(`, `expression(`, `javascript:` and addresses (`://`, `//`) are
+    refused. CSS escapes are decoded before the check.
+  - An inline SVG in `data:image/svg+xml` may carry `xmlns="http://…"`.
   - The subscription page itself loads images and fonts only from the panel, too (CSP).
   - The reason: a page loading anything from a third-party host hangs where that host is
     blocked.

@@ -10,8 +10,8 @@ rospanel plugin dev .         # an interactive console that reloads on save
 rospanel plugin validate .    # check the package the way the panel will
 ```
 
-In tests and in `dev` the plugin runs in the same sandbox as in the panel: the same limits,
-the same SQLite database with your migrations. Its database is created afresh on every `test`
+In tests and in `dev` the plugin runs in the same sandbox as in the panel: the same memory and
+database limits, the same SQLite database with your migrations. Its database is created afresh on every `test`
 or `dev` run.
 
 ## dev.config.json
@@ -124,6 +124,26 @@ The output:
 
 The exit code is non-zero when any test fails — `rospanel plugin test` fits a CI.
 
+### What tests check, and what they do not
+
+As in the panel: the manifest (the permissions points need included), the exports, `net` for
+mocked requests too, the memory limit, the database quota and its refused statements, `kv` and
+blob limits.
+
+Not in tests — check these on a real panel:
+
+- **`panel.api` permissions.** A mock answers whatever the plugin asks; with `--panel` the
+  key's permissions apply, not the plugin's.
+- **Read-only `panel.api`** in decisions, `bot.menu` and `transformSubscription`.
+- **Call times.** Every `plugin.call` gets 30 s, whatever the export's own limit (0.3 s for a
+  decision).
+- **Pausing.** Failed calls never pause the plugin, and a failed surface is not skipped for
+  30 s.
+- **Event delivery.** `plugin.event` calls `onEvent` once: no retries, no loop detection, no
+  `channel.send`.
+- **`onHttp` answers** are returned as the plugin made them, without the panel's header rules.
+- **Who sees** user fields, buttons and widgets in the admin panel.
+
 ## dev — the console
 
 ```sh
@@ -195,6 +215,7 @@ checks the exports, and lists every problem.
 - **Plugins → Code** — what is installed now.
 - **The panel's journal** — what the plugin changed through `panel.api` (actor
   `plugin:<id>`), and presses of its buttons.
-- A paused plugin's card says why; switch it back on once the cause is fixed.
+- A paused plugin's card says why and when the panel retries it; press **Start again** once
+  the cause is fixed.
 
 Common errors and what they mean are in [limits and errors](troubleshooting.md).

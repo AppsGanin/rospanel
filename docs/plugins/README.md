@@ -68,6 +68,6 @@ fields are in [docs/api.md](../api.md#events), the API's routes in your panel's 
 - **State in storage.** Keep it in `panel.kv`/`panel.db`, not in variables: the VM may be
   restarted between calls.
 - **Errors and retries.** A thrown exception is an error: the event is delivered again, and
-  after 10 errors in a row the plugin is paused.
+  after 10 errors in a row the plugin is paused until the panel retries it.
 - **Least privilege.** Ask only for the permissions and hosts you need: the operator sees
   them before installing.

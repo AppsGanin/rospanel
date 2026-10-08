@@ -72,8 +72,9 @@ What matters here:
 
 - **`id`** never changes: it names the plugin's database and its entries in the panel's
   journal.
-- **`permissions`** — what the plugin may do through the panel's API. This one needs none,
-  `users.view` stays for the example; the operator sees this list before installing.
+- **`permissions`** — what the plugin may do through the panel's API and what it is handed.
+  User events carry the user, so they need `users.view`; the operator sees this list before
+  installing.
 - **`net`** — the only hosts the plugin may reach. Without `api.telegram.org`, the request to
   Telegram is refused.
 - **`settings`** — the form the operator fills in after installing. A `secret` is stored

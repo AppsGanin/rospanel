@@ -22,7 +22,8 @@ panel.config   // {"token": "…", "mode": "live", "limit": "100", "enabled_log"
 ```
 
 `panel.config` is the operator's settings, decrypted, defaults included. **Every value is a
-string**: a `bool` comes as `"true"`/`"false"`, a `number` as `"100"`. An optional field left
+string**: a `bool` is always `"true"` or `"false"` (unset reads `"false"`), a `number` comes as
+`"100"`. An optional field left
 empty without a `default` is absent. The object is read-only; after a settings change the
 plugin restarts with the new one.
 
@@ -40,8 +41,9 @@ panel.log.error(new Error("…").message);
 console.log("the same as panel.log.info", { a: 1 });
 ```
 
-Lines show in the panel (**Plugins → Log**, the last 1000) and in the server's log tagged
-`plugin=<id>`. A line is up to 4 KB. Do not log secrets.
+Every line shows in the panel (**Plugins → Log**, the last 1000). Warnings and errors are also
+copied into the server's log tagged `plugin=<id>`, up to 20 a minute; `info` lines go there at
+debug level only. A line is up to 4 KB. Do not log secrets.
 
 ## panel.kv — simple values
 
@@ -93,11 +95,14 @@ panel.db.tx(() => {
 - **Refused:** `PRAGMA`, `ATTACH`, `DETACH`, `VACUUM`, `EXPLAIN`, `BEGIN`, `COMMIT`, `END`,
   `ROLLBACK`, `SAVEPOINT`, `RELEASE` — in code and in migrations. Transactions go only
   through `tx`. Triggers, indexes, views, `WITH`, `RETURNING`, `UPSERT` (`ON CONFLICT`) work.
-- **Quota:** `db_quota_mb` (100 MB by default). A write past it is refused, and the plugin is
-  paused until the operator decides.
+- **Quota:** `db_quota_mb` (100 MB by default). A write past it throws an error with
+  `over its quota`. If the database is still 90% full or more after that call, the plugin is
+  paused until the operator decides; a call that frees room keeps it running. Pages of deleted
+  rows are reused, and the write-ahead log is trimmed back to 8 MB after checkpoints.
+- **Sizes:** one value up to 8 MB, one statement's text up to 1 MB.
 
-Change the schema with a new migration (`0002_add_email.sql` with `ALTER TABLE …`). Before an
-update's migrations the panel snapshots the database, and **Roll back** restores it.
+Change the schema with a new migration (`0002_add_email.sql` with `ALTER TABLE …`). Before
+every update the panel snapshots the database, and **Roll back** restores it.
 
 ## panel.api — the panel's REST API
 
@@ -124,7 +129,10 @@ const page = panel.api("GET", "/v1/users?limit=500&offset=0").body.data;
   `panel.api("GET", path, null, {blob: true})`.
 - **The journal.** Changes are recorded in the panel's journal under the plugin's name
   (`plugin:<id>`), and the events they cause reach other plugins too.
-- **Inside decisions** (`beforeSignup`, `quotePrice`, …) only `GET` is allowed.
+- **Read-only** in decisions (`beforeSignup`, `beforeDeviceBind`, `quotePrice`), `bot.menu`
+  and `transformSubscription`: only `GET` is allowed there.
+- **Not into itself.** A request that would call the plugin itself back (an order paid with
+  its own payment method) fails: `plugin: a call into itself (through the panel) is refused`.
 
 Shortcuts:
 
@@ -147,16 +155,17 @@ const r = panel.http.fetch("https://api.example.com/v1/items?limit=10", {
 const item = JSON.parse(r.body);
 ```
 
-- **Where.** Only hosts in the manifest's `net`. Private, local and special addresses
-  (127.0.0.0/8, 10/8, 192.168/16, ::1, NAT64 and the like) are never reachable, even when an
-  allowed name resolves to one.
+- **Where.** Only hosts in the manifest's `net`; an entry without a port allows ports 80 and
+  443. The panel's own addresses and private, loopback, CGNAT, NAT64, 6to4 and site-local ones
+  are never reachable, even when an allowed name resolves to one.
 - **The body.** A string is sent as is, anything else as JSON (`Content-Type:
   application/json` is set unless you set one). A blob is streamed. `form: {…}` sends
   multipart/form-data (see blobs below).
 - **The answer.** `body` is always text — parse JSON yourself; header names are lower-case;
   `{blob: true}` puts the answer in a blob.
 - **Errors.** A 4xx/5xx answer does not throw — check `status`. A network error, a timeout, a
-  host not in `net`, or a limit exceeded throws.
+  host not in `net`, or a limit exceeded throws. The message names only `scheme://host`, never
+  the path or query.
 - **Limits.** A string body up to 1 MB, an answer up to 4 MB, up to 30 s, up to 5 redirects,
   and only to hosts in `net`. `User-Agent: RosPanel-Plugin/1` unless you set your own.
 

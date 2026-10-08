@@ -10,8 +10,8 @@
 | A link | the same place, paste an https link to the zip (a GitHub release, say) |
 
 Either way, the operator sees the consent screen: permissions, hosts, what the plugin does,
-experimental points. They install it with their password, and the plugin is installed switched
-off. The operator switches it on once its settings are filled in.
+experimental points. They install it with their password, and only if they hold every
+permission it asks for; the plugin is installed switched off. The operator switches it on once its settings are filled in.
 
 ## Versions
 
@@ -30,9 +30,11 @@ apart by it.
 A new version installs from the **Update** button on the plugin's card (a zip or a link).
 What happens:
 
-1. The panel checks it is the same `id` and shows the consent screen. New permissions and
-   hosts are marked and must be approved again.
-2. It snapshots the plugin's database.
+1. The panel checks it is the same `id` and shows the consent screen. New permissions, hosts
+   and extension points are marked and must be approved again, by an admin holding every
+   permission it asks for.
+2. It stops the plugin and snapshots its database (a plugin with no database yet snapshots as
+   empty). If the snapshot fails, the old version keeps running.
 3. It applies the new migrations and starts the new code, calling `onEnable`.
 4. If any of that fails, it puts the previous version and database back by itself.
 
@@ -40,7 +42,8 @@ Settings are kept. New fields get their defaults, and fields removed from the ma
 dropped.
 
 **Roll back** on the card restores the previous package together with the database snapshot
-taken before its migrations. One previous version is kept.
+taken before the update. One previous version is kept. A rollback is refused if the snapshot
+file is gone, and needs an admin holding the previous version's permissions.
 
 ## Migrations
 

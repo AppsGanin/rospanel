@@ -100,15 +100,22 @@ LICENSE, CHANGELOG.md
 Какое право нужно конкретному маршруту, видно в `/v1/docs` панели. Просите меньше: оператор
 читает этот список перед установкой.
 
+Точкам расширения, которые передают плагину данные пользователей или дают решать за них,
+тоже нужно право — колонка «Нужно» в [`provides`](#на-что-он-отвечает). Без него проверка не
+проходит: `provides.price needs the "billing.manage" permission: it sets what users pay`.
+
+Установить или обновить плагин может только админ, у которого есть все запрошенные права;
+для отката нужны права той версии, которую он возвращает.
+
 **`net`** — хосты для `panel.http.fetch`, до 20:
 
-- `api.example.com` — ровно этот хост, любой порт;
-- `*.example.com` — любые поддомены (но не сам `example.com`);
+- `api.example.com` — ровно этот хост, порты 80 и 443;
+- `*.example.com` — любые поддомены (но не сам `example.com`), порты 80 и 443;
 - `api.example.com:8443` — только этот порт.
 
 Только имена в нижнем регистре: IP-адреса и имена без точки не принимаются. Даже по
-разрешённому имени панель не соединится с приватным или локальным адресом (защита от
-подмены DNS).
+разрешённому имени панель не соединится со своими адресами, с приватными, loopback, CGNAT,
+NAT64, 6to4 и site-local (защита от подмены DNS).
 
 ### Настройки
 
@@ -130,11 +137,11 @@ LICENSE, CHANGELOG.md
 | Свойство | |
 |---|---|
 | `key` | `a-z`, `0-9`, `_`, начинается с буквы, до 40 символов, уникален. |
-| `kind` | `text`, `secret`, `textarea`, `bool` (`"true"`/`"false"`), `number` (строка с числом), `select` (одно из `options`). |
+| `kind` | `text`, `secret`, `textarea`, `bool` (всегда `"true"` или `"false"`; не заданный — `"false"`), `number` (строка с числом), `select` (одно из `options`). |
 | `label` | Подпись, обязательна. |
 | `help`, `placeholder` | Подсказка под полем и в пустом поле. |
 | `optional` | Необязательное поле. Обязательное незаполненное не даёт включить плагин. |
-| `default` | Значение по умолчанию (у `secret` его быть не может). |
+| `default` | Значение по умолчанию (у `secret` его быть не может). `bool` принимает `"true"`/`"false"` или `"1"`/`"0"` — то же самое. |
 | `options` | Для `select`: `[{"value", "label"}]`. |
 
 `secret` хранится зашифрованным, в панели больше не показывается, а пустое значение при
@@ -145,22 +152,22 @@ LICENSE, CHANGELOG.md
 
 `provides` — точки расширения. Подробно каждая — в [справочнике по точкам](exports-RU.md).
 
-| Ключ | Значение | Плагин экспортирует |
-|---|---|---|
-| `events` | имена событий, `["user.created", …]` | `onEvent` |
-| `cron` | `[{"name": "sync", "schedule": "*/15 * * * *"}]`, до 10 | функции с этими именами |
-| `payment` | `{"label": …, "note": …}` | `payment.create`, `payment.status`, `payment.webhook` |
-| `http` | `true` | `onHttp` |
-| `hooks` | `["beforeSignup", "beforeDeviceBind"]` | функции с этими именами |
-| `user_fields` | `[{"key", "label"}]`, до 20 | `userFields` |
-| `actions` | `[{"key", "label", "scope", "perm", "confirm"}]`, до 20 | `onAction` |
-| `widgets` | `[{"key", "label"}]`, до 20 | `widget` |
-| `sub_blocks` | `true` | `subBlocks` |
-| `bot` | `{"menu": true, "commands": [{"command", "description"}]}` | `bot.menu`, `bot.onCallback` (с `menu`), `bot.onCommand` (с `commands`) |
-| `channel` | `{"label": …}` | `channel.send` |
-| `price` | `true` | `quotePrice` |
-| `subscription` | `true` | `transformSubscription` |
-| `theme` | `true` | — (нужен `theme/theme.css`) |
+| Ключ | Значение | Плагин экспортирует | Нужно |
+|---|---|---|---|
+| `events` | имена событий, `["user.created", …]` | `onEvent` | `users.view`; для `payment.*`, `plan.*`, `balance.*`, `referral.*`, `promo.*` ещё `billing.view`; для `node.*` ничего |
+| `cron` | `[{"name": "sync", "schedule": "*/15 * * * *"}]`, до 10 | функции с этими именами | — |
+| `payment` | `{"label": …, "note": …}` | `payment.create`, `payment.status`, `payment.webhook` | `payments.manage` |
+| `http` | `true` | `onHttp` | — |
+| `hooks` | `["beforeSignup", "beforeDeviceBind"]` | функции с этими именами | `users.view` |
+| `user_fields` | `[{"key", "label"}]`, до 20 | `userFields` | `users.view` |
+| `actions` | `[{"key", "label", "scope", "perm", "confirm"}]`, до 20 | `onAction` | — |
+| `widgets` | `[{"key", "label"}]`, до 20 | `widget` | — |
+| `sub_blocks` | `true` | `subBlocks` | `users.view` |
+| `bot` | `{"menu": true, "commands": [{"command", "description"}]}` | `bot.menu`, `bot.onCallback` (с `menu`), `bot.onCommand` (с `commands`) | `users.view` |
+| `channel` | `{"label": …}` | `channel.send` | `users.view` |
+| `price` | `true` | `quotePrice` | `billing.manage` |
+| `subscription` | `true` | `transformSubscription` | `users.manage` |
+| `theme` | `true` | — (нужен `theme/theme.css`) | — |
 
 Если `main.js` не экспортирует то, что объявлено, плагин не включится: «main.js does not export
 what plugin.json declares: …». Объявленная точка, которой нет в этой версии панели, — ошибка
@@ -179,7 +186,7 @@ what plugin.json declares: …». Объявленная точка, котор�
 
 | Поле | По умолчанию | Максимум | |
 |---|---|---|---|
-| `db_quota_mb` | 100 | 1024 | размер своей базы; сверх него плагин останавливается |
+| `db_quota_mb` | 100 | 1024 | размер своей базы; запись сверх него отклоняется ([подробнее](api-RU.md#paneldb--своя-база-sqlite)) |
 | `memory_mb` | 32 | 128 | память JavaScript; сверх неё вызов бросает `out of memory` |
 
 ## Проверка

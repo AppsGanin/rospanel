@@ -24,7 +24,10 @@ interface PanelKV {
 type SQLValue = string | number | boolean | null | { base64: string };
 
 interface PanelDB {
-  /** Runs a statement on the plugin's own SQLite database. */
+  /**
+   * Runs a statement on the plugin's own SQLite database. A write past db_quota_mb
+   * throws ("over its quota"). One value up to 8 MB, one statement up to 1 MB.
+   */
   exec(sql: string, ...args: SQLValue[]): { changes: number; last_insert_id: number };
   /** Rows as objects keyed by column; at most 10 000 rows / 4 MB. */
   query<T = Record<string, SQLValue>>(sql: string, ...args: SQLValue[]): T[];
@@ -54,10 +57,10 @@ type FormValue = string | number | boolean | Blob | { blob: Blob; filename?: str
 
 interface PanelHTTP {
   /**
-   * Requests a URL whose host is in the manifest's "net". A body that is not a
-   * string is sent as JSON; a Blob is sent as it is; `form` sends
-   * multipart/form-data. `blob: true` puts the answer in a Blob. Private and local
-   * addresses are never reachable.
+   * Requests a URL whose host is in the manifest's "net" (an entry without a port:
+   * 80 and 443 only). A body that is not a string is sent as JSON; a Blob is sent
+   * as it is; `form` sends multipart/form-data. `blob: true` puts the answer in a
+   * Blob. The panel's own, private and local addresses are never reachable.
    */
   fetch(
     url: string,
@@ -102,7 +105,7 @@ interface APIResponse<T = any> {
 interface Panel {
   /** This plugin. */
   readonly plugin: { id: string; version: string };
-  /** The operator's settings (the manifest's "settings"), secrets included. */
+  /** The operator's settings (the manifest's "settings"), secrets included. A bool is "true" or "false". */
   readonly config: Readonly<Record<string, string>>;
   readonly log: PanelLog;
   readonly kv: PanelKV;
@@ -112,8 +115,9 @@ interface Panel {
   readonly blob: PanelBlob;
   /**
    * Calls the panel's REST API (/v1, see /v1/docs) with the permissions in the
-   * manifest. Inside a decision hook only GET is allowed. `{blob: true}` puts the
-   * answer's body in a Blob (an export too big for the plugin's memory).
+   * manifest. Inside a decision hook, bot.menu and transformSubscription only GET
+   * is allowed. `{blob: true}` puts the answer's body in a Blob (an export too big
+   * for the plugin's memory).
    */
   api<T = any>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown, opts?: { blob?: false }): APIResponse<T>;
   api(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body: unknown, opts: { blob: true }): APIResponse<Blob>;
@@ -250,7 +254,9 @@ type BotReply = string | { text: string; buttons?: (BotButton | BotButton[])[] }
 
 /** The bot export: menu adds buttons under the bot's menu, onCallback answers them. */
 interface PluginBot {
+  /** panel.api is GET only here. */
   menu?(req: { user: BotUser; lang: string }): BotButton[];
+  /** data comes from the user's Telegram client: check it like any input. */
   onCallback?(req: { user: BotUser; data: string; lang: string }): BotReply;
   onCommand?(req: { user: BotUser; command: string; args: string; lang: string }): BotReply;
 }

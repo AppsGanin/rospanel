@@ -100,14 +100,22 @@ other plugins.
 Which permission a route needs is shown in the panel's `/v1/docs`. Ask for less: the operator
 reads this list before installing.
 
+Extension points that hand the plugin users' data, or let it decide for them, need a
+permission too — the "Needs" column of [`provides`](#what-it-answers). Without it validation
+fails: `provides.price needs the "billing.manage" permission: it sets what users pay`.
+
+Only an admin holding every requested permission can install or update the plugin; a rollback
+needs the permissions of the version it brings back.
+
 **`net`** — hosts for `panel.http.fetch`, up to 20:
 
-- `api.example.com` — exactly this host, any port;
-- `*.example.com` — any subdomain (but not `example.com` itself);
+- `api.example.com` — exactly this host, ports 80 and 443;
+- `*.example.com` — any subdomain (but not `example.com` itself), ports 80 and 443;
 - `api.example.com:8443` — this port only.
 
 Lower-case names only: IP addresses and names without a dot are refused. Even through an
-allowed name the panel never connects to a private or local address (DNS rebinding included).
+allowed name the panel never connects to its own addresses or to private, loopback, CGNAT,
+NAT64, 6to4 and site-local ones (DNS rebinding included).
 
 ### Settings
 
@@ -129,11 +137,11 @@ sees the values in `panel.config` — **always as strings**.
 | Property | |
 |---|---|
 | `key` | `a-z`, `0-9`, `_`, starting with a letter, up to 40 characters, unique. |
-| `kind` | `text`, `secret`, `textarea`, `bool` (`"true"`/`"false"`), `number` (a string holding a number), `select` (one of `options`). |
+| `kind` | `text`, `secret`, `textarea`, `bool` (always `"true"` or `"false"`; unset is `"false"`), `number` (a string holding a number), `select` (one of `options`). |
 | `label` | The label, required. |
 | `help`, `placeholder` | A hint under the field and in the empty field. |
 | `optional` | Not required. A required field left empty keeps the plugin from being switched on. |
-| `default` | The default value (a `secret` cannot have one). |
+| `default` | The default value (a `secret` cannot have one). A `bool` takes `"true"`/`"false"`, or `"1"`/`"0"`, read as the same. |
 | `options` | For `select`: `[{"value", "label"}]`. |
 
 A `secret` is stored encrypted and never shown in the panel again; saving the form with it
@@ -145,22 +153,22 @@ plugin's VM; the next call sees the new `panel.config`.
 `provides` — the extension points. Each one is described in the
 [extension points reference](exports.md).
 
-| Key | Value | The plugin exports |
-|---|---|---|
-| `events` | event names, `["user.created", …]` | `onEvent` |
-| `cron` | `[{"name": "sync", "schedule": "*/15 * * * *"}]`, up to 10 | functions of those names |
-| `payment` | `{"label": …, "note": …}` | `payment.create`, `payment.status`, `payment.webhook` |
-| `http` | `true` | `onHttp` |
-| `hooks` | `["beforeSignup", "beforeDeviceBind"]` | functions of those names |
-| `user_fields` | `[{"key", "label"}]`, up to 20 | `userFields` |
-| `actions` | `[{"key", "label", "scope", "perm", "confirm"}]`, up to 20 | `onAction` |
-| `widgets` | `[{"key", "label"}]`, up to 20 | `widget` |
-| `sub_blocks` | `true` | `subBlocks` |
-| `bot` | `{"menu": true, "commands": [{"command", "description"}]}` | `bot.menu`, `bot.onCallback` (with `menu`), `bot.onCommand` (with `commands`) |
-| `channel` | `{"label": …}` | `channel.send` |
-| `price` | `true` | `quotePrice` |
-| `subscription` | `true` | `transformSubscription` |
-| `theme` | `true` | — (needs `theme/theme.css`) |
+| Key | Value | The plugin exports | Needs |
+|---|---|---|---|
+| `events` | event names, `["user.created", …]` | `onEvent` | `users.view`; `payment.*`, `plan.*`, `balance.*`, `referral.*`, `promo.*` also `billing.view`; `node.*` nothing |
+| `cron` | `[{"name": "sync", "schedule": "*/15 * * * *"}]`, up to 10 | functions of those names | — |
+| `payment` | `{"label": …, "note": …}` | `payment.create`, `payment.status`, `payment.webhook` | `payments.manage` |
+| `http` | `true` | `onHttp` | — |
+| `hooks` | `["beforeSignup", "beforeDeviceBind"]` | functions of those names | `users.view` |
+| `user_fields` | `[{"key", "label"}]`, up to 20 | `userFields` | `users.view` |
+| `actions` | `[{"key", "label", "scope", "perm", "confirm"}]`, up to 20 | `onAction` | — |
+| `widgets` | `[{"key", "label"}]`, up to 20 | `widget` | — |
+| `sub_blocks` | `true` | `subBlocks` | `users.view` |
+| `bot` | `{"menu": true, "commands": [{"command", "description"}]}` | `bot.menu`, `bot.onCallback` (with `menu`), `bot.onCommand` (with `commands`) | `users.view` |
+| `channel` | `{"label": …}` | `channel.send` | `users.view` |
+| `price` | `true` | `quotePrice` | `billing.manage` |
+| `subscription` | `true` | `transformSubscription` | `users.manage` |
+| `theme` | `true` | — (needs `theme/theme.css`) | — |
 
 If `main.js` does not export what is declared, the plugin will not switch on: "main.js does
 not export what plugin.json declares: …". Declaring a point this panel version does not have
@@ -179,7 +187,7 @@ consent screen.
 
 | Field | Default | Maximum | |
 |---|---|---|---|
-| `db_quota_mb` | 100 | 1024 | the size of its database; past it the plugin is paused |
+| `db_quota_mb` | 100 | 1024 | the size of its database; a write past it is refused ([details](api.md#paneldb--its-own-sqlite-database)) |
 | `memory_mb` | 32 | 128 | JavaScript memory; past it a call throws `out of memory` |
 
 ## Checking
