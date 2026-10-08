@@ -16,39 +16,57 @@ import (
 // A plugin can feed itself: onEvent changes a user through panel.api, the change
 // is an event it is subscribed to, and so on. Until the actor travels with every
 // event (docs/plugins-design.md, section 13) the breaker for that is a rate: past
-// stormRate deliveries a minute for stormMinutes minutes running, the plugin is
-// paused. Ordinary traffic is far below it — events follow what people do.
+// stormRate deliveries a minute while the plugin itself makes stormWrites changes
+// through panel.api a minute, for stormMinutes minutes running, it is paused. Both
+// sides of the loop are required: the panel's own bulk events — a monthly traffic
+// reset for thousands of users — come fast too, but a plugin that only reads them
+// is not feeding anything.
 const (
 	stormRate    = 300
+	stormWrites  = 100
 	stormMinutes = 3
 )
 
 type stormMeter struct {
 	mu     sync.Mutex
 	minute int64
-	count  int
-	hot    int // consecutive minutes over the rate
+	count  int // deliveries this minute
+	writes int // the plugin's panel.api changes this minute
+	hot    int // consecutive minutes over both rates
+}
+
+// roll moves the meter to the minute of now (call with mu held).
+func (s *stormMeter) roll(now time.Time) {
+	m := now.Unix() / 60
+	switch m {
+	case s.minute:
+	case s.minute + 1:
+		if s.count > stormRate && s.writes >= stormWrites {
+			s.hot++
+		} else {
+			s.hot = 0
+		}
+		s.minute, s.count, s.writes = m, 0, 0
+	default: // a quiet minute or more in between
+		s.minute, s.count, s.writes, s.hot = m, 0, 0, 0
+	}
 }
 
 // note counts one delivery and reports whether the plugin is in a storm.
 func (s *stormMeter) note(now time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	m := now.Unix() / 60
-	switch m {
-	case s.minute:
-	case s.minute + 1:
-		if s.count > stormRate {
-			s.hot++
-		} else {
-			s.hot = 0
-		}
-		s.minute, s.count = m, 0
-	default: // a quiet minute or more in between
-		s.minute, s.count, s.hot = m, 0, 0
-	}
+	s.roll(now)
 	s.count++
-	return s.hot >= stormMinutes-1 && s.count > stormRate
+	return s.hot >= stormMinutes-1 && s.count > stormRate && s.writes >= stormWrites
+}
+
+// noteWrite counts one change the plugin made through panel.api.
+func (s *stormMeter) noteWrite(now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.roll(now)
+	s.writes++
 }
 
 // EventSubscribers lists the active plugins subscribed to event, in order: those

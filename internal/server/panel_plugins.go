@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/plugin"
 	"github.com/AppsGanin/rospanel/internal/plugin/manifest"
 )
@@ -215,6 +216,22 @@ func (rt *Router) installOrUpdatePlugin(w http.ResponseWriter, r *http.Request, 
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	// An admin hands a plugin only what they hold themselves — the rule API keys
+	// follow. Without it, installing a plugin would be a way to a permission the
+	// role was never given (an admin without audit.view reading the journal through
+	// a plugin that has it).
+	caller := callerPerms(r)
+	var beyond []string
+	for p := range model.NewPermSet(req.Perms) {
+		if !caller.Has(p) {
+			beyond = append(beyond, p)
+		}
+	}
+	if len(beyond) > 0 {
+		slices.Sort(beyond)
+		writeErrDetail(w, http.StatusForbidden, "err.pluginPermsBeyond", "у вас нет прав, которые просит плагин: ", strings.Join(beyond, ", "))
+		return
+	}
 	if !rt.verifyStepUp(w, r, req.CurrentPassword) {
 		return
 	}
@@ -240,6 +257,9 @@ func (rt *Router) installOrUpdatePlugin(w http.ResponseWriter, r *http.Request, 
 		writePluginErr(w, err)
 		return
 	}
+	// An update may bring onHttp or a payment method: their addresses need the
+	// callback secret as much as on enable.
+	rt.ensurePluginCallbacks(info)
 	writeJSON(w, http.StatusOK, info)
 }
 

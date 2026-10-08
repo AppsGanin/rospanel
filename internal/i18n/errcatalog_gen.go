@@ -283,6 +283,7 @@ var errEN = map[string]string{
 	"err.pluginFailed":             "the plugin did not start: {{detail}}",
 	"err.pluginInvalid":            "the package does not fit: {{detail}}",
 	"err.pluginNotFound":           "the plugin is not installed",
+	"err.pluginPermsBeyond":        "you do not hold the permissions the plugin asks for: {{detail}}",
 	"err.pluginSettings":           "the settings do not fit: {{detail}}",
 	"err.pluginTooLarge":           "the package is larger than 5 MB",
 	"err.pluginUploadExpired":      "the upload expired — choose the file again",

@@ -159,9 +159,16 @@ func (m *Manager) MiniAppEnter(ctx context.Context, tu MiniAppUser, startParam s
 	// Asked outside the lock: a plugin may take its time, and an account it lets
 	// through is still made only once below.
 	if set.RegistrationOpen() && !m.restoresTelegram(chat) {
-		if ok, reason := m.SignupAllowed(ctx, model.SignupCheck{
-			Channel: "miniapp", TelegramID: chat, Username: tu.Username, Ref: strings.TrimPrefix(startParam, "ref_"), Lang: tu.Lang,
-		}); !ok {
+		check := model.SignupCheck{Channel: "miniapp", TelegramID: chat, Username: tu.Username, Lang: tu.Lang}
+		// The start parameter is an invite ("ref_<code>") or a source tag, as in the bot.
+		if p := strings.TrimSpace(startParam); p != "" {
+			if code, ok := strings.CutPrefix(p, "ref_"); ok {
+				check.Ref = code
+			} else {
+				check.Source = p
+			}
+		}
+		if ok, reason := m.SignupAllowed(ctx, check); !ok {
 			return MiniAppResult{Reason: "sub.miniRefused", Detail: reason}, nil
 		}
 	}

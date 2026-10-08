@@ -114,7 +114,7 @@ func TestPluginEventsRetryAndDrop(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("pending after the first round: %d, want 1", n)
 	}
-	ds, _ := st.LeasePluginDeliveries(time.Now().Add(time.Hour).Unix(), 0, 10)
+	ds, _ := st.LeasePluginDeliveries(time.Now().Add(time.Hour).Unix(), 0, 10, nil)
 	if len(ds) != 1 || ds[0].PluginID != "flaky" || ds[0].Attempt != 1 {
 		t.Fatalf("%+v", ds)
 	}
@@ -197,7 +197,7 @@ func TestBusyPluginDoesNotHoldBothWorkers(t *testing.T) {
 			t.Fatal("slow's events were lost")
 		}
 	}
-	ds, _ := st.LeasePluginDeliveries(time.Now().Add(time.Hour).Unix(), 0, 10)
+	ds, _ := st.LeasePluginDeliveries(time.Now().Add(time.Hour).Unix(), 0, 10, nil)
 	if len(ds) != 0 {
 		t.Fatalf("%d deliveries left over", len(ds))
 	}
@@ -213,5 +213,32 @@ func TestWebhookWantedCountsPlugins(t *testing.T) {
 	m.SetPluginEvents(&fakePlugins{subs: map[string][]string{model.WebhookUserExpiring: {"mail"}}})
 	if !m.webhookWanted(model.WebhookUserExpiring) {
 		t.Fatal("a plugin subscriber does not count")
+	}
+}
+
+// A plugin with a delivery in flight gets no more rows leased, and each lease
+// holds one row per plugin, its oldest: nothing is put back while it is busy.
+func TestPluginLeaseOneRowPerIdlePlugin(t *testing.T) {
+	m, st := pluginEventsManager(t)
+	fp := &slowFirst{subs: []string{"a"}, got: make(chan string, 8)}
+	m.SetPluginEvents(fp)
+	m.EmitWebhook(model.WebhookUserCreated, map[string]any{"id": 1})
+	m.EmitWebhook(model.WebhookUserCreated, map[string]any{"id": 2})
+	fp.subs = []string{"b"}
+	m.EmitWebhook(model.WebhookUserCreated, map[string]any{"id": 3})
+	now := time.Now().Unix() + 1
+	ds, err := st.LeasePluginDeliveries(now, 60, 10, []string{"b"})
+	if err != nil || len(ds) != 1 || ds[0].PluginID != "a" {
+		t.Fatalf("lease skipping b: %+v %v", ds, err)
+	}
+	first := ds[0].ID
+	ds, _ = st.LeasePluginDeliveries(now, 60, 10, nil)
+	if len(ds) != 2 || ds[0].PluginID == ds[1].PluginID {
+		t.Fatalf("one row per plugin: %+v", ds)
+	}
+	for _, d := range ds {
+		if d.PluginID == "a" && d.ID < first {
+			t.Fatal("a's rows came out of order")
+		}
 	}
 }

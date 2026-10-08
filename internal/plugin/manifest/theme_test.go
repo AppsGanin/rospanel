@@ -58,6 +58,10 @@ func TestThemePackage(t *testing.T) {
 		{`"theme": true`, map[string]string{"theme/theme.css": `/**/@import "x.css";`}, "@import"},
 		{`"theme": true`, map[string]string{"theme/theme.css": `/**/@im/**/port url(x.css);`}, "not in the package"},
 		{`"theme": true`, map[string]string{"theme/theme.css": `a{} /* open`}, "not closed"},
+		{`"theme": true`, map[string]string{"theme/theme.css": `a { background: image-set("https://evil/t.png" 1x) }`}, "image-set("},
+		{`"theme": true`, map[string]string{"theme/theme.css": `a { background: u\72l(https://evil/x) }`}, "backslash"},
+		{`"theme": true`, map[string]string{"theme/theme.css": `@\69mport "https://evil/x.css";`}, "backslash"},
+		{`"theme": true`, map[string]string{"theme/theme.css": `@font-face { src: "//evil/f.woff2" }`}, "outside the theme"},
 	} {
 		_, err := Read(themeZip(t, c.provides, c.files), "")
 		if err == nil || !strings.Contains(err.Error(), c.want) {

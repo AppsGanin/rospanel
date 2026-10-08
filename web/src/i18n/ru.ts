@@ -243,6 +243,7 @@ const ru = {
     pluginConsent: "пакет изменился после проверки — загрузите его ещё раз",
     pluginInvalid: "пакет не подходит: {{detail}}",
     pluginSettings: "настройки не подходят: {{detail}}",
+    pluginPermsBeyond: "у вас нет прав, которые просит плагин: {{detail}}",
     pluginActionFailed: "действие не выполнено: {{detail}}",
     pluginTooLarge: "пакет больше 5 МБ",
     pluginUploadExpired: "загрузка устарела — выберите файл ещё раз",

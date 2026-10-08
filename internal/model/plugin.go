@@ -49,6 +49,7 @@ type SignupCheck struct {
 // DeviceCheck is a device about to take one of a user's slots.
 type DeviceCheck struct {
 	UserID      int64  `json:"user_id"`
+	HWID        string `json:"hwid"`
 	DeviceOS    string `json:"device_os,omitempty"`
 	DeviceModel string `json:"device_model,omitempty"`
 	UserAgent   string `json:"user_agent,omitempty"`

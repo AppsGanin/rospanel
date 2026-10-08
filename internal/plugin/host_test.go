@@ -596,8 +596,12 @@ func TestStormMeter(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0).Truncate(time.Minute)
 	storm := false
 	for minute := 0; minute < stormMinutes && !storm; minute++ {
+		at := base.Add(time.Duration(minute) * time.Minute)
+		for i := 0; i < stormWrites; i++ {
+			s.noteWrite(at) // the plugin writes back: the loop
+		}
 		for i := 0; i <= stormRate+1; i++ {
-			storm = s.note(base.Add(time.Duration(minute) * time.Minute))
+			storm = s.note(at)
 		}
 		if minute < stormMinutes-1 && storm {
 			t.Fatalf("storm declared in minute %d", minute)
@@ -605,6 +609,15 @@ func TestStormMeter(t *testing.T) {
 	}
 	if !storm {
 		t.Fatal("no storm after three hot minutes")
+	}
+	// The panel's own bulk events, which the plugin only reads, are no storm.
+	var bulk stormMeter
+	for minute := 0; minute < 10; minute++ {
+		for i := 0; i <= stormRate*3; i++ {
+			if bulk.note(base.Add(time.Duration(minute) * time.Minute)) {
+				t.Fatalf("a read-only plugin taken for a storm in minute %d", minute)
+			}
+		}
 	}
 	// A quiet minute resets it.
 	var q stormMeter

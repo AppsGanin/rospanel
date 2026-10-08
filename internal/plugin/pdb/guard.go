@@ -24,14 +24,17 @@ var forbidden = map[string]bool{
 // CheckSQL refuses SQL containing a statement that starts with a forbidden keyword.
 //
 // It is a lexer, not a parser: it only has to find where each statement starts.
-// That takes skipping string literals, quoted identifiers and comments, and
-// knowing that inside CREATE TRIGGER … BEGIN … END the semicolons separate the
-// body's statements (which SQLite already limits to INSERT/UPDATE/DELETE/SELECT)
-// rather than ours — and that CASE … END nests inside such a body.
+// That takes skipping string literals, quoted identifiers and comments, and the one
+// statement whose semicolons are not ours: CREATE [TEMP|TEMPORARY] TRIGGER, whose
+// body is a list of "statement;" closed by END. It ends the way SQLite itself
+// decides a trigger is complete (sqlite3_complete): at "; END ;", an END standing
+// alone between two semicolons. Keywords used as names — a table called trigger, a
+// column called begin — change nothing here, so they cannot hide a statement.
 func CheckSQL(sql string) error {
 	l := lexer{s: sql}
-	var stmt []string // keyword-ish tokens of the current statement, upper-cased
-	trigger, depth := false, 0
+	var stmt []string    // the current statement's tokens, upper-cased
+	var segment []string // inside a trigger: the tokens since its last semicolon
+	trigger := false
 	for {
 		tok, ok := l.next()
 		if !ok {
@@ -41,32 +44,34 @@ func CheckSQL(sql string) error {
 			return l.err
 		}
 		if tok == ";" {
-			if trigger && depth > 0 {
-				continue // a separator inside the trigger body
+			if trigger && !(len(segment) == 1 && segment[0] == "END") {
+				segment = segment[:0] // a separator inside the trigger body
+				continue
 			}
-			stmt, trigger, depth = stmt[:0], false, 0
+			stmt, segment, trigger = stmt[:0], segment[:0], false
 			continue
 		}
 		if len(stmt) == 0 && forbidden[tok] {
 			return fmt.Errorf("%w: %s (the host manages pragmas, attachments and transactions)", ErrForbidden, tok)
 		}
 		stmt = append(stmt, tok)
-		if len(stmt) <= 3 && tok == "TRIGGER" && stmt[0] == "CREATE" {
+		segment = append(segment, tok)
+		if !trigger && isCreateTrigger(stmt) {
 			trigger = true
-		}
-		if !trigger {
-			continue
-		}
-		switch tok {
-		case "BEGIN", "CASE":
-			depth++
-		case "END":
-			if depth > 0 {
-				depth--
-			}
 		}
 	}
 	return l.err
+}
+
+// isCreateTrigger reports whether a statement begins CREATE [TEMP|TEMPORARY] TRIGGER.
+func isCreateTrigger(stmt []string) bool {
+	switch {
+	case len(stmt) == 2:
+		return stmt[0] == "CREATE" && stmt[1] == "TRIGGER"
+	case len(stmt) == 3:
+		return stmt[0] == "CREATE" && (stmt[1] == "TEMP" || stmt[1] == "TEMPORARY") && stmt[2] == "TRIGGER"
+	}
+	return false
 }
 
 // lexer yields upper-cased words and ";" — everything else (literals, identifiers

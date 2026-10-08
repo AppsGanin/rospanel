@@ -374,6 +374,10 @@ func (h *Host) SubBlocks(ctx context.Context, user map[string]any, lang string) 
 					blocks = cleanBlocks(got)
 				}
 			}
+			parts[i] = blocks
+			if err != nil {
+				return // a busy or failing plugin is asked again next time, not remembered empty
+			}
 			h.subs.mu.Lock()
 			if h.subs.m == nil {
 				h.subs.m = map[string]cachedBlocks{}
@@ -383,7 +387,6 @@ func (h *Host) SubBlocks(ctx context.Context, user map[string]any, lang string) 
 			}
 			h.subs.m[ck] = cachedBlocks{blocks: blocks, at: time.Now()}
 			h.subs.mu.Unlock()
-			parts[i] = blocks
 		}(i, id, ck)
 	}
 	wg.Wait()

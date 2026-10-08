@@ -97,9 +97,20 @@ func CheckThemeCSS(css string, files map[string][]byte) []string {
 		out = append(out, "a comment is not closed")
 	}
 	low := strings.ToLower(css)
-	for _, bad := range []string{"@import", "expression(", "javascript:", "behavior:", "-moz-binding", "</style"} {
+	for _, bad := range []string{"@import", "expression(", "javascript:", "behavior:", "-moz-binding", "</style", "image-set(", "://"} {
 		if strings.Contains(low, bad) {
 			out = append(out, fmt.Sprintf("%q is not allowed", bad))
+		}
+	}
+	// CSS escapes spell anything (u\72l( is url(, @\69mport is @import), and a theme
+	// has no use for them that a plain character would not serve.
+	if strings.Contains(css, `\`) {
+		out = append(out, `a backslash escape is not allowed — write the character itself`)
+	}
+	// A string can carry an address too (image-set, src()): none may leave the theme.
+	for _, q := range []string{`"//`, `'//`} {
+		if strings.Contains(css, q) {
+			out = append(out, fmt.Sprintf("%s…: an address outside the theme is not allowed", q))
 		}
 	}
 	for _, m := range cssURLRe.FindAllStringSubmatch(css, -1) {

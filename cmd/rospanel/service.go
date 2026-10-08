@@ -880,12 +880,14 @@ func startPlugins(runBG func(string, func(context.Context)), rt *server.Router, 
 		host.CheckpointAll(ctx)
 	})
 	runBG("plugins", func(ctx context.Context) {
-		if err := host.Start(ctx); err != nil {
-			log.Printf("plugins: %v", err)
-		}
+		// Connected first: an event raised while the plugins start is queued for them
+		// (and delivered once each is up), not lost.
 		mgr.SetPluginEvents(host)
 		mgr.SetPluginHooks(host)
 		mgr.SetPluginBot(host)
+		if err := host.Start(ctx); err != nil {
+			log.Printf("plugins: %v", err)
+		}
 		tick(ctx, 15*time.Second, func() {
 			safeTick("plugins cron", func() { host.RunCron(ctx, time.Now().In(mgr.Location())) })
 		})

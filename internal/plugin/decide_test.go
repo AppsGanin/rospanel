@@ -122,13 +122,13 @@ func TestDecisionDoesNotWaitForABusyPlugin(t *testing.T) {
 func TestBeforeDeviceBindCachesARefusal(t *testing.T) {
 	h := installGate(t)
 	ctx := context.Background()
-	evil := model.DeviceCheck{UserID: 1, DeviceOS: "evil", IP: "1.2.3.4"}
+	evil := model.DeviceCheck{UserID: 1, HWID: "a", DeviceOS: "evil", IP: "1.2.3.4"}
 	for range 3 {
 		if ok, reason := h.host.BeforeDeviceBind(ctx, evil); ok || reason != "Not this one" {
 			t.Fatalf("%v %q", ok, reason)
 		}
 	}
-	if ok, _ := h.host.BeforeDeviceBind(ctx, model.DeviceCheck{UserID: 1, DeviceOS: "ios"}); !ok {
+	if ok, _ := h.host.BeforeDeviceBind(ctx, model.DeviceCheck{UserID: 1, HWID: "b", DeviceOS: "ios"}); !ok {
 		t.Fatal("ios refused")
 	}
 	if got := gateKV(t, h, "dev-calls"); got != "2" {

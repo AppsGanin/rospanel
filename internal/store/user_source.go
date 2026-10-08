@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -80,4 +81,15 @@ func (s *Store) FunnelBySource(since int64, limit int) ([]model.SourceFunnel, er
 		out = append(out, f)
 	}
 	return out, rows.Err()
+}
+
+// ChatOrigin is what a Telegram chat came with before it signed up: its @username,
+// the referrer of the invite link it opened (0 for none) and its source tag.
+func (s *Store) ChatOrigin(chatID int64) (username string, refUserID int64, source string, err error) {
+	err = s.rdb.QueryRow(`SELECT username, ref_user_id, source FROM tg_subscribers WHERE chat_id = ?`, chatID).
+		Scan(&username, &refUserID, &source)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", 0, "", nil
+	}
+	return username, refUserID, source, err
 }

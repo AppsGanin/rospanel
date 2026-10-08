@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"sort"
@@ -38,6 +39,10 @@ const (
 	// whose heap is tens of megabytes.
 	MaxRows        = 10000
 	MaxResultBytes = 4 << 20
+	// MaxValue bounds one string or blob value in the plugin's database (and so a
+	// row being built), MaxSQL one statement's text.
+	MaxValue = 8 << 20
+	MaxSQL   = 1 << 20
 	// MaxKVValue bounds one kv value.
 	MaxKVValue = 64 << 10
 	pageSize   = 4096
@@ -100,6 +105,15 @@ func Open(ctx context.Context, path string, quota int64) (*DB, error) {
 func (d *DB) lockDown(ctx context.Context) error {
 	if _, err := sqlite.Limit(d.conn, sqlite3.SQLITE_LIMIT_ATTACHED, 0); err != nil {
 		return fmt.Errorf("pdb: attach limit: %w", err)
+	}
+	// One value (a string, a blob, a row being built) stays small. Without it
+	// SELECT randomblob(800000000) allocated 800 MB in the panel's own process —
+	// memory the plugin's wasm cap does not see.
+	if _, err := sqlite.Limit(d.conn, sqlite3.SQLITE_LIMIT_LENGTH, MaxValue); err != nil {
+		return fmt.Errorf("pdb: length limit: %w", err)
+	}
+	if _, err := sqlite.Limit(d.conn, sqlite3.SQLITE_LIMIT_SQL_LENGTH, MaxSQL); err != nil {
+		return fmt.Errorf("pdb: sql limit: %w", err)
 	}
 	if d.quota > 0 {
 		pages := (d.quota + pageSize - 1) / pageSize
@@ -257,6 +271,12 @@ func (d *DB) EndCall() {
 	if d.conn != nil && d.tx {
 		_, _ = d.conn.ExecContext(context.Background(), "ROLLBACK")
 		d.tx = false
+	}
+	// The quota again, whatever the call did: CheckSQL keeps a plugin from the
+	// pragma, and this keeps a gap in CheckSQL from lasting past one call.
+	if d.conn != nil && d.quota > 0 {
+		pages := (d.quota + pageSize - 1) / pageSize
+		_, _ = d.conn.ExecContext(context.Background(), fmt.Sprintf("PRAGMA max_page_count = %d", pages))
 	}
 }
 
@@ -458,10 +478,10 @@ func (d *DB) Migrate(ctx context.Context, ms []Migration) (applied []string, err
 // for rolling an update back. It opens its own connection: the plugin's cannot
 // attach, which VACUUM INTO needs.
 func Snapshot(ctx context.Context, path, dst string) error {
+	_ = os.Remove(dst) // never leave an older snapshot standing in for this one
 	if _, err := os.Stat(path); err != nil {
 		return err
 	}
-	_ = os.Remove(dst)
 	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		return err
@@ -473,9 +493,26 @@ func Snapshot(ctx context.Context, path, dst string) error {
 
 // Restore puts a snapshot back in place of the database at path. The database
 // must be closed.
+// The snapshot is used up: it belongs to one update, and a later rollback must not
+// find it standing in for its own.
 func Restore(snapshot, path string) error {
-	b, err := os.ReadFile(snapshot)
+	src, err := os.Open(snapshot)
 	if err != nil {
+		return err
+	}
+	defer src.Close()
+	tmp := path + ".restore"
+	dst, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(dst, src); err != nil { // streamed: a snapshot can be a gigabyte
+		dst.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := dst.Close(); err != nil {
+		os.Remove(tmp)
 		return err
 	}
 	for _, suffix := range []string{"-wal", "-shm"} {
@@ -483,11 +520,10 @@ func Restore(snapshot, path string) error {
 			return err
 		}
 	}
-	tmp := path + ".restore"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	if err := os.Rename(tmp, path); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	return os.Remove(snapshot)
 }
 
 // Remove deletes the database files at path.

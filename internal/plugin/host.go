@@ -142,9 +142,12 @@ type instance struct {
 	vmBase uint32 // the VM's memory right after loading
 	db     *pdb.DB
 	blobs  *blobSet // the running call's panel.blob files
-	fails  int
-	status string
-	errMsg string
+	// running: started (database open, migrations applied, code loaded). A plugin
+	// can be "active" by its record before that — the panel starting up.
+	running bool
+	fails   int
+	status  string
+	errMsg  string
 
 	logs  *ring
 	storm stormMeter
@@ -184,9 +187,16 @@ func (h *Host) Start(ctx context.Context) error {
 	}
 	// Blobs of calls a crash or a kill cut short.
 	_ = os.RemoveAll(filepath.Join(h.deps.DataDir, "plugins", ".blobs"))
-	for _, rec := range recs {
-		inst := h.add(rec)
-		if rec.Enabled {
+	// Every plugin is known (and subscribed) before the first one starts: starting
+	// takes a while per plugin, and events keep coming meanwhile.
+	insts := make([]*instance, len(recs))
+	for i, rec := range recs {
+		insts[i] = h.add(rec)
+	}
+	for i, rec := range recs {
+		inst := insts[i]
+		// A paused plugin stays paused across a restart: the operator lifts a pause.
+		if rec.Enabled && rec.Status != model.PluginPaused {
 			inst.mu.Lock()
 			if err := inst.start(ctx, false); err != nil {
 				h.log.Warn("plugin failed to start", "plugin", rec.ID, "err", err)
@@ -209,9 +219,17 @@ func (h *Host) Close(ctx context.Context) error {
 	for _, inst := range insts {
 		inst.mu.Lock()
 		inst.stop()
+		inst.status = model.PluginDisabled // a call queued behind this one must not start a VM
+		inst.publish()
 		inst.mu.Unlock()
 	}
 	return h.engine.Close(ctx)
+}
+
+func (h *Host) isClosed() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.closed
 }
 
 func (h *Host) add(rec model.Plugin) *instance {
@@ -247,11 +265,15 @@ func (inst *instance) start(ctx context.Context, snapshot bool) error {
 	inst.stop()
 	err := inst.open(ctx, snapshot)
 	if err != nil {
+		if inst.status == model.PluginPaused { // onEnable outgrew the quota: it stays paused
+			return err
+		}
 		inst.stop()
 		inst.setState(true, model.PluginError, err.Error())
 		return err
 	}
 	inst.fails = 0
+	inst.running = true
 	inst.setState(true, model.PluginActive, "")
 	return nil
 }
@@ -282,7 +304,7 @@ func (inst *instance) open(ctx context.Context, snapshot bool) error {
 	} else if len(applied) > 0 {
 		inst.logf("info", "migrations applied: %s", strings.Join(applied, ", "))
 	}
-	if err := inst.ensureVM(ctx); err != nil {
+	if err := inst.ensureVM(ctx, callOpts{}); err != nil {
 		return err
 	}
 	var missing []string
@@ -304,7 +326,8 @@ func (inst *instance) open(ctx context.Context, snapshot bool) error {
 
 // ensureVM makes a VM with the prelude and the plugin's code loaded, if there is
 // no live one.
-func (inst *instance) ensureVM(ctx context.Context) error {
+// o is the call's: main.js loaded inside a decision may only read, like the call.
+func (inst *instance) ensureVM(ctx context.Context, o callOpts) error {
 	if inst.vm != nil && inst.vm.Err() == nil {
 		return nil
 	}
@@ -312,11 +335,12 @@ func (inst *instance) ensureVM(ctx context.Context) error {
 		inst.vm.Close()
 		inst.vm = nil
 	}
+	ctx = context.WithoutCancel(ctx) // the VM outlives the request that happened to start it
 	vm, err := inst.host.engine.NewVM(ctx, jsvm.Limits{Memory: inst.pkg.Manifest.Memory()})
 	if err != nil {
 		return err
 	}
-	hf := inst.hostFunc(callOpts{})
+	hf := inst.hostFunc(o)
 	if err := vm.Script(ctx, "prelude.js", preludeJS, LoadTimeout, hf); err != nil {
 		vm.Close()
 		return fmt.Errorf("prelude: %w", err)
@@ -335,11 +359,16 @@ func (inst *instance) publish() {
 	p := &published{status: inst.status, sort: inst.rec.Sort}
 	if inst.pkg != nil {
 		p.manifest, p.pkg = inst.pkg.Manifest, inst.pkg
+	} else if m, err := manifest.Parse([]byte(inst.rec.Manifest)); err == nil {
+		// Not loaded yet (the panel starting): what it provides is known from its
+		// record, so events for it are queued from the first moment.
+		p.manifest = m
 	}
 	inst.pub.Store(p)
 }
 
 func (inst *instance) stop() {
+	inst.running = false
 	if inst.vm != nil {
 		inst.vm.Close()
 		inst.vm = nil
@@ -456,6 +485,12 @@ func (h *Host) Update(ctx context.Context, raw []byte, consent Consent) (*Info, 
 	inst.rec = next
 	inst.pkg = pkg
 	if !prev.Enabled {
+		// Switched off, it still gets its snapshot: a rollback restores the data as
+		// this version left it, never a copy from an older update.
+		path := h.dbPath(inst.id)
+		if err := pdb.Snapshot(ctx, path, path+".prev"); err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("snapshot before update: %w", err)
+		}
 		return inst.info(), nil
 	}
 	if err := inst.start(ctx, true); err != nil {
@@ -555,6 +590,8 @@ func (h *Host) Uninstall(_ context.Context, id string, keepData bool) error {
 	if err := h.deps.Store.DeletePlugin(id); err != nil {
 		return err
 	}
+	inst.status = model.PluginDisabled // a call queued behind this one must not run it again
+	inst.publish()
 	h.mu.Lock()
 	delete(h.plugins, id)
 	h.mu.Unlock()
@@ -799,7 +836,12 @@ func (h *Host) CheckpointAll(ctx context.Context) {
 	}
 	h.mu.RUnlock()
 	for _, inst := range insts {
-		inst.mu.Lock()
+		// Bounded: a backup must not hang behind a plugin stuck in a long call. That
+		// plugin's last writes then miss this backup and make the next one.
+		if !lockWithin(ctx, &inst.mu, 10*time.Second) {
+			h.log.Warn("plugin db checkpoint skipped: the plugin is busy", "plugin", inst.id)
+			continue
+		}
 		if inst.db != nil {
 			if err := inst.db.Checkpoint(ctx); err != nil {
 				h.log.Warn("plugin db checkpoint", "plugin", inst.id, "err", err)

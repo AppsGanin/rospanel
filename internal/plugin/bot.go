@@ -73,13 +73,16 @@ func (h *Host) BotMenu(ctx context.Context, u model.BotUser, lang string) []mode
 					}
 				}
 			}
+			parts[i] = buttons
+			if err != nil {
+				return // a busy or failing plugin is asked again next time, not remembered empty
+			}
 			h.bot.mu.Lock()
 			if h.bot.m == nil || len(h.bot.m) > 10000 {
 				h.bot.m = map[string]cachedMenu{}
 			}
 			h.bot.m[ck] = cachedMenu{buttons: buttons, at: time.Now()}
 			h.bot.mu.Unlock()
-			parts[i] = buttons
 		}(i, id, ck)
 	}
 	wg.Wait()

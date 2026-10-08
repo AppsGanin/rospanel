@@ -71,9 +71,10 @@ export function onEvent(e) {
 - **Retries on error.** If `onEvent` throws, the event comes again after 10 s, 30 s, 2 min
   and 10 min — up to 5 attempts in all.
 - **No guaranteed order** between different users' events or across retries.
-- **Overload.** A plugin that receives over 300 events a minute for three minutes in a row is
-  paused. Usually that is a plugin reacting to its own changes — say, changing limits through
-  `panel.api` on `user.limits_changed`.
+- **Loops.** A plugin that, for three minutes in a row, receives over 300 events a minute and
+  itself makes over 100 changes a minute through `panel.api` is paused: that is a plugin
+  reacting to its own changes (changing limits on `user.limits_changed`). The panel's bulk
+  events — a traffic reset for thousands of users — do not pause a plugin that only reads them.
 
 Events often needed:
 
@@ -302,7 +303,7 @@ export function beforeSignup(req) {
 }
 
 export function beforeDeviceBind(req) {
-  // req = {user_id, device_os, device_model, user_agent, ip, count, cap, lang}
+  // req = {user_id, hwid, device_os, device_model, user_agent, ip, count, cap, lang}
   return req.device_os === "Windows" ? false : { allow: true };
 }
 
@@ -325,8 +326,8 @@ Common rules:
 | Export | Asked | Answer |
 |---|---|---|
 | `beforeSignup` | before a new account from the bot, the Mini App or `POST /v1/signup`. Not asked about an existing account or one coming back after being unlinked | `{allow, reason}` or `false` |
-| `beforeDeviceBind` | before a device new to the user takes a slot (the device limit on, and the client sent a HWID). A refusal is kept for a minute | `{allow, reason}` or `false` |
-| `quotePrice` | while pricing a plan or a renewal; `base_rub` is the price after the period discount, before a promo code | `{price_rub, note}` or `null` |
+| `beforeDeviceBind` | before a device new to the user takes a slot (the device limit on, and the client sent a HWID). A refusal of that device is kept for a minute | `{allow, reason}` or `false` |
+| `quotePrice` | while pricing a plan or a renewal the user buys; `base_rub` is the price after the period discount, before a promo code. Auto-renewal from the balance charges the regular price | `{price_rub, note}` or `null` |
 
 - **Price bounds.** A price counts from half of `base_rub` to `base_rub`. Any other is
   ignored, with a warning in the plugin's log.
@@ -420,7 +421,9 @@ body { background-image: url(bg.webp); }
   (`.btn`, `.btn.alt` …) can be styled too, but they may change between versions.
 - **Nothing from elsewhere.**
   - `url()` may name only a file of `theme/`, or `data:image/…`, `data:font/…`.
-  - `@import`, `expression(`, `javascript:` are refused.
+  - `@import`, `image-set(`, `expression(`, `javascript:`, addresses with a scheme (`://`)
+    or `//`, and backslash escapes are refused.
+  - The subscription page itself loads images and fonts only from the panel, too (CSP).
   - The reason: a page loading anything from a third-party host hangs where that host is
     blocked.
 - **Sizes.** Up to 50 files, 1 MB each, 3 MB together.

@@ -191,6 +191,8 @@ interface SignupRequest {
 /** beforeDeviceBind(req): a device the user has not bound yet, about to take a slot. */
 interface DeviceRequest {
   user_id: number;
+  /** The device's id (x-hwid). */
+  hwid: string;
   device_os?: string;
   device_model?: string;
   user_agent?: string;

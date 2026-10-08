@@ -413,12 +413,19 @@ func refRewardText(set *model.Settings, lang i18n.Lang) string {
 // quoteLines explains a price that is not simply the plan's: the discount, the part
 // the balance pays, and what is left. Empty when the plan costs its price in money.
 func quoteLines(q core.PlanQuote, lang i18n.Lang) string {
-	if q.DiscountRub == 0 && q.BalanceKop == 0 && q.PeriodDiscountRub == 0 {
+	if q.DiscountRub == 0 && q.BalanceKop == 0 && q.PeriodDiscountRub == 0 && q.PluginDiscountRub == 0 {
 		return ""
 	}
 	var b strings.Builder
 	if q.PeriodDiscountRub > 0 {
 		b.WriteString("\n" + i18n.T(lang, "user.quotePeriods", q.Periods, q.PeriodDiscountRub))
+	}
+	if q.PluginDiscountRub > 0 {
+		note := q.PluginNote
+		if note == "" {
+			note = i18n.T(lang, "sub.yourPrice")
+		}
+		b.WriteString("\n" + i18n.T(lang, "user.quotePlugin", esc(note), q.PluginDiscountRub))
 	}
 	if q.DiscountRub > 0 {
 		b.WriteString("\n" + i18n.T(lang, "user.quoteDiscount", esc(q.PromoCode), q.DiscountRub))

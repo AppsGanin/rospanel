@@ -61,7 +61,11 @@ func TestPluginThemeOnSubscriptionPage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	page := get(base, true).Body.String()
+	pageRec := get(base, true)
+	if csp := pageRec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "img-src 'self'") || !strings.Contains(csp, "font-src 'self'") {
+		t.Fatalf("the page's CSP: %q", csp)
+	}
+	page := pageRec.Body.String()
 	if !strings.Contains(page, `/theme/theme.css?v=`+pkg.SHA256[:12]) {
 		t.Fatalf("the page does not link the theme")
 	}

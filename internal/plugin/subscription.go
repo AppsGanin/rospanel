@@ -25,6 +25,7 @@ const (
 	subTransformTimeout = 300 * time.Millisecond
 	subTransformTTL     = 5 * time.Minute
 	subTransformCache   = 32 << 20 // bytes of answers kept, all plugins together
+	subTransformEntries = 50000
 	maxSubOutput        = 4 << 20
 	maxLinkLen          = 8 << 10
 )
@@ -61,7 +62,9 @@ func (c *transformCache) get(key string) ([]byte, bool) {
 func (c *transformCache) put(key string, out []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.m == nil || c.bytes+len(out) > subTransformCache {
+	// Bounded in bytes and in entries: "no change" answers weigh nothing, and a key
+	// per user, format and profile would otherwise grow without end.
+	if c.m == nil || c.bytes+len(out) > subTransformCache || len(c.m) >= subTransformEntries {
 		c.m, c.bytes = map[string]cachedTransform{}, 0 // a bound, not an eviction policy
 	}
 	if old, ok := c.m[key]; ok {

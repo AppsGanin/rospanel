@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -48,8 +49,52 @@ func (s *Store) LeaseWebhookDeliveries(now, lease int64, limit int) ([]WebhookDe
 
 // LeasePluginDeliveries is LeaseWebhookDeliveries for the plugins' rows. The two are
 // leased apart so a slow plugin never holds an endpoint's delivery back.
-func (s *Store) LeasePluginDeliveries(now, lease int64, limit int) ([]WebhookDelivery, error) {
-	return s.leaseDeliveries(now, lease, limit, true)
+//
+// At most one row per plugin — its oldest due one — and none for the plugins in
+// skip (those with a delivery in flight): calls into a plugin run one at a time,
+// so a second row would only wait, or be put back, over and over.
+func (s *Store) LeasePluginDeliveries(now, lease int64, limit int, skip []string) ([]WebhookDelivery, error) {
+	var due int
+	if err := s.rdb.QueryRow(`SELECT EXISTS(SELECT 1 FROM webhook_outbox WHERE next_at <= ? AND plugin_id <> '')`, now).Scan(&due); err == nil && due == 0 {
+		return nil, nil
+	}
+	not, args := "", []any{now}
+	if len(skip) > 0 {
+		not = ` AND plugin_id NOT IN (?` + strings.Repeat(`, ?`, len(skip)-1) + `)`
+		for _, p := range skip {
+			args = append(args, p)
+		}
+	}
+	args = append(args, limit)
+	var out []WebhookDelivery
+	err := s.withTx(func(tx *sql.Tx) error {
+		rows, err := tx.Query(`SELECT id, hook_id, plugin_id, event, body, attempt FROM webhook_outbox
+			WHERE id IN (SELECT MIN(id) FROM webhook_outbox
+				WHERE next_at <= ? AND plugin_id <> ''`+not+` GROUP BY plugin_id)
+			ORDER BY next_at, id LIMIT ?`, args...)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var d WebhookDelivery
+			if err := rows.Scan(&d.ID, &d.HookID, &d.PluginID, &d.Event, &d.Body, &d.Attempt); err != nil {
+				rows.Close()
+				return err
+			}
+			out = append(out, d)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, d := range out {
+			if _, err := tx.Exec(`UPDATE webhook_outbox SET next_at = ? WHERE id = ?`, now+lease, d.ID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return out, err
 }
 
 func (s *Store) leaseDeliveries(now, lease int64, limit int, plugins bool) ([]WebhookDelivery, error) {

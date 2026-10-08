@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/i18n"
@@ -18,6 +19,8 @@ import (
 type PluginHooks interface {
 	// Hooked reports whether any active plugin answers a decision ("beforeDeviceBind"…).
 	Hooked(hook string) bool
+	// Stopped reports whether a plugin is installed but not running.
+	Stopped(id string) bool
 	BeforeSignup(ctx context.Context, req model.SignupCheck) (allow bool, reason string)
 	BeforeDeviceBind(ctx context.Context, req model.DeviceCheck) (allow bool, reason string)
 	QuotePrice(ctx context.Context, req model.PriceRequest) (priceRub int, note string, ok bool)
@@ -45,6 +48,19 @@ func (m *Manager) SignupAllowed(ctx context.Context, req model.SignupCheck) (boo
 	h := m.pluginHooks()
 	if h == nil {
 		return true, ""
+	}
+	// A Telegram that opened the bot first carries what it came with: the invite
+	// link's referrer and the source tag, kept for it since /start.
+	if req.TelegramID > 0 && req.Ref == "" && req.Source == "" {
+		if name, refID, source, err := m.store.ChatOrigin(req.TelegramID); err == nil {
+			if req.Username == "" {
+				req.Username = name
+			}
+			req.Source = source
+			if refID > 0 {
+				req.Ref, _ = m.RefCode(refID)
+			}
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, hookBudget)
 	defer cancel()
@@ -83,9 +99,32 @@ func (m *Manager) deviceAllowed(u model.User, d model.Device, capacity int) (boo
 	ctx, cancel := context.WithTimeout(context.Background(), hookBudget)
 	defer cancel()
 	return h.BeforeDeviceBind(ctx, model.DeviceCheck{
-		UserID: u.ID, DeviceOS: d.OS, DeviceModel: d.Model, UserAgent: d.App, IP: d.IP, Count: count, Cap: capacity,
+		UserID: u.ID, HWID: d.HWID, DeviceOS: d.OS, DeviceModel: d.Model, UserAgent: d.App, IP: d.IP, Count: count, Cap: capacity,
 		Lang: string(m.userLang(u.TgChatID)),
 	})
+}
+
+// pluginPaymentStopped reports whether provider is a plugin's payment method whose
+// plugin is installed but not running.
+func (m *Manager) pluginPaymentStopped(provider string) bool {
+	id, ok := strings.CutPrefix(provider, "plugin.")
+	if !ok {
+		return false
+	}
+	h := m.pluginHooks()
+	return h != nil && h.Stopped(id)
+}
+
+// warmPluginPrice asks the plugins for a purchase's price before applyPlanMu is
+// taken: the price quoted under the lock then comes from the plugin host's cache,
+// and the lock every payment confirmation needs is never held while a plugin thinks.
+func (m *Manager) warmPluginPrice(userID int64, p Purchase) {
+	if h := m.pluginHooks(); h == nil || !h.Hooked("quotePrice") {
+		return
+	}
+	if u, err := m.store.GetUser(userID); err == nil {
+		_, _, _ = m.quotePurchase(*u, p, time.Now().Unix())
+	}
 }
 
 // pluginPrice asks the plugins for this user's price of a plan. The answer is held

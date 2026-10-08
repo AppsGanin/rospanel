@@ -29,27 +29,40 @@ type decisionCache struct {
 }
 
 type cachedDecision struct {
-	raw json.RawMessage
-	at  time.Time
+	raw     json.RawMessage // nil: no answer
+	expires time.Time
 }
 
 func (c *decisionCache) get(key string) (json.RawMessage, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	d, ok := c.m[key]
-	if !ok || time.Since(d.at) >= decisionTTL {
+	if !ok || time.Now().After(d.expires) {
 		return nil, false
 	}
 	return d.raw, true
 }
 
-func (c *decisionCache) put(key string, raw json.RawMessage) {
+func (c *decisionCache) put(key string, raw json.RawMessage) { c.putFor(key, raw, decisionTTL) }
+
+func (c *decisionCache) putFor(key string, raw json.RawMessage, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.m == nil || len(c.m) >= maxDecided { // a bound, not an eviction policy
 		c.m = map[string]cachedDecision{}
 	}
-	c.m[key] = cachedDecision{raw: raw, at: time.Now()}
+	c.m[key] = cachedDecision{raw: raw, expires: time.Now().Add(ttl)}
+}
+
+// Stopped reports whether a plugin is installed but not running (paused, failed,
+// switched off).
+func (h *Host) Stopped(id string) bool {
+	inst, err := h.get(id)
+	if err != nil {
+		return false
+	}
+	p := inst.pub.Load()
+	return p != nil && p.status != model.PluginActive
 }
 
 // Hooked reports whether an active plugin answers a decision: callers skip the work
@@ -75,14 +88,33 @@ func (h *Host) BeforeSignup(ctx context.Context, req model.SignupCheck) (bool, s
 }
 
 // BeforeDeviceBind asks the plugins whether a new device may take a slot. A refusal
-// is kept for a minute: the refused client asks again on every refresh.
+// is kept for a minute, per device: the refused client asks again on every refresh.
+// An allowed device is bound and never asked about again, so allowing is not kept.
 func (h *Host) BeforeDeviceBind(ctx context.Context, req model.DeviceCheck) (bool, string) {
-	return h.decide(ctx, manifest.HookBeforeDeviceBind, req, req.Lang,
-		fmt.Sprintf("%d/%s/%s/%s", req.UserID, req.DeviceOS, req.DeviceModel, req.IP))
+	key := fmt.Sprintf("%d/%s", req.UserID, req.HWID)
+	for _, id := range h.Active(hookPick(manifest.HookBeforeDeviceBind)) {
+		if ctx.Err() != nil {
+			break
+		}
+		ck := id + "/" + manifest.HookBeforeDeviceBind + "/" + key
+		raw, ok := h.decided.get(ck)
+		if !ok {
+			var err error
+			raw, err = h.call(ctx, id, manifest.HookBeforeDeviceBind, req, HookTimeout,
+				callOpts{readOnly: true, lang: req.Lang, wait: HookTimeout})
+			if err != nil {
+				continue
+			}
+		}
+		if allow, reason := verdict(raw); !allow {
+			h.decided.put(ck, raw)
+			return false, h.reason(id, req.Lang, reason)
+		}
+	}
+	return true, ""
 }
 
-// decide asks each plugin with the hook in order; the first refusal wins. key, when
-// set, caches each plugin's answer under it.
+// decide asks each plugin with the hook in order; the first refusal wins.
 func (h *Host) decide(ctx context.Context, hook string, req any, lang, key string) (bool, string) {
 	for _, id := range h.Active(hookPick(hook)) {
 		if ctx.Err() != nil {
@@ -99,20 +131,29 @@ func (h *Host) decide(ctx context.Context, hook string, req any, lang, key strin
 	return true, ""
 }
 
+// noAnswerTTL is how long a plugin that did not answer (busy, failing, slow) is
+// taken as having no opinion, so a screen asking for many prices does not wait on
+// it for each one.
+const noAnswerTTL = 10 * time.Second
+
 // ask calls a decision export, through the cache when key is set; ok is false when
 // the plugin gave no answer.
 func (h *Host) ask(ctx context.Context, id, export string, req any, lang, key string) (json.RawMessage, bool) {
+	ck := id + "/" + export + "/" + key
 	if key != "" {
-		if raw, ok := h.decided.get(id + "/" + export + "/" + key); ok {
-			return raw, true
+		if raw, ok := h.decided.get(ck); ok {
+			return raw, raw != nil
 		}
 	}
 	raw, err := h.call(ctx, id, export, req, HookTimeout, callOpts{readOnly: true, lang: lang, wait: HookTimeout})
 	if err != nil {
+		if key != "" {
+			h.decided.putFor(ck, nil, noAnswerTTL)
+		}
 		return nil, false
 	}
 	if key != "" {
-		h.decided.put(id+"/"+export+"/"+key, raw)
+		h.decided.put(ck, raw)
 	}
 	return raw, true
 }

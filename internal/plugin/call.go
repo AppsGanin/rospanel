@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"time"
 
@@ -35,35 +36,85 @@ func (h *Host) call(ctx context.Context, id, export string, arg any, timeout tim
 	if err != nil {
 		return nil, err
 	}
+	// A plugin calling back into itself — panel.api opening an order paid with its
+	// own payment method — would wait on the lock its outer call holds.
+	if calling(ctx, id) {
+		return nil, ErrReentry
+	}
 	var raw []byte
 	if arg != nil {
 		if raw, err = json.Marshal(arg); err != nil {
 			return nil, err
 		}
 	}
-	if o.wait > 0 {
-		if !lockWithin(&inst.mu, o.wait) {
-			return nil, ErrBusy
+	// Never wait for the plugin longer than the call itself may take: a call stuck
+	// in another (or in a loop through the panel the context did not carry) ends as
+	// "busy" instead of holding its caller — an event worker, the bot — for good.
+	wait := o.wait
+	if wait <= 0 {
+		wait = timeout
+	}
+	if !lockWithin(ctx, &inst.mu, wait) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-	} else {
-		inst.mu.Lock()
+		return nil, ErrBusy
 	}
 	defer inst.mu.Unlock()
-	if inst.status != model.PluginActive {
+	if inst.status != model.PluginActive || h.isClosed() {
 		return nil, ErrNotActive
 	}
-	return inst.invoke(ctx, export, raw, timeout, o)
+	if !inst.running { // active by its record, still starting: come back later
+		return nil, ErrBusy
+	}
+	if err := ctx.Err(); err != nil { // the caller left while this call queued
+		return nil, err
+	}
+	// The VM runs on its own clock. A caller that goes away (a client disconnecting
+	// from onHttp or the subscription page) must not tear the VM down mid-call — that
+	// counted as the plugin failing, and ten disconnects paused it. The caller's
+	// deadline still holds: it shortens the call's own, so the JS is interrupted, not
+	// the module killed.
+	if dl, ok := ctx.Deadline(); ok {
+		if rem := time.Until(dl); rem < timeout {
+			timeout = max(rem, 10*time.Millisecond)
+		}
+	}
+	return inst.invoke(context.WithoutCancel(withCalling(ctx, id)), export, raw, timeout, o)
 }
 
-// lockWithin takes mu if it comes free within d: a sign-up must not stand behind a
-// plugin's minute-long cron job.
-func lockWithin(mu *sync.Mutex, d time.Duration) bool {
+// ErrPaused is a call that ended with the plugin paused (its database over quota).
+var ErrPaused = errors.New("plugin: paused")
+
+// ErrReentry is a plugin's call reaching the same plugin again.
+var ErrReentry = errors.New("plugin: a call into itself (through the panel) is refused")
+
+type callingKey struct{}
+
+// withCalling marks ctx as inside a call of plugin id; calling reports the mark.
+func withCalling(ctx context.Context, id string) context.Context {
+	prev, _ := ctx.Value(callingKey{}).([]string)
+	return context.WithValue(ctx, callingKey{}, append(slices.Clone(prev), id))
+}
+
+func calling(ctx context.Context, id string) bool {
+	ids, _ := ctx.Value(callingKey{}).([]string)
+	return slices.Contains(ids, id)
+}
+
+// lockWithin takes mu if it comes free within d, and while ctx lasts: a sign-up
+// must not stand behind a plugin's minute-long cron job.
+func lockWithin(ctx context.Context, mu *sync.Mutex, d time.Duration) bool {
 	deadline := time.Now().Add(d)
+	pause := 2 * time.Millisecond
 	for !mu.TryLock() {
-		if time.Now().After(deadline) {
+		if time.Now().After(deadline) || ctx.Err() != nil {
 			return false
 		}
-		time.Sleep(2 * time.Millisecond)
+		time.Sleep(pause)
+		if pause < 50*time.Millisecond { // a long wait polls less often
+			pause *= 2
+		}
 	}
 	return true
 }
@@ -71,7 +122,7 @@ func lockWithin(mu *sync.Mutex, d time.Duration) bool {
 // invoke runs one call with inst.mu held. It replaces a dead or bloated VM,
 // rolls back what the call left open in the database, and counts failures.
 func (inst *instance) invoke(ctx context.Context, export string, arg []byte, timeout time.Duration, o callOpts) (json.RawMessage, error) {
-	if err := inst.ensureVM(ctx); err != nil {
+	if err := inst.ensureVM(ctx, o); err != nil {
 		inst.failed(fmt.Errorf("reload: %w", err))
 		return nil, err
 	}
@@ -92,7 +143,7 @@ func (inst *instance) invoke(ctx context.Context, export string, arg []byte, tim
 	}
 	if inst.db != nil && inst.db.OverQuota() {
 		inst.pause(fmt.Sprintf("its database grew past the %d MB quota", inst.pkg.Manifest.Quota()>>20))
-		return out, err
+		return nil, ErrPaused
 	}
 	if err != nil {
 		inst.failed(fmt.Errorf("%s: %w", export, err))

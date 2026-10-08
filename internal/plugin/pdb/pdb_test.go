@@ -270,3 +270,17 @@ func TestSnapshotRestore(t *testing.T) {
 		t.Fatal("size")
 	}
 }
+
+// One value is held to MaxValue: SQLite refuses to build a bigger one, so a query
+// cannot allocate hundreds of megabytes in the panel's process.
+func TestValueLengthLimit(t *testing.T) {
+	d := open(t, 0)
+	ctx := context.Background()
+	if _, err := d.Query(ctx, "SELECT length(randomblob(?)) AS n", []any{float64(MaxValue + 1)}); err == nil {
+		t.Fatal("a value over the limit was built")
+	}
+	rows, err := d.Query(ctx, "SELECT length(randomblob(1000)) AS n", nil)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("%v %v", rows, err)
+	}
+}

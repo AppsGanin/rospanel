@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"log"
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/i18n"
@@ -44,9 +45,38 @@ func (s *UserService) handlePluginCallback(ctx context.Context, client *Client, 
 		s.pluginGone(ctx, client, chatID, msgID, lang, linked)
 		return true
 	}
-	reply, err := pb.BotCallback(ctx, data, botUser(u, chatID, cb.From), string(lang))
-	s.showPluginReply(ctx, client, chatID, msgID, lang, linked, reply, err)
+	s.offLoop(chatID, func() {
+		reply, err := pb.BotCallback(ctx, data, botUser(u, chatID, cb.From), string(lang))
+		s.showPluginReply(ctx, client, chatID, msgID, lang, linked, reply, err)
+	})
 	return true
+}
+
+// offLoop runs a plugin's answer outside the bot's update loop: the loop serves
+// every chat in turn, and a plugin given seconds to answer would hold them all. One
+// at a time per chat — a second press while the first is out is dropped.
+func (s *UserService) offLoop(chatID int64, fn func()) {
+	s.mu.Lock()
+	if s.pluginChats == nil {
+		s.pluginChats = map[int64]bool{}
+	}
+	if s.pluginChats[chatID] {
+		s.mu.Unlock()
+		return
+	}
+	s.pluginChats[chatID] = true
+	s.mu.Unlock()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("telegram user: plugin answer panic recovered: %v", r)
+			}
+			s.mu.Lock()
+			delete(s.pluginChats, chatID)
+			s.mu.Unlock()
+		}()
+		fn()
+	}()
 }
 
 // handlePluginCommand answers a /command a plugin declares; false = none does.
@@ -56,14 +86,28 @@ func (s *UserService) handlePluginCommand(ctx context.Context, client *Client, m
 	if pb == nil || name == cmd || name == "" {
 		return false
 	}
+	// Whether a plugin answers it is known without asking one (its manifest).
+	known := false
+	for _, c := range pb.BotCommands("") {
+		if c.Command == name {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return false
+	}
 	chatID := m.Chat.ID
 	lang := s.lang(chatID)
 	u, linked := s.findLinkedUser(chatID)
-	reply, err := pb.BotCommand(ctx, name, strings.Join(args, " "), botUser(u, chatID, m.From), string(lang))
-	if errors.Is(err, plugin.ErrNoBot) {
-		return false
-	}
-	s.showPluginReply(ctx, client, chatID, 0, lang, linked, reply, err)
+	from := m.From
+	s.offLoop(chatID, func() {
+		reply, err := pb.BotCommand(ctx, name, strings.Join(args, " "), botUser(u, chatID, from), string(lang))
+		if errors.Is(err, plugin.ErrNoBot) {
+			return // switched off in the meantime
+		}
+		s.showPluginReply(ctx, client, chatID, 0, lang, linked, reply, err)
+	})
 	return true
 }
 

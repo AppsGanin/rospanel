@@ -39,6 +39,11 @@ func TestCheckSQL(t *testing.T) {
 		`SAVEPOINT a`,
 		`EXPLAIN PRAGMA max_page_count = 5`,
 		`CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; END; PRAGMA x = 1`,
+		// Keywords as names must not open a "trigger body" the guard skips.
+		`CREATE TABLE trigger(begin INT); PRAGMA max_page_count = 1000000`,
+		`CREATE VIEW trigger AS SELECT 1 AS begin; PRAGMA max_page_count = 1000000`,
+		`CREATE TRIGGER t AFTER INSERT ON begin BEGIN SELECT 1; END; PRAGMA max_page_count = 1000000`,
+		`CREATE TEMP TRIGGER t AFTER INSERT ON x BEGIN SELECT CASE 1 WHEN 1 THEN 2 END; END; PRAGMA x = 1`,
 		`SELECT CASE 1 WHEN 1 THEN 2 END; END`,
 		"-- comment\nPRAGMA x",
 	}

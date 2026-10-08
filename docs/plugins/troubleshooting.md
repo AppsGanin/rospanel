@@ -25,7 +25,7 @@
 | JS memory | `memory_mb`, 32 MB (up to 128) | the call throws `InternalError: out of memory`, the VM is replaced |
 | Call time | see the table in [extension points](exports.md): 0.3 s – 60 s | `InternalError: interrupted` |
 | Database | `db_quota_mb`, 100 MB (up to 1024) | the write is refused, the plugin is paused |
-| A database query | 10,000 rows, 4 MB of answer | an error — use `LIMIT`/`OFFSET` |
+| A database query | 10,000 rows, 4 MB of answer; one value up to 8 MB, the statement text up to 1 MB | an error — use `LIMIT`/`OFFSET` |
 | `kv` | a 64 KB value, a 512-byte key, `list` up to 1000 | an error |
 | `panel.api` | 1 MB request, 4 MB answer | an error — page through, or use a blob |
 | `panel.http.fetch` | 1 MB body, 4 MB answer, 30 s, 5 redirects | an error — big data through blobs |
@@ -44,12 +44,14 @@ The plugin goes to "paused" (`paused`), and the operator is told in the admin bo
 
 - **10 errors in a row** — any call threw or ran out of time;
 - **the database outgrew its quota**;
-- **an event storm** — over 300 events a minute for three minutes in a row. Usually the plugin
-  is reacting to its own changes: it changes a user through `panel.api` on an event that the
-  change fires again.
+- **a loop** — three minutes in a row of over 300 events a minute and over 100 changes a minute
+  by the plugin itself through `panel.api`: it changes a user on an event that the change fires
+  again.
 
-A paused plugin gets no calls, and events for it do not pile up. The operator switches it back
-on from its card once the cause is fixed; that resets the error count.
+A paused plugin gets no calls, and events for it do not pile up. It stays paused across a panel
+restart. The operator presses **Start again** on its card once the cause is fixed; that resets
+the error count. Orders of its payment method wait: the panel does not cancel them by age while
+the plugin is installed.
 
 ## Common errors
 

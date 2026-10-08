@@ -277,6 +277,7 @@ func (m *Manager) buyPlanFromBalance(ctx context.Context, userID int64, p Purcha
 	if err != nil {
 		return nil, invalidCode("err.planNotFound", "тариф не найден")
 	}
+	m.warmPluginPrice(userID, p)
 	m.applyPlanMu.Lock()
 	u, err := m.store.GetUser(userID)
 	if err != nil {

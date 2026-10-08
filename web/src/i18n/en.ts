@@ -245,6 +245,7 @@ const en: Dict = {
     pluginConsent: "the package changed after the review — upload it again",
     pluginInvalid: "the package does not fit: {{detail}}",
     pluginSettings: "the settings do not fit: {{detail}}",
+    pluginPermsBeyond: "you do not hold the permissions the plugin asks for: {{detail}}",
     pluginActionFailed: "the action failed: {{detail}}",
     pluginTooLarge: "the package is larger than 5 MB",
     pluginUploadExpired: "the upload expired — choose the file again",

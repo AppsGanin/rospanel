@@ -28,8 +28,9 @@ type UserService struct {
 	mu          sync.Mutex
 	client      *Client
 	clientToken string
-	clientProxy string // proxy the cached client was built with; a change rebuilds it
-	commandsFor string // token (and plugin commands) whose command menu was already published
+	clientProxy string         // proxy the cached client was built with; a change rebuilds it
+	commandsFor string         // token (and plugin commands) whose command menu was already published
+	pluginChats map[int64]bool // chats with a plugin's answer being worked out (offLoop)
 	offset      int64
 	pending     map[int64]string // chatID → "reg" (awaiting display name), "promo", "topup"
 
@@ -1122,7 +1123,7 @@ func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msg
 		}
 		// A discount code the user entered, or devices held, show in the price it buys.
 		label := planButtonLabel(p, lang)
-		if q.DiscountRub > 0 || q.Devices > 0 {
+		if q.DiscountRub > 0 || q.PluginDiscountRub > 0 || q.Devices > 0 {
 			shown := p
 			shown.PriceRub = q.TotalRub
 			label = "🏷 " + planButtonLabel(shown, lang)

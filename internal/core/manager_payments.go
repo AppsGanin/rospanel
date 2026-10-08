@@ -430,7 +430,9 @@ func (m *Manager) startProviderOrder(ctx context.Context, lang i18n.Lang, d stor
 	adminLang := m.botLang()
 	// A separate timeout context for the outbound provider call — ctx carries the
 	// actor for the audit row and must not be cancelled along with the HTTP request.
-	callCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	// WithoutCancel keeps the request's values (a plugin's own call chain among
+	// them, so a plugin opening an order paid with itself is refused, not deadlocked).
+	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
 	if strings.TrimSpace(returnURL) == "" {
 		returnURL = "https://t.me/"
@@ -648,7 +650,10 @@ func (m *Manager) PollPendingPayments() {
 		// looks abandoned, including the ones that were paid while we were down. So
 		// age only ever decides what to do with an order the provider has already been
 		// asked about — cancelling first and asking later is how money goes missing.
-		stale := o.CreatedAt > 0 && o.CreatedAt < staleBefore
+		// A plugin's payment method that is installed but stopped (paused by its
+		// breaker, failed to start) comes back when the operator resumes it: its
+		// orders wait for that, whatever their age.
+		stale := o.CreatedAt > 0 && o.CreatedAt < staleBefore && !m.pluginPaymentStopped(o.Provider)
 		client, ok := clients[o.Provider]
 		if !ok {
 			// A provider that's since been switched off or unconfigured has no client —

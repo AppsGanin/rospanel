@@ -21,9 +21,8 @@ type PluginEvents interface {
 }
 
 const (
-	pluginWorkers   = 2
-	pluginTimeout   = 15 * time.Second // the plugin's own deadline plus its grace
-	pluginBusyRetry = 2 * time.Second  // a delivery to a plugin busy with another
+	pluginWorkers = 2
+	pluginTimeout = 30 * time.Second // onEvent and channel.send, each within its own deadline
 )
 
 // SetPluginEvents connects the plugin host. Until it is set no event goes to a
@@ -102,12 +101,13 @@ func (m *Manager) dispatchPluginEvents(ch chan<- pluginJob) bool {
 	if m.pluginHost() == nil {
 		return false
 	}
-	ds, err := m.store.LeasePluginDeliveries(time.Now().Unix(), int64(webhookLease.Seconds()), webhookBatch)
+	ds, err := m.store.LeasePluginDeliveries(time.Now().Unix(), int64(webhookLease.Seconds()), webhookBatch, m.busyPlugins())
 	if err != nil {
 		logErr("plugin events: leasing deliveries failed", "err", err)
 		return false
 	}
 	for _, d := range ds {
+		m.claimPlugin(d.PluginID) // in flight from here until its worker is done
 		select {
 		case ch <- pluginJob{outboxID: d.ID, plugin: d.PluginID, event: d.Event, body: d.Body, attempt: d.Attempt + 1}:
 		case <-m.done:
@@ -118,20 +118,19 @@ func (m *Manager) dispatchPluginEvents(ch chan<- pluginJob) bool {
 }
 
 func (m *Manager) deliverPluginEvent(job pluginJob) {
+	// The dispatcher claimed the plugin when it leased this row and leases nothing
+	// more for it until this is done; done, it asks for the plugin's next row.
+	defer func() {
+		m.releasePlugin(job.plugin)
+		select {
+		case m.pluginKick <- struct{}{}:
+		default:
+		}
+	}()
 	host := m.pluginHost()
 	if host == nil {
 		return // leased; back after the lease
 	}
-	// Calls into one plugin are serialized, so a second worker taking that plugin's
-	// next event would only sit waiting — for up to a call's full deadline — while
-	// other plugins' events queue behind both. It goes back instead, unspent.
-	if !m.claimPlugin(job.plugin) {
-		if e := m.store.RetryWebhookDelivery(job.outboxID, job.attempt-1, time.Now().Add(pluginBusyRetry).Unix()); e != nil {
-			logErr("plugin events: putting back a delivery failed", "plugin", job.plugin, "err", e)
-		}
-		return
-	}
-	defer m.releasePlugin(job.plugin)
 	ctx, cancel := context.WithTimeout(context.Background(), pluginTimeout)
 	gone, err := host.DeliverEvent(ctx, job.plugin, job.body)
 	cancel()
@@ -153,17 +152,24 @@ func (m *Manager) deliverPluginEvent(job pluginJob) {
 	}
 }
 
-func (m *Manager) claimPlugin(plugin string) bool {
+func (m *Manager) claimPlugin(plugin string) {
 	m.pluginBusyMu.Lock()
 	defer m.pluginBusyMu.Unlock()
-	if m.pluginBusy[plugin] {
-		return false
-	}
 	if m.pluginBusy == nil {
 		m.pluginBusy = map[string]bool{}
 	}
 	m.pluginBusy[plugin] = true
-	return true
+}
+
+// busyPlugins are the plugins with a delivery in flight.
+func (m *Manager) busyPlugins() []string {
+	m.pluginBusyMu.Lock()
+	defer m.pluginBusyMu.Unlock()
+	out := make([]string, 0, len(m.pluginBusy))
+	for p := range m.pluginBusy {
+		out = append(out, p)
+	}
+	return out
 }
 
 func (m *Manager) releasePlugin(plugin string) {

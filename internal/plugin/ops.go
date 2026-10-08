@@ -224,6 +224,9 @@ func (inst *instance) opAPI(ctx context.Context, arg []byte, o callOpts) (any, e
 	if err != nil {
 		return nil, err
 	}
+	if method != http.MethodGet {
+		inst.storm.noteWrite(time.Now())
+	}
 	if len(resp) > maxAPIResponse {
 		return nil, fmt.Errorf("panel.api: answer over %d MB — page with limit/offset", maxAPIResponse>>20)
 	}
