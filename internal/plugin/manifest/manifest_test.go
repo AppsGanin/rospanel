@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// full is the manifest from docs/plugins-design.md, every point declared.
+// full is a manifest with every point declared.
 const full = `{
   "id": "lava-pay",
   "version": "1.2.0",

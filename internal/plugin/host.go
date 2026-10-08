@@ -1,5 +1,5 @@
 // Package plugin runs installed plugins: their lifecycle, the calls into them, and
-// the host side of the `panel` API they program against. See docs/plugins-design.md.
+// the host side of the `panel` API they program against. Authors' docs: docs/plugins.
 //
 // Every plugin is one jsvm.VM plus one pdb.DB. Calls into a plugin are serialized
 // (an author never thinks about concurrency); different plugins run in parallel.
@@ -84,7 +84,7 @@ type Deps struct {
 	NoBreaker bool
 }
 
-// Call timeouts per kind of call (docs/plugins-design.md 3.2).
+// Call timeouts per kind of call.
 const (
 	LoadTimeout   = 10 * time.Second
 	EventTimeout  = 10 * time.Second

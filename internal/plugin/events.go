@@ -15,9 +15,9 @@ import (
 
 // A plugin can feed itself: onEvent changes a user through panel.api, the change
 // is an event it is subscribed to, and so on. Until the actor travels with every
-// event (docs/plugins-design.md, section 13) the breaker for that is a rate: past
-// stormRate deliveries a minute while the plugin itself makes stormWrites changes
-// through panel.api a minute, for stormMinutes minutes running, it is paused. Both
+// event the breaker for that is a rate: past stormRate deliveries a minute while
+// the plugin itself makes stormWrites changes through panel.api a minute, for
+// stormMinutes minutes running, it is paused. Both
 // sides of the loop are required: the panel's own bulk events — a monthly traffic
 // reset for thousands of users — come fast too, but a plugin that only reads them
 // is not feeding anything.
