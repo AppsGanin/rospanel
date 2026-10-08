@@ -868,11 +868,14 @@ function TestsView({
       />
     );
 
-  // The rows: what the last run reported, then any test it did not get to.
+  // The rows: what the last run reported, then any test it did not get to. While
+  // a run goes, every test is "running" — the last run's marks would read as this
+  // one's.
+  const shown = running ? null : res;
   const rows: { name: string; state: TestState; result?: DraftTestResult }[] = [
-    ...(res?.results ?? []).map((r) => ({ name: r.name, state: (r.ok ? "ok" : "fail") as TestState, result: r })),
-    ...names
-      .filter((n) => !res?.results.some((r) => r.name === n))
+    ...(shown?.results ?? []).map((r) => ({ name: r.name, state: (r.ok ? "ok" : "fail") as TestState, result: r })),
+    ...(names.length ? names : (res?.results.map((r) => r.name) ?? []))
+      .filter((n) => !shown?.results.some((r) => r.name === n))
       .map((name) => ({ name, state: (running ? "running" : "idle") as TestState })),
   ];
   const total = rows.length;
@@ -920,10 +923,10 @@ function TestsView({
             </div>
           )}
 
-          {res?.error && (
+          {shown?.error && (
             <div className="danger-tint border-t border-gray-100 px-4 py-3">
               <p className="mb-1 text-xs font-semibold text-danger">{t("studio.testsBrokenWhy")}</p>
-              <pre className="whitespace-pre-wrap break-words font-mono text-[11px] text-ink">{res.error}</pre>
+              <pre className="whitespace-pre-wrap break-words font-mono text-[11px] text-ink">{shown.error}</pre>
             </div>
           )}
 
@@ -966,11 +969,11 @@ function TestsView({
           )}
         </section>
 
-        {res?.output.trim() && (
+        {shown?.output.trim() && (
           <details className="rounded-2xl border border-gray-200">
             <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-ink select-none">{t("studio.output")}</summary>
             <pre className="max-h-80 overflow-auto border-t border-gray-100 px-4 py-3 font-mono text-[11px] whitespace-pre-wrap text-ink">
-              {res.output}
+              {shown.output}
             </pre>
           </details>
         )}
