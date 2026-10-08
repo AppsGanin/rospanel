@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import {
   configurePlugin,
@@ -36,7 +36,14 @@ import {
   Code,
   cn,
   EmptyState,
+  IconBraces,
+  IconButton,
   IconExport,
+  IconGear,
+  IconPencil,
+  IconRestart,
+  IconTerminal,
+  IconTrash,
   Modal,
   Panel,
   PasswordInput,
@@ -361,57 +368,66 @@ function PluginRow({
         <p className="text-[11px] text-ink-muted">{t("plugins.paymentHint")}</p>
       )}
 
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {/* What asks to be done, in words; the rest are the icons on the right. */}
         {canManage && p.enabled && p.status !== "active" && (
           <Button size="xs" variant="light" loading={busy} onClick={() => toggle(true)}>
             {t("plugins.startAgain")}
           </Button>
         )}
-        {hasSettings && (
-          <Button size="xs" variant="light" color="gray" nav onClick={() => setOpen((v) => !v)}>
-            {t("plugins.settings")}
+        {canManage && hasSettings && (p.missing_setup?.length ?? 0) > 0 && (
+          <Button size="xs" onClick={() => setOpen(true)}>
+            {t("plugins.fillSettings")}
           </Button>
         )}
         {p.status === "active" && <PluginActionButtons scope="global" plugin={p.id} />}
-        <Button size="xs" variant="light" color="gray" nav onClick={onLogs}>
-          {t("plugins.logs")}
-        </Button>
-        <Button size="xs" variant="light" color="gray" nav onClick={onCode}>
-          {t("plugins.code")}
-        </Button>
-        {canManage && (
-          <>
-            <Button size="xs" variant="light" color="gray" onClick={onUpdate}>
-              {t("plugins.update")}
-            </Button>
-            <Button size="xs" variant="light" color="gray" onClick={onEdit}>
-              {t("studio.openInEditor")}
-            </Button>
-            {p.prev_version && (
-              <Button
-                size="xs"
-                variant="light"
-                color="gray"
-                loading={busy}
-                onClick={rollback}
-              >
-                {t("plugins.rollback", { v: p.prev_version })}
-              </Button>
-            )}
-            <Button size="xs" variant="light" color="red" onClick={onRemove}>
-              {t("plugins.remove")}
-            </Button>
-          </>
-        )}
+        <div className="ml-auto flex items-center gap-0.5">
+          {hasSettings && (
+            <IconButton title={t("plugins.settings")} variant="subtle" color="gray" nav onClick={() => setOpen(true)}>
+              <IconGear size={16} />
+            </IconButton>
+          )}
+          <IconButton title={t("plugins.logs")} variant="subtle" color="gray" nav onClick={onLogs}>
+            <IconTerminal size={16} />
+          </IconButton>
+          <IconButton title={t("plugins.code")} variant="subtle" color="gray" nav onClick={onCode}>
+            <IconBraces size={16} />
+          </IconButton>
+          {canManage && (
+            <>
+              <IconButton title={t("studio.openInEditor")} variant="subtle" color="gray" onClick={onEdit}>
+                <IconPencil size={16} />
+              </IconButton>
+              <IconButton title={t("plugins.update")} variant="subtle" color="gray" onClick={onUpdate}>
+                <IconExport size={16} />
+              </IconButton>
+              {p.prev_version && (
+                <IconButton
+                  title={t("plugins.rollback", { v: p.prev_version })}
+                  variant="subtle"
+                  color="gray"
+                  disabled={busy}
+                  onClick={rollback}
+                >
+                  <IconRestart size={16} />
+                </IconButton>
+              )}
+              <IconButton title={t("plugins.remove")} variant="subtle" color="red" onClick={onRemove}>
+                <IconTrash size={16} />
+              </IconButton>
+            </>
+          )}
+        </div>
       </div>
 
       {open && m && (
-        <SettingsForm
+        <SettingsDialog
           // A new package (update, rollback) brings its own fields: start the form over.
           key={p.sha256}
           plugin={p}
           fields={m.settings ?? []}
           canManage={canManage}
+          onClose={() => setOpen(false)}
           onSaved={(n) => {
             onChange(n);
             notifySuccess(t("plugins.saved"));
@@ -428,25 +444,27 @@ function settingNames(m: PluginManifest | null, keys: string[]): string {
   return keys.map((k) => pickText(m?.settings?.find((f) => f.key === k)?.label) || k).join(", ");
 }
 
-// SettingsForm is a plugin's settings, drawn from its manifest. Secrets are
-// write-only: blank keeps what is stored.
-function SettingsForm({
+// SettingsDialog is a plugin's settings form: one field per row with its hint, a
+// secret shown as set without its value, a required field still empty marked.
+function SettingsDialog({
   plugin,
   fields,
   canManage,
+  onClose,
   onSaved,
   onFailed,
 }: {
   plugin: PluginInfo;
   fields: PluginField[];
   canManage: boolean;
+  onClose: () => void;
   onSaved: (p: PluginInfo) => void;
   onFailed: () => void;
 }) {
   const { t } = useTranslation();
   // What the form starts from is what it sends: a select shows its first option and
   // a switch shows "off", so those are the values, not "" the server would drop.
-  const initial = () => {
+  const initial = useMemo(() => {
     const v: Record<string, string> = {};
     for (const f of fields) {
       const stored = plugin.config[f.key] ?? f.default ?? "";
@@ -456,21 +474,18 @@ function SettingsForm({
       else v[f.key] = stored;
     }
     return v;
-  };
+  }, [fields, plugin.config]);
   const [values, setValues] = useState(initial);
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: string) => setValues((cur) => ({ ...cur, [k]: v }));
+  const dirty = fields.some((f) => values[f.key] !== initial[f.key]);
+  const missing = plugin.missing_setup ?? [];
 
   const save = async () => {
     setSaving(true);
     try {
-      const next = await configurePlugin(plugin.id, values);
-      onSaved(next);
-      setValues((cur) => {
-        const out = { ...cur };
-        for (const f of fields) if (f.kind === "secret") out[f.key] = "";
-        return out;
-      });
+      onSaved(await configurePlugin(plugin.id, values));
+      onClose();
     } catch (e) {
       notifyError(errMessage(e));
       onFailed();
@@ -480,72 +495,110 @@ function SettingsForm({
   };
 
   return (
-    <div className="flex flex-col gap-2.5 rounded-lg border border-brand-600/10 p-3">
-      <div className="grid gap-2.5 sm:grid-cols-2">
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      title={t("plugins.settingsTitle")}
+      subtitle={`${pickText(plugin.manifest?.name) || plugin.id} · ${t("plugins.version", { v: plugin.version })}`}
+      footer={
+        canManage && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="text-[11px] text-ink-muted">{plugin.enabled ? t("plugins.settingsRestart") : ""}</span>
+            <div className="flex gap-2">
+              <Button variant="light" color="gray" onClick={onClose}>
+                {t("common.cancel")}
+              </Button>
+              <Button loading={saving} disabled={!dirty} onClick={save}>
+                {t("common.save")}
+              </Button>
+            </div>
+          </div>
+        )
+      }
+    >
+      <div className="flex flex-col">
         {fields.map((f) => {
           const label = pickText(f.label);
           const help = pickText(f.help);
-          const hint = help && <p className="mt-1 text-[11px] text-ink-muted">{help}</p>;
           if (f.kind === "bool") {
             return (
-              <label key={f.key} className="flex items-center gap-2 text-xs text-ink">
+              <div
+                key={f.key}
+                className="flex items-center gap-4 border-t border-gray-100 py-3.5 first:border-t-0 first:pt-0 last:pb-0"
+              >
+                <div className="min-w-0 flex-1">
+                  <span className="text-sm font-semibold text-ink">{label}</span>
+                  {help && <p className="mt-1 text-xs leading-relaxed text-ink-muted">{help}</p>}
+                </div>
                 <Switch
                   checked={values[f.key] === "true"}
                   onChange={(v) => set(f.key, v ? "true" : "false")}
                   disabled={!canManage}
                   label={label}
                 />
-                {label}
-                {help && <span className="text-[11px] text-ink-muted">— {help}</span>}
-              </label>
-            );
-          }
-          if (f.kind === "select") {
-            const opts = (f.options ?? []).map((o) => ({ value: o.value, label: pickText(o.label) }));
-            return (
-              <div key={f.key}>
-                <Select
-                  label={label}
-                  data={opts}
-                  value={values[f.key]}
-                  onChange={(v) => set(f.key, v)}
-                  disabled={!canManage}
-                />
-                {hint}
-              </div>
-            );
-          }
-          if (f.kind === "textarea") {
-            return (
-              <div key={f.key} className="sm:col-span-2">
-                <Textarea label={label} value={values[f.key]} onChange={(v) => set(f.key, v)} hint={help} />
               </div>
             );
           }
           const secretSet = f.kind === "secret" && plugin.secrets_set?.includes(f.key);
-          return (
-            <div key={f.key}>
-              <TextInput
-                label={secretSet ? t("plugins.secretSet", { label }) : label}
+          const needed = missing.includes(f.key) && !values[f.key]?.trim();
+          let input: React.ReactNode;
+          if (f.kind === "select") {
+            input = (
+              <Select
+                data={(f.options ?? []).map((o) => ({ value: o.value, label: pickText(o.label) }))}
                 value={values[f.key]}
                 onChange={(v) => set(f.key, v)}
-                placeholder={secretSet ? "••••••••" : (f.placeholder ?? "")}
+                disabled={!canManage}
+              />
+            );
+          } else if (f.kind === "textarea") {
+            input = <Textarea value={values[f.key]} onChange={(v) => set(f.key, v)} rows={4} />;
+          } else if (f.kind === "secret") {
+            input = (
+              <PasswordInput
+                ariaLabel={label}
+                value={values[f.key]}
+                onChange={(v) => set(f.key, v)}
+                placeholder={secretSet ? t("plugins.secretKeep") : (f.placeholder ?? "")}
+                disabled={!canManage}
+              />
+            );
+          } else {
+            input = (
+              <TextInput
+                ariaLabel={label}
+                value={values[f.key]}
+                onChange={(v) => set(f.key, v)}
+                placeholder={f.placeholder ?? ""}
                 type={f.kind === "number" ? "number" : undefined}
                 disabled={!canManage}
               />
-              {hint}
+            );
+          }
+          return (
+            <div key={f.key} className="border-t border-gray-100 py-3.5 first:border-t-0 first:pt-0 last:pb-0">
+              <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold text-ink">{label}</span>
+                {secretSet && (
+                  <Badge color="green" size="xs">
+                    {t("plugins.secretIsSet")}
+                  </Badge>
+                )}
+                {needed && (
+                  <Badge color="orange" size="xs">
+                    {t("plugins.settingNeeded")}
+                  </Badge>
+                )}
+                {f.optional && <span className="text-[11px] text-ink-muted">{t("plugins.settingOptional")}</span>}
+              </div>
+              {help && <p className="mb-2 text-xs leading-relaxed text-ink-muted">{help}</p>}
+              {input}
             </div>
           );
         })}
       </div>
-      {canManage && (
-        <div className="flex justify-end">
-          <Button size="sm" loading={saving} onClick={save}>
-            {t("common.save")}
-          </Button>
-        </div>
-      )}
-    </div>
+    </Modal>
   );
 }
 
