@@ -284,3 +284,48 @@ func TestValueLengthLimit(t *testing.T) {
 		t.Fatalf("%v %v", rows, err)
 	}
 }
+
+// A TEMP table is held to the quota too: it lives outside the main file.
+func TestTempTablesWithinQuota(t *testing.T) {
+	d := open(t, 1<<20)
+	ctx := context.Background()
+	if _, err := d.Exec(ctx, "CREATE TEMP TABLE big(b BLOB)", nil); err != nil {
+		t.Fatal(err)
+	}
+	var err error
+	for i := 0; i < 50 && err == nil; i++ {
+		_, err = d.Exec(ctx, "INSERT INTO big VALUES (randomblob(200000))", nil)
+	}
+	if err == nil {
+		t.Fatal("10 MB went into a TEMP table under a 1 MB quota")
+	}
+}
+
+// Full is judged by the pages in use: a plugin that hit its quota and then cleaned
+// up is not full any more, though SQLite keeps the file at its size.
+func TestOverQuotaByPagesInUse(t *testing.T) {
+	d := open(t, 1<<20)
+	ctx := context.Background()
+	if _, err := d.Exec(ctx, "CREATE TABLE big(b BLOB)", nil); err != nil {
+		t.Fatal(err)
+	}
+	if d.OverQuota() {
+		t.Fatal("empty and over quota")
+	}
+	var err error
+	for i := 0; i < 50 && err == nil; i++ {
+		_, err = d.Exec(ctx, "INSERT INTO big VALUES (randomblob(100000))", nil)
+	}
+	if !errors.Is(err, ErrQuota) {
+		t.Fatalf("filled without hitting the quota: %v", err)
+	}
+	if !d.OverQuota() {
+		t.Fatal("full and not over quota")
+	}
+	if _, err := d.Exec(ctx, "DELETE FROM big", nil); err != nil {
+		t.Fatal(err)
+	}
+	if d.OverQuota() {
+		t.Fatal("still over quota after deleting everything")
+	}
+}

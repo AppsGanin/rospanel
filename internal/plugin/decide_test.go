@@ -12,7 +12,7 @@ import (
 
 const gateManifest = `{
 	"id": "gate", "version": "1.0.0", "api": 1, "name": "Gate",
-	"permissions": ["users.view"],
+	"permissions": ["users.view", "billing.manage"],
 	"provides": {"hooks": ["beforeSignup", "beforeDeviceBind"], "price": true, "cron": [{"name": "slow", "schedule": "* * * * *"}]},
 	"experimental": ["price"]
 }`

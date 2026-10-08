@@ -890,6 +890,7 @@ func startPlugins(runBG func(string, func(context.Context)), rt *server.Router, 
 		}
 		tick(ctx, 15*time.Second, func() {
 			safeTick("plugins cron", func() { host.RunCron(ctx, time.Now().In(mgr.Location())) })
+			safeTick("plugins retry", func() { host.RetryStopped(ctx, time.Now()) })
 		})
 		host.WaitCron(2 * time.Second)
 		closeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

@@ -25,6 +25,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -68,11 +69,16 @@ type DB struct {
 	db   *sql.DB
 	conn *sql.Conn
 	tx   bool // a plugin transaction is open on conn
+	// hitQuota: a write since the last OverQuota was refused for the quota.
+	hitQuota bool
 }
 
 // Open opens (creating if needed) the database at path with a quota in bytes.
 func Open(ctx context.Context, path string, quota int64) (*DB, error) {
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)")
+	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"+
+		// A checkpoint shrinks the WAL back to this: one big write must not leave
+		// the file at its peak for good.
+		"&_pragma=journal_size_limit(8388608)")
 	if err != nil {
 		return nil, err
 	}
@@ -116,9 +122,20 @@ func (d *DB) lockDown(ctx context.Context) error {
 		return fmt.Errorf("pdb: sql limit: %w", err)
 	}
 	if d.quota > 0 {
-		pages := (d.quota + pageSize - 1) / pageSize
-		if _, err := d.conn.ExecContext(ctx, fmt.Sprintf("PRAGMA max_page_count = %d", pages)); err != nil {
+		if err := d.applyQuota(ctx); err != nil {
 			return fmt.Errorf("pdb: quota: %w", err)
+		}
+	}
+	return nil
+}
+
+// applyQuota sets the page ceiling on the main database and on the temporary one: a
+// TEMP table lives in a file of its own, which the main ceiling does not cover.
+func (d *DB) applyQuota(ctx context.Context) error {
+	pages := (d.quota + pageSize - 1) / pageSize
+	for _, schema := range []string{"main", "temp"} {
+		if _, err := d.conn.ExecContext(ctx, fmt.Sprintf("PRAGMA %s.max_page_count = %d", schema, pages)); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -165,7 +182,7 @@ func (d *DB) Exec(ctx context.Context, query string, args []any) (Result, error)
 	}
 	r, err := d.conn.ExecContext(ctx, query, vals...)
 	if err != nil {
-		return Result{}, mapErr(err)
+		return Result{}, d.mapErr(err)
 	}
 	var res Result
 	res.Changes, _ = r.RowsAffected()
@@ -191,7 +208,7 @@ func (d *DB) Query(ctx context.Context, query string, args []any) ([]map[string]
 	}
 	rows, err := d.conn.QueryContext(ctx, query, vals...)
 	if err != nil {
-		return nil, mapErr(err)
+		return nil, d.mapErr(err)
 	}
 	defer rows.Close()
 	cols, err := rows.Columns()
@@ -224,7 +241,7 @@ func (d *DB) Query(ctx context.Context, query string, args []any) ([]map[string]
 		out = append(out, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, mapErr(err)
+		return nil, d.mapErr(err)
 	}
 	return out, nil
 }
@@ -257,7 +274,7 @@ func (d *DB) txStmt(ctx context.Context, stmt string, open bool) error {
 			_, _ = d.conn.ExecContext(context.Background(), "ROLLBACK")
 			d.tx = false
 		}
-		return mapErr(err)
+		return d.mapErr(err)
 	}
 	d.tx = open
 	return nil
@@ -275,8 +292,7 @@ func (d *DB) EndCall() {
 	// The quota again, whatever the call did: CheckSQL keeps a plugin from the
 	// pragma, and this keeps a gap in CheckSQL from lasting past one call.
 	if d.conn != nil && d.quota > 0 {
-		pages := (d.quota + pageSize - 1) / pageSize
-		_, _ = d.conn.ExecContext(context.Background(), fmt.Sprintf("PRAGMA max_page_count = %d", pages))
+		_ = d.applyQuota(context.Background())
 	}
 }
 
@@ -291,10 +307,32 @@ func (d *DB) Size() int64 {
 	return n
 }
 
-// OverQuota reports whether the file has grown past its quota with slack: the
-// page ceiling bounds the main file, this also catches a WAL that grew with it.
+// OverQuota reports whether the database filled up since it was last asked: a
+// write was refused for the quota and the pages in use are still near the ceiling
+// (a plugin that made room in the same call is fine; free pages left by deletes
+// are written again and do not count). A WAL that ran away past the quota — the
+// page ceiling does not bound it — is over too.
 func (d *DB) OverQuota() bool {
-	return d.quota > 0 && float64(d.Size()) > float64(d.quota)*1.1+4<<20
+	if d.quota <= 0 {
+		return false
+	}
+	if st, err := os.Stat(d.path + "-wal"); err == nil && st.Size() > d.quota+64<<20 {
+		return true
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	hit := d.hitQuota
+	d.hitQuota = false
+	if !hit || d.conn == nil {
+		return false
+	}
+	var pages, free int64
+	ctx := context.Background()
+	if d.conn.QueryRowContext(ctx, "PRAGMA page_count").Scan(&pages) != nil ||
+		d.conn.QueryRowContext(ctx, "PRAGMA freelist_count").Scan(&free) != nil {
+		return false
+	}
+	return pages-free >= (d.quota+pageSize-1)/pageSize*9/10
 }
 
 // Checkpoint folds the WAL into the main file — before a backup copies the file,
@@ -324,7 +362,7 @@ func (d *DB) KVGet(ctx context.Context, key string) (string, bool, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
-	return v, err == nil, mapErr(err)
+	return v, err == nil, d.mapErr(err)
 }
 
 // KVSet stores a kv value.
@@ -343,7 +381,7 @@ func (d *DB) KVSet(ctx context.Context, key, value string) error {
 	_, err := d.conn.ExecContext(ctx, `INSERT INTO _kv(key, value, updated_at) VALUES (?, ?, ?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 		key, value, time.Now().Unix())
-	return mapErr(err)
+	return d.mapErr(err)
 }
 
 // KVDelete removes a kv value; a missing key is not an error.
@@ -354,7 +392,7 @@ func (d *DB) KVDelete(ctx context.Context, key string) error {
 		return ErrClosed
 	}
 	_, err := d.conn.ExecContext(ctx, `DELETE FROM _kv WHERE key = ?`, key)
-	return mapErr(err)
+	return d.mapErr(err)
 }
 
 // KVEntry is one kv pair.
@@ -379,14 +417,20 @@ func (d *DB) KVList(ctx context.Context, prefix, after string, limit int) ([]KVE
 		WHERE key >= ? AND key > ? AND substr(key, 1, length(?)) = ? ORDER BY key LIMIT ?`,
 		prefix, after, prefix, prefix, limit)
 	if err != nil {
-		return nil, mapErr(err)
+		return nil, d.mapErr(err)
 	}
 	defer rows.Close()
 	out := []KVEntry{}
+	size := 0
 	for rows.Next() {
 		var e KVEntry
 		if err := rows.Scan(&e.Key, &e.Value); err != nil {
 			return nil, err
+		}
+		// A page ends at MaxResultBytes too: a thousand 64 KB values would be 64 MB
+		// for the plugin's heap and more as JSON. The caller pages on with after.
+		if size += len(e.Key) + len(e.Value); size > MaxResultBytes && len(out) > 0 {
+			break
 		}
 		out = append(out, e)
 	}
@@ -458,7 +502,7 @@ func (d *DB) Migrate(ctx context.Context, ms []Migration) (applied []string, err
 		sum := sha256.Sum256([]byte(m.SQL))
 		if _, err := d.conn.ExecContext(ctx, m.SQL); err != nil {
 			_, _ = d.conn.ExecContext(context.Background(), "ROLLBACK")
-			return nil, fmt.Errorf("migration %s: %w", m.Name, mapErr(err))
+			return nil, fmt.Errorf("migration %s: %w", m.Name, d.mapErr(err))
 		}
 		if _, err := d.conn.ExecContext(ctx, `INSERT INTO _migrations(name, sha256, applied_at) VALUES (?, ?, ?)`,
 			m.Name, hex.EncodeToString(sum[:]), time.Now().Unix()); err != nil {
@@ -476,10 +520,24 @@ func (d *DB) Migrate(ctx context.Context, ms []Migration) (applied []string, err
 
 // Snapshot writes a consistent copy of the database at path to dst (replacing it),
 // for rolling an update back. It opens its own connection: the plugin's cannot
-// attach, which VACUUM INTO needs.
+// attach, which VACUUM INTO needs. A database not created yet snapshots as an
+// empty file — SQLite reads that as an empty database, which is what a rollback
+// should bring back. The copy is written aside and renamed into place, so a crash
+// never leaves half a snapshot to be restored.
 func Snapshot(ctx context.Context, path, dst string) error {
 	_ = os.Remove(dst) // never leave an older snapshot standing in for this one
-	if _, err := os.Stat(path); err != nil {
+	tmp := dst + ".tmp"
+	_ = os.Remove(tmp)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		if err != nil {
+			return err
+		}
+		if err := f.Close(); err != nil {
+			return err
+		}
+		return os.Rename(tmp, dst)
+	} else if err != nil {
 		return err
 	}
 	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)")
@@ -487,8 +545,38 @@ func Snapshot(ctx context.Context, path, dst string) error {
 		return err
 	}
 	defer db.Close()
-	_, err = db.ExecContext(ctx, "VACUUM INTO ?", dst)
-	return err
+	if _, err := db.ExecContext(ctx, "VACUUM INTO ?", tmp); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := syncFile(tmp); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, dst)
+}
+
+func syncFile(name string) error {
+	f, err := os.OpenFile(name, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// Sweep removes what a crash in Snapshot or Restore left beside the databases in
+// dir.
+func Sweep(dir string) {
+	for _, pattern := range []string{"*.prev.tmp", "*.restore"} {
+		names, _ := filepath.Glob(filepath.Join(dir, pattern))
+		for _, n := range names {
+			_ = os.Remove(n)
+		}
+	}
 }
 
 // Restore puts a snapshot back in place of the database at path. The database
@@ -507,6 +595,11 @@ func Restore(snapshot, path string) error {
 		return err
 	}
 	if _, err := io.Copy(dst, src); err != nil { // streamed: a snapshot can be a gigabyte
+		dst.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := dst.Sync(); err != nil { // on disk before it replaces the database
 		dst.Close()
 		os.Remove(tmp)
 		return err
@@ -592,12 +685,14 @@ func valueSize(v any) int {
 	}
 }
 
-// mapErr names the quota error: SQLite says "database or disk is full".
-func mapErr(err error) error {
+// mapErr names the quota error (SQLite says "database or disk is full") and
+// remembers it for OverQuota.
+func (d *DB) mapErr(err error) error {
 	if err == nil {
 		return nil
 	}
 	if strings.Contains(err.Error(), "database or disk is full") {
+		d.hitQuota = true
 		return fmt.Errorf("%w: %v", ErrQuota, err)
 	}
 	return err

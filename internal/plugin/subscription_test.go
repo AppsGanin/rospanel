@@ -8,6 +8,7 @@ import (
 
 const subManifest = `{
 	"id": "subx", "version": "1.0.0", "api": 1, "name": "Sub",
+	"permissions": ["users.manage"],
 	"provides": {"subscription": true},
 	"experimental": ["subscription"]
 }`

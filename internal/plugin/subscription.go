@@ -140,6 +140,9 @@ func (h *Host) transform(ctx context.Context, user map[string]any, format string
 			}
 			continue
 		}
+		if h.skipFailing("transformSubscription/" + id) {
+			continue
+		}
 		field := "config"
 		if format == SubLinks {
 			field = "links"
@@ -147,6 +150,7 @@ func (h *Host) transform(ctx context.Context, user map[string]any, format string
 		arg := fmt.Appendf(nil, `{"user":%s,"format":%q,%q:%s}`, mustJSON(user), format, field, cur)
 		raw, err := h.call(ctx, id, "transformSubscription", json.RawMessage(arg), subTransformTimeout,
 			callOpts{readOnly: true, wait: subTransformTimeout})
+		h.noteResult("transformSubscription/"+id, err)
 		var out []byte
 		if err == nil {
 			out = pick(raw, field)

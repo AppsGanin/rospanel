@@ -46,8 +46,8 @@ type PluginFields struct {
 
 // UserFields asks every plugin with user fields about one user, in parallel, each
 // within userFieldsTimeout. A plugin that fails or is slow simply has no block.
-func (h *Host) UserFields(ctx context.Context, userID int64, lang string) []PluginFields {
-	ids := h.Active(func(m *manifest.Manifest) bool { return len(m.Provides.UserFields) > 0 })
+func (h *Host) UserFields(ctx context.Context, userID int64, lang string, held func(perm string) bool) []PluginFields {
+	ids := h.reachable(h.Active(func(m *manifest.Manifest) bool { return len(m.Provides.UserFields) > 0 }), held)
 	out := make([]*PluginFields, len(ids))
 	var wg sync.WaitGroup
 	for i, id := range ids {
@@ -105,7 +105,7 @@ type ActionInfo struct {
 // a permission, so each admin sees only what they may press.
 func (h *Host) Actions(lang string, held func(perm string) bool) []ActionInfo {
 	var out []ActionInfo
-	for _, id := range h.Active(func(m *manifest.Manifest) bool { return len(m.Provides.Actions) > 0 }) {
+	for _, id := range h.reachable(h.Active(func(m *manifest.Manifest) bool { return len(m.Provides.Actions) > 0 }), held) {
 		m := h.manifestOf(id)
 		if m == nil {
 			continue
@@ -116,6 +116,24 @@ func (h *Host) Actions(lang string, held func(perm string) bool) []ActionInfo {
 				continue
 			}
 			out = append(out, ActionInfo{Plugin: id, Key: a.Key, Label: a.Label.Get(lang), Scope: a.Scope, Perm: perm, Confirm: a.Confirm})
+		}
+	}
+	return out
+}
+
+// reachable keeps the plugins whose every granted permission the admin holds. A
+// button runs the plugin with its own permissions and a widget or a card field
+// shows what it read with them: an admin must not reach further through a plugin
+// than on their own — the rule installs and API keys follow.
+func (h *Host) reachable(ids []string, held func(perm string) bool) []string {
+	var out []string
+	for _, id := range ids {
+		inst, err := h.get(id)
+		if err != nil {
+			continue
+		}
+		if !slices.ContainsFunc(inst.pub.Load().rec.GrantedPerms, func(p string) bool { return !held(p) }) {
+			out = append(out, id)
 		}
 	}
 	return out
@@ -150,7 +168,7 @@ func (h *Host) RunAction(ctx context.Context, id, key string, userIDs []int64, h
 	}
 	a := m.Provides.Actions[i]
 	perm := actionPerm(a)
-	if !held(perm) {
+	if !held(perm) || len(h.reachable([]string{id}, held)) == 0 {
 		return nil, perm, ErrForbidden
 	}
 	switch a.Scope {
@@ -214,13 +232,13 @@ type cachedWidget struct {
 // Widgets returns every active plugin's widgets, each answered within
 // widgetTimeout and kept for widgetTTL — a dashboard viewer must not make every
 // plugin compute on each refresh.
-func (h *Host) Widgets(ctx context.Context, lang string) []Widget {
+func (h *Host) Widgets(ctx context.Context, lang string, held func(perm string) bool) []Widget {
 	type job struct {
 		id string
 		w  manifest.Widget
 	}
 	var jobs []job
-	for _, id := range h.Active(func(m *manifest.Manifest) bool { return len(m.Provides.Widgets) > 0 }) {
+	for _, id := range h.reachable(h.Active(func(m *manifest.Manifest) bool { return len(m.Provides.Widgets) > 0 }), held) {
 		if m := h.manifestOf(id); m != nil {
 			for _, w := range m.Provides.Widgets {
 				jobs = append(jobs, job{id, w})
@@ -333,6 +351,27 @@ type SubBlock struct {
 	URL   string `json:"url,omitempty"`   // button: https only
 }
 
+// failBackoff is how long a surface that threw is left alone: a plugin failing on
+// every subscription page or bot menu is not called, and waited for, on every one.
+const failBackoff = 30 * time.Second
+
+// skipFailing reports whether key ("surface/plugin") failed within failBackoff.
+func (h *Host) skipFailing(key string) bool {
+	at, ok := h.failing.Load(key)
+	return ok && time.Since(at.(time.Time)) < failBackoff
+}
+
+// noteResult remembers a failure of the plugin's own (not a busy one) for
+// skipFailing, and forgets it on success.
+func (h *Host) noteResult(key string, err error) {
+	switch {
+	case err == nil:
+		h.failing.Delete(key)
+	case Failed(err):
+		h.failing.Store(key, time.Now())
+	}
+}
+
 type subCache struct {
 	mu sync.Mutex
 	m  map[string]cachedBlocks
@@ -363,10 +402,14 @@ func (h *Host) SubBlocks(ctx context.Context, user map[string]any, lang string) 
 			parts[i] = c.blocks
 			continue
 		}
+		if h.skipFailing("subBlocks/" + id) {
+			continue
+		}
 		wg.Add(1)
 		go func(i int, id, ck string) {
 			defer wg.Done()
 			raw, err := h.Call(ctx, id, "subBlocks", map[string]any{"user": user, "lang": lang}, subBlocksTimeout)
+			h.noteResult("subBlocks/"+id, err)
 			var blocks []SubBlock
 			if err == nil {
 				var got []SubBlock

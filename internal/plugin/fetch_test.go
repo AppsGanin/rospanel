@@ -36,7 +36,8 @@ func TestAllowlist(t *testing.T) {
 	allow := []string{"api.example.com", "*.cdn.net", "pay.io:8443"}
 	for raw, want := range map[string]bool{
 		"https://api.example.com/x":         true,
-		"http://api.example.com:8080/x":     true, // a bare name allows any port
+		"http://api.example.com:8080/x":     false, // a bare name is 80 and 443 only
+		"http://api.example.com/x":          true,
 		"https://API.EXAMPLE.COM/x":         true,
 		"https://evil.example.com/x":        false,
 		"https://api.example.com.evil.io/x": false,
@@ -65,7 +66,7 @@ func TestFetchRefusesLoopback(t *testing.T) {
 		t.Fatalf("by IP literal: %v", err)
 	}
 	// "localhost" resolves to 127.0.0.1: allowlisted, still refused at the dial.
-	_, err = f.Fetch(context.Background(), []string{"localhost"}, FetchRequest{URL: "http://localhost:" + u.Port()})
+	_, err = f.Fetch(context.Background(), []string{"localhost:" + u.Port()}, FetchRequest{URL: "http://localhost:" + u.Port()})
 	if err == nil || !strings.Contains(err.Error(), "private or local") {
 		t.Fatalf("by name: %v", err)
 	}
@@ -91,7 +92,7 @@ func TestFetchRequestAndRedirects(t *testing.T) {
 	u, _ := url.Parse(srv.URL)
 	f := NewFetcher()
 	f.denied = func(netip.Addr) bool { return false } // reach httptest
-	allow := []string{"localhost"}
+	allow := []string{"localhost:" + u.Port()}
 	base := "http://localhost:" + u.Port()
 
 	r, err := f.Fetch(context.Background(), allow, FetchRequest{URL: base + "/echo", Method: "post", Body: `{"a":1}`,
@@ -137,5 +138,19 @@ func TestFetchStreamsBlobs(t *testing.T) {
 	}
 	if gotLen != 5 || got != "blob!" {
 		t.Fatalf("server got %d %q", gotLen, got)
+	}
+}
+
+// A failed request does not echo the URL: tokens ride in paths and queries.
+func TestFetchErrorHidesTheURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	u, _ := url.Parse(srv.URL)
+	srv.Close() // nothing listens there now
+	f := NewFetcher()
+	f.denied = func(netip.Addr) bool { return false }
+	_, err := f.Fetch(context.Background(), []string{"localhost:" + u.Port()},
+		FetchRequest{URL: "http://localhost:" + u.Port() + "/bot123:SECRET/send?key=SECRET2"})
+	if err == nil || strings.Contains(err.Error(), "SECRET") || !strings.Contains(err.Error(), "localhost") {
+		t.Fatalf("error: %v", err)
 	}
 }

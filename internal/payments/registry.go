@@ -84,6 +84,10 @@ type Client interface {
 // payment. The polling fallback skips them (the webhook is the only confirmation).
 var ErrNoStatusAPI = errors.New("the provider has no status API")
 
+// ErrUnavailable is a provider that cannot answer right now (a plugin busy, starting
+// or paused): ask again later, and never take the silence for an abandoned order.
+var ErrUnavailable = errors.New("the provider cannot answer now")
+
 // Descriptor is a provider's registry entry.
 type Descriptor struct {
 	Key    string  // stable id, stored on the order row and used as the webhook path leaf

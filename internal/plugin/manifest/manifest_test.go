@@ -21,7 +21,7 @@ const full = `{
   "author": "someone",
   "homepage": "https://github.com/someone/rospanel-lava",
   "license": "MIT",
-  "permissions": ["users.view"],
+  "permissions": ["users.view", "users.manage", "billing.manage", "payments.manage"],
   "net": ["api.lava.ru", "*.lava.ru:8443"],
   "settings": [
     {"key": "shop_id", "kind": "text", "label": {"ru": "ID магазина", "en": "Shop ID"}},
@@ -233,7 +233,7 @@ func zipOf(t *testing.T, entries ...entry) []byte {
 	return buf.Bytes()
 }
 
-const minimal = `{"id": "hello", "version": "0.1.0", "api": 1, "name": "Hello", "provides": {"events": ["user.created"]}}`
+const minimal = `{"id": "hello", "version": "0.1.0", "api": 1, "name": "Hello", "permissions": ["users.view"], "provides": {"events": ["user.created"]}}`
 
 func TestReadPackage(t *testing.T) {
 	raw := zipOf(t,

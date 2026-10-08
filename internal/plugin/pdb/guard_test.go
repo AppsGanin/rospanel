@@ -21,6 +21,8 @@ func TestCheckSQL(t *testing.T) {
 		`CREATE TEMP TRIGGER IF NOT EXISTS tr AFTER DELETE ON t BEGIN DELETE FROM u; END`,
 		`SELECT CASE 1 WHEN 1 THEN 'end' END; SELECT 2`,
 		`   ;;  SELECT 1;  `,
+		`SELECT * FROM t WHERE a = :id AND b = $b AND c = @c AND d = ?1 AND e = ?`,
+		`SELECT $a(x) FROM t`,
 		``,
 	}
 	for _, q := range allowed {
@@ -46,6 +48,12 @@ func TestCheckSQL(t *testing.T) {
 		`CREATE TEMP TRIGGER t AFTER INSERT ON x BEGIN SELECT CASE 1 WHEN 1 THEN 2 END; END; PRAGMA x = 1`,
 		`SELECT CASE 1 WHEN 1 THEN 2 END; END`,
 		"-- comment\nPRAGMA x",
+		// SQLite reads $a(...) as one parameter, to the ")", quotes and all.
+		`SELECT $a(');PRAGMA/**/max_page_count=99999;--'`,
+		`SELECT @a(');PRAGMA/**/max_page_count=99999;--'`,
+		`SELECT :a(');PRAGMA/**/max_page_count=99999;--'`,
+		`SELECT #a(');PRAGMA/**/max_page_count=99999;--'`,
+		`SELECT $a::b(");PRAGMA/**/max_page_count=99999;--"`,
 	}
 	for _, q := range refused {
 		if err := CheckSQL(q); !errors.Is(err, ErrForbidden) {

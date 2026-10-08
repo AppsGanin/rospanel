@@ -14,8 +14,10 @@ export function onEvent(e) {
   if (res.status === 429) throw new Error("Discord rate limit — the panel will retry");
   if (res.status >= 300) throw new Error(`Discord answered ${res.status}: ${res.body.slice(0, 200)}`);
 
-  panel.kv.set("sent/" + e.id, Math.floor(Date.now() / 1000));
-  forgetOld();
+  const now = Math.floor(Date.now() / 1000);
+  panel.kv.set("sent/" + e.id, now);
+  panel.kv.set("age/" + String(now).padStart(12, "0") + "/" + e.id, e.id); // keys sort by time
+  forgetOld(now);
 }
 
 function webhook() {
@@ -33,7 +35,7 @@ function message(e) {
     case "user.created":
       return panel.t("userCreated", { name: d.name || String(d.id) }, lang);
     case "payment.paid":
-      if (panel.config.payments !== "1") return "";
+      if (panel.config.payments !== "true") return "";
       return panel.t("paymentPaid", { amount: String(d.amount_rub ?? "?"), name: d.user_name || String(d.user_id ?? "") }, lang);
     case "node.down":
       return panel.t("nodeDown", { name: d.name || d.host || String(d.node_id) }, lang);
@@ -43,10 +45,12 @@ function message(e) {
   return "";
 }
 
-// forgetOld drops remembered event ids older than a day, a few at a time.
-function forgetOld() {
-  const now = Math.floor(Date.now() / 1000);
-  for (const { key, value } of panel.kv.list("sent/", { limit: 50 })) {
-    if (now - value > DAY) panel.kv.delete(key);
+// forgetOld drops remembered event ids older than a day, oldest first, a few at a
+// time — the "age/" keys sort by when they were sent.
+function forgetOld(now) {
+  for (const { key, value } of panel.kv.list("age/", { limit: 50 })) {
+    if (now - Number(key.split("/")[1]) <= DAY) break;
+    panel.kv.delete("sent/" + value);
+    panel.kv.delete(key);
   }
 }

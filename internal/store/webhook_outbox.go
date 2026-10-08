@@ -1,8 +1,10 @@
 package store
 
 import (
+	"cmp"
 	"database/sql"
-	"strings"
+	"errors"
+	"slices"
 	"time"
 )
 
@@ -15,6 +17,7 @@ type WebhookDelivery struct {
 	Event    string
 	Body     []byte
 	Attempt  int // attempts made so far
+	dueAt    int64
 }
 
 // EnqueueWebhookDeliveries stores deliveries due now, in one transaction — a bulk
@@ -44,34 +47,16 @@ func (s *Store) EnqueueWebhookDeliveries(ds []WebhookDelivery) error {
 // them out of reach until now+lease, so a delivery being sent is not taken again —
 // and one whose sender died with the panel comes back once the lease runs out.
 func (s *Store) LeaseWebhookDeliveries(now, lease int64, limit int) ([]WebhookDelivery, error) {
-	return s.leaseDeliveries(now, lease, limit, false)
-}
-
-// LeasePluginDeliveries is LeaseWebhookDeliveries for the plugins' rows. The two are
-// leased apart so a slow plugin never holds an endpoint's delivery back.
-//
-// At most one row per plugin — its oldest due one — and none for the plugins in
-// skip (those with a delivery in flight): calls into a plugin run one at a time,
-// so a second row would only wait, or be put back, over and over.
-func (s *Store) LeasePluginDeliveries(now, lease int64, limit int, skip []string) ([]WebhookDelivery, error) {
+	// The dispatcher asks every few seconds and nearly always finds nothing: answer
+	// that from the read pool, leaving the single writer alone.
 	var due int
-	if err := s.rdb.QueryRow(`SELECT EXISTS(SELECT 1 FROM webhook_outbox WHERE next_at <= ? AND plugin_id <> '')`, now).Scan(&due); err == nil && due == 0 {
+	if err := s.rdb.QueryRow(`SELECT EXISTS(SELECT 1 FROM webhook_outbox WHERE next_at <= ? AND plugin_id = '')`, now).Scan(&due); err == nil && due == 0 {
 		return nil, nil
 	}
-	not, args := "", []any{now}
-	if len(skip) > 0 {
-		not = ` AND plugin_id NOT IN (?` + strings.Repeat(`, ?`, len(skip)-1) + `)`
-		for _, p := range skip {
-			args = append(args, p)
-		}
-	}
-	args = append(args, limit)
 	var out []WebhookDelivery
 	err := s.withTx(func(tx *sql.Tx) error {
 		rows, err := tx.Query(`SELECT id, hook_id, plugin_id, event, body, attempt FROM webhook_outbox
-			WHERE id IN (SELECT MIN(id) FROM webhook_outbox
-				WHERE next_at <= ? AND plugin_id <> ''`+not+` GROUP BY plugin_id)
-			ORDER BY next_at, id LIMIT ?`, args...)
+			WHERE next_at <= ? AND plugin_id = '' ORDER BY next_at, id LIMIT ?`, now, limit)
 		if err != nil {
 			return err
 		}
@@ -97,39 +82,50 @@ func (s *Store) LeasePluginDeliveries(now, lease int64, limit int, skip []string
 	return out, err
 }
 
-func (s *Store) leaseDeliveries(now, lease int64, limit int, plugins bool) ([]WebhookDelivery, error) {
-	which := `plugin_id = ''`
-	if plugins {
-		which = `plugin_id <> ''`
+// LeasePluginDeliveries is LeaseWebhookDeliveries for the plugins' rows. The two are
+// leased apart so a slow plugin never holds an endpoint's delivery back.
+//
+// At most one row per plugin — its oldest due one — and only for the plugins
+// given (those taking events, without a delivery in flight): calls into a plugin
+// run one at a time, so a second row would only wait. Each plugin's row is found by
+// its own index on the read pool; the writer only claims what was found.
+func (s *Store) LeasePluginDeliveries(now, lease int64, limit int, plugins []string) ([]WebhookDelivery, error) {
+	var found []WebhookDelivery
+	for _, p := range plugins {
+		var d WebhookDelivery
+		err := s.rdb.QueryRow(`SELECT id, hook_id, plugin_id, event, body, attempt, next_at FROM webhook_outbox
+			WHERE plugin_id = ? AND plugin_id <> '' AND next_at <= ? ORDER BY next_at, id LIMIT 1`, p, now). // <> '' lets SQLite use the partial index
+			Scan(&d.ID, &d.HookID, &d.PluginID, &d.Event, &d.Body, &d.Attempt, &d.dueAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		found = append(found, d)
 	}
-	// The dispatcher asks every few seconds and nearly always finds nothing: answer
-	// that from the read pool, leaving the single writer alone.
-	var due int
-	if err := s.rdb.QueryRow(`SELECT EXISTS(SELECT 1 FROM webhook_outbox WHERE next_at <= ? AND `+which+`)`, now).Scan(&due); err == nil && due == 0 {
+	if len(found) == 0 {
 		return nil, nil
+	}
+	slices.SortFunc(found, func(a, b WebhookDelivery) int {
+		if a.dueAt != b.dueAt {
+			return cmp.Compare(a.dueAt, b.dueAt)
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
+	if len(found) > limit {
+		found = found[:limit]
 	}
 	var out []WebhookDelivery
 	err := s.withTx(func(tx *sql.Tx) error {
-		rows, err := tx.Query(`SELECT id, hook_id, plugin_id, event, body, attempt FROM webhook_outbox
-			WHERE next_at <= ? AND `+which+` ORDER BY next_at, id LIMIT ?`, now, limit)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var d WebhookDelivery
-			if err := rows.Scan(&d.ID, &d.HookID, &d.PluginID, &d.Event, &d.Body, &d.Attempt); err != nil {
-				rows.Close()
+		for _, d := range found {
+			// Claimed only if still due: another lease may have taken it meanwhile.
+			res, err := tx.Exec(`UPDATE webhook_outbox SET next_at = ? WHERE id = ? AND next_at <= ?`, now+lease, d.ID, now)
+			if err != nil {
 				return err
 			}
-			out = append(out, d)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return err
-		}
-		for _, d := range out {
-			if _, err := tx.Exec(`UPDATE webhook_outbox SET next_at = ? WHERE id = ?`, now+lease, d.ID); err != nil {
-				return err
+			if n, _ := res.RowsAffected(); n == 1 {
+				out = append(out, d)
 			}
 		}
 		return nil

@@ -55,6 +55,9 @@ func (rt *Router) PluginAPI(ctx context.Context, req plugin.APIRequest) (int, []
 	if rec.status == 0 {
 		rec.status = http.StatusOK
 	}
+	if rec.over {
+		return 0, nil, errors.New("panel.api: answer over 4 MB — page with limit/offset, or take it as a blob")
+	}
 	return rec.status, rec.body.Bytes(), nil
 }
 

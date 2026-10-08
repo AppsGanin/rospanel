@@ -11,6 +11,7 @@ import (
 
 const botManifest = `{
 	"id": "botty", "version": "1.0.0", "api": 1, "name": "Botty",
+	"permissions": ["users.view"],
 	"provides": {"bot": {"menu": true, "commands": [
 		{"command": "bonus", "description": {"ru": "Бонус", "en": "Bonus"}}
 	]}}

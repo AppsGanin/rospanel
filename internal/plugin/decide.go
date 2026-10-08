@@ -54,15 +54,33 @@ func (c *decisionCache) putFor(key string, raw json.RawMessage, ttl time.Duratio
 	c.m[key] = cachedDecision{raw: raw, expires: time.Now().Add(ttl)}
 }
 
-// Stopped reports whether a plugin is installed but not running (paused, failed,
-// switched off).
+// Stopped reports whether a plugin is on but not running: paused (by its breaker,
+// its quota) or failed to start. A plugin the operator switched off is not
+// "stopped" — it is off, and its orders are no one's to wait for.
 func (h *Host) Stopped(id string) bool {
 	inst, err := h.get(id)
 	if err != nil {
 		return false
 	}
 	p := inst.pub.Load()
-	return p != nil && p.status != model.PluginActive
+	return p != nil && (p.status == model.PluginPaused || p.status == model.PluginError)
+}
+
+// StoppedIDs lists the plugins Stopped reports.
+func (h *Host) StoppedIDs() []string {
+	h.mu.RLock()
+	ids := make([]string, 0, len(h.plugins))
+	for id := range h.plugins {
+		ids = append(ids, id)
+	}
+	h.mu.RUnlock()
+	var out []string
+	for _, id := range ids {
+		if h.Stopped(id) {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // Hooked reports whether an active plugin answers a decision: callers skip the work

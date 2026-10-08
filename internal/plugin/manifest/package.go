@@ -227,6 +227,10 @@ func commonFolder(entries []*zip.File) string {
 
 // Translate looks a key up in the package's dictionaries: lang, then English, then
 // Russian, then the key itself. {name} placeholders are filled from params.
+//
+// The result is held to MaxTranslated bytes, checked before any replacement: a
+// template with a million {a} and a long a would otherwise ask Go for gigabytes,
+// and running out of memory there ends the panel, not the plugin.
 func (pkg *Package) Translate(lang, key string, params map[string]string) string {
 	s := key
 	for _, l := range []string{lang, "en", "ru"} {
@@ -235,8 +239,23 @@ func (pkg *Package) Translate(lang, key string, params map[string]string) string
 			break
 		}
 	}
+	if len(s) > MaxTranslated {
+		s = s[:MaxTranslated]
+	}
+	size := len(s)
+	for k, v := range params {
+		if n := strings.Count(s, "{"+k+"}"); n > 0 {
+			size += n * (len(v) - len(k) - 2)
+		}
+	}
+	if size > MaxTranslated {
+		return s // too big filled in: the template as it is
+	}
 	for k, v := range params {
 		s = strings.ReplaceAll(s, "{"+k+"}", v)
 	}
 	return s
 }
+
+// MaxTranslated bounds what panel.t returns.
+const MaxTranslated = 64 << 10

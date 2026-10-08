@@ -587,7 +587,7 @@ func (rt *Router) panelMux() http.Handler {
 	canPluginsManage("POST /api/plugins/inspect", rt.inspectPlugin)
 	canPluginsManage("POST /api/plugins", rt.installPlugin)
 	canPluginsManage("POST /api/plugins/{id}/update", rt.updatePlugin)
-	canPluginsManage("POST /api/plugins/{id}/rollback", rt.pluginAction((*plugin.Host).Rollback))
+	canPluginsManage("POST /api/plugins/{id}/rollback", rt.rollbackPlugin)
 	canPluginsManage("POST /api/plugins/{id}/enable", rt.pluginAction((*plugin.Host).Enable))
 	canPluginsManage("POST /api/plugins/{id}/disable", rt.pluginAction((*plugin.Host).Disable))
 	canPluginsManage("POST /api/plugins/{id}/config", rt.configurePlugin)

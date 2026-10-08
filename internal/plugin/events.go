@@ -77,9 +77,29 @@ func (h *Host) EventSubscribers(event string) []string {
 	})
 }
 
+// EventPlugins lists the active plugins that take events: subscribers and channels.
+func (h *Host) EventPlugins() []string {
+	return h.Active(func(m *manifest.Manifest) bool { return len(m.Provides.Events) > 0 || m.Provides.Channel != nil })
+}
+
 // DeliverEvent calls a plugin's onEvent with a stored webhook payload. gone is
 // true when the plugin cannot take it any more and it should not be retried.
 func (h *Host) DeliverEvent(ctx context.Context, id string, body []byte) (gone bool, err error) {
+	gone, err = h.deliverEvent(ctx, id, body)
+	if gone {
+		// The panel shutting down is not the plugin going away: what it was handed
+		// is delivered after the restart. A pause the panel retries keeps it too.
+		if h.isClosed() {
+			return false, ErrNotActive
+		}
+		if inst, e := h.get(id); e == nil && inst.retryAt.Load() != 0 {
+			return false, err
+		}
+	}
+	return gone, err
+}
+
+func (h *Host) deliverEvent(ctx context.Context, id string, body []byte) (gone bool, err error) {
 	inst, err := h.get(id)
 	if err != nil {
 		return true, err

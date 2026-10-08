@@ -1,7 +1,7 @@
 {
   "settings": {
     "webhook_url": "https://discord.com/api/webhooks/123/test-token",
-    "payments": "1",
+    "payments": "true",
     "lang": "en"
   }
 }

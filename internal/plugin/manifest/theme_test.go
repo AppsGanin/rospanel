@@ -30,8 +30,10 @@ func themeZip(t *testing.T, provides string, files map[string]string) []byte {
 
 func TestThemePackage(t *testing.T) {
 	good := map[string]string{
-		"theme/theme.css": `/* url() in a comment */ :root { --bg: #000; } body { background: url("bg.png") , url(data:image/png;base64,AA==); }`,
-		"theme/bg.png":    "png",
+		"theme/theme.css": `/* url() in a comment */ :root { --bg: #000; } body { background: url("bg.png") , url(data:image/png;base64,AA==); }
+			a::before { content: "\2014\00a0"; }
+			i { background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><path d='M0 0'/></svg>"); }`,
+		"theme/bg.png": "png",
 	}
 	pkg, err := Read(themeZip(t, `"theme": true`, good), "")
 	if err != nil {
@@ -59,8 +61,11 @@ func TestThemePackage(t *testing.T) {
 		{`"theme": true`, map[string]string{"theme/theme.css": `/**/@im/**/port url(x.css);`}, "not in the package"},
 		{`"theme": true`, map[string]string{"theme/theme.css": `a{} /* open`}, "not closed"},
 		{`"theme": true`, map[string]string{"theme/theme.css": `a { background: image-set("https://evil/t.png" 1x) }`}, "image-set("},
-		{`"theme": true`, map[string]string{"theme/theme.css": `a { background: u\72l(https://evil/x) }`}, "backslash"},
-		{`"theme": true`, map[string]string{"theme/theme.css": `@\69mport "https://evil/x.css";`}, "backslash"},
+		{`"theme": true`, map[string]string{"theme/theme.css": `a { background: u\72l(https://evil/x) }`}, "only a file of the theme"},
+		{`"theme": true`, map[string]string{"theme/theme.css": `a { background: u\72 l(https://evil/x) }`}, "only a file of the theme"},
+		{`"theme": true`, map[string]string{"theme/theme.css": `@\69mport "https://evil/x.css";`}, "@import"},
+		{`"theme": true`, map[string]string{"theme/theme.css": `a { background: url("ok.png"), url('https://evil/x') }`}, "only a file of the theme"},
+		{`"theme": true`, map[string]string{"theme/theme.css": `a { background: url("data:image/svg+xml,x") ; b: "http://evil" }`}, "://"},
 		{`"theme": true`, map[string]string{"theme/theme.css": `@font-face { src: "//evil/f.woff2" }`}, "outside the theme"},
 	} {
 		_, err := Read(themeZip(t, c.provides, c.files), "")

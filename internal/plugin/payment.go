@@ -65,9 +65,23 @@ type pluginPayment struct {
 }
 
 func (c *paymentClient) call(ctx context.Context, export string, arg any) (pluginPayment, error) {
+	return c.callWith(ctx, export, arg, callOpts{})
+}
+
+// callPublic is call for what anyone on the internet can send: a refusal there (a
+// forged callback) is not the plugin failing.
+func (c *paymentClient) callPublic(ctx context.Context, export string, arg any) (pluginPayment, error) {
+	return c.callWith(ctx, export, arg, callOpts{public: true})
+}
+
+func (c *paymentClient) callWith(ctx context.Context, export string, arg any, o callOpts) (pluginPayment, error) {
 	var p pluginPayment
-	out, err := c.host.Call(ctx, c.id, export, arg, PaymentTimeout)
+	out, err := c.host.call(ctx, c.id, export, arg, PaymentTimeout, o)
 	if err != nil {
+		if errors.Is(err, ErrBusy) || errors.Is(err, ErrNotActive) || errors.Is(err, ErrPaused) ||
+			errors.Is(err, ErrReentry) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return p, fmt.Errorf("plugin %s: %w: %w", c.id, payments.ErrUnavailable, err)
+		}
 		return p, fmt.Errorf("plugin %s: %w", c.id, err)
 	}
 	if err := json.Unmarshal(out, &p); err != nil {
@@ -101,9 +115,12 @@ func (c *paymentClient) Status(ctx context.Context, providerID string) (payments
 func (c *paymentClient) Webhook(ctx context.Context, body []byte, h http.Header) (string, payments.Result, error) {
 	headers := map[string]string{}
 	for k, v := range h {
+		if strings.EqualFold(k, "Cookie") { // the panel's session never reaches a plugin
+			continue
+		}
 		headers[strings.ToLower(k)] = strings.Join(v, ", ")
 	}
-	p, err := c.call(ctx, "payment.webhook", map[string]any{"body": string(body), "headers": headers})
+	p, err := c.callPublic(ctx, "payment.webhook", map[string]any{"body": string(body), "headers": headers})
 	if err != nil {
 		return "", payments.Result{}, err
 	}

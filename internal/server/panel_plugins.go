@@ -80,6 +80,9 @@ type pluginInspection struct {
 	// Added lists what an update asks for beyond the installed version.
 	AddedPerms []string `json:"added_perms,omitempty"`
 	AddedNet   []string `json:"added_net,omitempty"`
+	// AddedPoints are the extension points it starts using ("events" also for a
+	// new event): what the plugin is handed changes with them.
+	AddedPoints []string `json:"added_points,omitempty"`
 }
 
 func (rt *Router) pluginHost(w http.ResponseWriter) *plugin.Host {
@@ -160,6 +163,7 @@ func (rt *Router) respondInspection(w http.ResponseWriter, h *plugin.Host, raw [
 				out.AddedNet = append(out.AddedNet, n)
 			}
 		}
+		out.AddedPoints = m.AddedPoints(cur.Manifest)
 	}
 	rt.pluginUploads.put(pkg.SHA256, raw)
 	writeJSON(w, http.StatusOK, out)
@@ -220,16 +224,7 @@ func (rt *Router) installOrUpdatePlugin(w http.ResponseWriter, r *http.Request, 
 	// follow. Without it, installing a plugin would be a way to a permission the
 	// role was never given (an admin without audit.view reading the journal through
 	// a plugin that has it).
-	caller := callerPerms(r)
-	var beyond []string
-	for p := range model.NewPermSet(req.Perms) {
-		if !caller.Has(p) {
-			beyond = append(beyond, p)
-		}
-	}
-	if len(beyond) > 0 {
-		slices.Sort(beyond)
-		writeErrDetail(w, http.StatusForbidden, "err.pluginPermsBeyond", "у вас нет прав, которые просит плагин: ", strings.Join(beyond, ", "))
+	if !withinCaller(w, r, req.Perms) {
 		return
 	}
 	if !rt.verifyStepUp(w, r, req.CurrentPassword) {
@@ -261,6 +256,41 @@ func (rt *Router) installOrUpdatePlugin(w http.ResponseWriter, r *http.Request, 
 	// callback secret as much as on enable.
 	rt.ensurePluginCallbacks(info)
 	writeJSON(w, http.StatusOK, info)
+}
+
+// withinCaller refuses a plugin grant beyond what the calling admin holds.
+func withinCaller(w http.ResponseWriter, r *http.Request, perms []string) bool {
+	caller := callerPerms(r)
+	var beyond []string
+	for p := range model.NewPermSet(perms) {
+		if !caller.Has(p) {
+			beyond = append(beyond, p)
+		}
+	}
+	if len(beyond) > 0 {
+		slices.Sort(beyond)
+		writeErrDetail(w, http.StatusForbidden, "err.pluginPermsBeyond", "у вас нет прав, которые просит плагин: ", strings.Join(beyond, ", "))
+		return false
+	}
+	return true
+}
+
+// rollbackPlugin restores the previous version — with what that version was
+// granted, which the admin must hold as for an install.
+func (rt *Router) rollbackPlugin(w http.ResponseWriter, r *http.Request) {
+	h := rt.pluginHost(w)
+	if h == nil {
+		return
+	}
+	perms, err := h.PrevPermissions(r.PathValue("id"))
+	if err != nil {
+		writePluginErr(w, err)
+		return
+	}
+	if !withinCaller(w, r, perms) {
+		return
+	}
+	rt.pluginAction((*plugin.Host).Rollback)(w, r)
 }
 
 func (rt *Router) pluginAction(fn func(*plugin.Host, context.Context, string) (*plugin.Info, error)) http.HandlerFunc {
@@ -465,7 +495,8 @@ func (rt *Router) runPluginAction(w http.ResponseWriter, r *http.Request) {
 func (rt *Router) pluginWidgets(w http.ResponseWriter, r *http.Request) {
 	widgets := []plugin.Widget{}
 	if rt.plugins != nil {
-		if ws := rt.plugins.Widgets(r.Context(), panelLang(r)); ws != nil {
+		held := callerPerms(r)
+		if ws := rt.plugins.Widgets(r.Context(), panelLang(r), func(p string) bool { return held.Has(p) }); ws != nil {
 			widgets = ws
 		}
 	}
@@ -475,7 +506,8 @@ func (rt *Router) pluginWidgets(w http.ResponseWriter, r *http.Request) {
 func (rt *Router) userPluginFields(w http.ResponseWriter, r *http.Request, id int64) {
 	blocks := []plugin.PluginFields{}
 	if rt.plugins != nil {
-		if fs := rt.plugins.UserFields(r.Context(), id, panelLang(r)); fs != nil {
+		held := callerPerms(r)
+		if fs := rt.plugins.UserFields(r.Context(), id, panelLang(r), func(p string) bool { return held.Has(p) }); fs != nil {
 			blocks = fs
 		}
 	}

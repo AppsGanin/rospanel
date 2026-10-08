@@ -633,7 +633,7 @@ const providerOrderReuseWindow = 5 * time.Minute
 // status endpoint (ErrNoStatusAPI) are left to their webhook — for those, a missed
 // callback is only ever resolved by the abandoned sweep or by hand.
 func (m *Manager) PollPendingPayments() {
-	orders, err := m.store.PendingProviderOrders(100)
+	orders, err := m.store.PendingProviderOrders(100, m.stoppedPluginProviders())
 	if err != nil || len(orders) == 0 {
 		return
 	}
@@ -670,6 +670,9 @@ func (m *Manager) PollPendingPayments() {
 		}
 		res, err := client.Status(ctx, o.ProviderID)
 		if err != nil {
+			if errors.Is(err, payments.ErrUnavailable) {
+				continue // busy or starting: next cycle asks again, nothing is decided by age
+			}
 			if errors.Is(err, payments.ErrNoStatusAPI) {
 				// Webhook-only provider: there is no way to ask, so the age sweep is the
 				// only thing that ever stops this order being polled.

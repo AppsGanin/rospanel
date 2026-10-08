@@ -57,7 +57,7 @@ func (h *Host) HTTPPlugins() []string {
 
 // ServeHTTP calls a plugin's onHttp.
 func (h *Host) ServeHTTP(ctx context.Context, id string, req HTTPRequest) (*HTTPResponse, error) {
-	out, err := h.Call(ctx, id, "onHttp", req, HTTPTimeout)
+	out, err := h.call(ctx, id, "onHttp", req, HTTPTimeout, callOpts{public: true})
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,11 @@ func WriteHTTP(w http.ResponseWriter, resp *HTTPResponse) {
 	for k, v := range resp.Headers {
 		switch strings.ToLower(k) {
 		case "set-cookie", "content-security-policy", "content-security-policy-report-only",
-			"x-content-type-options", "strict-transport-security", "content-length", "transfer-encoding", "connection":
+			"x-content-type-options", "strict-transport-security", "content-length", "transfer-encoding", "connection",
+			// The panel's origin is the admin's too: no wiping their session, no
+			// refresh-redirects, no service workers, no cross-origin grants.
+			"clear-site-data", "refresh", "service-worker-allowed", "link",
+			"access-control-allow-origin", "access-control-allow-credentials", "access-control-allow-headers", "access-control-allow-methods":
 			continue
 		}
 		if strings.ContainsAny(k+v, "\r\n") {
@@ -95,7 +99,9 @@ func WriteHTTP(w http.ResponseWriter, resp *HTTPResponse) {
 		}
 		hdr.Set(k, v)
 	}
-	if hdr.Get("Content-Type") == "" {
+	// No script from the panel's origin: something a <script src> could load there
+	// is served as text.
+	if ct := strings.ToLower(hdr.Get("Content-Type")); ct == "" || strings.Contains(ct, "javascript") || strings.Contains(ct, "ecmascript") {
 		hdr.Set("Content-Type", "text/plain; charset=utf-8")
 	}
 	hdr.Set("Content-Security-Policy", "sandbox")

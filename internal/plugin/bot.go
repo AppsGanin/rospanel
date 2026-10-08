@@ -57,12 +57,16 @@ func (h *Host) BotMenu(ctx context.Context, u model.BotUser, lang string) []mode
 			parts[i] = c.buttons
 			continue
 		}
+		if h.skipFailing("bot.menu/" + id) {
+			continue
+		}
 		wg.Add(1)
 		go func(i int, id, ck string) {
 			defer wg.Done()
 			var buttons []model.BotButton
 			raw, err := h.call(ctx, id, "bot.menu", map[string]any{"user": u, "lang": lang}, botMenuTimeout,
 				callOpts{lang: lang, readOnly: true, wait: botMenuTimeout})
+			h.noteResult("bot.menu/"+id, err)
 			if err == nil {
 				var got []model.BotButton
 				if json.Unmarshal(raw, &got) == nil {

@@ -15,6 +15,7 @@
     {"key": "api_key", "kind": "secret", "label": {"ru": "API-ключ Resend", "en": "Resend API key"}},
     {"key": "from", "kind": "text", "label": {"ru": "Отправитель", "en": "Sender"}, "placeholder": "VPN <no-reply@example.com>"}
   ],
+  "permissions": ["users.view"],
   "provides": {
     "channel": {"label": {"ru": "E-mail", "en": "E-mail"}},
     "user_fields": [{"key": "email", "label": {"ru": "E-mail", "en": "E-mail"}}, {"key": "last", "label": {"ru": "Последнее письмо", "en": "Last e-mail"}}],

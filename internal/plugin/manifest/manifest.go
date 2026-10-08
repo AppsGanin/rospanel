@@ -198,6 +198,38 @@ var Available = map[string]bool{
 	"hooks": true, "price": true, "bot": true, "subscription": true, "theme": true,
 }
 
+// CanonBool is a bool setting's one stored form: "true" or "false" ("1" and "0"
+// are taken too). "" for anything else.
+func CanonBool(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "true", "1":
+		return "true"
+	case "false", "0", "":
+		return "false"
+	}
+	return ""
+}
+
+// AddedPoints lists the points m uses that prev did not — a new event counting as
+// "events" — for the update's consent screen.
+func (m *Manifest) AddedPoints(prev *Manifest) []string {
+	var out []string
+	for _, p := range m.declared() {
+		if !slices.Contains(prev.declared(), p) {
+			out = append(out, p)
+		}
+	}
+	if !slices.Contains(out, "events") {
+		for _, e := range m.Provides.Events {
+			if !slices.Contains(prev.Provides.Events, e) {
+				out = append(out, "events")
+				break
+			}
+		}
+	}
+	return out
+}
+
 // declared lists the points a manifest uses, by their provides key.
 func (m *Manifest) declared() []string {
 	pr := m.Provides
@@ -419,6 +451,9 @@ func (m *Manifest) validateSettings(p *Problems) {
 		if f.Kind == "secret" && f.Default != "" {
 			p.addf("%s: a secret cannot have a default", at)
 		}
+		if f.Kind == "bool" && f.Default != "" && CanonBool(f.Default) == "" {
+			p.addf("%s default: true or false", at)
+		}
 		if f.Kind == "number" && f.Default != "" {
 			if _, err := strconv.ParseFloat(f.Default, 64); err != nil {
 				p.addf("%s default: not a number", at)
@@ -500,6 +535,68 @@ func (m *Manifest) validateProvides(p *Problems) {
 			p.addf("provides.bot: declare menu, commands or both")
 		}
 	}
+	held := model.NewPermSet(m.Permissions)
+	for _, n := range m.PointPerms() {
+		if !held.Has(n.Perm) {
+			p.addf("provides.%s needs the %q permission: %s", n.Point, n.Perm, n.Why)
+		}
+	}
+}
+
+// PointPerm is a permission an extension point needs.
+type PointPerm struct {
+	Point string `json:"point"`
+	Perm  string `json:"perm"`
+	Why   string `json:"why"`
+}
+
+// PointPerms lists the permissions the plugin's extension points need. A point
+// that hands the plugin users' data, or lets it decide for them, needs the
+// permission that covers the same through the API: the consent screen then says
+// what the plugin gets, whether it reads it or is handed it.
+func (m *Manifest) PointPerms() []PointPerm {
+	pr := m.Provides
+	var out []PointPerm
+	add := func(point, perm, why string) {
+		if !slices.ContainsFunc(out, func(n PointPerm) bool { return n.Point == point && n.Perm == perm }) {
+			out = append(out, PointPerm{point, perm, why})
+		}
+	}
+	for _, e := range pr.Events {
+		switch strings.SplitN(e, ".", 2)[0] {
+		case "node":
+		case "payment", "plan", "balance", "referral", "promo":
+			add("events", model.PermUsersView, "events carry the user")
+			add("events", model.PermBillingView, e+" carries money")
+		default:
+			add("events", model.PermUsersView, "events carry the user")
+		}
+	}
+	if len(pr.Hooks) > 0 {
+		add("hooks", model.PermUsersView, "a hook is handed the user who signs up or binds a device")
+	}
+	if pr.Channel != nil {
+		add("channel", model.PermUsersView, "a channel is handed the users to message")
+	}
+	if len(pr.UserFields) > 0 {
+		add("user_fields", model.PermUsersView, "it is asked about a user's card")
+	}
+	if pr.SubBlocks {
+		add("sub_blocks", model.PermUsersView, "it is handed the user of the subscription page")
+	}
+	if pr.Bot != nil {
+		add("bot", model.PermUsersView, "it is handed the bot's user")
+	}
+	if pr.Price {
+		add("price", model.PermBillingManage, "it sets what users pay")
+	}
+	if pr.Subscription {
+		add("subscription", model.PermUsersManage, "it rewrites what users connect with")
+	}
+	if pr.Payment != nil {
+		add("payment", model.PermPayments, "it decides which orders are paid")
+	}
+	return out
 }
 
 // checkKeyed checks a list of {key, label} entries: valid unique keys, labels set.

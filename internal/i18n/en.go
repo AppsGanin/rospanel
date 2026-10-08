@@ -443,6 +443,7 @@ var en = map[string]string{
 	"notify.nodeAWGDown":         "⚠️ <b>AmneziaWG tunnel is down</b>\n%s\nThe lane is on for this server, so its users cannot connect through it.",
 	"notify.nodeAWGBack":         "✅ <b>AmneziaWG tunnel is back</b>\n%s",
 	"notify.pluginPaused":        "⏸ <b>Plugin %s paused</b>\n%s\nTurn it back on in Settings → Plugins once the cause is fixed.",
+	"notify.pluginRetrying":      "⏸ <b>Plugin %s stopped</b>\n%s\nThe panel tries it again in 5 minutes, then less often.",
 	"notify.nodeBack":            "✅ <b>Contact with the server restored</b>",
 	"notify.nodeXrayCrashed":     "⚠️ <b>Xray crashed</b>\n%s\nThe agent restarts the process automatically.",
 	"notify.nodeXrayBack":        "✅ <b>Xray is running again</b>",

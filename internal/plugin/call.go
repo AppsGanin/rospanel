@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"runtime/debug"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -19,6 +18,10 @@ type callOpts struct {
 	readOnly bool          // a decision hook: panel.api is GET only (the panel may be holding a lock)
 	lang     string        // the language panel.t defaults to
 	wait     time.Duration // >0: give up (ErrBusy) rather than wait longer for a busy plugin
+	// public: the caller is anyone on the internet (onHttp, a payment callback). A
+	// call that fails there is logged but not counted against the plugin: rejecting a
+	// forged request is its job, and ten of them must not pause it.
+	public bool
 }
 
 // ErrBusy is a plugin still in another call when a decision could not wait for it.
@@ -54,7 +57,7 @@ func (h *Host) call(ctx context.Context, id, export string, arg any, timeout tim
 	if wait <= 0 {
 		wait = timeout
 	}
-	if !lockWithin(ctx, &inst.mu, wait) {
+	if !inst.mu.lockWithin(ctx, wait) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -102,21 +105,34 @@ func calling(ctx context.Context, id string) bool {
 	return slices.Contains(ids, id)
 }
 
-// lockWithin takes mu if it comes free within d, and while ctx lasts: a sign-up
-// must not stand behind a plugin's minute-long cron job.
-func lockWithin(ctx context.Context, mu *sync.Mutex, d time.Duration) bool {
-	deadline := time.Now().Add(d)
-	pause := 2 * time.Millisecond
-	for !mu.TryLock() {
-		if time.Now().After(deadline) || ctx.Err() != nil {
-			return false
-		}
-		time.Sleep(pause)
-		if pause < 50*time.Millisecond { // a long wait polls less often
-			pause *= 2
-		}
+// gate is the lock on one plugin. Its waiters are served in the order they came (a
+// channel's senders queue up): with a polling TryLock a sign-up waiting its 300 ms
+// lost to every event and cron call that simply blocked.
+type gate struct{ ch chan struct{} }
+
+func newGate() gate { return gate{ch: make(chan struct{}, 1)} }
+
+func (g gate) Lock()   { g.ch <- struct{}{} }
+func (g gate) Unlock() { <-g.ch }
+
+// lockWithin takes the lock if it comes free within d, and while ctx lasts: a
+// sign-up must not stand behind a plugin's minute-long cron job.
+func (g gate) lockWithin(ctx context.Context, d time.Duration) bool {
+	select {
+	case g.ch <- struct{}{}:
+		return true
+	default:
 	}
-	return true
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case g.ch <- struct{}{}:
+		return true
+	case <-t.C:
+		return false
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // invoke runs one call with inst.mu held. It replaces a dead or bloated VM,
@@ -142,18 +158,33 @@ func (inst *instance) invoke(ctx context.Context, export string, arg []byte, tim
 		}
 	}
 	if inst.db != nil && inst.db.OverQuota() {
+		// The call itself is answered (a payment it confirmed stays confirmed); the
+		// plugin is paused for the next one.
 		inst.pause(fmt.Sprintf("its database grew past the %d MB quota", inst.pkg.Manifest.Quota()>>20))
-		return nil, ErrPaused
+		if err != nil {
+			return nil, err
+		}
+		return out, nil
 	}
 	if err != nil {
+		if o.public {
+			inst.logf("warn", "%s: %v", export, err)
+			return nil, err
+		}
 		inst.failed(fmt.Errorf("%s: %w", export, err))
 		return nil, err
 	}
 	inst.fails = 0
+	if export != "onEnable" { // a call that did real work: the plugin is back
+		inst.trips = 0
+	}
 	return out, nil
 }
 
 // failed logs a failed call and pauses the plugin after breakerLimit in a row.
+// The cause is as often outside the plugin as in it — the service it calls is
+// down — so the panel brings it back on its own (retryLater) and keeps what waits
+// for it.
 func (inst *instance) failed(err error) {
 	inst.fails++
 	msg := err.Error()
@@ -162,10 +193,21 @@ func (inst *instance) failed(err error) {
 		msg += "\n" + je.Stack
 	}
 	inst.logf("error", "%s", msg)
-	if inst.fails >= breakerLimit && inst.status == model.PluginActive && !inst.host.deps.NoBreaker {
-		inst.pause(fmt.Sprintf("%d failed calls in a row; the last: %v", inst.fails, err))
+	if inst.fails < breakerLimit || inst.status != model.PluginActive || inst.host.deps.NoBreaker {
+		return
 	}
+	reason := fmt.Sprintf("%d %s; the last: %v", inst.fails, tripMark, err)
+	inst.stop()
+	inst.setState(true, model.PluginPaused, reason)
+	d := inst.retryLater()
+	inst.logf("error", "paused: %s — the panel retries it in %s", reason, d)
+	inst.host.log.Warn("plugin paused", "plugin", inst.id, "reason", reason, "retry_in", d)
+	inst.notify(reason, true)
 }
+
+// tripMark is in the status of a plugin the breaker paused: what tells a restart
+// to keep retrying it.
+const tripMark = "failed calls in a row"
 
 // Failed reports whether err came from the plugin's own code or limits (as
 // opposed to the plugin not being there).

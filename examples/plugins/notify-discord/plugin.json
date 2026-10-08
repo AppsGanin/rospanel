@@ -16,10 +16,12 @@
   "settings": [
     {"key": "webhook_url", "kind": "secret", "label": {"ru": "Вебхук канала Discord", "en": "Discord channel webhook"},
      "help": {"ru": "Настройки канала → Интеграции → Вебхуки", "en": "Channel settings → Integrations → Webhooks"}},
-    {"key": "payments", "kind": "bool", "label": {"ru": "Сообщать об оплатах", "en": "Report payments"}, "default": "1"},
+    {"key": "payments", "kind": "bool", "label": {"ru": "Сообщать об оплатах", "en": "Report payments"}, "default": "true"},
     {"key": "lang", "kind": "select", "label": {"ru": "Язык сообщений", "en": "Message language"}, "default": "ru",
      "options": [{"value": "ru", "label": "Русский"}, {"value": "en", "label": "English"}]}
   ],
+
+  "permissions": ["users.view", "billing.view"],
 
   "provides": {
     "events": ["user.created", "payment.paid", "node.down", "node.up"]

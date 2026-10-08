@@ -36,7 +36,8 @@ type HTTPFetcher struct {
 
 // NewFetcher returns the fetcher plugins use.
 func NewFetcher() *HTTPFetcher {
-	f := &HTTPFetcher{denied: deniedAddr}
+	own := ownAddrs()
+	f := &HTTPFetcher{denied: func(a netip.Addr) bool { return deniedAddr(a) || own[a] }}
 	dialer := &net.Dialer{
 		Timeout: 10 * time.Second,
 		Control: func(_, address string, _ syscall.RawConn) error {
@@ -78,7 +79,21 @@ func deniedAddr(a netip.Addr) bool {
 	return false
 }
 
+// ownAddrs are the box's own addresses, public ones included: a service its firewall
+// hides from the internet is still open to the box itself.
+func ownAddrs() map[netip.Addr]bool {
+	out := map[netip.Addr]bool{}
+	addrs, _ := net.InterfaceAddrs()
+	for _, a := range addrs {
+		if p, err := netip.ParsePrefix(a.String()); err == nil {
+			out[p.Addr().Unmap()] = true
+		}
+	}
+	return out
+}
+
 var deniedPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("fec0::/10"), // site-local, deprecated but routed by some
 	netip.MustParsePrefix("0.0.0.0/8"),
 	netip.MustParsePrefix("100.64.0.0/10"), // CGNAT: a provider's internal network
 	netip.MustParsePrefix("192.0.0.0/24"),
@@ -102,6 +117,10 @@ func allowed(u *url.URL, allow []string) bool {
 		if hasPort && entryPort != port {
 			continue
 		}
+		// An entry without a port is a web API: 80 and 443, not every port the host has.
+		if !hasPort && port != "80" && port != "443" {
+			continue
+		}
 		if wild, ok := strings.CutPrefix(name, "*."); ok {
 			if strings.HasSuffix(host, "."+wild) {
 				return true
@@ -119,7 +138,7 @@ func allowed(u *url.URL, allow []string) bool {
 func (f *HTTPFetcher) Fetch(ctx context.Context, allow []string, req FetchRequest) (*FetchResponse, error) {
 	u, err := url.Parse(req.URL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
-		return nil, fmt.Errorf("fetch: %q is not an http(s) URL", req.URL)
+		return nil, errors.New("fetch: not an http(s) URL") // the URL itself may carry a secret
 	}
 	if !allowed(u, allow) {
 		return nil, fmt.Errorf("fetch: %s is not in the plugin's net allowlist", u.Hostname())
@@ -170,6 +189,12 @@ func (f *HTTPFetcher) Fetch(ctx context.Context, allow []string, req FetchReques
 	}
 	resp, err := client.Do(hr)
 	if err != nil {
+		// net/http names the whole URL, and a bot token or an API key often rides
+		// in its path or query: the error lands in the plugin's log.
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			return nil, fmt.Errorf("fetch: %s %s://%s: %w", ue.Op, u.Scheme, u.Host, ue.Err)
+		}
 		return nil, fmt.Errorf("fetch: %w", err)
 	}
 	defer resp.Body.Close()

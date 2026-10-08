@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,12 +13,14 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/plugin/jsvm"
+	"github.com/AppsGanin/rospanel/internal/plugin/manifest"
 )
 
 const (
 	maxAPIBody     = 1 << 20
 	maxAPIResponse = 4 << 20
 	maxLogLine     = 4 << 10
+	maxHostAnswer  = 12 << 20 // one host answer, as JSON
 )
 
 // hostFunc binds the plugin's __host calls to this instance. It runs inside a
@@ -28,7 +31,17 @@ func (inst *instance) hostFunc(o callOpts) jsvm.Host {
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(res)
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(false) // < > & stay one byte each, not six
+		err = enc.Encode(res)
+		out := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
+		if err == nil && len(out) > maxHostAnswer {
+			// Every op bounds its own answer; this is the backstop for one that
+			// grows when encoded (escaped text, base64), before it reaches the heap.
+			return nil, fmt.Errorf("%s: answer over %d MB", op, maxHostAnswer>>20)
+		}
+		return out, err
 	}
 }
 
@@ -50,6 +63,12 @@ func (inst *instance) op(ctx context.Context, op string, arg []byte, o callOpts)
 		cfg := map[string]string{}
 		for k, v := range inst.rec.Config {
 			cfg[k] = v
+		}
+		// A bool is always "true" or "false", whatever an older version stored.
+		for _, f := range inst.pkg.Manifest.Settings { // pkg is loaded: this runs inside a call
+			if f.Kind == "bool" {
+				cfg[f.Key] = manifest.CanonBool(cfg[f.Key])
+			}
 		}
 		return cfg, nil
 	case "log":
@@ -324,16 +343,54 @@ func (inst *instance) logf(level, format string, args ...any) {
 	if len(msg) > maxLogLine {
 		msg = msg[:maxLogLine] + "…"
 	}
-	inst.logs.add(LogLine{At: time.Now().Unix(), Level: level, Msg: msg})
-	lg := inst.host.log.With("plugin", inst.id)
-	switch level {
-	case "error":
-		lg.Warn(firstLine(msg)) // a plugin's error is the plugin's, not the panel's
-	case "warn":
-		lg.Info(firstLine(msg))
-	default:
-		lg.Debug(firstLine(msg))
+	now := time.Now()
+	inst.logs.add(LogLine{At: now.Unix(), Level: level, Msg: msg})
+	if level == "info" {
+		inst.host.log.Debug(firstLine(msg), "plugin", inst.id)
+		return
 	}
+	// Into the panel's own log only a few lines a minute: a plugin logging in a
+	// loop must not flood the journal. Its own log above keeps every line.
+	pass, dropped := inst.fwd.allow(now)
+	if dropped > 0 {
+		inst.host.log.Info("plugin log lines not copied here (see the plugin's own log)", "plugin", inst.id, "lines", dropped)
+	}
+	if !pass {
+		return
+	}
+	if level == "error" {
+		inst.host.log.Warn(firstLine(msg), "plugin", inst.id) // a plugin's error is the plugin's, not the panel's
+	} else {
+		inst.host.log.Info(firstLine(msg), "plugin", inst.id)
+	}
+}
+
+// fwdPerMinute is how many of a plugin's warnings and errors a minute go into the
+// panel's log.
+const fwdPerMinute = 20
+
+// forwardLimit counts a plugin's lines copied into the panel's log, per minute.
+type forwardLimit struct {
+	mu      sync.Mutex
+	minute  int64
+	n       int
+	dropped int
+}
+
+// allow reports whether a line may be copied now, and how many were held back in
+// the minute that just ended (reported once, when the next minute starts).
+func (f *forwardLimit) allow(now time.Time) (ok bool, dropped int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if m := now.Unix() / 60; m != f.minute {
+		dropped, f.minute, f.n, f.dropped = f.dropped, m, 0, 0
+	}
+	if f.n >= fwdPerMinute {
+		f.dropped++
+		return false, dropped
+	}
+	f.n++
+	return true, dropped
 }
 
 func firstLine(s string) string {

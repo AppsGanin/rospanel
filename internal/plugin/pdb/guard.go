@@ -51,6 +51,9 @@ func CheckSQL(sql string) error {
 			stmt, segment, trigger = stmt[:0], segment[:0], false
 			continue
 		}
+		if tok == "SQLITE_DBPAGE" { // raw pages of the file: a plugin could corrupt it for the host to read
+			return fmt.Errorf("%w: sqlite_dbpage", ErrForbidden)
+		}
 		if len(stmt) == 0 && forbidden[tok] {
 			return fmt.Errorf("%w: %s (the host manages pragmas, attachments and transactions)", ErrForbidden, tok)
 		}
@@ -104,6 +107,8 @@ func (l *lexer) next() (string, bool) {
 			} else {
 				l.i += end + 4
 			}
+		case c == '$' || c == '@' || c == ':' || c == '#':
+			l.skipVariable()
 		case isWordStart(c):
 			start := l.i
 			for l.i < len(l.s) && isWordPart(l.s[l.i]) {
@@ -144,9 +149,47 @@ func (l *lexer) skipQuoted(open, close byte) {
 	l.err = fmt.Errorf("pdb: unterminated %c in SQL", open)
 }
 
-func isWordStart(c byte) bool {
-	return c == '_' || c == '$' || c == '@' || c == ':' || c == '?' ||
-		(c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c >= 0x80
+// skipVariable moves past a bound parameter ($a, @a, :a, #a) the way SQLite's
+// tokenizer does — including its Tcl form $a(...), which runs to the ")" through
+// quotes and semicolons. Read as a name and a quoted string instead, it would let
+// `$a(');PRAGMA ...;--'` hide a statement SQLite runs.
+func (l *lexer) skipVariable() {
+	l.i++ // the sigil
+	n := 0
+	for l.i < len(l.s) {
+		c := l.s[l.i]
+		switch {
+		case isIDChar(c):
+			n++
+			l.i++
+		case c == '(' && n > 0:
+			for l.i++; l.i < len(l.s) && !isSpace(l.s[l.i]) && l.s[l.i] != ')'; l.i++ {
+			}
+			if l.i < len(l.s) && l.s[l.i] == ')' {
+				l.i++
+			} else {
+				l.err = errors.New("pdb: unterminated ( in a parameter")
+			}
+			return
+		case c == ':' && l.peek(1) == ':':
+			l.i += 2
+		default:
+			return
+		}
+	}
 }
 
-func isWordPart(c byte) bool { return isWordStart(c) || (c >= '0' && c <= '9') }
+// isWordStart and isIDChar follow SQLite's identifier characters: a "$" may go on
+// a name but not start one (it starts a parameter).
+func isWordStart(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c >= 0x80
+}
+
+func isWordPart(c byte) bool { return isIDChar(c) }
+
+func isIDChar(c byte) bool { return isWordStart(c) || c == '$' || (c >= '0' && c <= '9') }
+
+// isSpace is SQLite's sqlite3Isspace.
+func isSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r' || c == '\v'
+}

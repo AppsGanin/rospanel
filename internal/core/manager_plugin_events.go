@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"slices"
 	"time"
 )
 
@@ -18,10 +19,14 @@ type PluginEvents interface {
 	// not there to take it any more (removed, off, paused): the delivery is dropped
 	// rather than retried.
 	DeliverEvent(ctx context.Context, plugin string, body []byte) (gone bool, err error)
+	// EventPlugins lists the active plugins that take events (onEvent or a channel).
+	EventPlugins() []string
 }
 
 const (
-	pluginWorkers = 2
+	// pluginWorkers deliver to that many plugins at once (each plugin takes one
+	// event at a time): a plugin slow to answer holds one worker, not all of them.
+	pluginWorkers = 4
 	pluginTimeout = 30 * time.Second // onEvent and channel.send, each within its own deadline
 )
 
@@ -101,7 +106,14 @@ func (m *Manager) dispatchPluginEvents(ch chan<- pluginJob) bool {
 	if m.pluginHost() == nil {
 		return false
 	}
-	ds, err := m.store.LeasePluginDeliveries(time.Now().Unix(), int64(webhookLease.Seconds()), webhookBatch, m.busyPlugins())
+	busy := m.busyPlugins()
+	var idle []string
+	for _, p := range m.pluginHost().EventPlugins() {
+		if !slices.Contains(busy, p) {
+			idle = append(idle, p)
+		}
+	}
+	ds, err := m.store.LeasePluginDeliveries(time.Now().Unix(), int64(webhookLease.Seconds()), webhookBatch, idle)
 	if err != nil {
 		logErr("plugin events: leasing deliveries failed", "err", err)
 		return false

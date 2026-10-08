@@ -19,8 +19,10 @@ import (
 type PluginHooks interface {
 	// Hooked reports whether any active plugin answers a decision ("beforeDeviceBind"…).
 	Hooked(hook string) bool
-	// Stopped reports whether a plugin is installed but not running.
+	// Stopped reports whether a plugin is on but not running (paused, failed to
+	// start); StoppedIDs lists those plugins.
 	Stopped(id string) bool
+	StoppedIDs() []string
 	BeforeSignup(ctx context.Context, req model.SignupCheck) (allow bool, reason string)
 	BeforeDeviceBind(ctx context.Context, req model.DeviceCheck) (allow bool, reason string)
 	QuotePrice(ctx context.Context, req model.PriceRequest) (priceRub int, note string, ok bool)
@@ -113,6 +115,20 @@ func (m *Manager) pluginPaymentStopped(provider string) bool {
 	}
 	h := m.pluginHooks()
 	return h != nil && h.Stopped(id)
+}
+
+// stoppedPluginProviders are the payment providers of plugins that are on but not
+// running: their orders wait for the plugin, outside the poll's batch.
+func (m *Manager) stoppedPluginProviders() []string {
+	h := m.pluginHooks()
+	if h == nil {
+		return nil
+	}
+	var out []string
+	for _, id := range h.StoppedIDs() {
+		out = append(out, "plugin."+id)
+	}
+	return out
 }
 
 // warmPluginPrice asks the plugins for a purchase's price before applyPlanMu is

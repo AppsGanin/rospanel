@@ -14,6 +14,7 @@
     {"key": "webhook_key", "kind": "secret", "label": {"ru": "Дополнительный ключ (для вебхуков)", "en": "Additional key (for webhooks)"}},
     {"key": "lifetime", "kind": "number", "label": {"ru": "Срок жизни счёта, минут", "en": "Invoice lifetime, minutes"}, "default": "60"}
   ],
+  "permissions": ["payments.manage"],
   "provides": {
     "payment": {"label": "Lava", "note": {"ru": "Карты и СБП", "en": "Cards and SBP"}}
   }

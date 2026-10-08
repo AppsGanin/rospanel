@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -70,10 +71,10 @@ type Deps struct {
 	Store        Store
 	DataDir      string // plugins/<id>.db live under it; the wasm cache in cache/wasm
 	PanelVersion string
-	API          APICaller                      // nil: panel.api answers "not available"
-	Fetch        Fetcher                        // nil: panel.http.fetch answers "not available"
-	Notify       func(pluginID, message string) // tells the admins a plugin was paused
-	Stopped      func(pluginID string)          // a plugin stopped taking events: drop its queue
+	API          APICaller                                     // nil: panel.api answers "not available"
+	Fetch        Fetcher                                       // nil: panel.http.fetch answers "not available"
+	Notify       func(pluginID, message string, retrying bool) // tells the admins a plugin stopped
+	Stopped      func(pluginID string)                         // a plugin stopped taking events: drop its queue
 	Logger       *slog.Logger
 	// PublicURL is the panel's public callback URL for a path under its secret
 	// segment ("x/<id>", "plugin.<id>"), "" while the panel has no host or secret.
@@ -93,13 +94,23 @@ const (
 )
 
 const (
-	// breakerLimit failures in a row pause a plugin until an operator resumes it.
+	// breakerLimit failures in a row pause a plugin; the panel retries it later.
 	breakerLimit = 10
+	// probation is how many failures in a row pause a plugin a retry brought back.
+	probation = 3
 	// recycleAt is how much of its heap limit a VM may have grown by (over its size
 	// right after loading) before it is replaced after a call: wasm memory never
 	// shrinks, so a VM that once spiked would keep the memory otherwise.
 	recycleAt = 0.75
 )
+
+// retryDelays space the panel's own attempts to bring back a plugin the breaker
+// paused or that would not start at boot: the service it calls being down, the
+// network not up yet. The last delay repeats.
+var retryDelays = []time.Duration{5 * time.Minute, 15 * time.Minute, time.Hour}
+
+// notifyEvery spaces the admin notices about one plugin that keeps stopping.
+const notifyEvery = 6 * time.Hour
 
 var (
 	ErrNotFound  = errors.New("plugin: not installed")
@@ -124,6 +135,7 @@ type Host struct {
 	decided        decisionCache
 	bot            botCache
 	subTransforms  transformCache
+	failing        sync.Map     // "surface/plugin" → when it last threw (skipFailing)
 	lastRelease    atomic.Int64 // unix nanos of the last memory release
 	releasePending atomic.Bool  // a release is scheduled
 }
@@ -135,7 +147,7 @@ type instance struct {
 
 	// mu serializes everything that touches the plugin: its calls, and its
 	// lifecycle (start, stop, settings) against them.
-	mu     sync.Mutex
+	mu     gate
 	rec    model.Plugin
 	pkg    *manifest.Package
 	vm     *jsvm.VM
@@ -148,8 +160,17 @@ type instance struct {
 	fails   int
 	status  string
 	errMsg  string
+	// removed: uninstalled while an action waited for mu — it must not bring the
+	// plugin back.
+	removed bool
+	// trips counts the panel's retries since the plugin last did real work;
+	// retryAt (unix nanos, 0 none) is when the next is due.
+	trips    int
+	retryAt  atomic.Int64
+	notified time.Time
 
 	logs  *ring
+	fwd   forwardLimit // lines copied into the panel's log
 	storm stormMeter
 
 	// pub is what other goroutines may read without waiting on mu, which a long
@@ -159,9 +180,11 @@ type instance struct {
 
 type published struct {
 	status   string
+	errMsg   string
 	manifest *manifest.Manifest
 	pkg      *manifest.Package // read-only once loaded: its strings, for answers given outside a call
 	sort     int
+	rec      model.Plugin // a copy: what the plugins page shows while a long call holds mu
 }
 
 // New creates the host. Nothing runs until Start.
@@ -187,6 +210,8 @@ func (h *Host) Start(ctx context.Context) error {
 	}
 	// Blobs of calls a crash or a kill cut short.
 	_ = os.RemoveAll(filepath.Join(h.deps.DataDir, "plugins", ".blobs"))
+	// And half-written snapshots or restores.
+	pdb.Sweep(filepath.Join(h.deps.DataDir, "plugins"))
 	// Every plugin is known (and subscribed) before the first one starts: starting
 	// takes a while per plugin, and events keep coming meanwhile.
 	insts := make([]*instance, len(recs))
@@ -195,28 +220,108 @@ func (h *Host) Start(ctx context.Context) error {
 	}
 	for i, rec := range recs {
 		inst := insts[i]
-		// A paused plugin stays paused across a restart: the operator lifts a pause.
-		if rec.Enabled && rec.Status != model.PluginPaused {
-			inst.mu.Lock()
-			if err := inst.start(ctx, false); err != nil {
-				h.log.Warn("plugin failed to start", "plugin", rec.ID, "err", err)
-			}
-			inst.mu.Unlock()
+		if !rec.Enabled {
+			continue
 		}
+		inst.mu.Lock()
+		switch {
+		case rec.Status == model.PluginPaused && strings.Contains(rec.StatusError, tripMark):
+			inst.retryLater() // the breaker's pause goes on being retried
+		case rec.Status == model.PluginPaused:
+			// Paused for its quota or an event storm: the operator lifts that.
+		default:
+			if err := inst.start(ctx); err != nil && !errors.Is(err, ErrPaused) {
+				d := inst.retryLater()
+				h.log.Warn("plugin failed to start", "plugin", rec.ID, "err", err, "retry_in", d)
+				inst.notify("failed to start: "+err.Error(), true)
+			}
+		}
+		inst.mu.Unlock()
 	}
 	return nil
+}
+
+// retryLater schedules the panel's next attempt to start the plugin (mu held).
+func (inst *instance) retryLater() time.Duration {
+	d := retryDelays[min(inst.trips, len(retryDelays)-1)]
+	inst.trips++
+	inst.retryAt.Store(time.Now().Add(d).UnixNano())
+	inst.publish()
+	return d
+}
+
+// notify tells the admins the plugin stopped — once in a while, not on every retry.
+func (inst *instance) notify(reason string, retrying bool) {
+	n := inst.host.deps.Notify
+	if n == nil || time.Since(inst.notified) < notifyEvery {
+		return
+	}
+	inst.notified = time.Now()
+	go n(inst.id, reason, retrying)
+}
+
+// RetryStopped brings back the plugins whose retry is due (see retryLater). A
+// plugin back on a retry is paused again after a few failures, not ten.
+func (h *Host) RetryStopped(ctx context.Context, now time.Time) {
+	for _, inst := range h.all() {
+		at := inst.retryAt.Load()
+		if at == 0 || now.UnixNano() < at {
+			continue
+		}
+		go func() {
+			inst.mu.Lock()
+			defer inst.mu.Unlock()
+			if inst.removed || h.isClosed() || !inst.retryAt.CompareAndSwap(at, 0) {
+				return
+			}
+			if !inst.rec.Enabled || (inst.status != model.PluginPaused && inst.status != model.PluginError) {
+				return
+			}
+			inst.logf("info", "the panel retries the plugin (attempt %d)", inst.trips)
+			if err := inst.start(ctx); err != nil {
+				if !errors.Is(err, ErrPaused) {
+					d := inst.retryLater()
+					inst.logf("error", "retry failed: %v — the next in %s", err, d)
+				}
+				return
+			}
+			inst.fails = breakerLimit - probation
+		}()
+	}
+}
+
+// all lists the installed plugins.
+func (h *Host) all() []*instance {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	out := make([]*instance, 0, len(h.plugins))
+	for _, p := range h.plugins {
+		out = append(out, p)
+	}
+	return out
+}
+
+// lock finds a plugin and takes its lock. A plugin uninstalled while this waited
+// is gone: an Enable queued behind the Uninstall must not bring it back.
+func (h *Host) lock(id string) (*instance, error) {
+	inst, err := h.get(id)
+	if err != nil {
+		return nil, err
+	}
+	inst.mu.Lock()
+	if inst.removed {
+		inst.mu.Unlock()
+		return nil, ErrNotFound
+	}
+	return inst, nil
 }
 
 // Close stops every plugin and the engine.
 func (h *Host) Close(ctx context.Context) error {
 	h.mu.Lock()
 	h.closed = true
-	insts := make([]*instance, 0, len(h.plugins))
-	for _, p := range h.plugins {
-		insts = append(insts, p)
-	}
 	h.mu.Unlock()
-	for _, inst := range insts {
+	for _, inst := range h.all() {
 		inst.mu.Lock()
 		inst.stop()
 		inst.status = model.PluginDisabled // a call queued behind this one must not start a VM
@@ -233,7 +338,7 @@ func (h *Host) isClosed() bool {
 }
 
 func (h *Host) add(rec model.Plugin) *instance {
-	inst := &instance{host: h, id: rec.ID, rec: rec, status: rec.Status, errMsg: rec.StatusError, logs: newRing(logLines)}
+	inst := &instance{host: h, id: rec.ID, rec: rec, status: rec.Status, errMsg: rec.StatusError, logs: newRing(logLines), mu: newGate()}
 	if !rec.Enabled {
 		inst.status = model.PluginDisabled
 	}
@@ -258,27 +363,31 @@ func (h *Host) dbPath(id string) string { return filepath.Join(h.deps.DataDir, "
 
 // --- lifecycle (called with inst.mu held) ---
 
-// start opens the plugin's database, applies its migrations (snapshotting first
-// when asked, for an update), loads its code and calls onEnable. On failure the
-// plugin is left stopped with status error.
-func (inst *instance) start(ctx context.Context, snapshot bool) error {
+// start opens the plugin's database, applies its migrations, loads its code and
+// calls onEnable. On failure the plugin is left stopped with status error.
+func (inst *instance) start(ctx context.Context) error {
 	inst.stop()
-	err := inst.open(ctx, snapshot)
+	wasPaused := inst.status == model.PluginPaused
+	err := inst.open(ctx)
+	if err == nil && inst.status == model.PluginPaused && !wasPaused {
+		err = ErrPaused // onEnable ran but outgrew the quota: it stays paused, not "active"
+	}
+	if errors.Is(err, ErrPaused) {
+		return err
+	}
 	if err != nil {
-		if inst.status == model.PluginPaused { // onEnable outgrew the quota: it stays paused
-			return err
-		}
 		inst.stop()
 		inst.setState(true, model.PluginError, err.Error())
 		return err
 	}
 	inst.fails = 0
 	inst.running = true
+	inst.retryAt.Store(0)
 	inst.setState(true, model.PluginActive, "")
 	return nil
 }
 
-func (inst *instance) open(ctx context.Context, snapshot bool) error {
+func (inst *instance) open(ctx context.Context) error {
 	h := inst.host
 	pkg, err := manifest.Read(inst.rec.Package, h.deps.PanelVersion)
 	if err != nil {
@@ -288,11 +397,6 @@ func (inst *instance) open(ctx context.Context, snapshot bool) error {
 	path := h.dbPath(inst.id)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
-	}
-	if snapshot {
-		if err := pdb.Snapshot(ctx, path, path+".prev"); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("snapshot before update: %w", err)
-		}
 	}
 	db, err := pdb.Open(ctx, path, pkg.Manifest.Quota())
 	if err != nil {
@@ -317,7 +421,9 @@ func (inst *instance) open(ctx context.Context, snapshot bool) error {
 		return fmt.Errorf("main.js does not export what plugin.json declares: %s", strings.Join(missing, ", "))
 	}
 	if inst.vm.Has(ctx, "onEnable") {
-		if _, err := inst.invoke(ctx, "onEnable", nil, EnableTimeout, callOpts{}); err != nil {
+		// On its own clock and marked as this plugin's, like any call: an operator's
+		// browser closing must not kill it, and it may not call itself back.
+		if _, err := inst.invoke(context.WithoutCancel(withCalling(ctx, inst.id)), "onEnable", nil, EnableTimeout, callOpts{}); err != nil {
 			return fmt.Errorf("onEnable: %w", err)
 		}
 	}
@@ -356,7 +462,9 @@ func (inst *instance) ensureVM(ctx context.Context, o callOpts) error {
 
 // publish refreshes the lock-free view of the plugin (call with mu held).
 func (inst *instance) publish() {
-	p := &published{status: inst.status, sort: inst.rec.Sort}
+	rec := inst.rec
+	rec.Config = maps.Clone(rec.Config)
+	p := &published{status: inst.status, errMsg: inst.errMsg, sort: inst.rec.Sort, rec: rec}
 	if inst.pkg != nil {
 		p.manifest, p.pkg = inst.pkg.Manifest, inst.pkg
 	} else if m, err := manifest.Parse([]byte(inst.rec.Manifest)); err == nil {
@@ -389,15 +497,16 @@ func (inst *instance) setState(enabled bool, status, msg string) {
 	}
 }
 
-// pause stops a misbehaving plugin until an operator resumes it.
+// pause stops a misbehaving plugin until an operator resumes it: its database
+// over quota, an event storm. What waits for it is dropped.
 func (inst *instance) pause(reason string) {
 	inst.stop()
+	inst.retryAt.Store(0)
 	inst.setState(true, model.PluginPaused, reason)
 	inst.logf("error", "paused: %s", reason)
 	inst.host.log.Warn("plugin paused", "plugin", inst.id, "reason", reason)
-	if n := inst.host.deps.Notify; n != nil {
-		go n(inst.id, reason)
-	}
+	inst.notified = time.Time{} // always told: this one waits for the operator
+	inst.notify(reason, false)
 	inst.host.stopped(inst.id)
 }
 
@@ -452,6 +561,7 @@ func (h *Host) Install(ctx context.Context, raw []byte, consent Consent) (*Info,
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
 	inst.pkg = pkg
+	inst.publish()
 	return inst.info(), nil
 }
 
@@ -466,11 +576,10 @@ func (h *Host) Update(ctx context.Context, raw []byte, consent Consent) (*Info, 
 	if !consent.matches(pkg) {
 		return nil, ErrConsent
 	}
-	inst, err := h.get(pkg.Manifest.ID)
+	inst, err := h.lock(pkg.Manifest.ID)
 	if err != nil {
 		return nil, err
 	}
-	inst.mu.Lock()
 	defer inst.mu.Unlock()
 	prev := inst.rec
 	mf, _ := json.Marshal(pkg.Manifest)
@@ -479,21 +588,37 @@ func (h *Host) Update(ctx context.Context, raw []byte, consent Consent) (*Info, 
 	next.GrantedPerms, next.GrantedNet = pkg.Manifest.Permissions, pkg.Manifest.Net
 	next.PrevPackage, next.PrevVersion = prev.Package, prev.Version
 	next.Config = mergeDefaults(prev.Config, pkg.Manifest)
-	if err := h.deps.Store.SavePlugin(next); err != nil {
-		return nil, err
+	// The snapshot first, with the plugin stopped so none of its writes miss it: a
+	// rollback restores the data as this version left it. Nothing has changed if it
+	// fails — the old version goes on.
+	wasRunning := inst.running
+	inst.stop()
+	path := h.dbPath(inst.id)
+	err = os.MkdirAll(filepath.Dir(path), 0o700)
+	if err == nil {
+		err = pdb.Snapshot(ctx, path, path+".prev")
+	}
+	if err == nil {
+		err = h.deps.Store.SavePlugin(next)
+	}
+	if err != nil {
+		if wasRunning {
+			if e := inst.start(ctx); e != nil {
+				inst.logf("error", "restarting after a failed update: %v", e)
+			}
+		}
+		return nil, fmt.Errorf("update: %w", err)
 	}
 	inst.rec = next
 	inst.pkg = pkg
+	inst.publish()
 	if !prev.Enabled {
-		// Switched off, it still gets its snapshot: a rollback restores the data as
-		// this version left it, never a copy from an older update.
-		path := h.dbPath(inst.id)
-		if err := pdb.Snapshot(ctx, path, path+".prev"); err != nil && !os.IsNotExist(err) {
-			return nil, fmt.Errorf("snapshot before update: %w", err)
-		}
 		return inst.info(), nil
 	}
-	if err := inst.start(ctx, true); err != nil {
+	if pr := pkg.Manifest.Provides; len(pr.Events) == 0 && pr.Channel == nil {
+		h.stopped(inst.id) // this version takes no events: what waits for it would wait forever
+	}
+	if err := inst.start(ctx); err != nil {
 		inst.logf("error", "update to %s failed, rolling back: %v", next.Version, err)
 		if rbErr := inst.rollback(ctx); rbErr != nil {
 			return nil, errors.Join(err, fmt.Errorf("rollback: %w", rbErr))
@@ -506,11 +631,10 @@ func (h *Host) Update(ctx context.Context, raw []byte, consent Consent) (*Info, 
 // Rollback restores the previous package and the database snapshot taken before
 // the update.
 func (h *Host) Rollback(ctx context.Context, id string) (*Info, error) {
-	inst, err := h.get(id)
+	inst, err := h.lock(id)
 	if err != nil {
 		return nil, err
 	}
-	inst.mu.Lock()
 	defer inst.mu.Unlock()
 	if err := inst.rollback(ctx); err != nil {
 		return nil, err
@@ -527,12 +651,15 @@ func (inst *instance) rollback(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	inst.stop()
 	path := h.dbPath(inst.id)
-	if _, err := os.Stat(path + ".prev"); err == nil {
-		if err := pdb.Restore(path+".prev", path); err != nil {
-			return fmt.Errorf("restore database: %w", err)
-		}
+	// The previous code on the data the update migrated would be worse than no
+	// rollback: without the snapshot taken before it, refuse.
+	if _, err := os.Stat(path + ".prev"); err != nil {
+		return errors.New("plugin: the database snapshot taken before the update is gone; roll back by installing the previous version")
+	}
+	inst.stop()
+	if err := pdb.Restore(path+".prev", path); err != nil {
+		return fmt.Errorf("restore database: %w", err)
 	}
 	rec := inst.rec
 	mf, _ := json.Marshal(pkg.Manifest)
@@ -543,36 +670,54 @@ func (inst *instance) rollback(ctx context.Context) error {
 		return err
 	}
 	inst.rec, inst.pkg = rec, pkg
+	inst.publish()
 	if rec.Enabled {
-		return inst.start(ctx, false)
+		return inst.start(ctx)
 	}
 	return nil
 }
 
-// Enable turns a plugin on (or resumes a paused one).
-func (h *Host) Enable(ctx context.Context, id string) (*Info, error) {
+// PrevPermissions are what the version a rollback would restore was granted.
+func (h *Host) PrevPermissions(id string) ([]string, error) {
 	inst, err := h.get(id)
 	if err != nil {
 		return nil, err
 	}
-	inst.mu.Lock()
+	prev := inst.pub.Load().rec.PrevPackage
+	if len(prev) == 0 {
+		return nil, nil
+	}
+	pkg, err := manifest.Read(prev, "")
+	if err != nil {
+		return nil, err
+	}
+	return pkg.Manifest.Permissions, nil
+}
+
+// Enable turns a plugin on (or resumes a paused one).
+func (h *Host) Enable(ctx context.Context, id string) (*Info, error) {
+	inst, err := h.lock(id)
+	if err != nil {
+		return nil, err
+	}
 	defer inst.mu.Unlock()
 	if missing := inst.missingSettings(); len(missing) > 0 {
 		return nil, fmt.Errorf("plugin: fill in the settings first: %s", strings.Join(missing, ", "))
 	}
-	err = inst.start(ctx, false)
+	err = inst.start(ctx)
 	return inst.info(), err
 }
 
 // Disable turns a plugin off.
 func (h *Host) Disable(_ context.Context, id string) (*Info, error) {
-	inst, err := h.get(id)
+	inst, err := h.lock(id)
 	if err != nil {
 		return nil, err
 	}
-	inst.mu.Lock()
 	defer inst.mu.Unlock()
 	inst.stop()
+	inst.retryAt.Store(0)
+	inst.trips = 0
 	inst.setState(false, model.PluginDisabled, "")
 	h.stopped(id)
 	return inst.info(), nil
@@ -580,17 +725,18 @@ func (h *Host) Disable(_ context.Context, id string) (*Info, error) {
 
 // Uninstall removes a plugin; its database goes too unless keepData.
 func (h *Host) Uninstall(_ context.Context, id string, keepData bool) error {
-	inst, err := h.get(id)
+	inst, err := h.lock(id)
 	if err != nil {
 		return err
 	}
-	inst.mu.Lock()
 	defer inst.mu.Unlock()
 	inst.stop()
 	if err := h.deps.Store.DeletePlugin(id); err != nil {
 		return err
 	}
 	inst.status = model.PluginDisabled // a call queued behind this one must not run it again
+	inst.removed = true
+	inst.retryAt.Store(0)
 	inst.publish()
 	h.mu.Lock()
 	delete(h.plugins, id)
@@ -606,11 +752,10 @@ func (h *Host) Uninstall(_ context.Context, id string, keepData bool) error {
 // one clears it — except a secret, where empty keeps the stored one, as the payment
 // forms do. A running plugin restarts on the new settings.
 func (h *Host) SetConfig(ctx context.Context, id string, values map[string]string) (*Info, error) {
-	inst, err := h.get(id)
+	inst, err := h.lock(id)
 	if err != nil {
 		return nil, err
 	}
-	inst.mu.Lock()
 	defer inst.mu.Unlock()
 	m, err := inst.manifest()
 	if err != nil {
@@ -624,8 +769,9 @@ func (h *Host) SetConfig(ctx context.Context, id string, values map[string]strin
 		return nil, err
 	}
 	inst.rec.Config = cfg
+	inst.publish()
 	if inst.rec.Enabled && inst.status == model.PluginActive {
-		err = inst.start(ctx, false)
+		err = inst.start(ctx)
 	}
 	return inst.info(), err
 }
@@ -648,9 +794,17 @@ func (inst *instance) missingSettings() []string {
 	if err != nil {
 		return nil
 	}
+	return missingSettings(m, inst.rec.Config)
+}
+
+// missingSettings are the required settings cfg leaves empty.
+func missingSettings(m *manifest.Manifest, cfg map[string]string) []string {
+	if m == nil {
+		return nil
+	}
 	var out []string
 	for _, f := range m.Settings {
-		if !f.Optional && f.Kind != "bool" && strings.TrimSpace(inst.rec.Config[f.Key]) == "" {
+		if !f.Optional && f.Kind != "bool" && strings.TrimSpace(cfg[f.Key]) == "" {
 			out = append(out, f.Key)
 		}
 	}
@@ -685,8 +839,9 @@ type Info struct {
 	InstalledAt  int64              `json:"installed_at"`
 	UpdatedAt    int64              `json:"updated_at"`
 	SHA256       string             `json:"sha256"`
-	DBBytes      int64              `json:"db_bytes"`
+	DBBytes      int64              `json:"db_bytes"` // with its write-ahead log and rollback snapshot
 	MissingSetup []string           `json:"missing_setup,omitempty"`
+	RetryAt      int64              `json:"retry_at,omitempty"` // unix: the panel's next attempt to bring it back
 	// HTTPURL is where onHttp answers; PaymentKey the provider key of its payment
 	// method and PaymentWebhook the callback URL to give the payment system.
 	HTTPURL        string `json:"http_url,omitempty"`
@@ -694,17 +849,26 @@ type Info struct {
 	PaymentWebhook string `json:"payment_webhook,omitempty"`
 }
 
-func (inst *instance) info() *Info {
-	m, _ := inst.manifest()
+// info is the plugin as published (call with mu held, after the change it shows).
+func (inst *instance) info() *Info { return inst.host.infoOf(inst) }
+
+// infoOf builds what the admin panel shows from a published view: no waiting on a
+// plugin in a long call.
+func (h *Host) infoOf(inst *instance) *Info {
+	id, p := inst.id, inst.pub.Load()
+	rec, m := p.rec, p.manifest
 	in := &Info{
-		ID: inst.id, Version: inst.rec.Version, Manifest: m, Enabled: inst.rec.Enabled,
-		Status: inst.status, StatusError: inst.errMsg, PrevVersion: inst.rec.PrevVersion,
-		InstalledAt: inst.rec.InstalledAt, UpdatedAt: inst.rec.UpdatedAt, SHA256: inst.rec.SHA256,
-		Config: map[string]string{}, MissingSetup: inst.missingSettings(),
+		ID: id, Version: rec.Version, Manifest: m, Enabled: rec.Enabled,
+		Status: p.status, StatusError: p.errMsg, PrevVersion: rec.PrevVersion,
+		InstalledAt: rec.InstalledAt, UpdatedAt: rec.UpdatedAt, SHA256: rec.SHA256,
+		Config: map[string]string{}, MissingSetup: missingSettings(m, rec.Config),
+	}
+	if at := inst.retryAt.Load(); at != 0 {
+		in.RetryAt = time.Unix(0, at).Unix()
 	}
 	if m != nil {
 		for _, f := range m.Settings {
-			v := inst.rec.Config[f.Key]
+			v := rec.Config[f.Key]
 			if f.Kind == "secret" {
 				if v != "" {
 					in.SecretsSet = append(in.SecretsSet, f.Key)
@@ -714,22 +878,32 @@ func (inst *instance) info() *Info {
 			in.Config[f.Key] = v
 		}
 	}
-	if st, err := os.Stat(inst.host.dbPath(inst.id)); err == nil {
-		in.DBBytes = st.Size()
-	}
+	in.DBBytes = h.diskBytes(id)
 	if m != nil {
-		pub := inst.host.deps.PublicURL
+		pub := h.deps.PublicURL
 		if m.Provides.HTTP && pub != nil {
-			in.HTTPURL = pub("x/" + inst.id)
+			in.HTTPURL = pub("x/" + id)
 		}
 		if m.Provides.Payment != nil {
-			in.PaymentKey = PaymentKeyPrefix + inst.id
+			in.PaymentKey = PaymentKeyPrefix + id
 			if pub != nil {
 				in.PaymentWebhook = pub(in.PaymentKey)
 			}
 		}
 	}
 	return in
+}
+
+// diskBytes is what the plugin's data takes on disk: its database with the
+// write-ahead log and the snapshot kept for a rollback.
+func (h *Host) diskBytes(id string) int64 {
+	var n int64
+	for _, suffix := range []string{"", "-wal", ".prev"} {
+		if st, err := os.Stat(h.dbPath(id) + suffix); err == nil {
+			n += st.Size()
+		}
+	}
+	return n
 }
 
 // List returns every installed plugin in order.
@@ -754,9 +928,7 @@ func (h *Host) List() []*Info {
 	})
 	out := make([]*Info, 0, len(insts))
 	for _, inst := range insts {
-		inst.mu.Lock()
-		out = append(out, inst.info())
-		inst.mu.Unlock()
+		out = append(out, h.infoOf(inst))
 	}
 	return out
 }
@@ -767,9 +939,7 @@ func (h *Host) Get(id string) (*Info, error) {
 	if err != nil {
 		return nil, err
 	}
-	inst.mu.Lock()
-	defer inst.mu.Unlock()
-	return inst.info(), nil
+	return h.infoOf(inst), nil
 }
 
 // Code returns the plugin's main.js, for the code view.
@@ -778,9 +948,7 @@ func (h *Host) Code(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	inst.mu.Lock()
-	defer inst.mu.Unlock()
-	pkg, err := manifest.Read(inst.rec.Package, "")
+	pkg, err := manifest.Read(inst.pub.Load().rec.Package, "")
 	if err != nil {
 		return "", err
 	}
@@ -838,7 +1006,7 @@ func (h *Host) CheckpointAll(ctx context.Context) {
 	for _, inst := range insts {
 		// Bounded: a backup must not hang behind a plugin stuck in a long call. That
 		// plugin's last writes then miss this backup and make the next one.
-		if !lockWithin(ctx, &inst.mu, 10*time.Second) {
+		if !inst.mu.lockWithin(ctx, 10*time.Second) {
 			h.log.Warn("plugin db checkpoint skipped: the plugin is busy", "plugin", inst.id)
 			continue
 		}
@@ -856,7 +1024,10 @@ func (h *Host) CheckpointAll(ctx context.Context) {
 func defaults(m *manifest.Manifest) map[string]string {
 	cfg := map[string]string{}
 	for _, f := range m.Settings {
-		if f.Default != "" {
+		switch {
+		case f.Kind == "bool":
+			cfg[f.Key] = manifest.CanonBool(f.Default)
+		case f.Default != "":
 			cfg[f.Key] = f.Default
 		}
 	}
@@ -893,7 +1064,7 @@ func validateConfig(m *manifest.Manifest, old, values map[string]string) (map[st
 		}
 		switch f.Kind {
 		case "bool":
-			if v != "" && v != "1" && v != "true" && v != "0" && v != "false" {
+			if v = manifest.CanonBool(v); v == "" {
 				problems = append(problems, f.Key+": must be true or false")
 			}
 		case "number":
@@ -932,11 +1103,10 @@ func sameSet(a, b []string) bool {
 // tools (internal/plugin/devkit) use to seed and inspect a plugin's database from a
 // test. Not reachable from the panel's own surfaces.
 func (h *Host) DevOp(ctx context.Context, id, op string, arg []byte) ([]byte, error) {
-	inst, err := h.get(id)
+	inst, err := h.lock(id)
 	if err != nil {
 		return nil, err
 	}
-	inst.mu.Lock()
 	defer inst.mu.Unlock()
 	if inst.pkg == nil {
 		return nil, ErrNotActive

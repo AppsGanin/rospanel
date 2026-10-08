@@ -6,10 +6,12 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 const surfacesManifest = `{
 	"id": "surf", "version": "1.0.0", "api": 1, "name": {"ru": "Поверхности", "en": "Surfaces"},
+	"permissions": ["users.view"],
 	"provides": {
 		"user_fields": [{"key": "email", "label": {"ru": "Почта", "en": "Email"}}, {"key": "score", "label": "Score"}],
 		"actions": [
@@ -67,12 +69,12 @@ func kvGet(t *testing.T, h *harness, key string) string {
 
 func TestUserFields(t *testing.T) {
 	h := installSurfaces(t)
-	got := h.host.UserFields(context.Background(), 1, "en")
+	got := h.host.UserFields(context.Background(), 1, "en", allPerms)
 	if len(got) != 1 || got[0].Name != "Surfaces" || len(got[0].Fields) != 2 ||
 		got[0].Fields[0] != (FieldValue{"email", "Email", "a@b.c"}) || got[0].Fields[1].Value != "42" {
 		t.Fatalf("%+v", got)
 	}
-	if got := h.host.UserFields(context.Background(), 2, "en"); len(got) != 0 {
+	if got := h.host.UserFields(context.Background(), 2, "en", allPerms); len(got) != 0 {
 		t.Fatalf("an empty answer made a block: %+v", got)
 	}
 }
@@ -80,12 +82,27 @@ func TestUserFields(t *testing.T) {
 func TestActionsAndPermissions(t *testing.T) {
 	h := installSurfaces(t)
 	all := func(string) bool { return true }
-	usersOnly := func(p string) bool { return p == "users.manage" }
+	usersOnly := func(p string) bool { return p == "users.manage" || p == "users.view" }
 	if got := h.host.Actions("en", all); len(got) != 3 || got[0].Perm != "users.manage" || !got[1].Confirm {
 		t.Fatalf("%+v", got)
 	}
 	if got := h.host.Actions("en", usersOnly); len(got) != 2 {
 		t.Fatalf("an admin without billing.manage sees %+v", got)
+	}
+	// Without users.view, which the plugin holds, none of its buttons, widgets or
+	// card fields reach the admin: they would act and read through it.
+	manageOnly := func(p string) bool { return p == "users.manage" }
+	if got := h.host.Actions("en", manageOnly); len(got) != 0 {
+		t.Fatalf("an admin short of the plugin's grant sees %+v", got)
+	}
+	if _, _, err := h.host.RunAction(context.Background(), "surf", "receipt", []int64{1}, manageOnly); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("pressed short of the plugin's grant: %v", err)
+	}
+	if got := h.host.Widgets(context.Background(), "en", manageOnly); len(got) != 0 {
+		t.Fatalf("widgets: %+v", got)
+	}
+	if got := h.host.UserFields(context.Background(), 1, "en", manageOnly); len(got) != 0 {
+		t.Fatalf("user fields: %+v", got)
 	}
 	ctx := context.Background()
 	if _, _, err := h.host.RunAction(ctx, "surf", "bulk", []int64{1, 2}, usersOnly); !errors.Is(err, ErrForbidden) {
@@ -110,11 +127,11 @@ func TestActionsAndPermissions(t *testing.T) {
 func TestWidgetsCachedAndChecked(t *testing.T) {
 	h := installSurfaces(t)
 	ctx := context.Background()
-	got := h.host.Widgets(ctx, "en")
+	got := h.host.Widgets(ctx, "en", allPerms)
 	if len(got) != 2 || string(got[0].Data) != `{"type":"stat","value":7,"hint":"seven"}` || got[1].Error == "" || got[1].Data != nil {
 		t.Fatalf("%+v", got)
 	}
-	h.host.Widgets(ctx, "en")
+	h.host.Widgets(ctx, "en", allPerms)
 	if calls := kvGet(t, h, "widget-calls"); calls != "2" {
 		t.Fatalf("the cache let %s calls through for two widgets", calls)
 	}
@@ -206,5 +223,30 @@ func TestValidWidgetShapes(t *testing.T) {
 		if got := validWidget(json.RawMessage(raw)); got != want {
 			t.Errorf("%s: %v, want %v", raw, got, want)
 		}
+	}
+}
+
+func allPerms(string) bool { return true }
+
+// A plugin that throws on the subscription page is left alone for a while, not
+// called (and waited for) on every view.
+func TestFailingSubBlocksBackOff(t *testing.T) {
+	h := newHarness(t)
+	h.install(pkg(t, `{"id": "flaky", "version": "1.0.0", "api": 1, "name": "Flaky",
+		"permissions": ["users.view"], "provides": {"sub_blocks": true}}`, `
+let calls = 0;
+export function subBlocks() { calls++; throw new Error("down"); }
+export function count() { return calls; }`, nil))
+	h.enable("flaky")
+	for i := 0; i < 5; i++ {
+		h.host.SubBlocks(context.Background(), map[string]any{"id": i}, "en")
+	}
+	if got := h.mustCall("flaky", "count", nil); got != "1" {
+		t.Fatalf("called %s times within the backoff", got)
+	}
+	h.host.failing.Store("subBlocks/flaky", time.Now().Add(-failBackoff))
+	h.host.SubBlocks(context.Background(), map[string]any{"id": 9}, "en")
+	if got := h.mustCall("flaky", "count", nil); got != "2" {
+		t.Fatalf("not asked again after the backoff: %s", got)
 	}
 }

@@ -135,7 +135,7 @@ func newHarness(t *testing.T) *harness {
 			return 200, []byte(`{"id": 12, "name": "bob"}`), nil
 		},
 		Fetch:  fakeFetcher{h},
-		Notify: func(id, msg string) { h.notes <- id + ": " + msg },
+		Notify: func(id, msg string, _ bool) { h.notes <- id + ": " + msg },
 		Logger: quiet,
 	})
 	t.Cleanup(func() { _ = h.host.Close(context.Background()) })
@@ -690,5 +690,215 @@ func TestEmptyLogIsAList(t *testing.T) {
 	}
 	if b, _ := json.Marshal(map[string]any{"lines": lines}); string(b) != `{"lines":[]}` {
 		t.Fatalf("%s", b)
+	}
+}
+
+// The breaker keeps what waits for the plugin and brings it back on its own; back
+// on a retry, a few failures pause it again.
+func TestBreakerRetries(t *testing.T) {
+	h := newHarness(t)
+	installConf(h)
+	for i := 0; i < breakerLimit; i++ {
+		_, _ = h.call("conf", "boom", nil)
+	}
+	info, _ := h.host.Get("conf")
+	if info.Status != model.PluginPaused || info.RetryAt == 0 {
+		t.Fatalf("not paused for a retry: %+v", info)
+	}
+	if gone, _ := h.host.DeliverEvent(context.Background(), "conf", []byte(`{"event":"user.created"}`)); gone {
+		t.Fatal("a pause the panel retries must keep its events")
+	}
+	h.host.RetryStopped(context.Background(), time.Now()) // not due yet
+	time.Sleep(50 * time.Millisecond)
+	if info, _ := h.host.Get("conf"); info.Status != model.PluginPaused {
+		t.Fatalf("retried early: %+v", info)
+	}
+	h.host.RetryStopped(context.Background(), time.Now().Add(retryDelays[0]+time.Second))
+	waitFor(t, func() bool { info, _ := h.host.Get("conf"); return info.Status == model.PluginActive })
+	if info, _ := h.host.Get("conf"); info.RetryAt != 0 {
+		t.Fatalf("retry left scheduled: %+v", info)
+	}
+	for i := 0; i < probation; i++ {
+		_, _ = h.call("conf", "boom", nil)
+	}
+	info, _ = h.host.Get("conf")
+	if info.Status != model.PluginPaused {
+		t.Fatalf("%d failures after a retry did not pause it: %+v", probation, info)
+	}
+	if d := time.Until(time.Unix(info.RetryAt, 0)); d < retryDelays[1]-time.Minute {
+		t.Fatalf("the second retry is not later: in %s", d)
+	}
+}
+
+// A restart keeps retrying a plugin the breaker paused.
+func TestBreakerPauseSurvivesRestart(t *testing.T) {
+	h := newHarness(t)
+	installConf(h)
+	for i := 0; i < breakerLimit; i++ {
+		_, _ = h.call("conf", "boom", nil)
+	}
+	_ = h.host.Close(context.Background())
+	h2 := New(Deps{Store: h.store, DataDir: h.dir, PanelVersion: "4.4.0", Logger: quiet})
+	defer h2.Close(context.Background())
+	if err := h2.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if info, _ := h2.Get("conf"); info.Status != model.PluginPaused || info.RetryAt == 0 {
+		t.Fatalf("after a restart: %+v", info)
+	}
+}
+
+// An action queued behind an uninstall does not bring the plugin back.
+func TestNoResurrectionAfterUninstall(t *testing.T) {
+	h := newHarness(t)
+	installConf(h)
+	inst, _ := h.host.get("conf")
+	inst.mu.Lock() // a long call
+	done := make(chan error, 1)
+	go func() { done <- h.host.Uninstall(context.Background(), "conf", false) }()
+	time.Sleep(20 * time.Millisecond)
+	enabled := make(chan error, 1)
+	go func() { _, err := h.host.Enable(context.Background(), "conf"); enabled <- err }()
+	time.Sleep(20 * time.Millisecond)
+	inst.mu.Unlock()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-enabled; !errors.Is(err, ErrNotFound) {
+		t.Fatalf("enable after uninstall: %v", err)
+	}
+	if _, ok := h.store.m["conf"]; ok {
+		t.Fatal("the record came back")
+	}
+}
+
+// The plugins page answers while a plugin is stuck in a long call.
+func TestListDoesNotWaitForACall(t *testing.T) {
+	h := newHarness(t)
+	installConf(h)
+	inst, _ := h.host.get("conf")
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		_ = h.host.List()
+		_, _ = h.host.Get("conf")
+		_, _ = h.host.Code("conf")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("the plugins page waited for the plugin")
+	}
+}
+
+// Waiters for a busy plugin are served in the order they came.
+func TestGateIsFair(t *testing.T) {
+	g := newGate()
+	g.Lock()
+	var order []int
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if !g.lockWithin(context.Background(), 5*time.Second) {
+				t.Error("timed out")
+				return
+			}
+			mu.Lock()
+			order = append(order, i)
+			mu.Unlock()
+			g.Unlock()
+		}()
+		time.Sleep(10 * time.Millisecond) // queue them in order
+	}
+	g.Unlock()
+	wg.Wait()
+	if fmt.Sprint(order) != "[0 1 2 3 4]" {
+		t.Fatalf("served out of order: %v", order)
+	}
+	g.Lock()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if g.lockWithin(ctx, time.Second) {
+		t.Fatal("took a held lock")
+	}
+	if g.lockWithin(context.Background(), 10*time.Millisecond) {
+		t.Fatal("took a held lock")
+	}
+}
+
+func waitFor(t *testing.T, ok func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if ok() {
+			return
+		}
+	}
+	t.Fatal("timed out waiting")
+}
+
+// A bool setting is stored and handed over as "true" or "false", whatever form the
+// form or the manifest's default used.
+func TestBoolSettingsAreCanonical(t *testing.T) {
+	m := &manifest.Manifest{Settings: []manifest.Field{
+		{Key: "on", Kind: "bool", Default: "1"},
+		{Key: "off", Kind: "bool"},
+	}}
+	if got := defaults(m); got["on"] != "true" || got["off"] != "false" {
+		t.Fatalf("defaults: %v", got)
+	}
+	cfg, err := validateConfig(m, nil, map[string]string{"on": "0", "off": "TRUE"})
+	if err != nil || cfg["on"] != "false" || cfg["off"] != "true" {
+		t.Fatalf("%v %v", cfg, err)
+	}
+	if _, err := validateConfig(m, nil, map[string]string{"on": "yes"}); err == nil {
+		t.Fatal("took yes for a bool")
+	}
+}
+
+// A plugin updated before it ever ran has a snapshot of "no data", and a rollback
+// brings that back; a rollback whose snapshot is gone is refused, not run on the
+// data the update migrated.
+func TestRollbackSnapshots(t *testing.T) {
+	h := newHarness(t)
+	h.install(pkg(t, confManifest, confMain, confExtra)) // never enabled: no database yet
+	v2 := pkg(t, strings.Replace(confManifest, `"version": "1.0.0"`, `"version": "2.0.0"`, 1), confMain, confExtra)
+	if _, err := h.host.Update(context.Background(), v2, consentFor(t, h.host, v2)); err != nil {
+		t.Fatal(err)
+	}
+	path := h.host.dbPath("conf")
+	if st, err := os.Stat(path + ".prev"); err != nil || st.Size() != 0 {
+		t.Fatalf("snapshot of no data: %v", err)
+	}
+	if info, err := h.host.Rollback(context.Background(), "conf"); err != nil || info.Version != "1.0.0" {
+		t.Fatalf("rollback: %v %+v", err, info)
+	}
+	if _, err := h.host.Update(context.Background(), v2, consentFor(t, h.host, v2)); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Remove(path + ".prev")
+	if _, err := h.host.Rollback(context.Background(), "conf"); err == nil || !strings.Contains(err.Error(), "snapshot") {
+		t.Fatalf("rolled back without a snapshot: %v", err)
+	}
+}
+
+func TestLogForwardLimit(t *testing.T) {
+	var f forwardLimit
+	now := time.Unix(600, 0)
+	passed := 0
+	for i := 0; i < 100; i++ {
+		if ok, _ := f.allow(now); ok {
+			passed++
+		}
+	}
+	if passed != fwdPerMinute {
+		t.Fatalf("passed %d in a minute", passed)
+	}
+	if ok, dropped := f.allow(now.Add(time.Minute)); !ok || dropped != 100-fwdPerMinute {
+		t.Fatalf("next minute: %v %d", ok, dropped)
 	}
 }

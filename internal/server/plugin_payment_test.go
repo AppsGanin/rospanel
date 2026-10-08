@@ -39,7 +39,7 @@ func TestPluginPaymentEndToEnd(t *testing.T) {
 	})
 
 	raw := pluginZip(t, map[string]string{
-		"plugin.json": `{"id": "paytest", "version": "1.0.0", "api": 1, "name": "Pay test",
+		"plugin.json": `{"id": "paytest", "version": "1.0.0", "api": 1, "name": "Pay test", "permissions": ["payments.manage"],
 			"settings": [{"key": "secret", "kind": "secret", "label": "Secret"}],
 			"provides": {"payment": {"label": "PayTest"}, "http": true}}`,
 		"main.js": `
@@ -64,7 +64,7 @@ export function onHttp(req) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := host.Install(ctx, raw, plugin.Consent{SHA256: pkg.SHA256}); err != nil {
+	if _, err := host.Install(ctx, raw, plugin.Consent{SHA256: pkg.SHA256, Perms: pkg.Manifest.Permissions}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := host.SetConfig(ctx, "paytest", map[string]string{"secret": "k3y"}); err != nil {

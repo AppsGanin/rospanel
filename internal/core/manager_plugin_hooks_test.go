@@ -21,6 +21,8 @@ func (f *fakeHooks) Hooked(string) bool { return true }
 
 func (f *fakeHooks) Stopped(string) bool { return false }
 
+func (f *fakeHooks) StoppedIDs() []string { return nil }
+
 func (f *fakeHooks) BeforeSignup(_ context.Context, req model.SignupCheck) (bool, string) {
 	f.signups.Add(1)
 	if f.refuseAll || req.ExternalID == f.refuse || req.Username == f.refuse {

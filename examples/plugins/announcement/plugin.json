@@ -17,6 +17,7 @@
     {"key": "who", "kind": "select", "label": {"ru": "Кому показывать", "en": "Show to"}, "default": "all",
      "options": [{"value": "all", "label": {"ru": "Всем", "en": "Everyone"}}, {"value": "expiring", "label": {"ru": "Подписка кончается в 3 дня", "en": "Subscription ends within 3 days"}}]}
   ],
+  "permissions": ["users.view"],
   "provides": {
     "sub_blocks": true,
     "actions": [{"key": "preview", "label": {"ru": "Как это выглядит", "en": "Preview"}, "scope": "global", "perm": "settings.view"}]
