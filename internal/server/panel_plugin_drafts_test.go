@@ -64,13 +64,13 @@ func TestPluginDraftFlow(t *testing.T) {
 
 	// Half-made rules are kept, with the reasons.
 	spec := map[string]any{"id": "greet", "version": "1.0.0", "name": "Greet", "rules": []any{map[string]any{
-		"event": "user.registered", "actions": []any{map[string]any{"type": "telegram", "chat": "", "text": "Hi {{user.name}}"}},
+		"event": "user.registered", "actions": []any{map[string]any{"type": "telegram", "chat": "{{user.telegram_id}}", "text": ""}},
 	}}}
 	code, v = do(owner, "PUT", path, map[string]any{"spec": spec})
-	if code != 200 || v["problems"] == nil || !strings.Contains(v["problems"].([]any)[0].(string), "chat") {
+	if code != 200 || v["problems"] == nil || !strings.Contains(v["problems"].([]any)[0].(string), "text") {
 		t.Fatalf("half-made rules: %d %v", code, v)
 	}
-	spec["rules"].([]any)[0].(map[string]any)["actions"].([]any)[0].(map[string]any)["chat"] = "{{user.telegram_id}}"
+	spec["rules"].([]any)[0].(map[string]any)["actions"].([]any)[0].(map[string]any)["text"] = "Hi {{user.name}}"
 	code, v = do(owner, "PUT", path, map[string]any{"spec": spec})
 	if code != 200 || v["problems"] != nil {
 		t.Fatalf("save: %d %v", code, v)

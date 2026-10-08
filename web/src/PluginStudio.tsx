@@ -430,7 +430,11 @@ function RuleCard({
                 ? set({
                     event: undefined,
                     schedule: "0 9 * * *",
-                    actions: rule.actions.filter((a) => !USER_ACTIONS.includes(a.type)),
+                    // No user on a schedule: actions on one go, and a message to one
+                    // needs a chat instead.
+                    actions: rule.actions
+                      .filter((a) => !USER_ACTIONS.includes(a.type))
+                      .map((a) => (a.type === "telegram" && a.chat === USER_CHAT ? { ...a, chat: "" } : a)),
                   })
                 : set({ schedule: undefined, event: "user.created" })
             }
@@ -586,7 +590,10 @@ function ActionRow({
         <div className="min-w-0 flex-1">
           <Select
             value={a.type}
-            onChange={(v) => onChange({ type: v as RuleActionType, ...defaultsFor(v as RuleActionType) })}
+            onChange={(v) => {
+              const d = defaultsFor(v as RuleActionType);
+              onChange({ type: v as RuleActionType, ...d, ...(scheduled && v === "telegram" ? { chat: "" } : {}) });
+            }}
             data={types.map((x) => ({ value: x, label: t(`studio.action.${x}`) }))}
           />
         </div>
@@ -598,15 +605,26 @@ function ActionRow({
       </div>
       {a.type === "telegram" && (
         <>
-          <TextInput
-            label={t("studio.chat")}
-            value={a.chat ?? ""}
-            onChange={(v) => set({ chat: v })}
-            placeholder="-1001234567890 · {{user.telegram_id}}"
-            mono
-          />
+          {/* To the user themselves (their Telegram from the event), or to a fixed
+              group or channel. A scheduled rule has no user: a chat only. */}
+          {!scheduled && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-ink">{t("studio.tgTo")}</span>
+              <SegmentedControl
+                size="xs"
+                data={[
+                  { value: "user", label: t("studio.tgToUser") },
+                  { value: "chat", label: t("studio.tgToChat") },
+                ]}
+                value={a.chat === USER_CHAT ? "user" : "chat"}
+                onChange={(v) => set({ chat: v === "user" ? USER_CHAT : "" })}
+              />
+            </div>
+          )}
           <Textarea label={t("studio.text")} value={a.text ?? ""} onChange={(v) => set({ text: v })} rows={3} />
-          <p className="text-[11px] text-ink-muted">{braces(t("studio.telegramHint"))}</p>
+          <p className="text-[11px] text-ink-muted">
+            {a.chat === USER_CHAT && !scheduled ? t("studio.telegramHint") : t("studio.telegramChatHint")}
+          </p>
         </>
       )}
       {(a.type === "discord" || a.type === "log") && (
@@ -657,12 +675,15 @@ function ActionRow({
 
 // braces turns the dictionaries' [[path]] into the {{path}} a rule writes: written
 // as is, i18next would read it as its own placeholder and blank it.
+// USER_CHAT is the chat that is the user themselves: their Telegram, from the event.
+const USER_CHAT = "{{user.telegram_id}}";
+
 const braces = (s: string) => s.split("[[").join("{{").split("]]").join("}}");
 
 function defaultsFor(type: RuleActionType): Partial<RuleAction> {
   switch (type) {
     case "telegram":
-      return { chat: "", text: "" };
+      return { chat: USER_CHAT, text: "" };
     case "http":
       return { method: "POST", url: "" };
     case "extend":

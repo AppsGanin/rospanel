@@ -41,7 +41,7 @@ func TestValidate(t *testing.T) {
 		{func(s *Spec) { s.Rules[0].Schedule = "* * * * *" }, "not both"},
 		{func(s *Spec) { s.Rules[1].Schedule = "every day" }, "schedule"},
 		{func(s *Spec) { s.Rules[1].Actions = []Action{{Type: "extend", Days: 1}} }, "no user to extend"},
-		{func(s *Spec) { s.Rules[0].Actions[0].Chat = "" }, "chat: required"},
+		{func(s *Spec) { s.Rules[0].Actions[0].Text = "" }, "text: required"},
 		{func(s *Spec) { s.Rules[0].Actions[1].Days = 0 }, "days"},
 		{func(s *Spec) { s.Rules[0].Conditions[0].Op = "like" }, "op"},
 		{func(s *Spec) { s.Rules[0].Conditions[0].Field = "data;x" }, "field"},
@@ -249,7 +249,11 @@ func TestEveryCombinationRuns(t *testing.T) {
 			for _, conds := range []bool{false, true} {
 				r := Rule{Event: "user.created", Actions: []Action{samples[typ]}}
 				if scheduled {
-					r = Rule{Schedule: "0 9 * * *", Actions: []Action{samples[typ]}}
+					a := samples[typ]
+					if typ == "telegram" {
+						a.Chat = "" // the chat from the settings: no user to write to
+					}
+					r = Rule{Schedule: "0 9 * * *", Actions: []Action{a}}
 				}
 				if conds {
 					r.Conditions = []Condition{{Field: "event", Op: "not_empty"}}
@@ -269,5 +273,40 @@ func TestEveryCombinationRuns(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// A message to a group or channel takes the chat from the plugin's settings, which
+// the plugin then has; one to the user needs none.
+func TestTelegramChatFromSettings(t *testing.T) {
+	spec := Spec{ID: "tgchat", Version: "1.0.0", Name: "TG", Rules: []Rule{{
+		Event: "user.created", Actions: []Action{{Type: "telegram", Text: "new: {{user.name}}"}},
+	}}}
+	files, err := Compile(spec, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(files["plugin.json"]), `"telegram_chat"`) {
+		t.Fatalf("no chat setting:\n%s", files["plugin.json"])
+	}
+	files["test.js"] = []byte(`
+test("writes to the chat from the settings", () => {
+  mock.http("https://api.telegram.org/", { status: 200, body: "{}" });
+  plugin.event("user.created", { id: 1, name: "Ann" });
+  assert.equal(JSON.parse(mock.calls()[0].body).chat_id, "-100123");
+});
+`)
+	res, err := devkit.RunTestFiles(context.Background(), files, devkit.TestOptions{})
+	if err != nil || len(res) != 1 || !res[0].OK {
+		t.Fatalf("%+v %v", res, err)
+	}
+	spec.Rules[0].Actions[0].Chat = "{{user.telegram_id}}"
+	files, _ = Compile(spec, "")
+	if strings.Contains(string(files["plugin.json"]), `"telegram_chat"`) {
+		t.Fatal("a message to the user asks for a chat setting")
+	}
+	spec.Rules[0] = Rule{Schedule: "0 9 * * *", Actions: []Action{{Type: "telegram", Chat: "{{user.telegram_id}}", Text: "x"}}}
+	if _, err := Compile(spec, ""); err == nil || !strings.Contains(err.Error(), "no user to write to") {
+		t.Fatalf("a scheduled message to the user: %v", err)
 	}
 }

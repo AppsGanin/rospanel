@@ -56,7 +56,9 @@ type Condition struct {
 
 // Action is one thing a rule does. Texts take {{path}} placeholders.
 type Action struct {
-	Type   string `json:"type"` // telegram discord http extend enable disable tag untag log
+	Type string `json:"type"` // telegram discord http extend enable disable tag untag log
+	// Chat (telegram): {{user.telegram_id}} for the user themselves; empty for the
+	// group or channel the operator sets in the plugin's settings.
 	Chat   string `json:"chat,omitempty"`
 	Text   string `json:"text,omitempty"`
 	URL    string `json:"url,omitempty"`
@@ -172,7 +174,10 @@ func validateAction(at string, a Action, scheduled bool, add func(string, ...any
 	}
 	switch a.Type {
 	case "telegram":
-		text("chat", a.Chat, true)
+		if scheduled && strings.Contains(a.Chat, "{{user.") {
+			add("%s.chat: a scheduled rule has no user to write to", at)
+		}
+		text("chat", a.Chat, false)
 		text("text", a.Text, true)
 	case "discord", "log":
 		text("text", a.Text, true)
@@ -269,6 +274,9 @@ func Compile(s Spec, panelVersion string) (devkit.Files, error) {
 		}
 		for _, a := range r.Actions {
 			uses[a.Type] = true
+			if a.Type == "telegram" && a.Chat == "" {
+				uses["telegram_chat"] = true
+			}
 			if a.Type == "http" {
 				h, _ := httpHost(a.URL)
 				if !slices.Contains(m.Net, h) {
@@ -285,7 +293,14 @@ func Compile(s Spec, panelVersion string) (devkit.Files, error) {
 		m.Net = append(m.Net, "api.telegram.org")
 		m.Settings = append(m.Settings, manifest.Field{Key: "telegram_token", Kind: "secret",
 			Label: manifest.Text{"ru": "Токен Telegram-бота", "en": "Telegram bot token"},
-			Help:  manifest.Text{"ru": "От @BotFather. Бот должен быть в чате, куда пишет.", "en": "From @BotFather. The bot must be in the chat it writes to."}})
+			Help:  manifest.Text{"ru": "От @BotFather.", "en": "From @BotFather."}})
+	}
+	if uses["telegram_chat"] {
+		m.Settings = append(m.Settings, manifest.Field{Key: "telegram_chat", Kind: "text",
+			Label:       manifest.Text{"ru": "Чат Telegram", "en": "Telegram chat"},
+			Placeholder: "-1001234567890",
+			Help: manifest.Text{"ru": "ID группы (начинается с -100) или @имя канала. Бот должен быть в нём участником, в канале — администратором.",
+				"en": "A group's ID (starts with -100) or a channel's @name. The bot must be a member of it — an admin, in a channel."}})
 	}
 	if uses["discord"] {
 		m.Net = append(m.Net, "discord.com")
@@ -431,6 +446,9 @@ func devConfig(uses map[string]bool) []byte {
 	settings := map[string]string{}
 	if uses["telegram"] {
 		settings["telegram_token"] = "123:test"
+	}
+	if uses["telegram_chat"] {
+		settings["telegram_chat"] = "-100123"
 	}
 	if uses["discord"] {
 		settings["discord_webhook"] = "https://discord.com/api/webhooks/1/test"
