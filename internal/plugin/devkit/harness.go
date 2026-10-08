@@ -18,6 +18,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/plugin"
 	"github.com/AppsGanin/rospanel/internal/plugin/jsvm"
+	"github.com/AppsGanin/rospanel/internal/plugin/manifest"
 )
 
 // Harness runs one plugin on the real host, against a temporary directory, with
@@ -116,6 +117,9 @@ func (h *Harness) load(ctx context.Context, raw []byte, settings map[string]stri
 			return err
 		}
 		h.ID = pkg.Manifest.ID
+		// A key the plugin has no setting for is left out, not refused: a field the
+		// manifest dropped must not stop every test from running.
+		settings = knownSettings(pkg.Manifest, settings)
 		if len(settings) > 0 {
 			if _, err := h.Host.SetConfig(ctx, h.ID, settings); err != nil {
 				return fmt.Errorf("dev.config.json settings: %w", err)
@@ -385,4 +389,15 @@ func ReadDevConfig(dir string) (DevConfig, error) {
 
 func fetchResponse(status int, body string) plugin.FetchResponse {
 	return plugin.FetchResponse{Status: status, Headers: map[string]string{}, Body: body}
+}
+
+// knownSettings keeps the values of settings the manifest declares.
+func knownSettings(m *manifest.Manifest, settings map[string]string) map[string]string {
+	out := map[string]string{}
+	for _, f := range m.Settings {
+		if v, ok := settings[f.Key]; ok {
+			out[f.Key] = v
+		}
+	}
+	return out
 }

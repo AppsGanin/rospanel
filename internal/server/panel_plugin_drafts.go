@@ -542,20 +542,19 @@ func describeDraft(d *model.PluginDraft) {
 	}
 }
 
-// mergeDevConfig keeps the operator's trial settings and adds the keys the rules
-// now need.
+// mergeDevConfig keeps the operator's trial values for the settings the rules still
+// have; a setting the rules no longer need goes, a new one comes with its sample.
 func mergeDevConfig(cur, next []byte) []byte {
 	var a, b devkit.DevConfig
-	if json.Unmarshal(cur, &a) != nil || a.Settings == nil {
+	if json.Unmarshal(cur, &a) != nil || a.Settings == nil || json.Unmarshal(next, &b) != nil {
 		return next
 	}
-	_ = json.Unmarshal(next, &b)
-	for k, v := range b.Settings {
-		if _, ok := a.Settings[k]; !ok {
-			a.Settings[k] = v
+	for k := range b.Settings {
+		if v, ok := a.Settings[k]; ok {
+			b.Settings[k] = v
 		}
 	}
-	out, err := json.MarshalIndent(a, "", "  ")
+	out, err := json.MarshalIndent(b, "", "  ")
 	if err != nil {
 		return next
 	}

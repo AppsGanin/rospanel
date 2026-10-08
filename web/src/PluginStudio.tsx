@@ -42,6 +42,8 @@ import {
   DropdownItem,
   EmptyState,
   IconButton,
+  IconCheck,
+  IconChevron,
   IconClose,
   IconPlus,
   IconTrash,
@@ -809,6 +811,13 @@ function CodeView({
 
 // --- tests ---
 
+// testNames reads the test("…") names of test.js, to list them before a run.
+function testNames(src: string): string[] {
+  return [...src.matchAll(/\btest\(\s*(["'`])((?:\\.|(?!\1).)*)\1/g)].map((m) => m[2]);
+}
+
+type TestState = "idle" | "running" | "ok" | "fail";
+
 function TestsView({
   draftId,
   files,
@@ -825,13 +834,18 @@ function TestsView({
   const { t } = useTranslation();
   const [running, setRunning] = useState(false);
   const [res, setRes] = useState<{ results: DraftTestResult[]; output: string; error?: string } | null>(null);
-  const has = files.some((f) => f.path === "test.js");
+  const [open, setOpen] = useState<string | null>(null);
+  const src = files.find((f) => f.path === "test.js")?.text;
+  const names = useMemo(() => testNames(src ?? ""), [src]);
 
   const run = async () => {
     if (!(await flush())) return;
     setRunning(true);
+    setOpen(null);
     try {
-      setRes(await testPluginDraft(draftId));
+      const r = await testPluginDraft(draftId);
+      setRes(r);
+      setOpen(r.results.find((x) => !x.ok)?.name ?? null); // the first failure, opened
     } catch (e) {
       notifyError(errMessage(e));
     } finally {
@@ -839,7 +853,7 @@ function TestsView({
     }
   };
 
-  if (!has)
+  if (src === undefined)
     return (
       <EmptyState
         title={t("studio.noTests")}
@@ -854,42 +868,140 @@ function TestsView({
       />
     );
 
-  const passed = res?.results.filter((r) => r.ok).length ?? 0;
+  // The rows: what the last run reported, then any test it did not get to.
+  const rows: { name: string; state: TestState; result?: DraftTestResult }[] = [
+    ...(res?.results ?? []).map((r) => ({ name: r.name, state: (r.ok ? "ok" : "fail") as TestState, result: r })),
+    ...names
+      .filter((n) => !res?.results.some((r) => r.name === n))
+      .map((name) => ({ name, state: (running ? "running" : "idle") as TestState })),
+  ];
+  const total = rows.length;
+  const failed = res?.results.filter((r) => !r.ok).length ?? 0;
+  const overall: TestState | "broken" = running ? "running" : res?.error ? "broken" : !res ? "idle" : failed ? "fail" : "ok";
+  const title =
+    overall === "running"
+      ? t("studio.testsRunning")
+      : overall === "broken"
+        ? t("studio.testsBroken")
+        : overall === "ok"
+          ? t("studio.testsAllPassed", { count: total })
+          : overall === "fail"
+            ? t("studio.testsFailed", { n: failed, total })
+            : t("studio.tabTests");
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <Button loading={running} onClick={run}>
-            {t("studio.runTests")}
-          </Button>
-          {res && !res.error && (
-            <span className={cn("text-sm font-semibold", passed === res.results.length ? "text-success" : "text-danger")}>
-              {t("studio.testsPassed", { n: passed, total: res.results.length })}
-            </span>
-          )}
-          <span className="text-xs text-ink-muted">{t("studio.testsHint")}</span>
-        </div>
-        {res?.error && <ErrorBox text={res.error} />}
-        {res && res.results.length > 0 && (
-          <ul className="flex flex-col divide-y divide-gray-100 rounded-xl border border-gray-200">
-            {res.results.map((r) => (
-              <li key={r.name} className="px-3.5 py-2.5 text-sm">
-                <span className={r.ok ? "text-success" : "text-danger"}>{r.ok ? "✓" : "✗"}</span>{" "}
-                <span className="text-ink">{r.name}</span>
-                {!r.ok && (
-                  <pre className="mt-1.5 overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-ink-muted">
-                    {r.error}
-                    {r.stack ? `\n${r.stack}` : ""}
-                  </pre>
+        <section className="overflow-hidden rounded-2xl border border-gray-200">
+          <header className="flex flex-wrap items-center gap-3 px-4 py-3.5">
+            <StateMark state={overall} size={28} />
+            <div className="min-w-0 flex-1">
+              <p
+                className={cn(
+                  "text-sm font-semibold",
+                  overall === "ok" ? "text-success" : overall === "fail" || overall === "broken" ? "text-danger" : "text-ink",
                 )}
-              </li>
-            ))}
-          </ul>
+              >
+                {title}
+              </p>
+              <p className="text-xs text-ink-muted">
+                test.js · {t("studio.testsCount", { count: total })} · {t("studio.testsHint")}
+              </p>
+            </div>
+            <Button size="sm" loading={running} onClick={run}>
+              {res ? t("studio.runAgain") : t("studio.runTests")}
+            </Button>
+          </header>
+
+          {(overall === "ok" || overall === "fail") && total > 0 && (
+            <div className="flex h-1 bg-gray-100" aria-hidden>
+              <div className="bg-success" style={{ width: `${((total - failed) / total) * 100}%` }} />
+              <div className="bg-danger" style={{ width: `${(failed / total) * 100}%` }} />
+            </div>
+          )}
+
+          {res?.error && (
+            <div className="danger-tint border-t border-gray-100 px-4 py-3">
+              <p className="mb-1 text-xs font-semibold text-danger">{t("studio.testsBrokenWhy")}</p>
+              <pre className="whitespace-pre-wrap break-words font-mono text-[11px] text-ink">{res.error}</pre>
+            </div>
+          )}
+
+          {rows.length === 0 ? (
+            <p className="border-t border-gray-100 px-4 py-6 text-center text-xs text-ink-muted">{t("studio.noTestCases")}</p>
+          ) : (
+            <ul className="divide-y divide-gray-100 border-t border-gray-100">
+              {rows.map((r) => {
+                const expandable = r.state === "fail";
+                const isOpen = expandable && open === r.name;
+                return (
+                  <li key={r.name}>
+                    <button
+                      type="button"
+                      disabled={!expandable}
+                      onClick={() => setOpen(isOpen ? null : r.name)}
+                      className={cn(
+                        "flex w-full items-center gap-3 px-4 py-2.5 text-left",
+                        expandable && "accent-tint-hover cursor-pointer",
+                      )}
+                    >
+                      <StateMark state={r.state} size={18} />
+                      <span className={cn("min-w-0 flex-1 truncate text-sm", r.state === "idle" ? "text-ink-muted" : "text-ink")}>
+                        {r.name}
+                      </span>
+                      {expandable && (
+                        <IconChevron size={14} className={cn("shrink-0 text-ink-muted transition", isOpen && "rotate-180")} />
+                      )}
+                    </button>
+                    {isOpen && r.result && (
+                      <pre className="mx-4 mb-3 overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-gray-50 px-3 py-2.5 font-mono text-[11px] text-ink">
+                        {r.result.error}
+                        {r.result.stack ? `\n\n${r.result.stack}` : ""}
+                      </pre>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
+        {res?.output.trim() && (
+          <details className="rounded-2xl border border-gray-200">
+            <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-ink select-none">{t("studio.output")}</summary>
+            <pre className="max-h-80 overflow-auto border-t border-gray-100 px-4 py-3 font-mono text-[11px] whitespace-pre-wrap text-ink">
+              {res.output}
+            </pre>
+          </details>
         )}
-        {res?.output.trim() && <Pre title={t("studio.output")} text={res.output} />}
       </div>
     </div>
   );
+}
+
+// StateMark is a test's (or the run's) state as a round mark.
+function StateMark({ state, size }: { state: TestState | "broken"; size: number }) {
+  const icon = Math.round(size * 0.55);
+  const base = "flex shrink-0 items-center justify-center rounded-full";
+  if (state === "running")
+    return (
+      <span className={base} style={{ width: size, height: size }}>
+        <Spinner size={icon + 2} />
+      </span>
+    );
+  if (state === "ok")
+    return (
+      <span className={cn(base, "success-tint text-success")} style={{ width: size, height: size }}>
+        <IconCheck size={icon} />
+      </span>
+    );
+  if (state === "fail" || state === "broken")
+    return (
+      <span className={cn(base, "danger-tint text-danger")} style={{ width: size, height: size }}>
+        {state === "fail" ? <IconClose size={icon} /> : <span className="text-xs font-bold leading-none">!</span>}
+      </span>
+    );
+  return <span className={cn(base, "border-2 border-gray-300")} style={{ width: size, height: size }} />;
 }
 
 // --- trial run ---

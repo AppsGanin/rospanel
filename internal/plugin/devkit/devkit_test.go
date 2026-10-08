@@ -162,3 +162,17 @@ func TestExamplePlugins(t *testing.T) {
 		})
 	}
 }
+
+// A setting in dev.config.json the plugin no longer has does not stop the tests.
+func TestStaleDevConfigKey(t *testing.T) {
+	files := Files{
+		"plugin.json":     []byte(`{"id": "stale", "version": "1.0.0", "api": 1, "name": "Stale"}`),
+		"main.js":         []byte(`export function ping() { return "pong"; }`),
+		"dev.config.json": []byte(`{"settings": {"discord_webhook": "https://discord.com/api/webhooks/1/x"}}`),
+		"test.js":         []byte(`test("runs", () => { assert.equal(plugin.call("ping"), "pong"); });`),
+	}
+	res, err := RunTestFiles(context.Background(), files, TestOptions{})
+	if err != nil || len(res) != 1 || !res[0].OK {
+		t.Fatalf("%+v %v", res, err)
+	}
+}

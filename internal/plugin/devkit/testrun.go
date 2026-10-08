@@ -89,7 +89,7 @@ func RunTestFiles(ctx context.Context, files Files, o TestOptions) (results []Te
 		return nil, fmt.Errorf("test prelude: %w", err)
 	}
 	if err := vm.Load(ctx, string(src), 30*time.Second, host); err != nil {
-		return nil, fmt.Errorf("test.js: %w", jsDetail(err))
+		return nil, fmt.Errorf("test.js: %s", testFrames(jsDetail(err).Error()))
 	}
 	if err := vm.Load(ctx, `export function run() { return globalThis.__run(); }`, time.Second, host); err != nil {
 		return nil, err
@@ -100,6 +100,9 @@ func RunTestFiles(ctx context.Context, files Files, o TestOptions) (results []Te
 	}
 	if err := json.Unmarshal(res, &results); err != nil {
 		return nil, err
+	}
+	for i := range results {
+		results[i].Stack = testFrames(results[i].Stack)
 	}
 	for _, r := range results {
 		if o.NoReport {
@@ -202,4 +205,19 @@ func jsDetail(err error) error {
 		return fmt.Errorf("%s\n%s", je.Message, strings.TrimSpace(je.Stack))
 	}
 	return err
+}
+
+// testFrames names test.js's own stack frames: the sandbox calls every module it
+// loads main.js, and in a test's stack that is test.js (the runner and the test
+// helpers' own frames are dropped). The plugin's frames, in the error message a
+// failed plugin call carries, are not touched.
+func testFrames(stack string) string {
+	var out []string
+	for _, line := range strings.Split(stack, "\n") {
+		if strings.Contains(line, "at run (main.js:1:") || strings.Contains(line, "(testprelude.js:") {
+			continue // the runner and the assert helpers: nothing of the author's
+		}
+		out = append(out, strings.ReplaceAll(line, "main.js:", "test.js:"))
+	}
+	return strings.Join(out, "\n")
 }
