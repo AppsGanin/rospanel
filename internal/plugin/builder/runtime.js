@@ -102,11 +102,8 @@ function act(a, ctx) {
 function telegram(a, ctx) {
   const token = panel.config.telegram_token;
   if (!token) throw new Error("fill in the Telegram bot token in the plugin's settings");
-  // The user themselves ({{user.telegram_id}}), or the group or channel set in the
-  // plugin's settings.
-  const chat = a.chat ? fill(a.chat, ctx) : panel.config.telegram_chat;
-  if (!a.chat && !chat) throw new Error("fill in the Telegram chat in the plugin's settings");
-  if (!chat || chat === "0") return panel.log.warn("telegram: the user has no Telegram, nothing sent");
+  const chat = panel.config.telegram_chat;
+  if (!chat) throw new Error("fill in the chat ID in the plugin's settings");
   const res = panel.http.fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     body: { chat_id: chat, text: fill(a.text, ctx), disable_web_page_preview: true },

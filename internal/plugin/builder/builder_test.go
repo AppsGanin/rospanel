@@ -17,7 +17,7 @@ func welcome() Spec {
 		Event:      "user.registered",
 		Conditions: []Condition{{Field: "data.lang", Op: "eq", Value: "ru"}},
 		Actions: []Action{
-			{Type: "telegram", Chat: "-100500", Text: "New: {{user.name}}"},
+			{Type: "telegram", Text: "New: {{user.name}}"},
 			{Type: "extend", Days: 3},
 			{Type: "tag", Tag: "welcomed"},
 		},
@@ -85,7 +85,7 @@ func TestCompileManifest(t *testing.T) {
 	for _, f := range m.Settings {
 		keys = append(keys, f.Key)
 	}
-	if !slices.Equal(keys, []string{"telegram_token", "http_authorization"}) {
+	if !slices.Equal(keys, []string{"telegram_token", "telegram_chat", "http_authorization"}) {
 		t.Errorf("settings: %v", keys)
 	}
 	var back Spec
@@ -157,7 +157,7 @@ test("a matching event runs every action, once", () => {
   plugin.call("onEvent", e); // the outbox retrying
   const calls = mock.calls();
   assert.equal(calls.length, 4);
-  assert.equal(JSON.parse(calls[0].body), { chat_id: "-100500", text: "New: Ann", disable_web_page_preview: true });
+  assert.equal(JSON.parse(calls[0].body), { chat_id: "-100123", text: "New: Ann", disable_web_page_preview: true });
   assert.equal(calls[0].url, "https://api.telegram.org/bot123:test/sendMessage");
   assert.equal(JSON.parse(calls[1].body), { ids: [7], action: "extend", days: 3 });
   assert.equal(JSON.parse(calls[3].body), { tags: ["vip", "welcomed"] });
@@ -216,7 +216,7 @@ func TestMainHoldsOnlyWhatRulesUse(t *testing.T) {
 			t.Errorf("main.js lacks %q", kept)
 		}
 	}
-	spec.Rules[0].Actions = []Action{{Type: "telegram", Chat: "1", Text: "hi"}}
+	spec.Rules[0].Actions = []Action{{Type: "telegram", Text: "hi"}}
 	spec.Rules[0].Conditions = []Condition{{Field: "user.lang", Op: "eq", Value: "ru"}}
 	files, _ = Compile(spec, "")
 	main = string(files["main.js"])
@@ -229,7 +229,7 @@ func TestMainHoldsOnlyWhatRulesUse(t *testing.T) {
 // makes a plugin whose code runs: no part calls one that was left out.
 func TestEveryCombinationRuns(t *testing.T) {
 	samples := map[string]Action{
-		"telegram": {Type: "telegram", Chat: "{{user.telegram_id}}", Text: "hi {{user.name}}"},
+		"telegram": {Type: "telegram", Text: "hi {{user.name}}"},
 		"discord":  {Type: "discord", Text: "hi"},
 		"http":     {Type: "http", URL: "https://hooks.example.com/x", Auth: true},
 		"extend":   {Type: "extend", Days: 3},
@@ -249,11 +249,7 @@ func TestEveryCombinationRuns(t *testing.T) {
 			for _, conds := range []bool{false, true} {
 				r := Rule{Event: "user.created", Actions: []Action{samples[typ]}}
 				if scheduled {
-					a := samples[typ]
-					if typ == "telegram" {
-						a.Chat = "" // the chat from the settings: no user to write to
-					}
-					r = Rule{Schedule: "0 9 * * *", Actions: []Action{a}}
+					r = Rule{Schedule: "0 9 * * *", Actions: []Action{samples[typ]}}
 				}
 				if conds {
 					r.Conditions = []Condition{{Field: "event", Op: "not_empty"}}
@@ -276,8 +272,7 @@ func TestEveryCombinationRuns(t *testing.T) {
 	}
 }
 
-// A message to a group or channel takes the chat from the plugin's settings, which
-// the plugin then has; one to the user needs none.
+// A Telegram message goes to the chat ID in the plugin's settings.
 func TestTelegramChatFromSettings(t *testing.T) {
 	spec := Spec{ID: "tgchat", Version: "1.0.0", Name: "TG", Rules: []Rule{{
 		Event: "user.created", Actions: []Action{{Type: "telegram", Text: "new: {{user.name}}"}},
@@ -299,14 +294,5 @@ test("writes to the chat from the settings", () => {
 	res, err := devkit.RunTestFiles(context.Background(), files, devkit.TestOptions{})
 	if err != nil || len(res) != 1 || !res[0].OK {
 		t.Fatalf("%+v %v", res, err)
-	}
-	spec.Rules[0].Actions[0].Chat = "{{user.telegram_id}}"
-	files, _ = Compile(spec, "")
-	if strings.Contains(string(files["plugin.json"]), `"telegram_chat"`) {
-		t.Fatal("a message to the user asks for a chat setting")
-	}
-	spec.Rules[0] = Rule{Schedule: "0 9 * * *", Actions: []Action{{Type: "telegram", Chat: "{{user.telegram_id}}", Text: "x"}}}
-	if _, err := Compile(spec, ""); err == nil || !strings.Contains(err.Error(), "no user to write to") {
-		t.Fatalf("a scheduled message to the user: %v", err)
 	}
 }

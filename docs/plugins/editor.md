@@ -28,7 +28,7 @@ A rule is:
 
 | Action | What it does |
 |---|---|
-| Message in Telegram | To the user themselves, or to a group or channel. The group or channel (an ID `-100…` or an `@name`) and the bot token go into the plugin's settings after install. |
+| Message in Telegram | To the chat in the plugin's settings: the ID of a chat, group or channel (or an `@name`) and the bot token are set after install. |
 | Message in Discord | To the webhook from the plugin's settings. |
 | HTTP request | To your address; without a body the whole event goes as JSON. An `Authorization` header from the settings. |
 | Extend the subscription | By N days. |

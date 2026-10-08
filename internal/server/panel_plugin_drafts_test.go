@@ -64,7 +64,7 @@ func TestPluginDraftFlow(t *testing.T) {
 
 	// Half-made rules are kept, with the reasons.
 	spec := map[string]any{"id": "greet", "version": "1.0.0", "name": "Greet", "rules": []any{map[string]any{
-		"event": "user.registered", "actions": []any{map[string]any{"type": "telegram", "chat": "{{user.telegram_id}}", "text": ""}},
+		"event": "user.registered", "actions": []any{map[string]any{"type": "telegram", "text": ""}},
 	}}}
 	code, v = do(owner, "PUT", path, map[string]any{"spec": spec})
 	if code != 200 || v["problems"] == nil || !strings.Contains(v["problems"].([]any)[0].(string), "text") {
@@ -92,7 +92,7 @@ func TestPluginDraftFlow(t *testing.T) {
 		t.Fatalf("a trial run without real_http must not reach Telegram: %d %v", code, v)
 	}
 	calls := v["calls"].([]any)
-	if len(calls) != 1 || !strings.Contains(calls[0].(map[string]any)["body"].(string), `"chat_id":"42"`) {
+	if len(calls) != 1 || !strings.Contains(calls[0].(map[string]any)["body"].(string), `"chat_id":"-100123"`) {
 		t.Fatalf("calls: %v", calls)
 	}
 

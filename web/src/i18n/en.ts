@@ -2355,11 +2355,7 @@ const en: Dict = {
     httpAuth: "Send an Authorization header from the plugin's settings",
     days: "Days",
     tag: "Tag",
-    telegramHint: "The bot token goes into the plugin's settings after install.",
-    tgTo: "To",
-    tgToUser: "The user",
-    tgToChat: "A group or channel",
-    telegramChatHint: "The group or channel and the bot token go into the plugin's settings after install.",
+    telegramHint: "The bot token and the chat ID go into the plugin's settings after install.",
     discordHint: "The webhook link goes into the plugin's settings after install.",
     placeholdersHint: "Texts and addresses take placeholders: [[user.name]], [[user.id]], [[user.telegram_id]], [[data.…]] — the event's fields, [[event]], [[now]]. The plugin gets exactly the permissions and hosts these rules need.",
     op: {

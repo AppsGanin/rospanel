@@ -3488,7 +3488,6 @@ export interface RuleCondition {
 
 export interface RuleAction {
   type: RuleActionType
-  chat?: string
   text?: string
   url?: string
   method?: string
