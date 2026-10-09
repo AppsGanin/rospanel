@@ -231,6 +231,9 @@ func (v *VM) HeapUsed(ctx context.Context) int {
 	return used
 }
 
+// maxGuestString bounds one string copied into the guest (a source, a call's JSON).
+const maxGuestString = 1 << 30
+
 // guestArgs copies strings into guest memory for one call and frees them after.
 type guestArgs struct {
 	v    *VM
@@ -240,6 +243,11 @@ type guestArgs struct {
 // str copies s into guest memory followed by a NUL (JS_Eval requires one after the
 // source) and returns its address and length.
 func (a *guestArgs) str(ctx context.Context, s string) (ptr, n uint64, err error) {
+	// Guest memory is 32-bit and far smaller still: what cannot fit is refused
+	// before len(s)+1 is computed or allocated.
+	if len(s) >= maxGuestString {
+		return 0, 0, errors.New("a string too big for guest memory")
+	}
 	r, err := a.v.malloc.Call(ctx, uint64(len(s)+1))
 	if err != nil {
 		return 0, 0, err
