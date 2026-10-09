@@ -2,7 +2,7 @@
 
 [Русская версия](editor-RU.md)
 
-A plugin can be written in the panel itself: **Settings → Plugins → Plugin editor → New plugin**.
+A plugin can be written in the panel itself: **Settings → Plugins → Add → Or make your own**.
 Tests, a trial run, install and download are there too. A draft changes nothing in the panel
 until it is installed. The editor needs the `plugins.manage` permission.
 
@@ -12,10 +12,19 @@ until it is installed. The editor needs the `plugins.manage` permission.
 |---|---|
 | **Rule builder** | "When an event comes → if a condition holds → do something", no code. The panel builds an ordinary plugin from the rules. |
 | **Code** | The `plugin new` template: `main.js`, `plugin.json`, a migration, `test.js`, translations. |
-| **From a .zip** | A plugin package, or sources downloaded from the editor. |
+| **Sources (.zip)** | An archive downloaded from the editor — carry on where you left off. A plugin package opens too, as a code draft. (A zip dropped in the zone above is installed, not opened.) |
 
-An installed plugin opens with **Open in the editor** on its card: a draft with its code, which
-installs as an update.
+## Drafts in the plugin list
+
+Drafts of plugins not installed yet are in the one plugin list, after the installed plugins,
+with a gray dot by the name. The pencil opens a draft, the bin deletes it, **Install** installs
+it.
+
+An installed plugin opens in the editor with the pencil on its card. That makes a draft with its
+code — and however many times it is opened, it is the same draft: a plugin has one. It has no
+row of its own in the list: while it holds changes not applied yet, the plugin's card shows an
+orange dot. Hovering the dot says what is up. It also tells of settings to fill in and of a
+pause, and turns red when the plugin failed to start.
 
 ## The rule builder
 
@@ -98,20 +107,26 @@ change that:
 - **Read the panel's data** — `panel.api` `GET` only, with the permissions both the plugin and
   you hold.
 
-There is one sandbox per panel: a second run waits a few seconds or answers "the sandbox is
-busy". Tests are bounded by 60 seconds, a trial run by 30.
+There is one sandbox per panel, shared by tests, trial runs and the check: a second run waits a
+few seconds or answers "the sandbox is busy". Tests are bounded by 60 seconds, a trial run and
+the check by 30.
 
 ## Install and download
 
 - **Check** — the package as the install will read it: permissions, network, functions, size, or
-  the list of problems.
+  the list of problems. The code is loaded as a start would load it, so an error in `main.js`
+  shows at once.
 - **Install** — the ordinary consent screen with the password.
+- While the builder's rules have problems, **Check** lists them, and tests, trial runs, install
+  and the package download refuse until they are fixed: otherwise the code of the previous rules
+  would go, not the rules on the screen.
 - A draft is a copy: saving it does not touch the running plugin. The header says whether the
   draft is the installed version. With the plugin installed the button is **Apply**: an update, with a database snapshot and rollback. A draft version not above
   the installed one is raised by itself (0.1.0 → 0.1.1).
 - **Download** — the package, to install on another panel, or the sources with tests, to carry
   on in your own editor with `rospanel plugin test | dev | pack`. The sources open in the panel
-  again through **From a .zip**; a builder draft stays a builder draft (the rules are in
-  `rules.json`).
+  again through **Sources (.zip)**; a builder draft stays a builder draft (the rules are in
+  `rules.json`). Secret settings in `dev.config.json` stay behind — their values are blanked
+  in the archive.
 
 Drafts are kept in the panel's database encrypted, like plugin settings.

@@ -6,7 +6,7 @@
 
 | Way | How |
 |---|---|
-| A file | `rospanel plugin pack .` → zip → **Settings → Plugins → Install** → choose the file |
+| A file | `rospanel plugin pack .` → zip → **Settings → Plugins → Add** → choose the file |
 | A link | the same place, paste an https link to the zip (a GitHub release, say) |
 
 Either way, the operator sees the consent screen: permissions, hosts, what the plugin does,

@@ -252,10 +252,11 @@ new-users-1.0.0.zip — 2 KB, sha256 …
 not packed: dev.config.json, jsconfig.json, rospanel.d.ts, test.js
 ```
 
-In the panel: **Settings → Plugins → Install** → choose the zip. The panel shows the consent
+In the panel: **Settings → Plugins → Add** → choose the zip. The panel shows the consent
 screen: permissions, hosts, what the plugin does. After installing, the plugin is off — fill
-in its settings (token, chat) and switch it on. Create a user — a message arrives in the
-chat. The plugin's **Log** shows what it did and where it failed.
+in its settings (the gear on its card: token, chat) and switch it on. While something is
+missing, an orange dot shows by the name — hover it to see what. Create a user — a message
+arrives in the chat. The plugin's **Log** shows what it did and where it failed.
 
 ## What next
 
