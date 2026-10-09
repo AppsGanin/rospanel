@@ -3,10 +3,9 @@ package plugin
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash/maphash"
 	"net/url"
 	"strings"
 	"sync"
@@ -127,13 +126,17 @@ func (h *Host) TransformConfig(ctx context.Context, user map[string]any, format,
 	return string(out)
 }
 
+// subSeed keys the transform cache. The cache lives in this process only, so a
+// seeded non-cryptographic hash is enough — and, unlike a SHA-256 of a profile
+// that carries the users' passwords, says nothing about it outside the process.
+var subSeed = maphash.MakeSeed()
+
 // transform runs the chain: each plugin gets what the one before it returned. A
 // plugin's answer is used only when ok accepts it.
 func (h *Host) transform(ctx context.Context, user map[string]any, format string, in []byte, ok func([]byte) bool) []byte {
 	cur := in
 	for _, id := range h.Active(func(m *manifest.Manifest) bool { return m.Provides.Subscription }) {
-		sum := sha256.Sum256(cur)
-		key := fmt.Sprintf("%s/%v/%s/%s", id, user["id"], format, hex.EncodeToString(sum[:]))
+		key := fmt.Sprintf("%s/%v/%s/%016x", id, user["id"], format, maphash.Bytes(subSeed, cur))
 		if out, hit := h.subTransforms.get(key); hit {
 			if out != nil {
 				cur = out
