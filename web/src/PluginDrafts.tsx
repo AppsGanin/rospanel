@@ -1,24 +1,41 @@
 // Drafts: plugins written in the panel (see PluginStudio), in the one plugins list.
 // CreatePlugin is the "make your own" half of the Add dialog; DraftRow is a draft
 // not installed yet, among the installed plugins.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { createPluginDraft, type PluginDraft } from "./api";
+import { createPluginDraft, importPluginDraft, type PluginDraft } from "./api";
 import { fmtStamp } from "./format";
 import { errMessage, notifyError } from "./notify";
-import { Button, cn, HintDot, IconButton, IconPencil, IconTrash, TextInput } from "./ui";
+import { Button, cn, HintDot, IconButton, IconPencil, IconTrash, Spinner, TextInput } from "./ui";
 
 type Start = "builder" | "template";
 
 const ID_RE = /^[a-z][a-z0-9-]{2,39}$/;
 
-// CreatePlugin starts a draft — from the rule builder or the code template — and
-// hands its id on for the editor to open.
+// CreatePlugin starts a draft — from the rule builder, the code template, or the
+// sources the editor's Download gave — and hands its id on for the editor to open.
 export function CreatePlugin({ onCreated }: { onCreated: (draftId: number) => void }) {
   const { t } = useTranslation();
   const [start, setStart] = useState<Start | null>(null);
   const [id, setId] = useState("");
   const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+
+  // The sources zip (with test.js, and rules.json for a builder draft) opens as a
+  // draft; a package to install goes to the drop zone above instead.
+  const importSources = async (f: File | undefined) => {
+    if (!f) return;
+    setImporting(true);
+    try {
+      const v = await importPluginDraft(f);
+      onCreated(v.draft.id);
+    } catch (e) {
+      notifyError(errMessage(e));
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const create = async () => {
     if (!start) return;
@@ -40,7 +57,17 @@ export function CreatePlugin({ onCreated }: { onCreated: (draftId: number) => vo
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid gap-2 sm:grid-cols-2" role="radiogroup">
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".zip,application/zip"
+        className="hidden"
+        onChange={(e) => {
+          importSources(e.currentTarget.files?.[0]);
+          e.currentTarget.value = "";
+        }}
+      />
+      <div className="grid gap-2 sm:grid-cols-3" role="radiogroup">
         {choices.map((c) => (
           <button
             key={c.value}
@@ -49,7 +76,7 @@ export function CreatePlugin({ onCreated }: { onCreated: (draftId: number) => vo
             aria-checked={start === c.value}
             onClick={() => setStart(c.value)}
             className={cn(
-              "rounded-xl border px-4 py-3 text-left transition",
+              "flex flex-col justify-start rounded-xl border px-4 py-3 text-left transition",
               start === c.value ? "accent-tint border-brand-500" : "accent-tint-hover border-gray-200",
             )}
           >
@@ -57,6 +84,21 @@ export function CreatePlugin({ onCreated }: { onCreated: (draftId: number) => vo
             <span className="mt-0.5 block text-xs text-ink-muted">{c.hint}</span>
           </button>
         ))}
+        <button
+          type="button"
+          disabled={importing}
+          onClick={() => {
+            setStart(null);
+            fileRef.current?.click();
+          }}
+          className="accent-tint-hover flex flex-col justify-start rounded-xl border border-gray-200 px-4 py-3 text-left transition disabled:opacity-60"
+        >
+          <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+            {t("studio.fromSources")}
+            {importing && <Spinner size={12} />}
+          </span>
+          <span className="mt-0.5 block text-xs text-ink-muted">{t("studio.fromSourcesHint")}</span>
+        </button>
       </div>
       {start && (
         <form
