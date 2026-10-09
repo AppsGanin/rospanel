@@ -630,6 +630,13 @@ func checkText(p *Problems, at string, t Text, max int) {
 	}
 }
 
+// CheckHost is checkHost for those who make a manifest (the rule builder): "" when
+// h fits net, else why not. MaxNet is how many hosts net holds.
+func CheckHost(h string) string { return checkHost(h) }
+
+// MaxNet bounds net.
+const MaxNet = maxNet
+
 // checkHost accepts "api.example.com", "*.example.com" and either with ":port".
 // IP literals and single-label names are refused: an allowlist entry is a public
 // service by name, and the dialer refuses private addresses whatever the name.

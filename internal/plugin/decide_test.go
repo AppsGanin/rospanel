@@ -159,3 +159,27 @@ func TestQuotePriceBounds(t *testing.T) {
 		t.Fatalf("want 2 warnings for out-of-bounds prices, got %d: %+v", warned, logs)
 	}
 }
+
+// A decision does not wait for the plugin's code to load again: let through at
+// once, the code loaded meanwhile for the next one.
+func TestDecisionDoesNotWaitForAReload(t *testing.T) {
+	h := installGate(t)
+	inst, _ := h.host.get("gate")
+	inst.mu.Lock()
+	inst.vm.Close()
+	inst.vm = nil
+	inst.mu.Unlock()
+	if ok, _ := h.host.BeforeSignup(context.Background(), model.SignupCheck{Username: "spammer"}); !ok {
+		t.Fatal("waited for the reload instead of letting the sign-up through")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if ok, _ := h.host.BeforeSignup(context.Background(), model.SignupCheck{Username: "spammer"}); !ok {
+			break // loaded again, deciding again
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the code was not loaded again")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}

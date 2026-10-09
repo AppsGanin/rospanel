@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/plugin/jsvm"
 	"github.com/AppsGanin/rospanel/internal/plugin/manifest"
 )
@@ -100,6 +101,16 @@ func (inst *instance) op(ctx context.Context, op string, arg []byte, o callOpts)
 			lang = o.lang
 		}
 		return inst.pkg.Translate(lang, a.Key, a.Params), nil
+	case "time.offset":
+		// The panel's timezone, for a plugin to show a time as the panel does.
+		a, err := decode[struct {
+			Unix int64 `json:"unix"`
+		}](arg)
+		if err != nil {
+			return nil, err
+		}
+		_, off := time.Unix(a.Unix, 0).In(logbuf.Location()).Zone()
+		return off, nil
 	case "api":
 		return inst.opAPI(ctx, arg, o)
 	case "http.fetch":

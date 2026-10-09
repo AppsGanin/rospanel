@@ -106,6 +106,12 @@ func (h *Host) deliverEvent(ctx context.Context, id string, body []byte) (gone b
 	}
 	if inst.storm.note(time.Now()) {
 		inst.mu.Lock()
+		// Seen outside the lock: the operator may have switched the plugin off or
+		// removed it meanwhile, and a pause must not switch it back on.
+		if inst.removed || !inst.rec.Enabled || inst.status != model.PluginActive {
+			inst.mu.Unlock()
+			return true, ErrNotActive
+		}
 		inst.pause(fmt.Sprintf("an event storm: over %d events a minute for %d minutes — does onEvent trigger its own events?", stormRate, stormMinutes))
 		inst.mu.Unlock()
 		return true, errors.New("plugin paused: event storm")

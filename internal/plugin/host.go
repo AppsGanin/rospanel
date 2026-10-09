@@ -122,6 +122,14 @@ var (
 	ErrConsent   = errors.New("plugin: the consent does not match the package")
 )
 
+// SetupError is a plugin switched on, or that would stay so, without settings it
+// cannot run without.
+type SetupError struct{ Keys []string }
+
+func (e *SetupError) Error() string {
+	return "plugin: fill in the settings first: " + strings.Join(e.Keys, ", ")
+}
+
 // Host runs the installed plugins.
 type Host struct {
 	deps   Deps
@@ -172,6 +180,8 @@ type instance struct {
 	trips    int
 	retryAt  atomic.Int64
 	notified time.Time
+	// reloading: a reload of the VM runs off the call that needed it (reloadSoon).
+	reloading atomic.Bool
 
 	logs  *ring
 	fwd   forwardLimit // lines copied into the panel's log
@@ -443,6 +453,25 @@ func (inst *instance) open(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// reloadSoon loads the VM in the background, under the plugin's lock like any
+// call, for a call that could not wait for it.
+func (inst *instance) reloadSoon() {
+	if !inst.reloading.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer inst.reloading.Store(false)
+		inst.mu.Lock()
+		defer inst.mu.Unlock()
+		if inst.removed || !inst.running || inst.status != model.PluginActive || inst.host.isClosed() {
+			return
+		}
+		if err := inst.ensureVM(context.Background(), callOpts{}); err != nil {
+			inst.failed(fmt.Errorf("reload: %w", err))
+		}
+	}()
 }
 
 // ensureVM makes a VM with the prelude and the plugin's code loaded, if there is
@@ -726,7 +755,7 @@ func (h *Host) Enable(ctx context.Context, id string) (*Info, error) {
 	}
 	defer inst.mu.Unlock()
 	if missing := inst.missingSettings(); len(missing) > 0 {
-		return nil, fmt.Errorf("plugin: fill in the settings first: %s", strings.Join(missing, ", "))
+		return nil, &SetupError{Keys: missing}
 	}
 	err = inst.start(ctx)
 	return inst.info(), err
@@ -754,10 +783,12 @@ func (h *Host) Uninstall(_ context.Context, id string, keepData bool) error {
 		return err
 	}
 	defer inst.mu.Unlock()
-	inst.stop()
+	// The record first: should it fail to go, the plugin runs on as it was, rather
+	// than left "active" with nothing running. No call runs meanwhile — mu is held.
 	if err := h.deps.Store.DeletePlugin(id); err != nil {
 		return err
 	}
+	inst.stop()
 	inst.status = model.PluginDisabled // a call queued behind this one must not run it again
 	inst.removed = true
 	inst.retryAt.Store(0)
@@ -774,8 +805,9 @@ func (h *Host) Uninstall(_ context.Context, id string, keepData bool) error {
 
 // SetConfig saves the plugin's settings. A field not sent keeps its value, an empty
 // one clears it — except a secret, where empty keeps the stored one, as the payment
-// forms do. A running plugin restarts on the new settings.
-func (h *Host) SetConfig(ctx context.Context, id string, values map[string]string) (*Info, error) {
+// forms do; a secret goes only when named in clear. A running plugin restarts on the
+// new settings.
+func (h *Host) SetConfig(ctx context.Context, id string, values map[string]string, clear ...string) (*Info, error) {
 	inst, err := h.lock(id)
 	if err != nil {
 		return nil, err
@@ -785,9 +817,14 @@ func (h *Host) SetConfig(ctx context.Context, id string, values map[string]strin
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := validateConfig(m, inst.rec.Config, values)
+	cfg, err := validateConfig(m, inst.rec.Config, values, clear...)
 	if err != nil {
 		return nil, err
+	}
+	// A plugin that is on keeps what it needs: emptying a required setting would
+	// leave it failing every call until the breaker pauses it. Switch it off first.
+	if missing := missingSettings(m, cfg); inst.rec.Enabled && len(missing) > 0 {
+		return nil, &SetupError{Keys: missing}
 	}
 	if err := h.deps.Store.SetPluginConfig(id, cfg); err != nil {
 		return nil, err
@@ -1072,7 +1109,7 @@ func mergeDefaults(old map[string]string, m *manifest.Manifest) map[string]strin
 
 // validateConfig checks submitted settings against the manifest's fields and
 // returns the config to store.
-func validateConfig(m *manifest.Manifest, old, values map[string]string) (map[string]string, error) {
+func validateConfig(m *manifest.Manifest, old, values map[string]string, clear ...string) (map[string]string, error) {
 	cfg := map[string]string{}
 	var problems []string
 	for k := range values {
@@ -1085,6 +1122,9 @@ func validateConfig(m *manifest.Manifest, old, values map[string]string) (map[st
 		v := strings.TrimSpace(raw)
 		if !present || (f.Kind == "secret" && v == "") {
 			v = old[f.Key] // a field not sent, or a blank secret, keeps what is stored
+		}
+		if slices.Contains(clear, f.Key) {
+			v = "" // asked to go, a secret too
 		}
 		switch f.Kind {
 		case "bool":

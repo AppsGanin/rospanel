@@ -126,6 +126,10 @@ interface Panel {
     list<T = any>(query?: string): APIResponse<T>;
     update<T = any>(id: number | string, patch: Record<string, unknown>): APIResponse<T>;
   };
+  time: {
+    /** The panel's timezone: seconds east of UTC at that moment (unix seconds; now when omitted). */
+    offset(unix?: number): number;
+  };
   /** A string from i18n/<lang>.json, {name} placeholders filled from params. */
   t(key: string, params?: Record<string, string>, lang?: string): string;
 }

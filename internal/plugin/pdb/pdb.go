@@ -437,6 +437,9 @@ func (d *DB) KVList(ctx context.Context, prefix, after string, limit int) ([]KVE
 	return out, rows.Err()
 }
 
+// MigrateTimeout bounds one Migrate: a var so tests can shorten it.
+var MigrateTimeout = 60 * time.Second
+
 // Migration is one file of a plugin's migrations/ directory.
 type Migration struct {
 	Name string // "0001_init.sql"
@@ -446,7 +449,13 @@ type Migration struct {
 // Migrate applies the migrations not applied yet, in name order, all in one
 // transaction: either every new one lands or none does. An applied migration whose
 // text changed is refused — the plugin's history, like the panel's, is append-only.
+//
+// The whole run has MigrateTimeout: a statement that never ends (a recursive CTE
+// with no way out) is interrupted and rolled back, instead of holding the plugin —
+// and, at boot, every plugin started after it — for good.
 func (d *DB) Migrate(ctx context.Context, ms []Migration) (applied []string, err error) {
+	ctx, cancel := context.WithTimeout(ctx, MigrateTimeout)
+	defer cancel()
 	sorted := append([]Migration(nil), ms...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
 	for _, m := range sorted {

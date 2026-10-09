@@ -100,8 +100,10 @@ func WriteHTTP(w http.ResponseWriter, resp *HTTPResponse) {
 		hdr.Set(k, v)
 	}
 	// No script from the panel's origin: something a <script src> could load there
-	// is served as text.
-	if ct := strings.ToLower(hdr.Get("Content-Type")); ct == "" || strings.Contains(ct, "javascript") || strings.Contains(ct, "ecmascript") {
+	// is served as text. Every JavaScript MIME type the WHATWG lists has one of these
+	// in it (text/jscript and text/livescript too).
+	if ct := strings.ToLower(hdr.Get("Content-Type")); ct == "" || strings.Contains(ct, "javascript") ||
+		strings.Contains(ct, "ecmascript") || strings.Contains(ct, "jscript") || strings.Contains(ct, "livescript") {
 		hdr.Set("Content-Type", "text/plain; charset=utf-8")
 	}
 	hdr.Set("Content-Security-Policy", "sandbox")

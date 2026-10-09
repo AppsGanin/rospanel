@@ -138,6 +138,13 @@ func (g gate) lockWithin(ctx context.Context, d time.Duration) bool {
 // invoke runs one call with inst.mu held. It replaces a dead or bloated VM,
 // rolls back what the call left open in the database, and counts failures.
 func (inst *instance) invoke(ctx context.Context, export string, arg []byte, timeout time.Duration, o callOpts) (json.RawMessage, error) {
+	// A call with a short budget (a decision, the subscription, the bot's menu) does
+	// not wait for main.js to load — up to LoadTimeout: it is let through as busy,
+	// and the code is loaded off it, for the next.
+	if o.wait > 0 && o.wait < LoadTimeout && (inst.vm == nil || inst.vm.Err() != nil) {
+		inst.reloadSoon()
+		return nil, ErrBusy
+	}
 	if err := inst.ensureVM(ctx, o); err != nil {
 		inst.failed(fmt.Errorf("reload: %w", err))
 		return nil, err

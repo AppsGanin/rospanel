@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // A theme restyles the panel's subscription page: theme/theme.css and the files it
@@ -94,13 +95,17 @@ func (pkg *Package) checkTheme(p *Problems) {
 // is @import) — so neither hides anything from it.
 func CheckThemeCSS(css string, files map[string][]byte) []string {
 	var out []string
+	if !utf8.ValidString(css) {
+		// A broken byte reads differently in each lowering and slicing below.
+		return []string{"theme.css is not valid UTF-8"}
+	}
 	css = cssComment.ReplaceAllString(css, " ")
 	if strings.Contains(css, "/*") {
 		out = append(out, "a comment is not closed")
 	}
 	css = unescapeCSS(css)
 	refs, rest := cssURLs(css)
-	low := strings.ToLower(rest)
+	low := asciiLower(rest)
 	for _, bad := range []string{"@import", "expression(", "javascript:", "behavior:", "-moz-binding", "</style", "image-set(", "://"} {
 		if strings.Contains(low, bad) {
 			out = append(out, fmt.Sprintf("%q is not allowed", bad))
@@ -115,7 +120,7 @@ func CheckThemeCSS(css string, files map[string][]byte) []string {
 	}
 	for _, ref := range refs {
 		ref = strings.TrimSpace(ref)
-		lref := strings.ToLower(ref)
+		lref := asciiLower(ref)
 		switch {
 		case strings.HasPrefix(lref, "data:image/"), strings.HasPrefix(lref, "data:font/"):
 			// Inline: an SVG's xmlns="http://…" is a name, not a load.
@@ -168,6 +173,18 @@ func unescapeCSS(s string) string {
 	return b.String()
 }
 
+// asciiLower lowers A-Z only, keeping every byte where it is. CSS keywords are
+// ASCII, and CSS matches them ASCII-case-insensitively.
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + 'a' - 'A'
+		}
+	}
+	return string(b)
+}
+
 func isHex(c byte) bool {
 	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 }
@@ -177,7 +194,9 @@ func isHex(c byte) bool {
 // that look at the rest.
 func cssURLs(css string) (refs []string, rest string) {
 	var b strings.Builder
-	low := strings.ToLower(css)
+	// Byte for byte as css: a Unicode lowering changes lengths (K, the Kelvin sign,
+	// is 3 bytes, its "k" 1), and positions found in it would cut css elsewhere.
+	low := asciiLower(css)
 	i := 0
 	for {
 		k := strings.Index(low[i:], "url(")

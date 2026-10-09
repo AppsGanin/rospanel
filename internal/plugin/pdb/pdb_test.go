@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func open(t *testing.T, quota int64) *DB {
@@ -327,5 +328,22 @@ func TestOverQuotaByPagesInUse(t *testing.T) {
 	}
 	if d.OverQuota() {
 		t.Fatal("still over quota after deleting everything")
+	}
+}
+
+// A migration that never ends is cut at MigrateTimeout and rolled back.
+func TestMigrateTimeout(t *testing.T) {
+	old := MigrateTimeout
+	MigrateTimeout = 300 * time.Millisecond
+	defer func() { MigrateTimeout = old }()
+	db := open(t, 0)
+	start := time.Now()
+	_, err := db.Migrate(context.Background(), []Migration{{Name: "0001_spin.sql",
+		SQL: "CREATE TABLE t AS WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c) SELECT x FROM c WHERE x < 0;"}})
+	if err == nil || time.Since(start) > 5*time.Second {
+		t.Fatalf("%v after %v", err, time.Since(start))
+	}
+	if applied, err := db.Migrate(context.Background(), []Migration{{Name: "0001_ok.sql", SQL: "CREATE TABLE ok (id INTEGER);"}}); err != nil || len(applied) != 1 {
+		t.Fatalf("after the timeout: %v %v", applied, err)
 	}
 }

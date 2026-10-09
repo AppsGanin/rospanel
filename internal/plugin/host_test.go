@@ -342,6 +342,14 @@ func TestPanelAPI(t *testing.T) {
 	if info.Config["token"] != "s3cret" || info.Config["mode"] != "b" {
 		t.Fatalf("after save: %+v", info.Config)
 	}
+	// A plugin that is on keeps its required settings: clearing one is refused.
+	var setup *SetupError
+	if _, err := h.host.SetConfig(context.Background(), "conf", nil, "token"); !errors.As(err, &setup) || setup.Keys[0] != "token" {
+		t.Fatalf("cleared the token of a running plugin: %v", err)
+	}
+	if gi, _ := h.host.Get("conf"); len(gi.SecretsSet) != 1 {
+		t.Fatalf("the refused clear was saved: %+v", gi)
+	}
 
 	if got := h.mustCall("conf", "kv", nil); got != `{"got":{"n":1},"missing":true,"list":[{"key":"a/1","value":{"n":1}},{"key":"a/2","value":[2]}],"after":1}` {
 		t.Fatalf("kv: %s", got)
@@ -900,5 +908,40 @@ func TestLogForwardLimit(t *testing.T) {
 	}
 	if ok, dropped := f.allow(now.Add(time.Minute)); !ok || dropped != 100-fwdPerMinute {
 		t.Fatalf("next minute: %v %d", ok, dropped)
+	}
+}
+
+// A blank secret keeps what is stored; one named in clear goes.
+func TestClearSecret(t *testing.T) {
+	m := &manifest.Manifest{Settings: []manifest.Field{{Key: "token", Kind: "secret"}, {Key: "note", Kind: "text"}}}
+	old := map[string]string{"token": "t0k", "note": "hi"}
+	cfg, err := validateConfig(m, old, map[string]string{"token": "", "note": ""})
+	if err != nil || cfg["token"] != "t0k" || cfg["note"] != "" {
+		t.Fatalf("blank: %v %v", cfg, err)
+	}
+	cfg, err = validateConfig(m, old, map[string]string{"token": ""}, "token")
+	if err != nil || cfg["token"] != "" || cfg["note"] != "hi" {
+		t.Fatalf("cleared: %v %v", cfg, err)
+	}
+}
+
+// A storm seen as the operator switches the plugin off does not switch it back on.
+func TestStormAfterDisable(t *testing.T) {
+	h := newHarness(t)
+	installConf(h)
+	inst, _ := h.host.get("conf")
+	if _, err := h.host.Disable(context.Background(), "conf"); err != nil {
+		t.Fatal(err)
+	}
+	// The meter as it stands one delivery short of a storm.
+	inst.storm.mu.Lock()
+	inst.storm.minute = time.Now().Unix() / 60
+	inst.storm.count, inst.storm.writes, inst.storm.hot = stormRate, stormWrites, stormMinutes-1
+	inst.storm.mu.Unlock()
+	if gone, _ := h.host.DeliverEvent(context.Background(), "conf", []byte(`{"id":"e1","event":"user.created","data":{}}`)); !gone {
+		t.Fatal("a disabled plugin took the event")
+	}
+	if gi, _ := h.host.Get("conf"); gi.Enabled || gi.Status != model.PluginDisabled {
+		t.Fatalf("the storm pause switched it back on: enabled=%v status=%s", gi.Enabled, gi.Status)
 	}
 }

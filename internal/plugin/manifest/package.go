@@ -241,9 +241,10 @@ func commonFolder(entries []*zip.File) string {
 // Translate looks a key up in the package's dictionaries: lang, then English, then
 // Russian, then the key itself. {name} placeholders are filled from params.
 //
-// The result is held to MaxTranslated bytes, checked before any replacement: a
-// template with a million {a} and a long a would otherwise ask Go for gigabytes,
-// and running out of memory there ends the panel, not the plugin.
+// One pass over the template: a value put in is never read again for placeholders
+// (else {a} → "{b}{b}…" and a huge b multiply), and the result is held to
+// MaxTranslated bytes as it is written — running out of memory here ends the
+// panel, not the plugin. Too big filled in, the template is returned as it is.
 func (pkg *Package) Translate(lang, key string, params map[string]string) string {
 	s := key
 	for _, l := range []string{lang, "en", "ru"} {
@@ -255,19 +256,41 @@ func (pkg *Package) Translate(lang, key string, params map[string]string) string
 	if len(s) > MaxTranslated {
 		s = s[:MaxTranslated]
 	}
-	size := len(s)
-	for k, v := range params {
-		if n := strings.Count(s, "{"+k+"}"); n > 0 {
-			size += n * (len(v) - len(k) - 2)
+	if len(params) == 0 || !strings.Contains(s, "{") {
+		return s
+	}
+	var b strings.Builder
+	rest := s
+	for {
+		open := strings.IndexByte(rest, '{')
+		if open < 0 {
+			b.WriteString(rest)
+			break
 		}
+		end := strings.IndexByte(rest[open+1:], '}')
+		if end < 0 {
+			b.WriteString(rest)
+			break
+		}
+		name := rest[open+1 : open+1+end]
+		v, ok := params[name]
+		if !ok {
+			// Not a placeholder of these params: kept, and the scan goes on after "{".
+			b.WriteString(rest[:open+1])
+			rest = rest[open+1:]
+			continue
+		}
+		if b.Len()+open+len(v) > MaxTranslated {
+			return s
+		}
+		b.WriteString(rest[:open])
+		b.WriteString(v)
+		rest = rest[open+1+end+1:]
 	}
-	if size > MaxTranslated {
-		return s // too big filled in: the template as it is
+	if b.Len() > MaxTranslated {
+		return s
 	}
-	for k, v := range params {
-		s = strings.ReplaceAll(s, "{"+k+"}", v)
-	}
-	return s
+	return b.String()
 }
 
 // MaxTranslated bounds what panel.t returns.

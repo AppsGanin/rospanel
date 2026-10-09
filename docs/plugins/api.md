@@ -228,6 +228,17 @@ panel.crypto.randomUUID()
 To check a webhook signature: compute `hmac` over the body exactly as it came (the `body`
 string, without re-serializing the JSON) and compare it with the header in full.
 
+## panel.time — the panel's timezone
+
+```js
+const at = e.data.expire_at;                          // unix seconds
+const local = new Date((at + panel.time.offset(at)) * 1000);
+local.getUTCHours();                                  // the hour as the panel shows it
+```
+
+`offset(unix)` is how many seconds the panel's timezone (Settings → General) is ahead of UTC at
+that moment; without an argument, now. The sandbox has no timezone database of its own.
+
 ## panel.t — translations
 
 ```js

@@ -74,3 +74,20 @@ func TestThemePackage(t *testing.T) {
 		}
 	}
 }
+
+// Characters whose lowering changes their length (K, the Kelvin sign) or broken
+// bytes must not shift where url(…) is read: the outside address is still found,
+// and nothing panics.
+func TestThemeCSSLoweringShift(t *testing.T) {
+	files := map[string][]byte{"x.png": {1}}
+	bypass := `.a::before{content:"` + strings.Repeat("K", 11) + `"}.b{--v:x.png);background:url(//evil.example/a.png)}`
+	if p := CheckThemeCSS(bypass, files); len(p) == 0 {
+		t.Fatal("an outside address got through")
+	}
+	if p := CheckThemeCSS(strings.Repeat("\xff", 40)+"url(x.png)", files); len(p) != 1 || !strings.Contains(p[0], "UTF-8") {
+		t.Fatalf("%v", p)
+	}
+	if p := CheckThemeCSS(`.k{background:URL(x.png)}`, files); len(p) != 0 {
+		t.Fatalf("an upper-case url() of the theme: %v", p)
+	}
+}

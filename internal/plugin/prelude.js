@@ -127,6 +127,12 @@
 			text: (b, enc) => call("blob.text", { blob: b.blob, enc: enc || "" }),
 		}),
 
+		// The panel's timezone: seconds east of UTC at a moment (unix seconds; now
+		// when left out).
+		time: Object.freeze({
+			offset: (unix) => call("time.offset", { unix: Math.floor(unix === undefined ? Date.now() / 1000 : Number(unix) || 0) }),
+		}),
+
 		t(key, params, lang) {
 			return call("t", { key: String(key), params: params || null, lang: lang || "" });
 		},
