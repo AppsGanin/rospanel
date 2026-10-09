@@ -2415,6 +2415,8 @@ const en: Dict = {
     fromBuilderHint: "When an event comes → if a condition holds → do something. No code.",
     fromCode: "Code",
     fromCodeHint: "main.js from a template, with tests and the panel.* types",
+    fromSources: "Sources (.zip)",
+    fromSourcesHint: "An archive downloaded from the editor: carry on where you left off",
     pluginIdHint: "Latin letters, digits and hyphens, 3 or more: welcome-bot",
     create: "Create",
     untitled: "Untitled",

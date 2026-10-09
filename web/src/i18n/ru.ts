@@ -2412,6 +2412,8 @@ const ru = {
     fromBuilderHint: "Когда событие → если условие → сделать действие. Без кода.",
     fromCode: "Код",
     fromCodeHint: "main.js по шаблону, с тестами и типами panel.*",
+    fromSources: "Исходники (.zip)",
+    fromSourcesHint: "Архив, скачанный из редактора: продолжить с того же места",
     pluginIdHint: "Латиница, цифры и дефис, от 3 символов: welcome-bot",
     create: "Создать",
     untitled: "Без названия",
