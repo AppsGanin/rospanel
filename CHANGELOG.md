@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.1](https://github.com/AppsGanin/rospanel/compare/v5.0.0...v5.0.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **web:** open the editor's sources zip as a draft again ([eb96f84](https://github.com/AppsGanin/rospanel/commit/eb96f849ce4d12f3eab77dab48496b31110d5c56))
+
 ## [5.0.0](https://github.com/AppsGanin/rospanel/compare/v4.4.0...v5.0.0) (2026-10-09)
 
 
