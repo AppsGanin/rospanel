@@ -111,6 +111,8 @@ type PluginDraft struct {
 	CreatedBy string            `json:"created_by"`
 	CreatedAt int64             `json:"created_at"`
 	UpdatedAt int64             `json:"updated_at"`
+	// Rev counts the saves: a save made from an older read is refused.
+	Rev int64 `json:"-"`
 }
 
 // Draft modes: the rule builder writes the files, or they are edited by hand.

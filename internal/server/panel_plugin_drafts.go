@@ -3,15 +3,19 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -22,6 +26,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/plugin/devkit"
 	"github.com/AppsGanin/rospanel/internal/plugin/jsvm"
 	"github.com/AppsGanin/rospanel/internal/plugin/manifest"
+	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/version"
 )
 
@@ -62,6 +67,62 @@ type draftView struct {
 	Spec     *builder.Spec     `json:"spec,omitempty"`     // builder mode: the rules
 	Problems []string          `json:"problems,omitempty"` // builder mode: why the rules made no plugin
 	Events   []string          `json:"events"`             // what a rule may start on
+	// Catalog: what each event carries — the fields a rule can read, with samples.
+	Catalog builder.Catalog `json:"catalog"`
+	// Installed: the plugin of this ID the panel runs, and whether it runs this very
+	// code — the draft is a copy; edits reach the plugin only when applied.
+	Installed *draftInstalled `json:"installed,omitempty"`
+}
+
+type draftInstalled struct {
+	Version string `json:"version"`
+	Applied bool   `json:"applied"` // the draft packs to the installed package
+}
+
+// draftView is viewDraft with what the panel runs of it.
+func (rt *Router) draftView(d *model.PluginDraft, problems []string) draftView {
+	v := viewDraft(d, problems)
+	if rt.plugins == nil || d.PluginID == "" {
+		return v
+	}
+	info, err := rt.plugins.Get(d.PluginID)
+	if err != nil {
+		return v
+	}
+	v.Installed = &draftInstalled{Version: info.Version}
+	if raw, _, err := devkit.PackFiles(d.Files); err == nil {
+		sum := sha256.Sum256(raw)
+		v.Installed.Applied = hex.EncodeToString(sum[:]) == info.SHA256 || rt.sameFiles(d.PluginID, raw)
+	}
+	return v
+}
+
+// sameFiles: the package raw holds the very files of the installed one — which may
+// have been zipped by another tool, so its bytes (and sha256) differ.
+func (rt *Router) sameFiles(id string, raw []byte) bool {
+	installed, err := rt.plugins.Package(id)
+	if err != nil {
+		return false
+	}
+	a, errA := manifest.Unpack(installed)
+	b, errB := manifest.Unpack(raw)
+	if errA != nil || errB != nil || len(a) != len(b) {
+		return false
+	}
+	for name, body := range a {
+		if other, ok := b[name]; !ok || !bytes.Equal(body, other) {
+			return false
+		}
+	}
+	return true
+}
+
+// draftItem is a draft as the plugins list shows it: beside the installed plugin of
+// its id (whether that runs the draft's code), or on its own while not installed.
+type draftItem struct {
+	model.PluginDraft
+	Installed bool `json:"installed"`
+	Applied   bool `json:"applied"`
 }
 
 func (rt *Router) listPluginDrafts(w http.ResponseWriter, _ *http.Request) {
@@ -70,7 +131,17 @@ func (rt *Router) listPluginDrafts(w http.ResponseWriter, _ *http.Request) {
 		writeErrCode(w, http.StatusInternalServerError, "err.internal", "внутренняя ошибка сервера")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"drafts": ds})
+	out := make([]draftItem, 0, len(ds))
+	for _, d := range ds {
+		item := draftItem{PluginDraft: d}
+		if full, err := rt.mgr.Store().GetPluginDraft(d.ID); err == nil {
+			if inst := rt.draftView(full, nil).Installed; inst != nil {
+				item.Installed, item.Applied = true, inst.Applied
+			}
+		}
+		out = append(out, item)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"drafts": out})
 }
 
 // pluginDraftTypes is rospanel.d.ts, for the editor's completion.
@@ -84,6 +155,7 @@ func (rt *Router) pluginDraftTypes(w http.ResponseWriter, _ *http.Request) {
 // or a zip in the body (a package or the sources an earlier download gave).
 func (rt *Router) createPluginDraft(w http.ResponseWriter, r *http.Request) {
 	d := &model.PluginDraft{Mode: model.DraftCode, CreatedBy: adminName(r)}
+	from := "zip"
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/zip") {
 		r.Body = http.MaxBytesReader(w, r.Body, manifest.MaxPackage+1)
 		raw, err := io.ReadAll(r.Body)
@@ -108,6 +180,7 @@ func (rt *Router) createPluginDraft(w http.ResponseWriter, r *http.Request) {
 		if !decodeJSON(w, r, &req) {
 			return
 		}
+		from = req.From
 		var err error
 		switch req.From {
 		case "template":
@@ -135,11 +208,38 @@ func (rt *Router) createPluginDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	describeDraft(d)
-	if err := rt.mgr.Store().SavePluginDraft(d); err != nil {
+	// One draft per plugin: opening an installed plugin again goes back to its draft,
+	// and a second draft under the same id is refused rather than piling up.
+	if d.PluginID != "" {
+		existing, err := rt.mgr.Store().PluginDraftFor(d.PluginID)
+		if err != nil {
+			writeErrCode(w, http.StatusInternalServerError, "err.internal", "внутренняя ошибка сервера")
+			return
+		}
+		if existing != 0 {
+			if from == "installed" {
+				rt.getPluginDraft(w, r, existing)
+				return
+			}
+			writeErrDetail(w, http.StatusConflict, "err.draftExists", "черновик этого плагина уже есть — откройте его в списке: ", d.PluginID)
+			return
+		}
+	}
+	err := rt.mgr.Store().SavePluginDraft(d)
+	if errors.Is(err, store.ErrDraftExists) {
+		// Made by a request racing this one (a double click).
+		if existing, _ := rt.mgr.Store().PluginDraftFor(d.PluginID); existing != 0 && from == "installed" {
+			rt.getPluginDraft(w, r, existing)
+			return
+		}
+		writeErrDetail(w, http.StatusConflict, "err.draftExists", "черновик этого плагина уже есть — откройте его в списке: ", d.PluginID)
+		return
+	}
+	if err != nil {
 		writeErrCode(w, http.StatusInternalServerError, "err.internal", "внутренняя ошибка сервера")
 		return
 	}
-	writeJSON(w, http.StatusOK, viewDraft(d, nil))
+	writeJSON(w, http.StatusOK, rt.draftView(d, nil))
 }
 
 // starterSpec is the builder's first rule: a log line for each new user.
@@ -161,7 +261,7 @@ func (rt *Router) getPluginDraft(w http.ResponseWriter, _ *http.Request, id int6
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, viewDraft(d, nil))
+	writeJSON(w, http.StatusOK, rt.draftView(d, nil))
 }
 
 func (rt *Router) loadDraft(w http.ResponseWriter, id int64) (*model.PluginDraft, bool) {
@@ -190,31 +290,58 @@ func (rt *Router) savePluginDraft(w http.ResponseWriter, r *http.Request, id int
 	if !decodeJSONLimit(w, r, &req, 3*maxDraftBytes) {
 		return
 	}
-	d, ok := rt.loadDraft(w, id)
-	if !ok {
-		return
-	}
-	if req.Name != nil {
-		d.Name = strings.TrimSpace(*req.Name)
-	}
-	var problems []string
-	switch {
-	case req.Spec != nil:
-		if d.Mode != model.DraftBuilder {
-			writeErrCode(w, http.StatusConflict, "err.draftNotBuilder", "этот черновик редактируется кодом")
+	// The edit replaces what is there; should another write (a version bump on
+	// apply) land between the read and the write, it is read again and redone.
+	for range 3 {
+		d, ok := rt.loadDraft(w, id)
+		if !ok {
 			return
 		}
-		files, err := builder.Compile(*req.Spec, version.Version)
+		problems, done := rt.applyDraftEdit(w, d, req.Name, req.Spec, req.Files, req.Mode)
+		if done {
+			return
+		}
+		err := rt.mgr.Store().SavePluginDraft(d)
+		switch {
+		case errors.Is(err, store.ErrDraftChanged):
+			continue
+		case errors.Is(err, store.ErrDraftExists):
+			writeErrDetail(w, http.StatusConflict, "err.draftExists", "черновик этого плагина уже есть — откройте его в списке: ", d.PluginID)
+		case err != nil:
+			writeErrCode(w, http.StatusInternalServerError, "err.internal", "внутренняя ошибка сервера")
+		default:
+			writeJSON(w, http.StatusOK, rt.draftView(d, problems))
+		}
+		return
+	}
+	writeErrCode(w, http.StatusConflict, "err.draftChanged", "черновик только что изменился — повторите")
+}
+
+// applyDraftEdit puts an edit into the draft read; done when it answered already
+// (the edit does not fit the draft).
+func (rt *Router) applyDraftEdit(w http.ResponseWriter, d *model.PluginDraft, name *string, spec *builder.Spec, in []draftFile, mode string) (problems []string, done bool) {
+	if name != nil {
+		d.Name = strings.TrimSpace(*name)
+	}
+	switch {
+	case spec != nil:
+		if d.Mode != model.DraftBuilder {
+			writeErrCode(w, http.StatusConflict, "err.draftNotBuilder", "этот черновик редактируется кодом")
+			return nil, true
+		}
+		files, err := builder.Compile(*spec, version.Version)
 		var pr manifest.Problems
 		switch {
 		case errors.As(err, &pr):
 			// Kept as they are, half-made rules included: the operator carries on.
+			// The files made from the last rules that held stay, but nothing runs
+			// or installs them while these have problems (rulesProblems).
 			problems = pr
-			spec, _ := json.MarshalIndent(req.Spec, "", "  ")
-			d.Files[builder.SpecFile] = append(spec, '\n')
+			raw, _ := json.MarshalIndent(spec, "", "  ")
+			d.Files[builder.SpecFile] = append(raw, '\n')
 		case err != nil:
 			writeErrDetail(w, http.StatusBadRequest, "err.pluginInvalid", "пакет не подходит: ", err.Error())
-			return
+			return nil, true
 		default:
 			// The settings a trial run uses stay the operator's: new keys are added.
 			if cur, ok := d.Files["dev.config.json"]; ok {
@@ -222,27 +349,47 @@ func (rt *Router) savePluginDraft(w http.ResponseWriter, r *http.Request, id int
 			}
 			d.Files = files
 		}
-	case req.Files != nil:
+	case in != nil:
 		if d.Mode == model.DraftBuilder {
 			writeErrCode(w, http.StatusConflict, "err.draftBuilder", "этот черновик собирается конструктором")
-			return
+			return nil, true
 		}
-		files, problem := filesFrom(req.Files)
+		files, problem := filesFrom(in)
 		if problem != "" {
 			writeErrDetail(w, http.StatusBadRequest, "err.pluginInvalid", "пакет не подходит: ", problem)
-			return
+			return nil, true
 		}
 		d.Files = files
-	case req.Mode == model.DraftCode:
+	case mode == model.DraftCode:
 		d.Mode = model.DraftCode
 		delete(d.Files, builder.SpecFile)
 	}
 	describeDraft(d)
-	if err := rt.mgr.Store().SavePluginDraft(d); err != nil {
-		writeErrCode(w, http.StatusInternalServerError, "err.internal", "внутренняя ошибка сервера")
-		return
+	return problems, false
+}
+
+// rulesProblems is why a builder draft's rules make no plugin: its files are then
+// those of the last rules that held, and must not be checked, run or installed as
+// if they were what the operator sees.
+func rulesProblems(d *model.PluginDraft) []string {
+	if d.Mode != model.DraftBuilder {
+		return nil
 	}
-	writeJSON(w, http.StatusOK, viewDraft(d, problems))
+	var s builder.Spec
+	if err := json.Unmarshal(d.Files[builder.SpecFile], &s); err != nil {
+		return []string{builder.SpecFile + ": " + err.Error()}
+	}
+	return builder.Validate(s)
+}
+
+// rulesHold answers the rules' problems, if any; true when there are none.
+func rulesHold(w http.ResponseWriter, d *model.PluginDraft) bool {
+	p := rulesProblems(d)
+	if len(p) == 0 {
+		return true
+	}
+	writeErrDetail(w, http.StatusBadRequest, "err.draftRules", "в правилах есть ошибки — исправьте их в конструкторе: ", strings.Join(p, "; "))
+	return false
 }
 
 func (rt *Router) deletePluginDraft(w http.ResponseWriter, _ *http.Request, id int64) {
@@ -254,9 +401,13 @@ func (rt *Router) deletePluginDraft(w http.ResponseWriter, _ *http.Request, id i
 }
 
 // checkPluginDraft packs the draft and reads it as the install would.
-func (rt *Router) checkPluginDraft(w http.ResponseWriter, _ *http.Request, id int64) {
+func (rt *Router) checkPluginDraft(w http.ResponseWriter, r *http.Request, id int64) {
 	d, ok := rt.loadDraft(w, id)
 	if !ok {
+		return
+	}
+	if p := rulesProblems(d); len(p) > 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "problems": p})
 		return
 	}
 	raw, skipped, err := devkit.PackFiles(d.Files)
@@ -274,6 +425,19 @@ func (rt *Router) checkPluginDraft(w http.ResponseWriter, _ *http.Request, id in
 		out["ok"], out["problems"] = false, []string{err.Error()}
 	default:
 		out["manifest"], out["exports"] = pkg.Manifest, pkg.Manifest.Exports()
+		// The manifest holds; now the code, loaded as a start would load it — in the
+		// one sandbox slot, as tests and runs are: it is the draft's own code.
+		if rt.plugins != nil {
+			if !takeSandbox(w, r) {
+				return
+			}
+			defer func() { <-sandboxSlot }()
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), runTimeout)
+			defer cancel()
+			if err := rt.plugins.Probe(ctx, raw); err != nil {
+				out["ok"], out["problems"] = false, []string{err.Error()}
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -281,7 +445,7 @@ func (rt *Router) checkPluginDraft(w http.ResponseWriter, _ *http.Request, id in
 // testPluginDraft runs the draft's test.js in the sandbox.
 func (rt *Router) testPluginDraft(w http.ResponseWriter, r *http.Request, id int64) {
 	d, ok := rt.loadDraft(w, id)
-	if !ok {
+	if !ok || !rulesHold(w, d) {
 		return
 	}
 	if !takeSandbox(w, r) {
@@ -321,7 +485,7 @@ func (rt *Router) runPluginDraft(w http.ResponseWriter, r *http.Request, id int6
 		return
 	}
 	d, ok := rt.loadDraft(w, id)
-	if !ok {
+	if !ok || !rulesHold(w, d) {
 		return
 	}
 	raw, _, err := devkit.PackFiles(d.Files)
@@ -406,10 +570,14 @@ func (rt *Router) downloadPluginDraft(w http.ResponseWriter, r *http.Request, id
 	var raw []byte
 	var err error
 	if r.URL.Query().Get("kind") == "package" {
+		if !rulesHold(w, d) {
+			return
+		}
 		raw, _, err = devkit.PackFiles(d.Files)
 		name += "-" + d.Version + ".zip"
 	} else {
-		raw, err = devkit.ZipFiles(d.Files)
+		// The sources travel: the secrets a trial run used stay behind.
+		raw, err = devkit.ZipFiles(withoutSecrets(d.Files))
 		name += "-src.zip"
 	}
 	if err != nil {
@@ -429,15 +597,115 @@ func (rt *Router) inspectPluginDraft(w http.ResponseWriter, _ *http.Request, id 
 		return
 	}
 	d, ok := rt.loadDraft(w, id)
-	if !ok {
+	if !ok || !rulesHold(w, d) {
 		return
+	}
+	// Applied over the installed plugin, the draft takes a version above it: the card
+	// and a rollback then tell the two apart.
+	bumped := ""
+	if info, err := h.Get(d.PluginID); err == nil && !versionAbove(d.Version, info.Version) {
+		next := bumpPatch(info.Version)
+		if err := setDraftVersion(d, next); err != nil {
+			writeErrDetail(w, http.StatusBadRequest, "err.pluginInvalid", "пакет не подходит: ", err.Error())
+			return
+		}
+		describeDraft(d)
+		// Saved only over what was read: an edit that came in meanwhile is not lost.
+		err := rt.mgr.Store().SavePluginDraft(d)
+		if errors.Is(err, store.ErrDraftChanged) {
+			writeErrCode(w, http.StatusConflict, "err.draftChanged", "черновик только что изменился — повторите")
+			return
+		}
+		if err != nil {
+			writeErrCode(w, http.StatusInternalServerError, "err.internal", "внутренняя ошибка сервера")
+			return
+		}
+		bumped = next
 	}
 	raw, _, err := devkit.PackFiles(d.Files)
 	if err != nil {
 		writeErrDetail(w, http.StatusBadRequest, "err.pluginInvalid", "пакет не подходит: ", err.Error())
 		return
 	}
-	rt.respondInspection(w, h, raw)
+	rt.respondInspectionBumped(w, h, raw, bumped)
+}
+
+// versionAbove reports whether X.Y.Z a is above b; an unreadable one is not.
+func versionAbove(a, b string) bool {
+	pa, okA := semver(a)
+	pb, okB := semver(b)
+	if !okA || !okB {
+		return false
+	}
+	for i := range 3 {
+		if pa[i] != pb[i] {
+			return pa[i] > pb[i]
+		}
+	}
+	return false
+}
+
+func semver(v string) ([3]int, bool) {
+	var out [3]int
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return out, false
+	}
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return out, false
+		}
+		out[i] = n
+	}
+	return out, true
+}
+
+// bumpPatch is the version after v: 1.2.3 → 1.2.4 (an unreadable one → 0.0.1).
+func bumpPatch(v string) string {
+	p, ok := semver(v)
+	if !ok {
+		return "0.0.1"
+	}
+	return fmt.Sprintf("%d.%d.%d", p[0], p[1], p[2]+1)
+}
+
+// versionRe finds plugin.json's version to rewrite it in place, keeping the rest of
+// the file as its author wrote it.
+var versionRe = regexp.MustCompile(`("version"\s*:\s*")[^"]*(")`)
+
+// setDraftVersion puts a version into the draft: the builder's rules (and the files
+// they make), or plugin.json as written.
+func setDraftVersion(d *model.PluginDraft, v string) error {
+	if d.Mode == model.DraftBuilder {
+		var spec builder.Spec
+		if err := json.Unmarshal(d.Files[builder.SpecFile], &spec); err != nil {
+			return err
+		}
+		spec.Version = v
+		files, err := builder.Compile(spec, version.Version)
+		if err != nil {
+			return err
+		}
+		if cur, ok := d.Files["dev.config.json"]; ok {
+			files["dev.config.json"] = mergeDevConfig(cur, files["dev.config.json"])
+		}
+		d.Files = files
+		return nil
+	}
+	mf, ok := d.Files["plugin.json"]
+	if !ok {
+		return errors.New("plugin.json is missing")
+	}
+	loc := versionRe.FindSubmatchIndex(mf)
+	if loc == nil {
+		return errors.New(`plugin.json has no "version"`)
+	}
+	out := append([]byte{}, mf[:loc[3]]...)
+	out = append(out, v...)
+	out = append(out, mf[loc[4]:]...)
+	d.Files["plugin.json"] = out
+	return nil
 }
 
 // sandboxEngine is the panel's engine when plugins run here: the guest is already
@@ -466,7 +734,8 @@ func takeSandbox(w http.ResponseWriter, r *http.Request) bool {
 // --- files ---
 
 func viewDraft(d *model.PluginDraft, problems []string) draftView {
-	v := draftView{Draft: *d, Problems: problems, Files: []draftFile{}, Events: model.WebhookEventCatalog}
+	v := draftView{Draft: *d, Problems: problems, Files: []draftFile{}, Events: model.WebhookEventCatalog,
+		Catalog: builder.EventCatalog()}
 	names := make([]string, 0, len(d.Files))
 	for p := range d.Files {
 		names = append(names, p)
@@ -540,6 +809,42 @@ func describeDraft(d *model.PluginDraft) {
 	} else if d.Name == "" {
 		d.Name = m.ID
 	}
+}
+
+// withoutSecrets is the files with the values of the plugin's secret settings
+// blanked in dev.config.json — what a trial run used may be a real token.
+func withoutSecrets(files devkit.Files) devkit.Files {
+	raw, ok := files["dev.config.json"]
+	if !ok {
+		return files
+	}
+	var m struct {
+		Settings []struct {
+			Key  string `json:"key"`
+			Kind string `json:"kind"`
+		} `json:"settings"`
+	}
+	_ = json.Unmarshal(files["plugin.json"], &m)
+	var cfg map[string]any
+	if json.Unmarshal(raw, &cfg) != nil {
+		// Not readable, so not sorted out: it stays behind whole.
+		out := maps.Clone(files)
+		delete(out, "dev.config.json")
+		return out
+	}
+	settings, _ := cfg["settings"].(map[string]any)
+	for _, f := range m.Settings {
+		if _, set := settings[f.Key]; set && f.Kind == "secret" {
+			settings[f.Key] = ""
+		}
+	}
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return files
+	}
+	out := maps.Clone(files)
+	out["dev.config.json"] = append(b, '\n')
+	return out
 }
 
 // mergeDevConfig keeps the operator's trial values for the settings the rules still

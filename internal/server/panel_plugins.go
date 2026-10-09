@@ -46,11 +46,14 @@ func (u *pluginUploads) put(sha string, raw []byte) {
 			delete(u.m, k)
 		}
 	}
-	if len(u.m) >= 8 { // a handful of operators at most; never a store
-		for k := range u.m {
-			delete(u.m, k)
-			break
+	if len(u.m) >= 8 { // a handful of operators at most; never a store: the oldest goes
+		oldest := ""
+		for k, v := range u.m {
+			if oldest == "" || v.at.Before(u.m[oldest].at) {
+				oldest = k
+			}
 		}
+		delete(u.m, oldest)
 	}
 	u.m[sha] = pluginUpload{raw: raw, at: time.Now()}
 }
@@ -83,6 +86,9 @@ type pluginInspection struct {
 	// AddedPoints are the extension points it starts using ("events" also for a
 	// new event): what the plugin is handed changes with them.
 	AddedPoints []string `json:"added_points,omitempty"`
+	// BumpedTo: the editor raised the draft's version to this before packing — it was
+	// not above the installed one.
+	BumpedTo string `json:"bumped_to,omitempty"`
 }
 
 func (rt *Router) pluginHost(w http.ResponseWriter) *plugin.Host {
@@ -137,6 +143,10 @@ func (rt *Router) inspectPlugin(w http.ResponseWriter, r *http.Request) {
 // respondInspection reads a package and answers with what the consent screen shows,
 // keeping the bytes for the install.
 func (rt *Router) respondInspection(w http.ResponseWriter, h *plugin.Host, raw []byte) {
+	rt.respondInspectionBumped(w, h, raw, "")
+}
+
+func (rt *Router) respondInspectionBumped(w http.ResponseWriter, h *plugin.Host, raw []byte, bumped string) {
 	pkg, err := h.Inspect(raw)
 	if err != nil {
 		writeErrDetail(w, http.StatusBadRequest, "err.pluginInvalid", "пакет не подходит: ", err.Error())
@@ -165,6 +175,7 @@ func (rt *Router) respondInspection(w http.ResponseWriter, h *plugin.Host, raw [
 		}
 		out.AddedPoints = m.AddedPoints(cur.Manifest)
 	}
+	out.BumpedTo = bumped
 	rt.pluginUploads.put(pkg.SHA256, raw)
 	writeJSON(w, http.StatusOK, out)
 }
@@ -243,12 +254,15 @@ func (rt *Router) installOrUpdatePlugin(w http.ResponseWriter, r *http.Request, 
 	} else {
 		pkg, perr := h.Inspect(raw)
 		if perr == nil && pkg.Manifest.ID != updateID {
+			rt.pluginUploads.put(req.SHA256, raw)
 			writeErrDetail(w, http.StatusBadRequest, "err.pluginWrongID", "это другой плагин: ", pkg.Manifest.ID)
 			return
 		}
 		info, err = h.Update(r.Context(), raw, consent)
 	}
 	if err != nil {
+		// Not installed: the upload stays for another try, without choosing the file again.
+		rt.pluginUploads.put(req.SHA256, raw)
 		writePluginErr(w, err)
 		return
 	}
@@ -280,6 +294,17 @@ func withinCaller(w http.ResponseWriter, r *http.Request, perms []string) bool {
 func (rt *Router) rollbackPlugin(w http.ResponseWriter, r *http.Request) {
 	h := rt.pluginHost(w)
 	if h == nil {
+		return
+	}
+	// A rollback puts back the data of before the update — what the plugin wrote
+	// since is gone — and runs the older code: the password again, as for removal.
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if !rt.verifyStepUp(w, r, req.CurrentPassword) {
 		return
 	}
 	perms, err := h.PrevPermissions(r.PathValue("id"))
@@ -316,11 +341,12 @@ func (rt *Router) configurePlugin(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Values map[string]string `json:"values"`
+		Clear  []string          `json:"clear"` // settings to empty, secrets included
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	info, err := h.SetConfig(r.Context(), r.PathValue("id"), req.Values)
+	info, err := h.SetConfig(r.Context(), r.PathValue("id"), req.Values, req.Clear...)
 	var problems manifest.Problems
 	if errors.As(err, &problems) {
 		// A value the form refused, not the package: say so in those words.
@@ -339,8 +365,19 @@ func (rt *Router) uninstallPlugin(w http.ResponseWriter, r *http.Request) {
 	if h == nil {
 		return
 	}
-	keep := r.URL.Query().Get("keep_data") == "1"
-	if err := h.Uninstall(r.Context(), r.PathValue("id"), keep); err != nil {
+	// Removing a plugin takes its data with it — and it may be what a payment method
+	// or the sign-up gate runs on: the password again, as for an install.
+	var req struct {
+		KeepData        bool   `json:"keep_data"`
+		CurrentPassword string `json:"current_password"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if !rt.verifyStepUp(w, r, req.CurrentPassword) {
+		return
+	}
+	if err := h.Uninstall(r.Context(), r.PathValue("id"), req.KeepData); err != nil {
 		writePluginErr(w, err)
 		return
 	}
@@ -376,7 +413,10 @@ func (rt *Router) pluginCode(w http.ResponseWriter, r *http.Request) {
 // writePluginErr maps the host's errors to the panel's codes.
 func writePluginErr(w http.ResponseWriter, err error) {
 	var problems manifest.Problems
+	var setup *plugin.SetupError
 	switch {
+	case errors.As(err, &setup):
+		writeErrDetail(w, http.StatusConflict, "err.pluginSetup", "заполните настройки плагина: ", strings.Join(setup.Keys, ", "))
 	case errors.Is(err, plugin.ErrNotFound):
 		writeErrCode(w, http.StatusNotFound, "err.pluginNotFound", "плагин не установлен")
 	case errors.Is(err, plugin.ErrExists):

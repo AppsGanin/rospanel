@@ -3388,6 +3388,7 @@ export interface PluginInspection {
   installed?: string
   added_perms?: Perm[]
   added_net?: string[]
+  bumped_to?: string // the editor raised the draft's version to this (it was not above the installed one)
   added_points?: string[]
 }
 
@@ -3437,24 +3438,28 @@ const pluginPost = (id: string, what: string) =>
 
 export const enablePlugin = (id: string) => pluginPost(id, 'enable')
 export const disablePlugin = (id: string) => pluginPost(id, 'disable')
-export const rollbackPlugin = (id: string) => pluginPost(id, 'rollback')
-
-export const configurePlugin = (id: string, values: Record<string, string>) =>
-  api<PluginInfo>(`api/plugins/${encodeURIComponent(id)}/config`, {
+// A rollback puts back the data of before the update: the password again.
+export const rollbackPlugin = (id: string, currentPassword: string) =>
+  api<PluginInfo>(`api/plugins/${encodeURIComponent(id)}/rollback`, {
     method: 'POST',
-    body: JSON.stringify({ values }),
+    body: JSON.stringify({ current_password: currentPassword }),
   })
 
-export const uninstallPlugin = (id: string, keepData: boolean) =>
-  api<{ ok: boolean }>(`api/plugins/${encodeURIComponent(id)}${keepData ? '?keep_data=1' : ''}`, {
+export const configurePlugin = (id: string, values: Record<string, string>, clear: string[] = []) =>
+  api<PluginInfo>(`api/plugins/${encodeURIComponent(id)}/config`, {
+    method: 'POST',
+    body: JSON.stringify({ values, clear }),
+  })
+
+export const uninstallPlugin = (id: string, keepData: boolean, currentPassword: string) =>
+  api<{ ok: boolean }>(`api/plugins/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+    body: JSON.stringify({ keep_data: keepData, current_password: currentPassword }),
   })
 
 export const getPluginLogs = (id: string) =>
   api<{ lines: PluginLogLine[] }>(`api/plugins/${encodeURIComponent(id)}/logs`)
 
-export const getPluginCode = (id: string) =>
-  api<{ code: string }>(`api/plugins/${encodeURIComponent(id)}/code`)
 
 // --- plugins written in the panel (drafts) ---
 
@@ -3469,6 +3474,9 @@ export interface PluginDraft {
   created_by: string
   created_at: number
   updated_at: number
+  // In the list: whether a plugin of this ID is installed, and runs this very code.
+  installed?: boolean
+  applied?: boolean
 }
 
 export interface DraftFile {
@@ -3520,6 +3528,36 @@ export interface DraftView {
   spec?: RuleSpec
   problems?: string[]
   events: string[]
+  // What each event carries: the fields a rule can read, with samples.
+  catalog: EventCatalog
+  // The plugin of this ID the panel runs, and whether it runs this very code.
+  installed?: { version: string; applied: boolean }
+}
+
+// EventField is one value a rule can read: user.name, data.days_left, event.
+export interface EventField {
+  path: string
+  type: "text" | "number" | "bool" | "time" | "bytes" | "kop" | "rub" | "list" | "object"
+  hint: string // evField.<hint> in the dictionaries
+  example: unknown
+  maybe?: boolean // not on every such event
+}
+
+export interface EventInfo {
+  event: string
+  // Where its user comes from: the event's own fields, data.user, only data.user_id,
+  // or none.
+  user: "data" | "nested" | "id" | ""
+  // acts: actions on the user (extend, tag…) can run — not on user.deleted.
+  acts: boolean
+  fields: EventField[] | null
+  sample: Record<string, unknown>
+}
+
+export interface EventCatalog {
+  context: EventField[]
+  user: EventField[]
+  events: EventInfo[]
 }
 
 export interface DraftCheck {

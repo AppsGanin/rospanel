@@ -11,6 +11,8 @@ import {
   checkPluginDraft,
   type DraftCheck,
   type DraftFile,
+  type EventCatalog,
+  type EventField,
   type DraftRun,
   type DraftTestResult,
   type DraftView,
@@ -29,9 +31,10 @@ import {
   testPluginDraft,
 } from "./api";
 import { CronPicker, detectPreset, buildCron } from "./CronPicker";
+import { EventDataPanel, fieldsFor, useFieldTarget } from "./EventFields";
 import { langOf } from "./codeLang";
 import { slugKey, td } from "./i18n";
-import { errMessage, notifyError } from "./notify";
+import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
   Button,
@@ -45,6 +48,7 @@ import {
   IconCheck,
   IconChevron,
   IconClose,
+  IconDots,
   IconPlus,
   IconTrash,
   Modal,
@@ -66,10 +70,13 @@ const SAVE_DELAY = 800;
 
 export function PluginStudio({
   draftId,
+  refresh,
   onClose,
   onInstall,
 }: {
   draftId: number;
+  // refresh changes when the page applied the draft: what it shows as installed is read again.
+  refresh: number;
   onClose: () => void;
   onInstall: (review: PluginInspection) => void;
 }) {
@@ -82,6 +89,15 @@ export function PluginStudio({
   const [installing, setInstalling] = useState(false);
   const pending = useRef<{ spec?: RuleSpec; files?: DraftFile[] } | null>(null);
   const timer = useRef<number | undefined>(undefined);
+  // inflight: the save on its way. One at a time: two in flight may land in either
+  // order, and the server would keep the older.
+  const inflight = useRef<Promise<boolean> | null>(null);
+  const { confirm, confirmNode } = useConfirm();
+  // The page passes a new onClose on each render; the draft is loaded once per id.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
   // No Escape to close: it is the key that dismisses the editor's completion and
   // the dialogs on top, and a workspace closed by a stray key loses its place.
   useLockBody(true);
@@ -94,30 +110,51 @@ export function PluginStudio({
       })
       .catch((e) => {
         notifyError(errMessage(e));
-        onClose();
+        onCloseRef.current();
       });
-  }, [draftId, onClose]);
+  }, [draftId]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on a refresh from the page only, not on mount
+  useEffect(() => {
+    if (refresh === 0) return;
+    getPluginDraft(draftId)
+      .then((v) => setView((cur) => (cur ? { ...cur, installed: v.installed, draft: v.draft } : v)))
+      .catch(() => {});
+  }, [refresh]);
 
   // flush sends what waits to be saved now: before leaving, testing, installing.
-  const flush = useCallback(async () => {
+  // A save already on its way is waited for first, so what follows (a check, an
+  // install) reads the draft with every edit in it.
+  const flush = useCallback(async (): Promise<boolean> => {
     window.clearTimeout(timer.current);
+    while (inflight.current) await inflight.current;
     const change = pending.current;
     if (!change) return true;
     pending.current = null;
     setSave("saving");
+    const sent = (async () => {
+      try {
+        const v = await savePluginDraft(draftId, change);
+        // What was typed while the save travelled stays: the answer brings the rest
+        // (the files the rules made, the problems, the draft's name).
+        setView((cur) =>
+          cur ? { ...v, spec: change.spec ? cur.spec : v.spec, files: change.files ? cur.files : v.files } : v,
+        );
+        setSave(pending.current ? "dirty" : "saved");
+        return true;
+      } catch (e) {
+        // Not saved: the change waits again, under what was typed since.
+        pending.current = { ...change, ...pending.current };
+        setSave("failed");
+        notifyError(errMessage(e));
+        return false;
+      }
+    })();
+    inflight.current = sent;
     try {
-      const v = await savePluginDraft(draftId, change);
-      // What was typed while the save travelled stays: the answer brings the rest
-      // (the files the rules made, the problems, the draft's name).
-      setView((cur) =>
-        cur ? { ...v, spec: change.spec ? cur.spec : v.spec, files: change.files ? cur.files : v.files } : v,
-      );
-      setSave("saved");
-      return true;
-    } catch (e) {
-      setSave("failed");
-      notifyError(errMessage(e));
-      return false;
+      return await sent;
+    } finally {
+      if (inflight.current === sent) inflight.current = null;
     }
   }, [draftId]);
 
@@ -127,7 +164,27 @@ export function PluginStudio({
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(flush, SAVE_DELAY);
   };
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  // Leaving by the browser's Back (the page unmounts the editor) sends what waits;
+  // closing the tab with something unsaved asks first.
+  useEffect(
+    () => () => {
+      window.clearTimeout(timer.current);
+      if (pending.current) savePluginDraft(draftId, pending.current).catch(() => {});
+    },
+    [draftId],
+  );
+  useEffect(() => {
+    if (save === "saved") return;
+    const ask = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", ask);
+    return () => window.removeEventListener("beforeunload", ask);
+  }, [save]);
+
+  const close = async () => {
+    if ((await flush()) || (await confirm({ title: t("studio.unsavedTitle"), body: t("studio.unsavedBody"), danger: true, confirmLabel: t("studio.closeAnyway") }))) {
+      onClose();
+    }
+  };
 
   const runCheck = async () => {
     if (!(await flush())) return;
@@ -150,7 +207,13 @@ export function PluginStudio({
         setCheck(c);
         return;
       }
-      onInstall(await inspectPluginDraft(draftId));
+      const review = await inspectPluginDraft(draftId);
+      if (review.bumped_to) {
+        // The server raised the version to apply over the installed one: show it.
+        notifySuccess(t("studio.bumped", { v: review.bumped_to }));
+        setView(await getPluginDraft(draftId));
+      }
+      onInstall(review);
     } catch (e) {
       notifyError(errMessage(e));
     } finally {
@@ -180,53 +243,94 @@ export function PluginStudio({
 
   return createPortal(
     <div className="fixed inset-0 z-200 flex flex-col bg-white animate-fade-in">
-      <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-gray-100 px-4 py-2.5">
-        <IconButton title={t("common.close")} onClick={() => flush().then(onClose)}>
-          <IconClose size={18} />
-        </IconButton>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-base font-bold text-ink">{d?.name || t("studio.untitled")}</span>
-            {d && (
-              <Badge color={builder ? "teal" : "gray"} size="xs">
-                {builder ? t("studio.modeBuilder") : t("studio.modeCode")}
-              </Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-2 text-[11px] text-ink-muted">
-            {d?.plugin_id && (
-              <span className="font-mono">
-                {d.plugin_id}@{d.version}
+      <header className="shrink-0 border-b border-gray-100 px-3 py-2.5 sm:px-4">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <IconButton title={t("common.close")} onClick={close}>
+            <IconClose size={18} />
+          </IconButton>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-base font-bold text-ink">{d?.name || t("studio.untitled")}</span>
+              {d && (
+                <Badge color={builder ? "teal" : "gray"} size="xs">
+                  {builder ? t("studio.modeBuilder") : t("studio.modeCode")}
+                </Badge>
+              )}
+            </div>
+            {/* One line, cut at the edge on a phone rather than wrapping into a column. */}
+            <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px] whitespace-nowrap text-ink-muted">
+              {d?.plugin_id && (
+                <span className="shrink-0 font-mono">
+                  {d.plugin_id}@{d.version}
+                </span>
+              )}
+              {/* With the plugin installed, its state says more than "saved". */}
+              <span className={cn("min-w-0 truncate", view?.installed && save === "saved" && "hidden sm:inline")}>
+                <SaveBadge state={save} />
               </span>
-            )}
-            <SaveBadge state={save} />
+              {view?.installed && save === "saved" && (
+                <span className={cn("truncate", view.installed.applied ? "text-success" : "text-warning")}>
+                  ·{" "}
+                  {view.installed.applied
+                    ? t("studio.applied", { v: view.installed.version })
+                    : t("studio.notApplied", { v: view.installed.version })}
+                </span>
+              )}
+            </div>
+          </div>
+          {view && (
+            // One height with the buttons beside it (h-8, a small button's).
+            <div className="hidden sm:block [&>div]:h-8 [&_button]:py-0">
+              <SegmentedControl data={tabs} value={tab} onChange={(v) => setTab(v as Tab)} nav />
+            </div>
+          )}
+          <div className="hidden items-center gap-2 sm:flex">
+            <Button size="sm" className="h-8" variant="light" color="gray" loading={checking} onClick={runCheck}>
+              {t("studio.check")}
+            </Button>
+            <Dropdown
+              width={220}
+              trigger={
+                <Button size="sm" className="h-8" variant="light" color="gray">
+                  {t("studio.download")}
+                </Button>
+              }
+            >
+              <DropdownItem href={pluginDraftDownloadURL(draftId, "package")}>{t("studio.downloadPackage")}</DropdownItem>
+              <DropdownItem href={pluginDraftDownloadURL(draftId, "sources")}>{t("studio.downloadSources")}</DropdownItem>
+            </Dropdown>
+          </div>
+          <Button
+            size="sm"
+            className="h-8 shrink-0"
+            loading={installing}
+            // Nothing to apply: the installed plugin runs this very code.
+            disabled={view?.installed?.applied && save === "saved"}
+            onClick={install}
+          >
+            {view?.installed ? t("studio.apply") : t("studio.install")}
+          </Button>
+          {/* On a phone, check and download go in a menu. */}
+          <div className="sm:hidden">
+            <Dropdown
+              width={230}
+              trigger={
+                <IconButton title={t("studio.more")} variant="subtle" color="gray">
+                  <IconDots size={18} />
+                </IconButton>
+              }
+            >
+              <DropdownItem onClick={runCheck}>{t("studio.check")}</DropdownItem>
+              <DropdownItem href={pluginDraftDownloadURL(draftId, "package")}>{t("studio.downloadPackage")}</DropdownItem>
+              <DropdownItem href={pluginDraftDownloadURL(draftId, "sources")}>{t("studio.downloadSources")}</DropdownItem>
+            </Dropdown>
           </div>
         </div>
         {view && (
-          // One height with the buttons beside it (h-8, a small button's).
-          <div className="order-last w-full sm:order-none sm:w-auto [&>div]:h-8 [&_button]:py-0">
-            <SegmentedControl data={tabs} value={tab} onChange={(v) => setTab(v as Tab)} nav />
+          <div className="mt-2.5 sm:hidden [&>div]:h-8 [&_button]:py-0">
+            <SegmentedControl data={tabs} value={tab} onChange={(v) => setTab(v as Tab)} nav fullWidth />
           </div>
         )}
-        <div className="flex items-center gap-2">
-          <Button size="sm" className="h-8" variant="light" color="gray" loading={checking} onClick={runCheck}>
-            {t("studio.check")}
-          </Button>
-          <Dropdown
-            width={220}
-            trigger={
-              <Button size="sm" className="h-8" variant="light" color="gray">
-                {t("studio.download")}
-              </Button>
-            }
-          >
-            <DropdownItem href={pluginDraftDownloadURL(draftId, "package")}>{t("studio.downloadPackage")}</DropdownItem>
-            <DropdownItem href={pluginDraftDownloadURL(draftId, "sources")}>{t("studio.downloadSources")}</DropdownItem>
-          </Dropdown>
-          <Button size="sm" className="h-8" loading={installing} onClick={install}>
-            {t("studio.install")}
-          </Button>
-        </div>
       </header>
 
       <div className="min-h-0 flex-1">
@@ -236,6 +340,7 @@ export function PluginStudio({
           <BuilderView
             spec={view.spec}
             events={view.events}
+            catalog={view.catalog}
             problems={view.problems}
             onChange={(spec) => {
               setView((cur) => (cur ? { ...cur, spec } : cur));
@@ -264,11 +369,12 @@ export function PluginStudio({
             }}
           />
         ) : (
-          <RunView draftId={draftId} files={view.files} events={view.events} flush={flush} />
+          <RunView draftId={draftId} files={view.files} events={view.events} catalog={view.catalog} flush={flush} />
         )}
       </div>
 
       {check && <CheckDialog check={check} onClose={() => setCheck(null)} />}
+      {confirmNode}
     </div>,
     document.body,
   );
@@ -291,28 +397,17 @@ function SaveBadge({ state }: { state: SaveState }) {
 const OPS: RuleOp[] = ["eq", "ne", "contains", "gt", "lt", "empty", "not_empty"];
 const ACTIONS: RuleActionType[] = ["telegram", "discord", "http", "extend", "enable", "disable", "tag", "untag", "log"];
 const USER_ACTIONS: RuleActionType[] = ["extend", "enable", "disable", "tag", "untag"];
-const FIELDS = [
-  "user.id",
-  "user.name",
-  "user.status",
-  "user.plan_id",
-  "user.lang",
-  "user.telegram_id",
-  "user.external_id",
-  "data.source",
-  "data.amount_rub",
-  "data.plan",
-  "event",
-];
 
 function BuilderView({
   spec,
   events,
+  catalog,
   problems,
   onChange,
 }: {
   spec: RuleSpec;
   events: string[];
+  catalog: EventCatalog;
   problems?: string[];
   onChange: (s: RuleSpec) => void;
 }) {
@@ -330,9 +425,9 @@ function BuilderView({
         {problems && problems.length > 0 && (
           <div className="danger-tint rounded-xl px-4 py-3 text-xs">
             <p className="mb-1 font-semibold text-danger">{t("studio.problems")}</p>
-            <ul className="list-disc pl-4 font-mono text-[11px] text-ink">
+            <ul className="list-disc space-y-1 pl-4 text-xs leading-relaxed whitespace-pre-wrap break-words text-ink">
               {problems.map((p) => (
-                <li key={p}>{p}</li>
+                <li key={p}>{explainProblem(p)}</li>
               ))}
             </ul>
           </div>
@@ -341,7 +436,12 @@ function BuilderView({
         <section className="grid gap-3 sm:grid-cols-2">
           <TextInput label={t("studio.name")} value={spec.name} onChange={(v) => set({ name: v })} />
           <div className="grid grid-cols-[1fr_7rem] gap-3">
-            <TextInput label={t("studio.pluginId")} value={spec.id} onChange={(v) => set({ id: v })} mono />
+            <TextInput
+              label={t("studio.pluginId")}
+              value={spec.id}
+              onChange={(v) => set({ id: v.toLowerCase().replace(/[^a-z0-9-]/g, "") })}
+              mono
+            />
             <TextInput label={t("studio.version")} value={spec.version} onChange={(v) => set({ version: v })} mono />
           </div>
           <div className="sm:col-span-2">
@@ -360,6 +460,7 @@ function BuilderView({
             key={i}
             n={i + 1}
             rule={r}
+            catalog={catalog}
             eventOptions={eventOptions}
             onChange={(nr) => setRule(i, nr)}
             onRemove={spec.rules.length > 1 ? () => set({ rules: spec.rules.filter((_, j) => j !== i) }) : undefined}
@@ -384,12 +485,14 @@ function BuilderView({
 function RuleCard({
   n,
   rule,
+  catalog,
   eventOptions,
   onChange,
   onRemove,
 }: {
   n: number;
   rule: Rule;
+  catalog: EventCatalog;
   eventOptions: { value: string; label: string }[];
   onChange: (r: Rule) => void;
   onRemove?: () => void;
@@ -398,9 +501,21 @@ function RuleCard({
   const set = (patch: Partial<Rule>) => onChange({ ...rule, ...patch });
   const scheduled = rule.schedule !== undefined && rule.event === undefined;
   const conds = rule.conditions ?? [];
+  const infoOf = (event?: string) => catalog.events.find((e) => e.event === event);
+  const info = scheduled ? undefined : infoOf(rule.event);
+  // No user to act on: a schedule, an event about a server or a broadcast, or a
+  // user already deleted.
+  const noUser = scheduled || (info !== undefined && !info.acts);
+  const fields = fieldsFor(catalog, info, scheduled);
+  const target = useFieldTarget();
+  // Actions on a user go with a change to what has none; a rule keeps one action.
+  const withoutUser = (actions: RuleAction[]) => {
+    const left = actions.filter((a) => !USER_ACTIONS.includes(a.type));
+    return left.length > 0 ? left : [{ type: "log" as const, text: "" }];
+  };
 
   return (
-    <section className="rounded-2xl border border-gray-200">
+    <section className="rounded-2xl border border-gray-200" onFocus={target.onFocus} onPointerDown={target.onPointerDown}>
       <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
         <span className="text-xs font-bold text-ink-muted">{t("studio.rule", { n })}</span>
         <input
@@ -433,7 +548,7 @@ function RuleCard({
                     event: undefined,
                     schedule: "0 9 * * *",
                     // No user on a schedule: actions on one go.
-                    actions: rule.actions.filter((a) => !USER_ACTIONS.includes(a.type)),
+                    actions: withoutUser(rule.actions),
                   })
                 : set({ schedule: undefined, event: "user.created" })
             }
@@ -445,8 +560,16 @@ function RuleCard({
               onChange={(s) => set({ schedule: buildCron(s) })}
             />
           ) : (
-            <Select searchable value={rule.event ?? ""} onChange={(v) => set({ event: v })} data={eventOptions} />
+            <Select
+              searchable
+              value={rule.event ?? ""}
+              onChange={(v) =>
+                set(infoOf(v)?.acts === false ? { event: v, actions: withoutUser(rule.actions) } : { event: v })
+              }
+              data={eventOptions}
+            />
           )}
+          <EventDataPanel catalog={catalog} info={info} scheduled={scheduled} onPick={target.put} />
         </Step>
 
         <Step
@@ -471,6 +594,7 @@ function RuleCard({
               // biome-ignore lint/suspicious/noArrayIndexKey: conditions have no id; position is theirs
               key={j}
               cond={c}
+              fields={fields}
               onChange={(nc) => set({ conditions: conds.map((x, k) => (k === j ? nc : x)) })}
               onRemove={() => set({ conditions: conds.filter((_, k) => k !== j) })}
             />
@@ -479,11 +603,12 @@ function RuleCard({
             <Button
               size="xs"
               variant="subtle"
-              onClick={() => set({ conditions: [...conds, { field: "user.lang", op: "eq", value: "" }] })}
+              onClick={() => set({ conditions: [...conds, { field: fields[0]?.path ?? "event", op: "eq", value: "" }] })}
             >
               <IconPlus size={12} /> {t("studio.addCondition")}
             </Button>
           </div>
+          {conds.length > 0 && <p className="text-[11px] text-ink-muted">{t("studio.opsHint")}</p>}
         </Step>
 
         <Step label={t("studio.then")}>
@@ -492,7 +617,7 @@ function RuleCard({
               // biome-ignore lint/suspicious/noArrayIndexKey: actions have no id; position is theirs
               key={j}
               action={a}
-              scheduled={scheduled}
+              noUser={noUser}
               onChange={(na) => set({ actions: rule.actions.map((x, k) => (k === j ? na : x)) })}
               onRemove={rule.actions.length > 1 ? () => set({ actions: rule.actions.filter((_, k) => k !== j) }) : undefined}
             />
@@ -526,10 +651,12 @@ function Step({ label, aside, children }: { label: string; aside?: React.ReactNo
 
 function ConditionRow({
   cond,
+  fields,
   onChange,
   onRemove,
 }: {
   cond: RuleCondition;
+  fields: EventField[];
   onChange: (c: RuleCondition) => void;
   onRemove: () => void;
 }) {
@@ -541,14 +668,17 @@ function ConditionRow({
       <div className="col-span-2 sm:col-span-1">
         <input
           list={listId}
+          data-path=""
           aria-label={t("studio.field")}
           className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 font-mono text-[13px] text-ink outline-none placeholder:text-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25"
           value={cond.field}
           onChange={(e) => onChange({ ...cond, field: e.target.value })}
         />
         <datalist id={listId}>
-          {FIELDS.map((f) => (
-            <option key={f} value={f} />
+          {fields.map((f) => (
+            <option key={f.path} value={f.path}>
+              {td(`evField.${f.hint}`)}
+            </option>
           ))}
         </datalist>
       </div>
@@ -571,18 +701,19 @@ function ConditionRow({
 
 function ActionRow({
   action: a,
-  scheduled,
+  noUser,
   onChange,
   onRemove,
 }: {
   action: RuleAction;
-  scheduled: boolean;
+  // noUser: nothing to act on a user with — a schedule, or an event about none.
+  noUser: boolean;
   onChange: (a: RuleAction) => void;
   onRemove?: () => void;
 }) {
   const { t } = useTranslation();
   const set = (patch: Partial<RuleAction>) => onChange({ ...a, ...patch });
-  const types = ACTIONS.filter((x) => !scheduled || !USER_ACTIONS.includes(x));
+  const types = ACTIONS.filter((x) => !noUser || !USER_ACTIONS.includes(x));
   return (
     <div className="flex flex-col gap-2 rounded-xl bg-gray-50 p-3">
       <div className="flex items-center gap-2">
@@ -599,43 +730,46 @@ function ActionRow({
           </IconButton>
         )}
       </div>
-      {a.type === "telegram" && (
-        <>
+      {/* data-fill: a field picked from the event's data goes into these at the cursor. */}
+      <div data-fill className="flex flex-col gap-2 empty:hidden">
+        {a.type === "telegram" && (
+          <>
+            <Textarea label={t("studio.text")} value={a.text ?? ""} onChange={(v) => set({ text: v })} rows={3} />
+            <p className="text-[11px] text-ink-muted">{t("studio.telegramHint")}</p>
+          </>
+        )}
+        {(a.type === "discord" || a.type === "log") && (
           <Textarea label={t("studio.text")} value={a.text ?? ""} onChange={(v) => set({ text: v })} rows={3} />
-          <p className="text-[11px] text-ink-muted">{t("studio.telegramHint")}</p>
-        </>
-      )}
-      {(a.type === "discord" || a.type === "log") && (
-        <Textarea label={t("studio.text")} value={a.text ?? ""} onChange={(v) => set({ text: v })} rows={3} />
-      )}
-      {a.type === "discord" && <p className="text-[11px] text-ink-muted">{t("studio.discordHint")}</p>}
-      {a.type === "http" && (
-        <>
-          <div className="grid grid-cols-[7rem_1fr] gap-2">
-            <Select
-              value={(a.method ?? "POST").toUpperCase()}
-              onChange={(v) => set({ method: v })}
-              data={["POST", "GET", "PUT", "PATCH", "DELETE"].map((m) => ({ value: m, label: m }))}
-            />
-            <TextInput
-              ariaLabel="URL"
-              value={a.url ?? ""}
-              onChange={(v) => set({ url: v })}
-              placeholder="https://example.com/hook?user={{user.id}}"
+        )}
+        {a.type === "discord" && <p className="text-[11px] text-ink-muted">{t("studio.discordHint")}</p>}
+        {a.type === "http" && (
+          <>
+            <div className="grid grid-cols-[7rem_1fr] gap-2">
+              <Select
+                value={(a.method ?? "POST").toUpperCase()}
+                onChange={(v) => set({ method: v })}
+                data={["POST", "GET", "PUT", "PATCH", "DELETE"].map((m) => ({ value: m, label: m }))}
+              />
+              <TextInput
+                ariaLabel="URL"
+                value={a.url ?? ""}
+                onChange={(v) => set({ url: v })}
+                placeholder="https://example.com/hook?user={{user.id}}"
+                mono
+              />
+            </div>
+            <Textarea
+              label={t("studio.body")}
+              value={a.body ?? ""}
+              onChange={(v) => set({ body: v })}
+              rows={3}
               mono
+              placeholder={t("studio.bodyPlaceholder")}
             />
-          </div>
-          <Textarea
-            label={t("studio.body")}
-            value={a.body ?? ""}
-            onChange={(v) => set({ body: v })}
-            rows={3}
-            mono
-            placeholder={t("studio.bodyPlaceholder")}
-          />
-          <Checkbox checked={!!a.auth} onChange={(v) => set({ auth: v })} label={t("studio.httpAuth")} />
-        </>
-      )}
+            <Checkbox checked={!!a.auth} onChange={(v) => set({ auth: v })} label={t("studio.httpAuth")} />
+          </>
+        )}
+      </div>
       {a.type === "extend" && (
         <TextInput
           label={t("studio.days")}
@@ -795,6 +929,7 @@ function CodeView({
           ) : (
             <Suspense fallback={<CenterLoader />}>
               <CodeEditor
+                docKey={file.path}
                 value={file.text ?? ""}
                 onChange={builder ? undefined : setText}
                 lang={langOf(file.path)}
@@ -1009,17 +1144,18 @@ function StateMark({ state, size }: { state: TestState | "broken"; size: number 
 
 // --- trial run ---
 
-const SAMPLE_USER = { id: 1, name: "test-user", status: "active", enabled: true, plan_id: 0, telegram_id: 0, lang: "ru" };
 
 function RunView({
   draftId,
   files,
   events,
+  catalog,
   flush,
 }: {
   draftId: number;
   files: DraftFile[];
   events: string[];
+  catalog: EventCatalog;
   flush: () => Promise<boolean>;
 }) {
   const { t } = useTranslation();
@@ -1033,7 +1169,10 @@ function RunView({
       return "user.created";
     }
   });
-  const [data, setData] = useState(() => JSON.stringify(SAMPLE_USER, null, 2));
+  // The event's data starts as a sample shaped as the panel sends it.
+  const sampleOf = (ev: string) =>
+    JSON.stringify(catalog.events.find((e) => e.event === ev)?.sample ?? {}, null, 2);
+  const [data, setData] = useState(() => sampleOf(event));
   const exportsOf = useMemo(() => {
     const main = files.find((f) => f.path === "main.js")?.text ?? "";
     return [...main.matchAll(/export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g)].map((m) => m[1]);
@@ -1093,7 +1232,10 @@ function RunView({
             <Select
               searchable
               value={event}
-              onChange={setEvent}
+              onChange={(v) => {
+                setEvent(v);
+                setData(sampleOf(v));
+              }}
               data={events.map((k) => ({ value: k, label: `${td(`webhookEvent.${slugKey(k)}`)} · ${k}` }))}
             />
             <JSONField label={t("studio.eventData")} value={data} onChange={setData} />
@@ -1200,9 +1342,9 @@ function CheckDialog({ check, onClose }: { check: DraftCheck; onClose: () => voi
   return (
     <Modal open onClose={onClose} title={check.ok ? t("studio.checkOK") : t("studio.checkFailed")}>
       {!check.ok ? (
-        <ul className="list-disc pl-4 font-mono text-[11px] text-ink">
+        <ul className="list-disc space-y-1 pl-4 text-xs leading-relaxed whitespace-pre-wrap break-words text-ink">
           {(check.problems ?? []).map((p) => (
-            <li key={p}>{p}</li>
+            <li key={p}>{explainProblem(p)}</li>
           ))}
         </ul>
       ) : (
@@ -1222,4 +1364,38 @@ function CheckDialog({ check, onClose }: { check: DraftCheck; onClose: () => voi
       )}
     </Modal>
   );
+}
+
+// explainProblem puts the package checker's most common findings in the admin's
+// words; anything else is shown as the checker wrote it.
+const FIELD_KEYS: Record<string, string> = { text: "studio.text", url: "URL", tag: "studio.tag", days: "studio.days" };
+
+function explainProblem(p: string): string {
+  let m: RegExpMatchArray | null;
+  if ((m = p.match(/^id(?: "(.*)")?: 3-40 characters/))) return m[1] ? td("studio.pId", { id: m[1] }) : td("studio.pIdEmpty");
+  if ((m = p.match(/^id "(.*)": reserved/))) return td("studio.pIdReserved", { id: m[1] });
+  if ((m = p.match(/^version(?: "(.*)")?: (?:must be )?X\.Y\.Z/))) return td("studio.pVersion", { v: m[1] ?? "" });
+  if (/^name: required/.test(p)) return td("studio.pName");
+  if ((m = p.match(/^main\.js does not export what plugin\.json declares: (.*)$/))) return td("studio.pExports", { list: m[1] });
+  if ((m = p.match(/^main\.js: ([\s\S]*)$/))) return td("studio.pMain", { msg: m[1] });
+  if ((m = p.match(/^migration ([^:]+): ([\s\S]*)$/))) return td("studio.pMigration", { name: m[1], msg: m[2] });
+  if ((m = p.match(/^provides\.(\w+) needs the "([\w.]+)" permission/)))
+    return td("studio.pPerm", { point: m[1], perm: m[2] });
+  if ((m = p.match(/^rules\[(\d+)\]: choose an event or a schedule/))) return td("studio.pWhen", { rule: Number(m[1]) + 1 });
+  const at = (m: RegExpMatchArray) => ({ rule: Number(m[1]) + 1, action: Number(m[2]) + 1 });
+  if ((m = p.match(/^rules\[(\d+)\]\.actions\[(\d+)\]: an extension changes the limits again/))) return td("studio.pLoopExtend", at(m));
+  if ((m = p.match(/^rules\[(\d+)\]\.actions\[(\d+)\]: with the rule that enables a disabled user/))) return td("studio.pLoopSwitch", at(m));
+  if ((m = p.match(/^rules\[(\d+)\]\.actions\[(\d+)\]\.text: up to (\d+) characters — Discord/))) return td("studio.pDiscordLong", { ...at(m), n: m[3] });
+  if ((m = p.match(/^rules: HTTP requests to at most (\d+) different hosts/))) return td("studio.pHosts", { n: m[1] });
+  if ((m = p.match(/^rules\[(\d+)\]\.actions\[(\d+)\]\.url: ([\s\S]*)$/))) return td("studio.pUrl", { ...at(m), msg: m[3] });
+  if ((m = p.match(/^rules\[(\d+)\]\.actions\[(\d+)\]\.\w+: unknown format \|(\w*) — (.*)$/)))
+    return td("studio.pFormat", { rule: Number(m[1]) + 1, action: Number(m[2]) + 1, format: m[3], list: m[4] });
+  if ((m = p.match(/^rules\[(\d+)\]\.actions\[(\d+)\]: the (\S+) event is not about a user/)))
+    return td("studio.pNoUser", { rule: Number(m[1]) + 1, action: Number(m[2]) + 1, event: m[3] });
+  if ((m = p.match(/^rules\[(\d+)\]\.actions\[(\d+)\]\.(\w+): required/))) {
+    const key = FIELD_KEYS[m[3]];
+    const field = key?.startsWith("studio.") ? td(key) : (key ?? m[3]);
+    return td("studio.pRequired", { rule: Number(m[1]) + 1, action: Number(m[2]) + 1, field });
+  }
+  return p;
 }

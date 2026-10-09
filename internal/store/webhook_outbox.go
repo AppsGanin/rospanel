@@ -155,6 +155,7 @@ func (s *Store) PendingWebhookDeliveries() (int, error) {
 // DropPluginDeliveries removes every pending delivery to a plugin — one that was
 // switched off, paused or removed gets nothing it missed meanwhile.
 func (s *Store) DropPluginDeliveries(pluginID string) error {
-	_, err := s.db.Exec(`DELETE FROM webhook_outbox WHERE plugin_id = ?`, pluginID)
+	// plugin_id <> '' lets SQLite use the partial index idx_outbox_plugin_due.
+	_, err := s.db.Exec(`DELETE FROM webhook_outbox WHERE plugin_id = ? AND plugin_id <> ''`, pluginID)
 	return err
 }

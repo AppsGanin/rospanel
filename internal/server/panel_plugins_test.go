@@ -96,7 +96,7 @@ func TestPluginAdminFlow(t *testing.T) {
 		t.Fatalf("install: %d %v", code, out)
 	}
 
-	if code, out := do(owner, "POST", "/api/plugins/hello/enable", "", nil); code != 422 || !strings.Contains(out["error"].(string), "token") {
+	if code, out := do(owner, "POST", "/api/plugins/hello/enable", "", nil); code != 409 || out["code"] != "err.pluginSetup" || !strings.Contains(out["error"].(string), "token") {
 		t.Fatalf("enabled without its settings: %d %v", code, out)
 	}
 	if code, _ := do(owner, "POST", "/api/plugins/hello/config", "application/json", []byte(`{"values":{"token":"t0k"}}`)); code != 200 {
@@ -125,7 +125,10 @@ func TestPluginAdminFlow(t *testing.T) {
 	if code, out := do(owner, "POST", "/api/plugins/hello/disable", "", nil); code != 200 || out["status"] != "disabled" {
 		t.Fatalf("disable: %d %v", code, out)
 	}
-	if code, _ := do(owner, "DELETE", "/api/plugins/hello", "", nil); code != 200 {
+	if code, _ := do(owner, "DELETE", "/api/plugins/hello", "application/json", []byte(`{"current_password":"wrong"}`)); code != http.StatusForbidden {
+		t.Fatalf("uninstalled with a wrong password: %d", code)
+	}
+	if code, _ := do(owner, "DELETE", "/api/plugins/hello", "application/json", []byte(`{"current_password":"a-password"}`)); code != 200 {
 		t.Fatalf("uninstall: %d", code)
 	}
 	if code, out := do(owner, "POST", "/api/plugins/hello/enable", "", nil); code != 404 || out["code"] != "err.pluginNotFound" {

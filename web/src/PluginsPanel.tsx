@@ -1,17 +1,21 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import {
+  checkPluginDraft,
   configurePlugin,
   createPluginDraft,
+  deletePluginDraft,
   disablePlugin,
   enablePlugin,
-  getPluginCode,
   getPluginLogs,
+  inspectPluginDraft,
   inspectPluginFile,
   inspectPluginURL,
   installPlugin,
+  listPluginDrafts,
   listPlugins,
   type Perm,
+  type PluginDraft,
   type PluginField,
   type PluginInfo,
   type PluginInspection,
@@ -25,7 +29,7 @@ import {
 import { fmtBytes, fmtStamp } from "./format";
 import i18n, { td } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
-import { DraftsPanel } from "./PluginDrafts";
+import { CreatePlugin, DraftRow } from "./PluginDrafts";
 import { forgetPluginActions, PluginActionButtons } from "./PluginSurfaces";
 import { useCan } from "./role";
 import {
@@ -36,8 +40,9 @@ import {
   Code,
   cn,
   EmptyState,
-  IconBraces,
+  HintDot,
   IconButton,
+  IconClose,
   IconExport,
   IconGear,
   IconPencil,
@@ -47,11 +52,13 @@ import {
   Modal,
   Panel,
   PasswordInput,
+  SegmentedControl,
   Select,
   Spinner,
   Switch,
   Textarea,
   TextInput,
+  ToolDialog,
   useConfirm,
 } from "./ui";
 
@@ -117,22 +124,18 @@ function points(m: PluginManifest): { key: string; text: string }[] {
   return out;
 }
 
-const STATUS: Record<PluginInfo["status"], { key: string; color: "green" | "gray" | "orange" | "red" }> = {
-  active: { key: "plugins.statusActive", color: "green" },
-  disabled: { key: "plugins.statusDisabled", color: "gray" },
-  paused: { key: "plugins.statusPaused", color: "orange" },
-  error: { key: "plugins.statusError", color: "red" },
-};
-
 export function PluginsPanel() {
   const { t } = useTranslation();
   const canManage = useCan("plugins.manage");
   const [plugins, setPlugins] = useState<PluginInfo[] | null>(null);
   const [installing, setInstalling] = useState<{ update?: PluginInfo; review?: PluginInspection } | null>(null);
   const [studio, setStudio] = useState<number | null>(null);
-  const [draftsKey, setDraftsKey] = useState(0);
+  const [studioRefresh, setStudioRefresh] = useState(0);
+  // Plugins written in the panel: beside the installed one of their id, or on their
+  // own in the list while not installed. Managing only — they are code in the making.
+  const [drafts, setDrafts] = useState<PluginDraft[]>([]);
+  const { confirm, confirmNode } = useConfirm();
   const [logsOf, setLogsOf] = useState<PluginInfo | null>(null);
-  const [codeOf, setCodeOf] = useState<PluginInfo | null>(null);
   const [removing, setRemoving] = useState<PluginInfo | null>(null);
 
   const load = () =>
@@ -142,10 +145,57 @@ export function PluginsPanel() {
         setPlugins((cur) => cur ?? []);
         notifyError(errMessage(e));
       });
+  const loadDrafts = () => {
+    if (!canManage) return;
+    listPluginDrafts()
+      .then((r) => setDrafts(r.drafts ?? []))
+      .catch((e) => notifyError(errMessage(e)));
+  };
   // biome-ignore lint/correctness/useExhaustiveDependencies: once, on mount
   useEffect(() => {
     load();
+    loadDrafts();
   }, []);
+
+  const openDraft = async (pluginID: string) => {
+    try {
+      // The server hands back the draft the plugin has, or starts one from it.
+      const v = await createPluginDraft("installed", pluginID);
+      setStudio(v.draft.id);
+    } catch (e) {
+      notifyError(errMessage(e));
+    }
+  };
+  // installDraft checks a draft and, if it holds, goes on to the consent screen.
+  const installDraft = async (d: PluginDraft) => {
+    try {
+      const c = await checkPluginDraft(d.id);
+      if (!c.ok) {
+        notifyError(t("studio.checkFailed"));
+        setStudio(d.id); // the editor says what is wrong
+        return;
+      }
+      setInstalling({ review: await inspectPluginDraft(d.id) });
+    } catch (e) {
+      notifyError(errMessage(e));
+    }
+  };
+  const removeDraft = async (d: PluginDraft) => {
+    const ok = await confirm({
+      title: t("studio.deleteDraft", { name: d.name || d.plugin_id }),
+      body: t("studio.deleteDraftBody"),
+      confirmLabel: t("common.delete"),
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await deletePluginDraft(d.id);
+      setDrafts((cur) => cur.filter((x) => x.id !== d.id));
+    } catch (e) {
+      notifyError(errMessage(e));
+    }
+  };
+  const looseDrafts = drafts.filter((d) => !d.installed);
 
   const replace = (p: PluginInfo) =>
     setPlugins((cur) => (cur ?? []).map((x) => (x.id === p.id ? p : x)));
@@ -172,7 +222,7 @@ export function PluginsPanel() {
         <p className="border-b border-brand-600/10 px-3.5 py-3 text-xs text-ink-muted">{t("plugins.intro")}</p>
         {plugins === null ? (
           <CenterLoader />
-        ) : plugins.length === 0 ? (
+        ) : plugins.length === 0 && looseDrafts.length === 0 ? (
           <EmptyState title={t("plugins.empty")} body={t("plugins.emptyHint")} />
         ) : (
           <div className="divide-y divide-brand-600/10">
@@ -181,37 +231,37 @@ export function PluginsPanel() {
                 key={p.id}
                 plugin={p}
                 canManage={canManage}
+                pendingDraft={drafts.find((d) => d.plugin_id === p.id && !d.applied)}
                 onChange={replace}
                 onLogs={() => setLogsOf(p)}
-                onCode={() => setCodeOf(p)}
                 onUpdate={() => setInstalling({ update: p })}
-                onEdit={async () => {
-                  try {
-                    const v = await createPluginDraft("installed", p.id);
-                    setDraftsKey((k) => k + 1);
-                    setStudio(v.draft.id);
-                  } catch (e) {
-                    notifyError(errMessage(e));
-                  }
-                }}
+                onEdit={() => openDraft(p.id)}
                 onRemove={() => setRemoving(p)}
                 onReload={load}
+              />
+            ))}
+            {looseDrafts.map((d) => (
+              <DraftRow
+                key={`draft-${d.id}`}
+                draft={d}
+                onOpen={() => setStudio(d.id)}
+                onInstall={() => installDraft(d)}
+                onRemove={() => removeDraft(d)}
               />
             ))}
           </div>
         )}
       </Panel>
-
-
-      {canManage && <DraftsPanel key={draftsKey} onOpen={setStudio} />}
+      {confirmNode}
 
       {studio !== null && (
         <Suspense fallback={null}>
           <PluginStudio
             draftId={studio}
+            refresh={studioRefresh}
             onClose={() => {
               setStudio(null);
-              setDraftsKey((k) => k + 1);
+              loadDrafts();
             }}
             onInstall={(review) => {
               const installed = (plugins ?? []).find((x) => x.id === review.manifest.id);
@@ -226,15 +276,21 @@ export function PluginsPanel() {
           update={installing.update}
           initial={installing.review}
           onClose={() => setInstalling(null)}
+          onCreated={(id) => {
+            setInstalling(null);
+            loadDrafts();
+            setStudio(id);
+          }}
           onDone={() => {
             setInstalling(null);
+            loadDrafts();
+            setStudioRefresh((n) => n + 1); // an open editor shows the draft as applied
             forgetPluginActions();
             load();
           }}
         />
       )}
       {logsOf && <LogsDialog plugin={logsOf} onClose={() => setLogsOf(null)} />}
-      {codeOf && <CodeDialog plugin={codeOf} onClose={() => setCodeOf(null)} />}
       {removing && (
         <RemoveDialog
           plugin={removing}
@@ -255,17 +311,18 @@ function PluginRow({
   canManage,
   onChange,
   onLogs,
-  onCode,
   onUpdate,
   onEdit,
   onRemove,
   onReload,
+  pendingDraft,
 }: {
   plugin: PluginInfo;
+  // pendingDraft: the plugin's draft in the editor, with changes not applied to it.
+  pendingDraft?: PluginDraft;
   canManage: boolean;
   onChange: (p: PluginInfo) => void;
   onLogs: () => void;
-  onCode: () => void;
   onUpdate: () => void;
   onEdit: () => void;
   onRemove: () => void;
@@ -274,12 +331,11 @@ function PluginRow({
   onReload: () => void;
 }) {
   const { t } = useTranslation();
-  const { confirm, confirmNode } = useConfirm();
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const m = p.manifest;
-  const status = STATUS[p.status] ?? STATUS.disabled;
   const hasSettings = (m?.settings?.length ?? 0) > 0;
+  const startAgain = canManage && p.enabled && p.status !== "active";
 
   const run = async (fn: () => Promise<PluginInfo>, ok?: (p: PluginInfo) => string) => {
     setBusy(true);
@@ -302,86 +358,42 @@ function PluginRow({
     forgetPluginActions();
     return run(() => (on ? enablePlugin(p.id) : disablePlugin(p.id)));
   };
-  const rollback = async () => {
-    if (
-      !(await confirm({
-        title: t("plugins.rollbackTitle", { v: p.prev_version }),
-        body: t("plugins.rollbackConfirm"),
-        danger: true,
-      }))
-    ) {
-      return;
-    }
-    forgetPluginActions();
-    await run(
-      () => rollbackPlugin(p.id),
-      (n) => t("plugins.rolledBack", { v: n.version }),
+  const [rollingBack, setRollingBack] = useState(false);
+  const rollback = () => setRollingBack(true);
+
+  // What is wrong with the plugin, behind the dot by its name: the list stays a list
+  // of names, and the reasons are a hover away.
+  const issues: ReactNode[] = [];
+  if (p.status === "error" || p.status === "paused") {
+    issues.push(
+      <p key="status" className="font-semibold">
+        {t(p.status === "error" ? "plugins.errorWhy" : "plugins.pausedWhy")}
+      </p>,
     );
-  };
+  }
+  if (p.status_error && p.status !== "active") {
+    issues.push(
+      <p key="err" className="whitespace-pre-wrap break-words font-mono text-[11px] text-danger">
+        {p.status_error}
+      </p>,
+    );
+  }
+  if (p.retry_at && p.status !== "active") {
+    issues.push(
+      <p key="retry" className="text-ink-muted">
+        {t("plugins.retryAt", { at: fmtStamp(p.retry_at) })}
+      </p>,
+    );
+  }
+  if (p.missing_setup && p.missing_setup.length > 0 && p.status !== "active") {
+    issues.push(<p key="setup">{t("plugins.setupFirst", { list: settingNames(m, p.missing_setup) })}</p>);
+  }
+  if (pendingDraft && canManage) {
+    issues.push(<p key="draft">{t("plugins.draftPending")}</p>);
+  }
 
-  return (
-    <div className="flex flex-col gap-2 px-3.5 py-3">
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="text-sm font-semibold text-ink">{pickText(m?.name) || p.id}</span>
-            <span className="text-xs text-ink-muted">{t("plugins.version", { v: p.version })}</span>
-            <Badge color={status.color} size="xs">
-              {td(status.key)}
-            </Badge>
-          </div>
-          {m?.description && <p className="mt-0.5 text-xs text-ink-muted">{pickText(m.description)}</p>}
-          {p.status_error && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-xs text-danger">{p.status_error}</p>
-          )}
-          {p.retry_at && p.status !== "active" && (
-            <p className="mt-1 text-xs text-ink-muted">{t("plugins.retryAt", { at: fmtStamp(p.retry_at) })}</p>
-          )}
-          {p.missing_setup && p.missing_setup.length > 0 && p.status !== "active" && (
-            <p className="mt-1 text-xs text-warning">
-              {t("plugins.setupFirst", { list: settingNames(m, p.missing_setup) })}
-            </p>
-          )}
-          <p className="mt-1 text-[11px] text-ink-muted">
-            {[m?.author && t("plugins.by", { author: m.author }), t("plugins.db", { size: fmtBytes(p.db_bytes) })]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
-        </div>
-        <Switch
-          checked={p.enabled}
-          disabled={!canManage || busy}
-          onChange={toggle}
-          label={t("plugins.enabledLabel", { name: pickText(m?.name) || p.id })}
-        />
-      </div>
-
-      {p.status === "active" && p.http_url && (
-        <div>
-          <p className="mb-1 text-[11px] text-ink-muted">{t("plugins.httpUrl")}</p>
-          <Code block copy>
-            {p.http_url}
-          </Code>
-        </div>
-      )}
-      {p.status === "active" && p.payment_key && (
-        <p className="text-[11px] text-ink-muted">{t("plugins.paymentHint")}</p>
-      )}
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        {/* What asks to be done, in words; the rest are the icons on the right. */}
-        {canManage && p.enabled && p.status !== "active" && (
-          <Button size="xs" variant="light" loading={busy} onClick={() => toggle(true)}>
-            {t("plugins.startAgain")}
-          </Button>
-        )}
-        {canManage && hasSettings && (p.missing_setup?.length ?? 0) > 0 && (
-          <Button size="xs" onClick={() => setOpen(true)}>
-            {t("plugins.fillSettings")}
-          </Button>
-        )}
-        {p.status === "active" && <PluginActionButtons scope="global" plugin={p.id} />}
-        <div className="ml-auto flex items-center gap-0.5">
+  const tools = (
+    <>
           {hasSettings && (
             <IconButton title={t("plugins.settings")} variant="subtle" color="gray" nav onClick={() => setOpen(true)}>
               <IconGear size={16} />
@@ -389,9 +401,6 @@ function PluginRow({
           )}
           <IconButton title={t("plugins.logs")} variant="subtle" color="gray" nav onClick={onLogs}>
             <IconTerminal size={16} />
-          </IconButton>
-          <IconButton title={t("plugins.code")} variant="subtle" color="gray" nav onClick={onCode}>
-            <IconBraces size={16} />
           </IconButton>
           {canManage && (
             <>
@@ -417,9 +426,80 @@ function PluginRow({
               </IconButton>
             </>
           )}
+    </>
+  );
+
+  return (
+    <div className="flex flex-col gap-1.5 px-3.5 py-2.5">
+      {/* The head: name, version, the tools and the switch. What runs is what the
+          switch says; anything wrong besides is the dot by the name. */}
+      <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="break-words text-sm font-semibold text-ink">{pickText(m?.name) || p.id}</span>
+          <span className="text-xs text-ink-muted">{t("plugins.version", { v: p.version })}</span>
+          {issues.length > 0 && (
+            <HintDot color={p.status === "error" ? "red" : "orange"} label={t("plugins.issues")}>
+              <div className="flex flex-col gap-1.5">{issues}</div>
+            </HintDot>
+          )}
         </div>
+        {/* The tools: beside the switch on a wide screen, a row of their own under the
+            text on a phone — beside it they would squeeze the head. */}
+        {/* -my-1: the 32px buttons must not make the head taller than its text. */}
+        <div className="-my-1 hidden shrink-0 items-center gap-0.5 sm:flex">{tools}</div>
+        <Switch
+          checked={p.enabled}
+          disabled={!canManage || busy}
+          onChange={toggle}
+          label={t("plugins.enabledLabel", { name: pickText(m?.name) || p.id })}
+        />
       </div>
 
+      {/* Under the head, the full width of the card. */}
+      <div className="-mt-0.5 min-w-0">
+        {m?.description && <p className="break-words text-xs text-ink-muted">{pickText(m.description)}</p>}
+        <p className="mt-0.5 text-[11px] text-ink-muted">
+          {[m?.author && t("plugins.by", { author: m.author }), t("plugins.db", { size: fmtBytes(p.db_bytes) })]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      </div>
+
+      {p.status === "active" && p.http_url && (
+        <div>
+          <p className="mb-1 text-[11px] text-ink-muted">{t("plugins.httpUrl")}</p>
+          <Code block copy>
+            {p.http_url}
+          </Code>
+        </div>
+      )}
+      {p.status === "active" && p.payment_key && (
+        <p className="text-[11px] text-ink-muted">{t("plugins.paymentHint")}</p>
+      )}
+
+      <div className="-ml-1.5 flex items-center gap-0.5 sm:hidden">{tools}</div>
+      {(startAgain || p.status === "active") && (
+        <div className="flex flex-wrap items-center gap-1.5 empty:hidden">
+          {startAgain && (
+            <Button size="xs" variant="light" loading={busy} onClick={() => toggle(true)}>
+              {t("plugins.startAgain")}
+            </Button>
+          )}
+          {p.status === "active" && <PluginActionButtons scope="global" plugin={p.id} />}
+        </div>
+      )}
+
+      {rollingBack && (
+        <RollbackDialog
+          plugin={p}
+          onClose={() => setRollingBack(false)}
+          onDone={(next) => {
+            setRollingBack(false);
+            forgetPluginActions();
+            onChange(next);
+          }}
+        />
+      )}
       {open && m && (
         <SettingsDialog
           // A new package (update, rollback) brings its own fields: start the form over.
@@ -435,7 +515,6 @@ function PluginRow({
           onFailed={onReload}
         />
       )}
-      {confirmNode}
     </div>
   );
 }
@@ -476,15 +555,18 @@ function SettingsDialog({
     return v;
   }, [fields, plugin.config]);
   const [values, setValues] = useState(initial);
+  // Stored secrets marked to go: a blank secret keeps what is stored, so emptying one
+  // is said in so many words.
+  const [cleared, setCleared] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: string) => setValues((cur) => ({ ...cur, [k]: v }));
-  const dirty = fields.some((f) => values[f.key] !== initial[f.key]);
+  const dirty = cleared.length > 0 || fields.some((f) => values[f.key] !== initial[f.key]);
   const missing = plugin.missing_setup ?? [];
 
   const save = async () => {
     setSaving(true);
     try {
-      onSaved(await configurePlugin(plugin.id, values));
+      onSaved(await configurePlugin(plugin.id, values, cleared));
       onClose();
     } catch (e) {
       notifyError(errMessage(e));
@@ -555,34 +637,75 @@ function SettingsDialog({
           } else if (f.kind === "textarea") {
             input = <Textarea value={values[f.key]} onChange={(v) => set(f.key, v)} rows={4} />;
           } else if (f.kind === "secret") {
+            const goes = cleared.includes(f.key);
+            // The cross: what was typed goes; with nothing typed, the stored secret is
+            // marked to go — and the mark can be taken back.
+            const canClear = canManage && (values[f.key] !== "" || (secretSet && !goes));
             input = (
-              <PasswordInput
-                ariaLabel={label}
-                value={values[f.key]}
-                onChange={(v) => set(f.key, v)}
-                placeholder={secretSet ? t("plugins.secretKeep") : (f.placeholder ?? "")}
-                disabled={!canManage}
-              />
+              <div className="relative">
+                <PasswordInput
+                  ariaLabel={label}
+                  value={values[f.key]}
+                  onChange={(v) => set(f.key, v)}
+                  placeholder={goes ? t("plugins.secretGoes") : secretSet ? t("plugins.secretKeep") : (f.placeholder ?? "")}
+                  disabled={!canManage || goes}
+                  className="pr-16"
+                />
+                {(canClear || goes) && (
+                  <button
+                    type="button"
+                    title={goes ? t("plugins.secretUndo") : t("plugins.clearValue")}
+                    aria-label={goes ? t("plugins.secretUndo") : t("plugins.clearValue")}
+                    className="absolute top-1/2 right-9 -translate-y-1/2 p-1 text-gray-400 transition hover:text-gray-600"
+                    onClick={() => {
+                      if (goes) setCleared((c) => c.filter((k) => k !== f.key));
+                      else if (values[f.key] !== "") set(f.key, "");
+                      else setCleared((c) => [...c, f.key]);
+                    }}
+                  >
+                    {goes ? <IconRestart size={14} /> : <IconClose size={14} />}
+                  </button>
+                )}
+              </div>
             );
           } else {
             input = (
-              <TextInput
-                ariaLabel={label}
-                value={values[f.key]}
-                onChange={(v) => set(f.key, v)}
-                placeholder={f.placeholder ?? ""}
-                type={f.kind === "number" ? "number" : undefined}
-                disabled={!canManage}
-              />
+              <div className="relative">
+                <TextInput
+                  ariaLabel={label}
+                  value={values[f.key]}
+                  onChange={(v) => set(f.key, v)}
+                  placeholder={f.placeholder ?? ""}
+                  type={f.kind === "number" ? "number" : undefined}
+                  disabled={!canManage}
+                  className="pr-9"
+                />
+                {canManage && values[f.key] !== "" && (
+                  <button
+                    type="button"
+                    title={t("plugins.clearValue")}
+                    aria-label={t("plugins.clearValue")}
+                    className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-gray-400 transition hover:text-gray-600"
+                    onClick={() => set(f.key, "")}
+                  >
+                    <IconClose size={14} />
+                  </button>
+                )}
+              </div>
             );
           }
           return (
             <div key={f.key} className="border-t border-gray-100 py-3.5 first:border-t-0 first:pt-0 last:pb-0">
               <div className="mb-1.5 flex flex-wrap items-center gap-2">
                 <span className="text-sm font-semibold text-ink">{label}</span>
-                {secretSet && (
+                {secretSet && !cleared.includes(f.key) && (
                   <Badge color="green" size="xs">
                     {t("plugins.secretIsSet")}
+                  </Badge>
+                )}
+                {cleared.includes(f.key) && (
+                  <Badge color="red" size="xs">
+                    {t("plugins.secretWillGo")}
                   </Badge>
                 )}
                 {needed && (
@@ -609,12 +732,15 @@ function InstallDialog({
   initial,
   onClose,
   onDone,
+  onCreated,
 }: {
   update?: PluginInfo;
   // initial: a package already read — a draft from the editor — straight to consent.
   initial?: PluginInspection;
   onClose: () => void;
   onDone: () => void;
+  // onCreated: a plugin started here, to write in the editor (Add, not Update).
+  onCreated?: (draftId: number) => void;
 }) {
   const { t } = useTranslation();
   const [checking, setChecking] = useState(false);
@@ -694,11 +820,23 @@ function InstallDialog({
       }
     >
       {!review ? (
-        <PackagePicker
-          checking={checking}
-          onFile={(f) => inspect(() => inspectPluginFile(f))}
-          onURL={(u) => inspect(() => inspectPluginURL(u))}
-        />
+        <div className="flex flex-col gap-5">
+          <PackagePicker
+            checking={checking}
+            onFile={(f) => inspect(() => inspectPluginFile(f))}
+            onURL={(u) => inspect(() => inspectPluginURL(u))}
+          />
+          {!update && onCreated && (
+            <>
+              <div className="flex items-center gap-3 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
+                <span className="h-px flex-1 bg-gray-200" />
+                {t("plugins.orCreate")}
+                <span className="h-px flex-1 bg-gray-200" />
+              </div>
+              <CreatePlugin onCreated={onCreated} />
+            </>
+          )}
+        </div>
       ) : (
         <Consent review={review} password={password} onPassword={setPassword} />
       )}
@@ -936,15 +1074,37 @@ function LogsDialog({ plugin, onClose }: { plugin: PluginInfo; onClose: () => vo
     const id = setInterval(load, 5000);
     return () => clearInterval(id);
   }, [plugin.id]);
+  // The same dialog and filters as the panel's and Xray's logs: the newest line on
+  // top, the level to show at the head.
+  const [level, setLevel] = useState("all");
+  const shown = (lines ?? []).filter((l) => level === "all" || l.level === level);
   return (
-    <Modal open onClose={onClose} size="xl" title={t("plugins.logsTitle", { name: pickText(plugin.manifest?.name) || plugin.id })}>
+    <ToolDialog
+      title={t("plugins.logsTitle", { name: pickText(plugin.manifest?.name) || plugin.id })}
+      onClose={onClose}
+      headerExtra={
+        <SegmentedControl
+          nav
+          value={level}
+          onChange={setLevel}
+          data={[
+            { value: "all", label: t("logs.all") },
+            { value: "info", label: t("logs.info") },
+            { value: "warn", label: t("logs.warning") },
+            { value: "error", label: t("logs.error") },
+          ]}
+        />
+      }
+    >
       {lines === null ? (
         <CenterLoader />
-      ) : lines.length === 0 ? (
-        <p className="py-6 text-center text-xs text-ink-muted">{t("plugins.logsEmpty")}</p>
+      ) : shown.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center bg-gray-50 text-xs text-ink-muted">
+          {t("plugins.logsEmpty")}
+        </div>
       ) : (
-        <div className="max-h-[60vh] overflow-auto rounded-lg bg-gray-50 p-2 font-mono text-[11px] leading-relaxed">
-          {[...lines].reverse().map((l, i) => (
+        <div className="flex-1 overflow-auto bg-gray-50 p-3 font-mono text-xs leading-relaxed">
+          {[...shown].reverse().map((l, i) => (
             <div
               // biome-ignore lint/suspicious/noArrayIndexKey: a log has no ids, and it only grows
               key={i}
@@ -959,30 +1119,56 @@ function LogsDialog({ plugin, onClose }: { plugin: PluginInfo; onClose: () => vo
           ))}
         </div>
       )}
-    </Modal>
+    </ToolDialog>
   );
 }
 
-function CodeDialog({ plugin, onClose }: { plugin: PluginInfo; onClose: () => void }) {
+// RollbackDialog puts the previous version back, its data as of the update: what
+// the plugin wrote since goes, so the password is asked, as for removal.
+function RollbackDialog({
+  plugin,
+  onClose,
+  onDone,
+}: {
+  plugin: PluginInfo;
+  onClose: () => void;
+  onDone: (p: PluginInfo) => void;
+}) {
   const { t } = useTranslation();
-  const [code, setCode] = useState<string | null>(null);
-  const [failed, setFailed] = useState("");
-  useEffect(() => {
-    getPluginCode(plugin.id)
-      .then((r) => setCode(r.code ?? ""))
-      .catch((e) => setFailed(errMessage(e)));
-  }, [plugin.id]);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    try {
+      const next = await rollbackPlugin(plugin.id, password);
+      notifySuccess(t("plugins.rolledBack", { v: next.version }));
+      onDone(next);
+    } catch (e) {
+      notifyError(errMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
-    <Modal open onClose={onClose} size="xl" title={t("plugins.codeTitle", { name: pickText(plugin.manifest?.name) || plugin.id })}>
-      {failed ? (
-        <p className="py-6 text-center text-xs text-danger">{failed}</p>
-      ) : code === null ? (
-        <CenterLoader />
-      ) : (
-        <pre className="max-h-[65vh] overflow-auto rounded-lg bg-gray-50 p-3 font-mono text-[11px] leading-relaxed text-ink">
-          {code}
-        </pre>
-      )}
+    <Modal
+      open
+      onClose={onClose}
+      title={t("plugins.rollbackTitle", { v: plugin.prev_version })}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="light" color="gray" onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button color="red" loading={busy} disabled={!password} onClick={go}>
+            {t("plugins.rollbackShort")}
+          </Button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-ink-muted">{t("plugins.rollbackConfirm")}</p>
+        <PasswordInput label={t("creds.currentPassword")} value={password} onChange={setPassword} autoFocus />
+      </div>
     </Modal>
   );
 }
@@ -990,12 +1176,13 @@ function CodeDialog({ plugin, onClose }: { plugin: PluginInfo; onClose: () => vo
 function RemoveDialog({ plugin, onClose, onDone }: { plugin: PluginInfo; onClose: () => void; onDone: () => void }) {
   const { t } = useTranslation();
   const [keep, setKeep] = useState(false);
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const name = pickText(plugin.manifest?.name) || plugin.id;
   const remove = async () => {
     setBusy(true);
     try {
-      await uninstallPlugin(plugin.id, keep);
+      await uninstallPlugin(plugin.id, keep, password);
       notifySuccess(t("plugins.removed"));
       onDone();
     } catch (e) {
@@ -1014,7 +1201,7 @@ function RemoveDialog({ plugin, onClose, onDone }: { plugin: PluginInfo; onClose
           <Button variant="light" color="gray" onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button color="red" loading={busy} onClick={remove}>
+          <Button color="red" loading={busy} disabled={!password} onClick={remove}>
             {t("plugins.remove")}
           </Button>
         </div>
@@ -1024,6 +1211,7 @@ function RemoveDialog({ plugin, onClose, onDone }: { plugin: PluginInfo; onClose
         <p className="text-sm text-ink-muted">{t("plugins.removeHint")}</p>
         <Checkbox checked={keep} onChange={setKeep} label={t("plugins.removeKeep")} />
         <p className="text-[11px] text-ink-muted">{t("plugins.db", { size: fmtBytes(plugin.db_bytes) })}</p>
+        <PasswordInput label={t("creds.currentPassword")} value={password} onChange={setPassword} autoFocus />
       </div>
     </Modal>
   );

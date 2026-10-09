@@ -66,7 +66,8 @@ func TestPluginRollbackNeedsThePrevPerms(t *testing.T) {
 	install("1.1.0", `"users.view"`, true)
 	rollback := func(perms ...string) *httptest.ResponseRecorder {
 		admin := store.SessionAdmin{Perms: model.NewPermSet(append(perms, model.PermPluginsManage))}
-		r := httptest.NewRequest(http.MethodPost, "/api/plugins/rbk/rollback", nil)
+		r := httptest.NewRequest(http.MethodPost, "/api/plugins/rbk/rollback", strings.NewReader(`{"current_password": ""}`))
+		r.Header.Set("Content-Type", "application/json")
 		r.SetPathValue("id", "rbk")
 		r = r.WithContext(context.WithValue(r.Context(), ctxKeyAdmin{}, admin))
 		w := httptest.NewRecorder()

@@ -15,8 +15,8 @@
   are out of reach.
 - **Where it runs.** On the main server only, not on nodes. Its database goes into the panel's
   backups.
-- **What the operator sees.** Before installing: the permissions, hosts, points and code
-  (**Code** on the card). The plugin's actions: in the panel's journal as `plugin:<id>`.
+- **What the operator sees.** Before switching it on: the permissions, hosts, points and code
+  (the pencil on the card opens it in the editor). The plugin's actions: in the panel's journal as `plugin:<id>`.
 
 ## Limits
 

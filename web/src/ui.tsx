@@ -1885,6 +1885,94 @@ export function Badge({
   );
 }
 
+const DOT = { gray: "bg-gray-400", orange: "bg-warning", red: "bg-danger" } as const;
+
+// HintDot is a small coloured dot that says "look here" and tells why on hover, focus
+// or a tap (a phone has no hover). The text sits in a portal, so a list's rounded,
+// clipped box cannot cut it off, and it stays open while the pointer is over it — a
+// long error can be read and selected.
+export function HintDot({ color, label, children }: { color: keyof typeof DOT; label: string; children: ReactNode }) {
+  const btn = useRef<HTMLButtonElement>(null);
+  const tip = useRef<HTMLDivElement>(null);
+  // Below the dot, or above it when there is more room there (the last card on a
+  // phone); maxH keeps a long text inside the screen, scrolling.
+  const [at, setAt] = useState<{ top?: number; bottom?: number; left: number; maxH: number } | null>(null);
+  const leave = useRef<number | undefined>(undefined);
+  // A tap is hover, focus and click at once: the click must not shut what the hover
+  // just opened.
+  const openedAt = useRef(0);
+
+  const show = () => {
+    window.clearTimeout(leave.current);
+    const r = btn.current?.getBoundingClientRect();
+    if (!r) return;
+    if (!at) openedAt.current = Date.now();
+    const width = Math.min(320, window.innerWidth - 32);
+    const left = Math.max(16, Math.min(r.left - 8, window.innerWidth - width - 16));
+    const below = window.innerHeight - r.bottom - 22;
+    const above = r.top - 22;
+    setAt(
+      below >= 160 || below >= above
+        ? { top: r.bottom + 6, left, maxH: Math.min(288, below) }
+        : { bottom: window.innerHeight - r.top + 6, left, maxH: Math.min(288, above) },
+    );
+  };
+  const hide = () => {
+    window.clearTimeout(leave.current);
+    leave.current = window.setTimeout(() => setAt(null), 120);
+  };
+  useEscape(() => setAt(null), !!at);
+  useEffect(() => {
+    if (!at) return;
+    const close = () => setAt(null);
+    // The page scrolling moves the dot from under the hint; the hint's own long
+    // text scrolling does not.
+    const scroll = (e: Event) => {
+      if (!(e.target instanceof Node && tip.current?.contains(e.target))) setAt(null);
+    };
+    window.addEventListener("scroll", scroll, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", scroll, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [at]);
+  useEffect(() => () => window.clearTimeout(leave.current), []);
+
+  return (
+    <>
+      <button
+        ref={btn}
+        type="button"
+        aria-label={label}
+        aria-expanded={!!at}
+        className="-m-1.5 inline-flex shrink-0 self-center p-1.5"
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+        onClick={() => (at && Date.now() - openedAt.current > 400 ? setAt(null) : show())}
+      >
+        <span className={cn("block size-2 rounded-full", DOT[color])} />
+      </button>
+      {at &&
+        createPortal(
+          <div
+            ref={tip}
+            role="tooltip"
+            style={{ top: at.top, bottom: at.bottom, left: at.left, maxHeight: at.maxH }}
+            className="fixed z-300 w-[min(320px,calc(100vw-32px))] animate-scale-in overflow-y-auto rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-ink shadow-xl"
+            onMouseEnter={show}
+            onMouseLeave={hide}
+          >
+            {children}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
 // Grid tracks are inline styles (a shared template is the only way a header and its
 // rows cannot drift apart), and an inline style carries no media query — so the few
 // components whose columns change with width ask for the answer instead of guessing

@@ -16,7 +16,7 @@ import {
   syntaxHighlighting,
 } from "@codemirror/language";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorState, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, type Extension, Transaction } from "@codemirror/state";
 import {
   drawSelection,
   EditorView,
@@ -147,11 +147,15 @@ export default function CodeEditor({
   onChange,
   lang,
   readOnly = false,
+  docKey = "",
 }: {
   value: string;
   onChange?: (v: string) => void;
   lang: CodeLang;
   readOnly?: boolean;
+  // docKey names the document (a file's path). Each keeps its own state — undo
+  // history, cursor, scroll — so Ctrl+Z in one file never brings back another's text.
+  docKey?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -159,35 +163,37 @@ export default function CodeEditor({
   const roSlot = useRef(new Compartment());
   const change = useRef(onChange);
   change.current = onChange;
+  const states = useRef(new Map<string, EditorState>());
+  const shownKey = useRef(docKey);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: one view per mount; value/lang/readOnly sync below
+  const makeState = (doc: string) =>
+    EditorState.create({
+      doc,
+      extensions: [
+        lineNumbers(),
+        highlightActiveLineGutter(),
+        highlightActiveLine(),
+        history(),
+        drawSelection(),
+        indentOnInput(),
+        bracketMatching(),
+        highlightSelectionMatches(),
+        EditorState.tabSize.of(2),
+        keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+        theme,
+        syntaxHighlighting(highlight),
+        langSlot.current.of(languages[lang]()),
+        roSlot.current.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
+        EditorView.updateListener.of((u) => {
+          if (u.docChanged) change.current?.(u.state.doc.toString());
+        }),
+      ],
+    });
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: one view per mount; the document follows docKey and value below
   useEffect(() => {
     if (!host.current) return;
-    const v = new EditorView({
-      parent: host.current,
-      state: EditorState.create({
-        doc: value,
-        extensions: [
-          lineNumbers(),
-          highlightActiveLineGutter(),
-          highlightActiveLine(),
-          history(),
-          drawSelection(),
-          indentOnInput(),
-          bracketMatching(),
-          highlightSelectionMatches(),
-          EditorState.tabSize.of(2),
-          keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
-          theme,
-          syntaxHighlighting(highlight),
-          langSlot.current.of(languages[lang]()),
-          roSlot.current.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
-          EditorView.updateListener.of((u) => {
-            if (u.docChanged) change.current?.(u.state.doc.toString());
-          }),
-        ],
-      }),
-    });
+    const v = new EditorView({ parent: host.current, state: makeState(value) });
     view.current = v;
     return () => {
       v.destroy();
@@ -195,12 +201,34 @@ export default function CodeEditor({
     };
   }, []);
 
-  // A different file, or the server's copy after a save: replace the text unless it
-  // is what the editor already holds (typing must not lose the cursor).
+  // Another file: put the shown one's state aside and bring back the other's — or
+  // start it, the first time it is opened.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: switches on the key only; value is read as of the switch
+  useEffect(() => {
+    const v = view.current;
+    if (!v || shownKey.current === docKey) return;
+    states.current.set(shownKey.current, v.state);
+    shownKey.current = docKey;
+    const kept = states.current.get(docKey);
+    v.setState(kept && kept.doc.toString() === value ? kept : makeState(value));
+    // A kept state has the settings it was left with: bring them up to date.
+    v.dispatch({
+      effects: [
+        langSlot.current.reconfigure(languages[lang]()),
+        roSlot.current.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
+      ],
+    });
+  }, [docKey]);
+
+  // The same file changed outside the editor (the rules rebuilt it): take the new
+  // text, out of the undo history — Ctrl+Z must not undo what the editor did not do.
   useEffect(() => {
     const v = view.current;
     if (v && v.state.doc.toString() !== value) {
-      v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: value } });
+      v.dispatch({
+        changes: { from: 0, to: v.state.doc.length, insert: value },
+        annotations: Transaction.addToHistory.of(false),
+      });
     }
   }, [value]);
 

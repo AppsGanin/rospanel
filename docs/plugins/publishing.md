@@ -43,7 +43,8 @@ dropped.
 
 **Roll back** on the card restores the previous package together with the database snapshot
 taken before the update. One previous version is kept. A rollback is refused if the snapshot
-file is gone, and needs an admin holding the previous version's permissions.
+file is gone, and needs an admin holding the previous version's permissions and their
+password.
 
 ## Migrations
 

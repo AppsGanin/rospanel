@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -114,9 +115,10 @@ func TestPluginDraftFlow(t *testing.T) {
 	if names := zipNames(t, rec.Body.Bytes()); !strings.Contains(names, "test.js") || !strings.Contains(names, "rules.json") {
 		t.Fatalf("source files: %s", names)
 	}
-	code, v = do(owner, "POST", "/api/plugin-drafts", rec.Body.Bytes())
-	if code != 200 || v["draft"].(map[string]any)["mode"] != "builder" || v["spec"] == nil {
-		t.Fatalf("import the sources: %d %v", code, v)
+	// The sources come back as a draft — not a second one beside the first.
+	sources := rec.Body.Bytes()
+	if code, v = do(owner, "POST", "/api/plugin-drafts", sources); code != http.StatusConflict || v["code"] != "err.draftExists" {
+		t.Fatalf("a second draft of the same plugin: %d %v", code, v)
 	}
 
 	// Install: the ordinary consent screen and install.
@@ -148,15 +150,43 @@ func TestPluginDraftFlow(t *testing.T) {
 	if code != 200 || v["result"] != "pong" {
 		t.Fatalf("run an export: %d %v", code, v)
 	}
+
+	// The draft is a copy: edited, it is not what runs until applied — and applied
+	// over the same version, it goes up one.
+	code, v = do(owner, "GET", path, nil)
+	if inst, _ := v["installed"].(map[string]any); code != 200 || inst == nil || inst["version"] != "1.0.0" || inst["applied"] != false {
+		t.Fatalf("an edited draft of an installed plugin: %d %v", code, v["installed"])
+	}
+	code, insp = do(owner, "POST", path+"/inspect", nil)
+	if code != 200 || insp["bumped_to"] != "1.0.1" || insp["manifest"].(map[string]any)["version"] != "1.0.1" {
+		t.Fatalf("apply over the same version: %d %v", code, insp)
+	}
+	m = insp["manifest"].(map[string]any)
+	code, info = do(owner, "POST", "/api/plugins/greet/update", map[string]any{"sha256": insp["sha256"], "perms": m["permissions"],
+		"net": m["net"], "current_password": "a-password"})
+	if code != 200 || info["version"] != "1.0.1" {
+		t.Fatalf("update: %d %v", code, info)
+	}
+	code, v = do(owner, "GET", path, nil)
+	if inst, _ := v["installed"].(map[string]any); code != 200 || inst["version"] != "1.0.1" || inst["applied"] != true {
+		t.Fatalf("after applying: %d %v", code, v["installed"])
+	}
+	code, insp = do(owner, "POST", path+"/inspect", nil)
+	if code != 200 || insp["bumped_to"] != "1.0.2" {
+		t.Fatalf("applied again as is: %d %v", code, insp["bumped_to"])
+	}
 	if code, _ := do(owner, "PUT", path, map[string]any{"files": []any{map[string]any{"path": "../x", "text": "x"}}}); code != 400 {
 		t.Fatalf("an unsafe path was taken: %d", code)
 	}
-	code, v = do(owner, "POST", "/api/plugin-drafts", map[string]string{"from": "installed", "plugin_id": "greet"})
-	if code != 200 || v["draft"].(map[string]any)["plugin_id"] != "greet" {
-		t.Fatalf("open the installed plugin: %d %v", code, v)
+	// Opening the installed plugin goes back to its draft, however many times.
+	for range 2 {
+		code, v = do(owner, "POST", "/api/plugin-drafts", map[string]string{"from": "installed", "plugin_id": "greet"})
+		if code != 200 || int64(v["draft"].(map[string]any)["id"].(float64)) != id {
+			t.Fatalf("open the installed plugin: %d %v", code, v)
+		}
 	}
 	code, v = do(owner, "GET", "/api/plugin-drafts", nil)
-	if code != 200 || len(v["drafts"].([]any)) != 3 {
+	if code != 200 || len(v["drafts"].([]any)) != 1 {
 		t.Fatalf("list: %d %v", code, v)
 	}
 	if code, _ := do(owner, "DELETE", path, nil); code != 200 {
@@ -164,6 +194,11 @@ func TestPluginDraftFlow(t *testing.T) {
 	}
 	if code, _ := do(owner, "GET", path, nil); code != 404 {
 		t.Fatalf("a deleted draft: %d", code)
+	}
+	// With no draft left, the installed plugin opens as a new one; the sources too.
+	code, v = do(owner, "POST", "/api/plugin-drafts", map[string]string{"from": "installed", "plugin_id": "greet"})
+	if code != 200 || v["draft"].(map[string]any)["plugin_id"] != "greet" {
+		t.Fatalf("open the installed plugin after the draft went: %d %v", code, v)
 	}
 }
 
@@ -178,4 +213,90 @@ func zipNames(t *testing.T, raw []byte) string {
 		names = append(names, f.Name)
 	}
 	return strings.Join(names, " ")
+}
+
+func TestDraftVersions(t *testing.T) {
+	for _, c := range []struct {
+		a, b  string
+		above bool
+	}{{"1.0.1", "1.0.0", true}, {"1.0.0", "1.0.0", false}, {"0.9.9", "1.0.0", false}, {"2.0.0", "1.9.9", true}, {"x", "1.0.0", false}} {
+		if got := versionAbove(c.a, c.b); got != c.above {
+			t.Errorf("%s above %s: %v", c.a, c.b, got)
+		}
+	}
+	if bumpPatch("1.2.3") != "1.2.4" || bumpPatch("bad") != "0.0.1" {
+		t.Fatal(bumpPatch("1.2.3"), bumpPatch("bad"))
+	}
+}
+
+// Rules with problems keep the files of the last rules that held: those must not be
+// checked, run or installed in their place. The sources download leaves the trial
+// run's secrets behind.
+func TestDraftRulesWithProblems(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	if err := st.SetSetupDone(true); err != nil {
+		t.Fatal(err)
+	}
+	host := plugin.New(plugin.Deps{Store: st, DataDir: rt.dataDir, PanelVersion: version.Version, Logger: slog.New(slog.DiscardHandler)})
+	rt.SetPlugins(host)
+	t.Cleanup(func() { _ = host.Close(t.Context()) })
+	h := rt.panelMux()
+	owner := signIn(t, st, "owner", model.RoleOwner, false)
+	do := func(method, path string, body any) (int, map[string]any, []byte) {
+		t.Helper()
+		b, _ := json.Marshal(body)
+		req := httptest.NewRequest(method, path, bytes.NewReader(b))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(owner)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		var out map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out, rec.Body.Bytes()
+	}
+	_, v, _ := do("POST", "/api/plugin-drafts", map[string]string{"from": "builder", "plugin_id": "tg-note"})
+	path := "/api/plugin-drafts/" + strconv.FormatInt(int64(v["draft"].(map[string]any)["id"].(float64)), 10)
+	spec := map[string]any{"id": "tg-note", "version": "1.0.0", "name": "TG", "rules": []any{map[string]any{
+		"event": "user.created", "actions": []any{map[string]any{"type": "telegram", "text": "hi"}},
+	}}}
+	if code, _, _ := do("PUT", path, map[string]any{"spec": spec}); code != 200 {
+		t.Fatalf("save: %d", code)
+	}
+	spec["rules"].([]any)[0].(map[string]any)["actions"].([]any)[0].(map[string]any)["text"] = ""
+	if _, v, _ = do("PUT", path, map[string]any{"spec": spec}); v["problems"] == nil {
+		t.Fatalf("half-made rules: %v", v)
+	}
+	if _, v, _ = do("POST", path+"/check", nil); v["ok"] != false {
+		t.Fatalf("checked the old files: %v", v)
+	}
+	for _, p := range []string{"/test", "/run", "/inspect"} {
+		if code, v, _ := do("POST", path+p, map[string]any{"event": "user.created"}); code != 400 || v["code"] != "err.draftRules" {
+			t.Fatalf("%s on rules with problems: %d %v", p, code, v)
+		}
+	}
+	if code, _, _ := do("GET", path+"/download?kind=package", nil); code != 400 {
+		t.Fatalf("packaged the old files: %d", code)
+	}
+	// The sources: the token blanked, the chat ID (not a secret) kept.
+	code, _, raw := do("GET", path+"/download", nil)
+	if code != 200 {
+		t.Fatalf("sources: %d", code)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range zr.File {
+		if f.Name != "dev.config.json" {
+			continue
+		}
+		rc, _ := f.Open()
+		b, _ := io.ReadAll(rc)
+		_ = rc.Close()
+		if strings.Contains(string(b), "123:test") || !strings.Contains(string(b), "-100123") {
+			t.Fatalf("dev.config.json in the sources: %s", b)
+		}
+		return
+	}
+	t.Fatal("no dev.config.json in the sources")
 }
