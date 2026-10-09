@@ -44,7 +44,7 @@ The skeleton already works: `rospanel plugin test .` passes. Open the folder in 
   "id": "new-users",
   "version": "1.0.0",
   "api": 1,
-  "panel": ">=4.4.0",
+  "panel": ">=5.0.0",
   "name": {"ru": "Новые пользователи — в Telegram", "en": "New users to Telegram"},
   "description": {
     "ru": "Пишет в ваш чат Telegram о каждом новом пользователе и раз в день присылает сводку.",

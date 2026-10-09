@@ -7,6 +7,8 @@ const RULES = __RULES__;
 
 // @part events
 const DAY = 24 * 60 * 60;
+// The events whose data is a user's own fields: user.* reads them there.
+const USER_EVENTS = __USER_EVENTS__;
 
 /** @param {PanelEvent} e */
 export function onEvent(e) {
@@ -24,14 +26,14 @@ function context(e) {
   const data = e.data || {};
   let user = null;
   if (data.user && typeof data.user === "object") user = data.user;
-  else if (String(e.event).startsWith("user.")) user = data;
-  return { event: e.event, data, user, now: new Date().toISOString() };
+  else if (USER_EVENTS.includes(e.event)) user = data;
+  return { event: e.event, event_id: e.id, created_at: e.created_at, data, user, now: new Date().toISOString() };
 }
 
 // @part scheduled
 function runScheduled(i) {
   const rule = RULES[i];
-  const ctx = { event: "cron", data: {}, user: null, now: new Date().toISOString() };
+  const ctx = { event: "cron", event_id: "", created_at: Math.floor(Date.now() / 1000), data: {}, user: null, now: new Date().toISOString() };
   if (!matches(rule, ctx)) return;
   rule.actions.forEach((a) => act(a, ctx));
 }
@@ -49,12 +51,40 @@ function text(v) {
 }
 
 // @part fill
-// fill puts values into {{path}} placeholders; escape, when given, formats each.
+// fill puts values into {{path}} placeholders, {{path|format}} shown through a
+// format; escape, when given, then makes each fit where it goes.
 function fill(template, ctx, escape) {
-  return String(template || "").replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_, path) => {
-    const v = text(get(ctx, path));
+  return String(template || "").replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*(?:\|\s*([a-z]+)\s*)?\}\}/g, (_, path, format) => {
+    const raw = get(ctx, path);
+    const v = format && FORMATS[format] ? FORMATS[format](raw) : text(raw);
     return escape ? escape(v) : v;
   });
+}
+
+// Formats: a time (unix seconds, or ISO like {{now}}) as the panel's date, the days
+// left until it, bytes in GB, kopecks in roubles.
+const FORMATS = {
+  date: (v) => stamp(v, false),
+  datetime: (v) => stamp(v, true),
+  days: (v) => (seconds(v) ? String(Math.max(0, Math.ceil((seconds(v) - Date.now() / 1000) / 86400))) : ""),
+  gb: (v) => String(Number(((Number(v) || 0) / 1073741824).toFixed(1))),
+  rub: (v) => String(Number(((Number(v) || 0) / 100).toFixed(2))),
+};
+
+function seconds(v) {
+  if (typeof v !== "number" && typeof v !== "string") return 0;
+  if (typeof v === "string" && v !== "" && Number.isNaN(Number(v))) return Math.floor(Date.parse(v) / 1000) || 0;
+  return Number(v) || 0;
+}
+
+// stamp is the time in the panel's timezone; none (0) is "—".
+function stamp(v, withTime) {
+  const s = seconds(v);
+  if (!s) return "—";
+  const d = new Date((s + panel.time.offset(s)) * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  const day = `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`;
+  return withTime ? `${day} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}` : day;
 }
 
 // @part conditions
@@ -71,8 +101,9 @@ function holds(c, v) {
     case "eq": return v === String(c.value ?? "");
     case "ne": return v !== String(c.value ?? "");
     case "contains": return v.includes(String(c.value ?? ""));
-    case "gt": return Number(v) > Number(c.value);
-    case "lt": return Number(v) < Number(c.value);
+    // A value the event does not have is neither more nor less than anything.
+    case "gt": return v !== "" && Number(v) > Number(c.value);
+    case "lt": return v !== "" && Number(v) < Number(c.value);
     case "empty": return empty;
     case "not_empty": return !empty;
   }
@@ -88,11 +119,11 @@ function act(a, ctx) {
     case "telegram": return telegram(a, ctx);
     case "discord": return discord(a, ctx);
     case "http": return request(a, ctx);
-    case "extend": return answered("extend", panel.api("POST", "/v1/users/bulk", { ids: [userId(ctx)], action: "extend", days: a.days }));
-    case "enable": return answered("enable", panel.users.update(userId(ctx), { enabled: true }));
-    case "disable": return answered("disable", panel.users.update(userId(ctx), { enabled: false }));
-    case "tag": return retag(ctx, (tags) => (tags.includes(a.tag) ? tags : [...tags, a.tag]));
-    case "untag": return retag(ctx, (tags) => tags.filter((t) => t !== a.tag));
+    case "extend": return onUser(ctx, (id) => answered("extend", panel.api("POST", "/v1/users/bulk", { ids: [id], action: "extend", days: a.days })));
+    case "enable": return onUser(ctx, (id) => answered("enable", panel.users.update(id, { enabled: true })));
+    case "disable": return onUser(ctx, (id) => answered("disable", panel.users.update(id, { enabled: false })));
+    case "tag": return onUser(ctx, (id) => retag(id, (tags) => (tags.includes(a.tag) ? null : [...tags, a.tag])));
+    case "untag": return onUser(ctx, (id) => retag(id, (tags) => (tags.includes(a.tag) ? tags.filter((t) => t !== a.tag) : null)));
     case "log": return panel.log.info(fill(a.text, ctx));
   }
   throw new Error("unknown action " + a.type);
@@ -127,25 +158,31 @@ function request(a, ctx) {
   const headers = { "Content-Type": "application/json" };
   if (a.auth && panel.config.http_authorization) headers.Authorization = panel.config.http_authorization;
   const method = (a.method || "POST").toUpperCase();
-  const body = method === "GET" ? undefined : a.body ? fill(a.body, ctx, inJSON) : { event: ctx.event, data: ctx.data };
+  // No body typed: the event as the panel delivers it.
+  const whole = { id: ctx.event_id, event: ctx.event, created_at: ctx.created_at, data: ctx.data };
+  const body = method === "GET" ? undefined : a.body ? fill(a.body, ctx, inJSON) : whole;
   const url = fill(a.url, ctx, encodeURIComponent);
   answered(url.split("?")[0], panel.http.fetch(url, { method, headers, body }));
 }
 
 // @part retag
-function retag(ctx, change) {
-  const id = userId(ctx);
+// retag writes the user's tags when the change leaves them different (null: as
+// they are).
+function retag(id, change) {
   const cur = panel.users.get(id);
   answered("read user", cur);
-  const tags = (cur.body && cur.body.data && cur.body.data.tags) || [];
-  answered("tags", panel.users.update(id, { tags: change(tags) }));
+  const next = change((cur.body && cur.body.data && cur.body.data.tags) || []);
+  if (next) answered("tags", panel.users.update(id, { tags: next }));
 }
 
 // @part user
-function userId(ctx) {
+// onUser runs an action on the event's user. An event that names none this time
+// (a sign-up request rejected with no account behind it) is let pass: retrying
+// would not bring one.
+function onUser(ctx, fn) {
   const id = ctx.user ? ctx.user.id : ctx.data.user_id;
-  if (!id) throw new Error(`the ${ctx.event} event names no user`);
-  return id;
+  if (!id) return;
+  return fn(id);
 }
 
 // @part answered

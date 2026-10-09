@@ -211,7 +211,7 @@ func TestMainHoldsOnlyWhatRulesUse(t *testing.T) {
 			t.Errorf("main.js has %q for rules that do not use it", gone)
 		}
 	}
-	for _, kept := range []string{`case "enable"`, "function userId", "function answered", "export function onEvent", "const matches = () => true"} {
+	for _, kept := range []string{`case "enable"`, "function onUser", "function answered", "export function onEvent", "const matches = () => true"} {
 		if !strings.Contains(main, kept) {
 			t.Errorf("main.js lacks %q", kept)
 		}
@@ -220,7 +220,7 @@ func TestMainHoldsOnlyWhatRulesUse(t *testing.T) {
 	spec.Rules[0].Conditions = []Condition{{Field: "user.lang", Op: "eq", Value: "ru"}}
 	files, _ = Compile(spec, "")
 	main = string(files["main.js"])
-	if strings.Contains(main, `case "enable"`) || strings.Contains(main, "function userId") || !strings.Contains(main, "function telegram") || !strings.Contains(main, "function holds") {
+	if strings.Contains(main, `case "enable"`) || strings.Contains(main, "function onUser") || !strings.Contains(main, "function telegram") || !strings.Contains(main, "function holds") {
 		t.Fatalf("after switching to telegram:\n%s", main)
 	}
 }

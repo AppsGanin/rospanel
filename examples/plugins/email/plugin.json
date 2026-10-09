@@ -2,7 +2,7 @@
   "id": "email",
   "version": "1.0.0",
   "api": 1,
-  "panel": ">=4.4.0",
+  "panel": ">=5.0.0",
   "name": {"ru": "Письма через Resend", "en": "E-mail through Resend"},
   "description": {
     "ru": "Доставляет пользователям без Telegram сообщения, рассылки и напоминания письмом. Адрес — external_id пользователя, если это e-mail.",

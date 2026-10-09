@@ -2,7 +2,7 @@
   "id": "lava",
   "version": "1.0.0",
   "api": 1,
-  "panel": ">=4.4.0",
+  "panel": ">=5.0.0",
   "name": {"ru": "Lava", "en": "Lava"},
   "description": {"ru": "Оплата картой и СБП через Lava Business (api.lava.ru).", "en": "Card and SBP payments through Lava Business (api.lava.ru)."},
   "author": "RosPanel",

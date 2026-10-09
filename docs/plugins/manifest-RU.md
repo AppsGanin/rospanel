@@ -35,7 +35,7 @@ LICENSE, CHANGELOG.md
   "id": "my-plugin",
   "version": "1.2.0",
   "api": 1,
-  "panel": ">=4.4.0",
+  "panel": ">=5.0.0",
   "name": {"ru": "Мой плагин", "en": "My plugin"},
   "description": {"ru": "Одна-две фразы о том, что он делает", "en": "…"},
   "author": "Имя или ник",

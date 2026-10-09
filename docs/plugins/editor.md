@@ -30,16 +30,37 @@ A rule is:
 |---|---|
 | Message in Telegram | To the chat in the plugin's settings: the ID of a chat, group or channel (or an `@name`) and the bot token are set after install. |
 | Message in Discord | To the webhook from the plugin's settings. |
-| HTTP request | To your address; without a body the whole event goes as JSON. An `Authorization` header from the settings. |
+| HTTP request | To your address; without a body the whole event goes as JSON: `{id, event, created_at, data}`. An `Authorization` header from the settings. |
 | Extend the subscription | By N days. |
 | Enable / disable the user | |
 | Add / remove a tag | |
 | Write to the plugin's log | |
 
-Texts, the chat, the address and the body take placeholders: `{{user.name}}`, `{{user.id}}`,
-`{{user.telegram_id}}`, `{{data.<field>}}` — any field of the event, `{{event}}`, `{{now}}`.
-In an address only the path and query take them: the host is fixed, and the operator sees it at
-install.
+Texts, the address and the body take placeholders such as `{{user.name}}` or `{{data.days_left}}`.
+Each rule's **Event data** lists what its event carries — the user's fields (`user.*`), the
+event's own (`data.*`), and `event`, `event_id`, `created_at`, `now` — each described, with an
+example and the whole event as a sample; a click puts the field where the cursor is. Fields marked
+`?` are not on every such event. In an address only the path and query take placeholders:
+the host is fixed, and the operator sees it at install.
+
+A placeholder can show a value through a format — `{{user.expire_at|date}}`:
+
+| Format | For | Shows |
+|---|---|---|
+| `date` | a time (unix seconds or `{{now}}`) | `01.02.2026`, in the panel's timezone; `—` when 0 |
+| `datetime` | a time | `01.02.2026 03:00` |
+| `days` | a time | days left until it: `3` |
+| `gb` | bytes | gigabytes: `80` |
+| `rub` | kopecks | roubles: `150.5` |
+
+`user.*` works on every event about a user — `user.*`, `plan.*`, `balance.adjusted`, `referral.*`,
+`promo.*`, and the payment events (from `data.user`). Server, broadcast and sign-up request events
+have no user: their rules cannot act on one. Nor can a rule on `user.deleted`: the user's fields
+are there, the user is gone. A rejected sign-up request names a user only when an account already
+exists (`data.user_id`); otherwise the actions on a user are skipped.
+
+The builder refuses rules that would feed themselves: an extension on `user.limits_changed`, or
+enabling on `user.disabled` together with disabling on `user.enabled`.
 
 The plugin is granted exactly what the rules need: events bring `users.view` (money events also
 `billing.view`), actions on the user `users.manage`; hosts are `api.telegram.org`,
@@ -84,8 +105,10 @@ busy". Tests are bounded by 60 seconds, a trial run by 30.
 
 - **Check** — the package as the install will read it: permissions, network, functions, size, or
   the list of problems.
-- **Install** — the ordinary consent screen with the password; a plugin with the same ID is
-  updated (with a database snapshot and rollback).
+- **Install** — the ordinary consent screen with the password.
+- A draft is a copy: saving it does not touch the running plugin. The header says whether the
+  draft is the installed version. With the plugin installed the button is **Apply**: an update, with a database snapshot and rollback. A draft version not above
+  the installed one is raised by itself (0.1.0 → 0.1.1).
 - **Download** — the package, to install on another panel, or the sources with tests, to carry
   on in your own editor with `rospanel plugin test | dev | pack`. The sources open in the panel
   again through **From a .zip**; a builder draft stays a builder draft (the rules are in

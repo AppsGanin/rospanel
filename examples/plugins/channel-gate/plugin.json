@@ -2,7 +2,7 @@
   "id": "channel-gate",
   "version": "1.0.0",
   "api": 1,
-  "panel": ">=4.4.0",
+  "panel": ">=5.0.0",
   "name": {"ru": "Регистрация для подписчиков канала", "en": "Sign-up for channel subscribers"},
   "description": {
     "ru": "Новый аккаунт через Telegram получает только подписчик вашего канала. В боте — кнопка «Проверить подписку» и команда /check.",

@@ -2,7 +2,7 @@
   "id": "users-csv",
   "version": "1.0.0",
   "api": 1,
-  "panel": ">=4.4.0",
+  "panel": ">=5.0.0",
   "name": {"ru": "Пользователи в CSV — в Telegram", "en": "Users as CSV to Telegram"},
   "description": {
     "ru": "Раз в неделю присылает в ваш чат Telegram файл CSV со всеми пользователями: имя, статус, трафик, окончание подписки.",

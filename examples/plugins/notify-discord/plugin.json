@@ -2,7 +2,7 @@
   "id": "notify-discord",
   "version": "1.0.0",
   "api": 1,
-  "panel": ">=4.4.0",
+  "panel": ">=5.0.0",
   "name": {"ru": "Уведомления в Discord", "en": "Discord notifications"},
   "description": {
     "ru": "Пишет в канал Discord о новых пользователях, оплатах и серверах, которые перестали отвечать.",

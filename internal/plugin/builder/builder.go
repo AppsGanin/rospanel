@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/AppsGanin/rospanel/internal/cron"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -80,14 +81,19 @@ const (
 	maxActions = 10
 	maxConds   = 10
 	maxText    = 4000
+	maxDiscord = 2000 // characters: Discord refuses a longer message
 )
 
 var (
 	idRe      = regexp.MustCompile(`^[a-z][a-z0-9-]{2,39}$`)
 	versionRe = regexp.MustCompile(`^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$`)
 	fieldRe   = regexp.MustCompile(`^[a-z_][a-z0-9_]*(\.[a-z0-9_]+){0,5}$`)
-	tagRe     = regexp.MustCompile(`^[^,\s][^,]{0,31}$`)
+	// formatRe finds the {{path|format}} placeholders; runtime.js's FORMATS has them.
+	formatRe = regexp.MustCompile(`\{\{\s*[a-zA-Z0-9_.]+\s*\|\s*([a-z]*)\s*\}\}`)
 )
+
+// Formats a placeholder can name: {{user.expire_at|date}}.
+var Formats = []string{"date", "datetime", "days", "gb", "rub"}
 
 // Validate lists what keeps the spec from making a plugin, each problem naming
 // where it is (rules[2].actions[0].chat: …).
@@ -149,13 +155,49 @@ func Validate(s Spec) []string {
 			add("%s.actions: 1-%d", at, maxActions)
 		}
 		for j, a := range r.Actions {
-			validateAction(fmt.Sprintf("%s.actions[%d]", at, j), a, r.Schedule != "", add)
+			validateAction(fmt.Sprintf("%s.actions[%d]", at, j), a, r.Event, r.Schedule != "", add)
 		}
+	}
+	// Rules that feed themselves: their action makes the panel send the event they
+	// run on again, with a new id — once() does not stop it.
+	acts := func(event, action string) (int, int, bool) {
+		for i, r := range s.Rules {
+			if r.Event != event {
+				continue
+			}
+			for j, a := range r.Actions {
+				if a.Type == action {
+					return i, j, true
+				}
+			}
+		}
+		return 0, 0, false
+	}
+	if i, j, ok := acts(model.WebhookUserLimitsChanged, "extend"); ok {
+		add("rules[%d].actions[%d]: an extension changes the limits again — the rule would run on its own action without end", i, j)
+	}
+	if _, _, on := acts(model.WebhookUserDisabled, "enable"); on {
+		if i, j, ok := acts(model.WebhookUserEnabled, "disable"); ok {
+			add("rules[%d].actions[%d]: with the rule that enables a disabled user, the two would switch each other without end", i, j)
+		}
+	}
+	hosts := map[string]bool{}
+	for _, r := range s.Rules {
+		for _, a := range r.Actions {
+			if a.Type == "http" {
+				if h, err := httpHost(a.URL); err == nil {
+					hosts[h] = true
+				}
+			}
+		}
+	}
+	if len(hosts) > manifest.MaxNet-2 { // api.telegram.org and discord.com may be added
+		add("rules: HTTP requests to at most %d different hosts", manifest.MaxNet-2)
 	}
 	return p
 }
 
-func validateAction(at string, a Action, scheduled bool, add func(string, ...any)) {
+func validateAction(at string, a Action, event string, scheduled bool, add func(string, ...any)) {
 	if !slices.Contains(ActionTypes, a.Type) {
 		add("%s.type: one of %s", at, strings.Join(ActionTypes, ", "))
 		return
@@ -163,21 +205,35 @@ func validateAction(at string, a Action, scheduled bool, add func(string, ...any
 	if scheduled && slices.Contains(userActions, a.Type) {
 		add("%s: a scheduled rule has no user to %s", at, a.Type)
 	}
+	if event != "" && !actsOnUser(event) && slices.Contains(userActions, a.Type) {
+		add("%s: the %s event is not about a user, nothing to %s", at, event, a.Type)
+	}
 	text := func(field, v string, required bool) {
 		if required && strings.TrimSpace(v) == "" {
 			add("%s.%s: required", at, field)
+		}
+		for _, m := range formatRe.FindAllStringSubmatch(v, -1) {
+			if !slices.Contains(Formats, m[1]) {
+				add("%s.%s: unknown format |%s — %s", at, field, m[1], strings.Join(Formats, ", "))
+			}
 		}
 		if len(v) > maxText {
 			add("%s.%s: up to %d characters", at, field, maxText)
 		}
 	}
 	switch a.Type {
-	case "telegram", "discord", "log":
+	case "telegram", "log":
 		text("text", a.Text, true)
+	case "discord":
+		text("text", a.Text, true)
+		if utf8.RuneCountInString(a.Text) > maxDiscord {
+			add("%s.text: up to %d characters — Discord takes no more", at, maxDiscord)
+		}
 	case "http":
 		if _, err := httpHost(a.URL); err != nil {
 			add("%s.url: %v", at, err)
 		}
+		text("url", a.URL, false)
 		if m := strings.ToUpper(a.Method); m != "" && !slices.Contains([]string{"GET", "POST", "PUT", "PATCH", "DELETE"}, m) {
 			add("%s.method: GET, POST, PUT, PATCH or DELETE", at)
 		}
@@ -187,7 +243,7 @@ func validateAction(at string, a Action, scheduled bool, add func(string, ...any
 			add("%s.days: 1-3650", at)
 		}
 	case "tag", "untag":
-		if !tagRe.MatchString(a.Tag) {
+		if t, ok := model.NormalizeTags([]string{a.Tag}); !ok || len(t) != 1 {
 			add("%s.tag: up to 32 characters, no commas", at)
 		}
 	}
@@ -217,7 +273,11 @@ func httpHost(raw string) (string, error) {
 		return "", fmt.Errorf("a host name, not an IP address")
 	}
 	if p := u.Port(); p != "" && p != "80" && p != "443" {
-		return host + ":" + p, nil
+		host += ":" + p
+	}
+	// As the manifest takes it: an address it would refuse is told here, at the rule.
+	if problem := manifest.CheckHost(host); problem != "" {
+		return "", fmt.Errorf("%s: %s", host, problem)
 	}
 	return host, nil
 }
@@ -327,11 +387,33 @@ func Compile(s Spec, panelVersion string) (devkit.Files, error) {
 	if err != nil {
 		return nil, err
 	}
-	rules, err := json.MarshalIndent(s.Rules, "", "  ")
+	// Tags as the panel stores them ("VIP " is "vip"): an untag must match.
+	compiled := make([]Rule, len(s.Rules))
+	for i, r := range s.Rules {
+		r.Actions = slices.Clone(r.Actions)
+		for j, a := range r.Actions {
+			if a.Type == "tag" || a.Type == "untag" {
+				if t, ok := model.NormalizeTags([]string{a.Tag}); ok && len(t) == 1 {
+					r.Actions[j].Tag = t[0]
+				}
+			}
+		}
+		compiled[i] = r
+	}
+	rules, err := json.MarshalIndent(compiled, "", "  ")
 	if err != nil {
 		return nil, err
 	}
-	main := strings.Replace(mainFor(s, uses), "__RULES__", string(rules), 1)
+	userEvents := []string{}
+	for _, ev := range events {
+		if e, _ := eventInfo(ev); e.User == "data" {
+			userEvents = append(userEvents, ev)
+		}
+	}
+	ue, _ := json.Marshal(userEvents)
+	// The list first: rule texts are the operator's, and may hold the marker too.
+	main := strings.Replace(mainFor(s, uses), "__USER_EVENTS__", string(ue), 1)
+	main = strings.Replace(main, "__RULES__", string(rules), 1)
 	for i, r := range s.Rules {
 		if r.Schedule != "" {
 			main += fmt.Sprintf("export function %s() { runScheduled(%d); }\n", cronExport(i), i)
@@ -448,12 +530,12 @@ func devConfig(uses map[string]bool) []byte {
 	return append(b, '\n')
 }
 
-// smokeTest delivers each event rule's event with a sample user, everything the
-// rules reach mocked: the rules run without throwing. The operator adds real
-// checks in the code.
+// smokeTest delivers each event rule's event with sample data shaped as the panel
+// sends it, everything the rules reach mocked: the rules run without throwing. The
+// operator adds real checks in the code.
 func smokeTest(s Spec) string {
 	var b strings.Builder
-	b.WriteString(`// Made by the rule builder: each rule's event, with a sample user, runs without
+	b.WriteString(`// Made by the rule builder: each rule's event, with sample data, runs without
 // an error. Add your own checks below; plugin.event, mock.http and mock.calls are
 // described in docs/plugins/testing.md.
 
@@ -464,16 +546,15 @@ function mockAll() {
   mock.api("PATCH", "/v1/users/*", { status: 200, body: { data: {} } });
   mock.api("POST", "/v1/users/bulk", { status: 200, body: { data: {} } });
 }
-
-const sample = { id: 1, name: "test-user", status: "active", enabled: true, plan_id: 0, telegram_id: 0, lang: "ru",
-  user_id: 1, user: { id: 1, name: "test-user", telegram_id: 0, lang: "ru" } };
 `)
 	seen := map[string]bool{}
 	for i, r := range s.Rules {
 		switch {
 		case r.Event != "" && !seen[r.Event]:
 			seen[r.Event] = true
-			fmt.Fprintf(&b, "\ntest(%q, () => {\n  mockAll();\n  plugin.event(%q, sample);\n});\n", "the "+r.Event+" rules run", r.Event)
+			e, _ := eventInfo(r.Event)
+			sample, _ := json.Marshal(sampleData(e))
+			fmt.Fprintf(&b, "\ntest(%q, () => {\n  mockAll();\n  plugin.event(%q, %s);\n});\n", "the "+r.Event+" rules run", r.Event, sample)
 		case r.Schedule != "":
 			fmt.Fprintf(&b, "\ntest(%q, () => {\n  mockAll();\n  plugin.call(%q);\n});\n", "rule "+strconv.Itoa(i+1)+" runs on its schedule", cronExport(i))
 		}

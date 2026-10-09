@@ -2,7 +2,7 @@
   "id": "theme-night",
   "version": "1.0.1",
   "api": 1,
-  "panel": ">=4.4.0",
+  "panel": ">=5.0.0",
   "name": {"ru": "Тема «Ночь» для страницы подписки", "en": "“Night” theme for the subscription page"},
   "description": {
     "ru": "Тёмное оформление страницы подписки со звёздным фоном. Кнопки и цвет бренда — ваши.",

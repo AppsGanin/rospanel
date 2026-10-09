@@ -19,7 +19,7 @@ func TestTemplateWorks(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	results, err := RunTests(context.Background(), dir, "4.4.0", &out)
+	results, err := RunTests(context.Background(), dir, "5.0.0", &out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ test("plugin errors reach the test", () => { plugin.call("boom"); });
 test("a failing assertion", () => { assert.equal({a: [1, 2]}, {a: [1, 3]}); });
 `)
 	var out bytes.Buffer
-	results, err := RunTests(context.Background(), dir, "4.4.0", &out)
+	results, err := RunTests(context.Background(), dir, "5.0.0", &out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestExamplePlugins(t *testing.T) {
 		dir := filepath.Join(root, e.Name())
 		t.Run(e.Name(), func(t *testing.T) {
 			var out bytes.Buffer
-			results, err := RunTests(context.Background(), dir, "4.4.0", &out)
+			results, err := RunTests(context.Background(), dir, "5.0.0", &out)
 			if err != nil {
 				t.Fatal(err)
 			}
