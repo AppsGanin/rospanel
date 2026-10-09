@@ -676,6 +676,20 @@ is revoked. The assistant is offered only the tools the key allows.
 servers are up and 90 days of uptime history. Names and availability only: no addresses, no
 users, no traffic, and no page at all until you switch it on.
 
+#### 🧩 Plugins (beta)
+
+Community code inside the panel: notifications, integrations, your own logic on the panel's
+events and on a schedule. A plugin can add a payment method, fields and buttons on a user's
+card, dashboard widgets, blocks on the subscription page, buttons and commands in the bot, and
+have a say in sign-ups, device binding and prices, or restyle the subscription page. A plugin is one JavaScript file with a manifest; the panel runs it in
+a WebAssembly sandbox with its own database and memory and time limits, so a broken plugin is
+paused, not the panel. Before installing, the operator sees what it asks for — the panel API
+permissions and the internet hosts — and can read its code; nothing beyond that is reachable.
+*Settings → Plugins*, from a zip or a link. A plugin can also be made right there: a rule builder
+("when this event comes and this holds, do that" — Telegram, Discord, HTTP, extend, tag) or a
+code editor, with tests and a trial run in a sandbox. Authors get `rospanel plugin new | test | dev | pack` with no Node
+needed; see [docs/plugins](docs/plugins/README.md) and [examples/plugins](examples/plugins).
+
 #### 🌍 Language (RU / EN)
 
 | Surface                   | Language comes from                                            |
@@ -773,8 +787,8 @@ cannot be acted on by somebody else's site.
 **Secrets in the database are encrypted** (AES-GCM). Session tokens and API keys are stored as
 hashes only — even with table access you can't reuse someone's session. On a key change the
 panel re-wraps everything it keeps closed: user passwords and keys, node keys (REALITY, WARP,
-AmneziaWG), webhook secrets, custom-inbound keys, system-proxy passwords, admin second factors
-and payment-provider configs. Payment confirmation
+AmneziaWG), webhook secrets, custom-inbound keys, system-proxy passwords, admin second factors,
+payment-provider configs and plugin settings. Payment confirmation
 and admin management require **re-entering the password**. Outbound requests are protected
 against SSRF, brute force on inbounds is banned via nftables (a timed set entry the kernel
 expires on its own), and the number of connections per IP is limited via nftables.
@@ -797,6 +811,7 @@ rospanel path                show the panel URL and check secrets.key / the DB
 rospanel totp reset <login>  remove an admin's two-factor auth (lost phone); bare totp lists
 rospanel rescue <sub>        regain locked-out access: list | password | unlock | owner
 rospanel reset [-y]          factory reset (wipes the DB)
+rospanel plugin <sub>        plugin author tools: new, validate, pack, test, dev
 rospanel version             version
 rospanel help                full help
 ```

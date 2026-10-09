@@ -1,0 +1,20 @@
+/* The page's colours are CSS variables; overriding them is most of a theme.
+   url() may only name a file of this folder. */
+:root {
+  --bg: #0b1020;
+  --surface: #141a2e;
+  --ink: #e8ecf8;
+  --muted: #9aa3bf;
+}
+
+body {
+  background-color: var(--bg);
+  background-image: url(stars.svg);
+  background-size: 480px 480px;
+}
+
+/* Secondary buttons: light text on a faint brand tint, readable on the dark card. */
+.btn.alt {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--brand) 22%, var(--surface));
+}

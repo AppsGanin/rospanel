@@ -1,0 +1,33 @@
+name: plugin-guest
+
+# The plugin engine's guest (QuickJS-ng + rp.c → rp.wasm.gz) is a committed build
+# artefact. This rebuilds it from the pinned sources in guest/VERSIONS and fails
+# when the result differs from the committed hash: an edit to rp.c without a
+# rebuild, a rebuild nobody can reproduce, or a pinned download that changed under
+# us. The build is reproducible across x86_64 and arm64 hosts (checked 2026-10-06).
+on:
+  push:
+    branches: [main]
+    paths: ["internal/plugin/jsvm/guest/**", ".github/workflows/plugin-guest.yml"]
+  pull_request:
+    paths: ["internal/plugin/jsvm/guest/**", ".github/workflows/plugin-guest.yml"]
+  schedule:
+    - cron: "17 4 * * 1" # weekly: catches upstream downloads changing
+
+permissions:
+  contents: read
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Rebuild rp.wasm from pinned sources
+        run: |
+          want=$(cat internal/plugin/jsvm/guest/rp.wasm.sha256)
+          docker run --rm -v "$PWD/internal/plugin/jsvm/guest:/guest" golang:1.26.6 /guest/build.sh
+          got=$(cat internal/plugin/jsvm/guest/rp.wasm.sha256)
+          if [ "$got" != "$want" ]; then
+            echo "::error::rebuilt rp.wasm is $got, committed is $want — run guest/build.sh and commit"
+            exit 1
+          fi

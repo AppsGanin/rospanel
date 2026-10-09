@@ -401,6 +401,7 @@ func (m *Manager) BuyFromBalance(ctx context.Context, userID int64, p Purchase, 
 		return m.buyPlanFromBalance(ctx, userID, p, expectExpire)
 	}
 	now := time.Now().Unix()
+	m.warmPluginPrice(userID, p)
 	m.applyPlanMu.Lock()
 	u, err := m.store.GetUser(userID)
 	if err != nil {

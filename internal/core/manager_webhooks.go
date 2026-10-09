@@ -209,7 +209,8 @@ func (m *Manager) EmitWebhookEach(event string, items []any) {
 		logErr("webhook: lookup failed", "event", event, "err", err)
 		return
 	}
-	if len(hooks) == 0 {
+	plugins := m.pluginSubscribers(event)
+	if len(hooks) == 0 && len(plugins) == 0 {
 		return
 	}
 	// Sized by the items alone: append grows it per endpoint, and an allocation is never
@@ -226,14 +227,25 @@ func (m *Manager) EmitWebhookEach(event string, items []any) {
 		for _, h := range hooks {
 			ds = append(ds, store.WebhookDelivery{HookID: h.ID, Event: event, Body: body})
 		}
+		for _, p := range plugins {
+			ds = append(ds, store.WebhookDelivery{PluginID: p, Event: event, Body: body})
+		}
 	}
 	if err := m.store.EnqueueWebhookDeliveries(ds); err != nil {
 		logErr("webhook: storing deliveries failed", "event", event, "deliveries", len(ds), "err", err)
 		return
 	}
-	select {
-	case m.webhookKick <- struct{}{}:
-	default: // the dispatcher is already woken
+	if len(hooks) > 0 {
+		select {
+		case m.webhookKick <- struct{}{}:
+		default: // the dispatcher is already woken
+		}
+	}
+	if len(plugins) > 0 {
+		select {
+		case m.pluginKick <- struct{}{}:
+		default:
+		}
 	}
 }
 

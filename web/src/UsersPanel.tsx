@@ -1,3 +1,4 @@
+import { PluginActionButtons } from "./PluginSurfaces";
 import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -684,6 +685,12 @@ export function UsersPanel({
                   </Button>
                 </>
               )}
+              <PluginActionButtons
+                scope="users"
+                userIds={[...selected]}
+                disabled={pending !== null || selected.size > 1000}
+                onDone={refresh}
+              />
               {canDelete && (
                 <Button size="xs" variant="outline" color="red" disabled={pending !== null} onClick={() => setConfirmDelete(true)}>
                   {t("common.delete")}
@@ -841,7 +848,7 @@ function UserRow({
       }}
       className={cn(
         "grid cursor-pointer items-center gap-3 border-b border-gray-100 px-5 py-[7px] transition last:border-0",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-100",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/25",
         checked
           ? "accent-tint"
           : limited

@@ -22,6 +22,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/plugin"
 	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/telegram"
 	qrcode "github.com/skip2/go-qrcode"
@@ -158,7 +159,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			if r.URL.Query().Get("dl") != "" {
 				w.Header().Set("Content-Disposition", `attachment; filename="clash.yaml"`)
 			}
-			_, _ = w.Write([]byte(body))
+			_, _ = w.Write([]byte(rt.pluginConfig(r.Context(), *u, plugin.SubClash, body)))
 		case "singbox", "sing-box":
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			// A template that fails here has already passed validation on save, so a
@@ -168,17 +169,17 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			if err != nil {
 				slog.Warn("subscription: sing-box template failed, serving the generated profile", "err", err)
 			}
-			_, _ = w.Write([]byte(body))
+			_, _ = w.Write([]byte(rt.pluginConfig(r.Context(), *u, plugin.SubSingBox, body)))
 		case model.SubActionXrayJSON, "xray", "json":
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			body, err := sub.XrayJSONWithTemplate(*u, allServers, set.SubDPI, set.SubTplXray)
 			if err != nil {
 				slog.Warn("subscription: xray template failed, serving the generated profile", "err", err)
 			}
-			_, _ = w.Write([]byte(body))
+			_, _ = w.Write([]byte(rt.pluginConfig(r.Context(), *u, plugin.SubXray, body)))
 		default:
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			links := sub.ShareLinksAll(*u, allServers)
+			links := rt.pluginLinks(r.Context(), *u, sub.ShareLinksAll(*u, allServers))
 			var body string
 			if set.SubBase64 {
 				body = sub.Base64Payload(links)
@@ -309,8 +310,52 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			_, _ = w.Write(b)
 			return
 		}
+		if name, ok := strings.CutPrefix(leaf, "theme/"); ok {
+			rt.serveThemeFile(w, r, name)
+			return
+		}
 		rt.currentDecoy().ServeHTTP(w, r)
 	}
+}
+
+// pluginNote is a plugin's reason for its price, or the plain words for one.
+func pluginNote(q core.PlanQuote, lang i18n.Lang) string {
+	if q.PluginNote != "" {
+		return q.PluginNote
+	}
+	return i18n.T(lang, "sub.yourPrice")
+}
+
+// subPageCSP limits where the subscription page loads images and fonts from: this
+// origin, the subscription address's (the page links its logo, QR and fonts there,
+// and it can be another name than the one the page was opened by), and data: URIs.
+func subPageCSP(subURL string) string {
+	src := "'self' data: blob:"
+	if u, err := url.Parse(subURL); err == nil && u.Scheme != "" && u.Host != "" {
+		src = "'self' " + u.Scheme + "://" + u.Host + " data: blob:"
+	}
+	return "img-src " + src + "; font-src " + src + "; media-src " + src
+}
+
+// serveThemeFile serves a file of the page's theme plugin. Inert whatever it is: an
+// SVG opened on its own runs no script (sandbox), and nothing is sniffed into
+// something else. The URL changes with the package (?v=), so it caches for a day.
+func (rt *Router) serveThemeFile(w http.ResponseWriter, r *http.Request, name string) {
+	if rt.plugins == nil {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	b, ct, ok := rt.plugins.ThemeFile(name)
+	if !ok {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", ct)
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Security-Policy", "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox")
+	h.Set("Cache-Control", "private, max-age=86400")
+	_, _ = w.Write(b)
 }
 
 // handleSubApp serves the redirect page for one client deep link, chosen by its
@@ -579,14 +624,19 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 			continue
 		}
 		q := rt.mgr.QuotePlan(u, plan)
-		if q.DiscountRub > 0 || q.Devices > 0 {
+		if q.DiscountRub > 0 || q.PluginDiscountRub > 0 || q.Devices > 0 {
 			shown := *plan
 			shown.PriceRub = q.TotalRub
 			b.Plans[i].Label = payPlanLabel(lang, shown)
 		}
-		if q.DiscountRub > 0 {
+		if q.DiscountRub > 0 || q.PluginDiscountRub > 0 {
 			b.Plans[i].OldPrice = i18n.T(lang, "sub.price", q.PriceRub)
+		}
+		switch {
+		case q.DiscountRub > 0:
 			b.Plans[i].Promo = i18n.T(lang, "sub.planPromo", q.PromoCode, q.DiscountRub)
+		case q.PluginDiscountRub > 0: // a plugin's price for this user, with its reason
+			b.Plans[i].Promo = i18n.T(lang, "sub.planPluginPrice", pluginNote(q, lang), q.PluginDiscountRub)
 		}
 		b.Plans[i].FromBalance = q.MoneyRub == 0
 		b.Plans[i].Free = q.TotalRub == 0
@@ -770,6 +820,10 @@ func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Sett
 	if err != nil {
 		return err
 	}
+	// Images and fonts only from the panel: a plugin's theme stylesheet or a Markdown
+	// block cannot pull anything from elsewhere — a host blocked in the reader's
+	// country hangs the page, and any other one learns who opened it.
+	w.Header().Set("Content-Security-Policy", subPageCSP(sub.URL(set, u.SubToken)))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(html)
@@ -928,7 +982,12 @@ func (rt *Router) admitDevice(w http.ResponseWriter, r *http.Request, u model.Us
 	}
 	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
 	msg := i18n.T(lang, "sub.deviceRequired")
-	if d.HWID != "" {
+	switch {
+	case v.ByPlugin && v.Reason != "":
+		msg = v.Reason
+	case v.ByPlugin:
+		msg = i18n.T(lang, "sub.deviceRefused")
+	case d.HWID != "":
 		msg = fmt.Sprintf(i18n.T(lang, "sub.deviceLimitReached"), v.Count, v.Cap)
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -1522,6 +1581,9 @@ func handleMiniApp(rt *Router, w http.ResponseWriter, r *http.Request, leaf stri
 			}
 		}
 		out := map[string]string{"message": i18n.T(lang, res.Reason)}
+		if res.Detail != "" {
+			out["message"] = res.Detail
+		}
 		if name := botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL()); name != "" {
 			out["bot"] = "https://t.me/" + name
 		}

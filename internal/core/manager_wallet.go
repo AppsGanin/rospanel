@@ -55,11 +55,14 @@ const (
 type PlanQuote struct {
 	// Periods is how many of the plan's periods it buys; PeriodDiscountRub what buying
 	// them together takes off the plain sum.
-	Periods           int    `json:"periods"`
-	PeriodPercent     int    `json:"period_percent"`
-	PeriodDiscountRub int    `json:"period_discount_rub"`
-	PriceRub          int    `json:"price_rub"`    // the plan's price × periods
-	DiscountRub       int    `json:"discount_rub"` // what the attached promo code takes off
+	Periods           int `json:"periods"`
+	PeriodPercent     int `json:"period_percent"`
+	PeriodDiscountRub int `json:"period_discount_rub"`
+	PriceRub          int `json:"price_rub"`    // the plan's price × periods
+	DiscountRub       int `json:"discount_rub"` // what the attached promo code takes off
+	// PluginDiscountRub is what a plugin's price takes off (PluginNote says why).
+	PluginDiscountRub int    `json:"plugin_discount_rub,omitempty"`
+	PluginNote        string `json:"plugin_note,omitempty"`
 	PromoID           int64  `json:"promo_id,omitempty"`
 	PromoCode         string `json:"promo_code,omitempty"`
 	TotalRub          int    `json:"total_rub"`   // price after the discount
@@ -108,6 +111,14 @@ func (m *Manager) quotePlan(set *model.Settings, u model.User, plan *model.Tarif
 		Devices: devices, DevicesRub: devices * plan.DevicePrice * periods}
 	q.PeriodDiscountRub = base * pct / 100
 	q.TotalRub = base - q.PeriodDiscountRub
+	// A plugin may price it lower for this user (held to at least half): before the
+	// promo code, so a code still applies on top.
+	if price, note, ok := m.pluginPrice(u, model.PriceRequest{
+		UserID: u.ID, PlanID: plan.ID, Plan: plan.Name, Periods: periods, Devices: devices, BaseRub: q.TotalRub,
+	}); ok {
+		q.PluginDiscountRub, q.PluginNote = q.TotalRub-price, note
+		q.TotalRub = price
+	}
 	w, err := m.store.GetWalletLite(u.ID)
 	if err != nil {
 		q.MoneyRub = q.TotalRub
@@ -266,6 +277,7 @@ func (m *Manager) buyPlanFromBalance(ctx context.Context, userID int64, p Purcha
 	if err != nil {
 		return nil, invalidCode("err.planNotFound", "тариф не найден")
 	}
+	m.warmPluginPrice(userID, p)
 	m.applyPlanMu.Lock()
 	u, err := m.store.GetUser(userID)
 	if err != nil {

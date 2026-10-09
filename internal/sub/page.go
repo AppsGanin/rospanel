@@ -835,6 +835,33 @@ type Access struct {
 	TGLinked bool   // already linked: the link moves it to another Telegram
 	// Legal are the operator's documents the page links to at its foot.
 	Legal []LegalLink
+	// Blocks are what plugins add at the top of the page (internal/plugin).
+	Blocks []Block
+	// ThemeCSS is the theme plugin's stylesheet, applied over the page's own.
+	ThemeCSS string
+}
+
+// Block is one block a plugin adds: a note, Markdown, a notice or a button. HTML is
+// set for text, notice and markdown — escaped, or rendered without raw HTML.
+type Block struct {
+	Type  string
+	HTML  template.HTML
+	Label string
+	URL   string
+}
+
+// NewBlock renders a plugin's block for the page; ok is false for one it cannot show.
+func NewBlock(typ, text, label, url string) (Block, bool) {
+	switch typ {
+	case "text", "notice":
+		return Block{Type: typ, HTML: template.HTML(template.HTMLEscapeString(text))}, text != "" // #nosec G203 -- escaped above
+	case "markdown":
+		h, err := RenderMarkdown(text)
+		return Block{Type: typ, HTML: h}, err == nil && text != ""
+	case "button":
+		return Block{Type: typ, Label: label, URL: url}, label != "" && strings.HasPrefix(url, "https://")
+	}
+	return Block{}, false
 }
 
 // LegalLink is one legal document's name and public page.

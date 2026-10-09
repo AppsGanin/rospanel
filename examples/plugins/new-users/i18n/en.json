@@ -1,0 +1,6 @@
+{
+  "new_user": "🆕 New user: {name} (#{id})",
+  "self_registered": "signed up by themselves",
+  "created": "created in the panel",
+  "summary": "📊 New users in the last day: {count}"
+}

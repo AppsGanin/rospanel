@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -817,15 +818,25 @@ func (s *Store) SetPaymentWebhookSecret(secret string) error {
 // provider (for the polling fallback). Stale ones (older than maxAge seconds) are
 // skipped — the caller marks them cancelled. An external system's orders are not here:
 // it confirms or cancels them itself.
-func (s *Store) PendingProviderOrders(limit int) ([]model.PaymentOrder, error) {
+// skip lists providers whose orders wait (a stopped plugin's): left out, they
+// cannot fill the batch and keep every other provider's orders from being checked.
+func (s *Store) PendingProviderOrders(limit int, skip []string) ([]model.PaymentOrder, error) {
 	if limit <= 0 {
 		limit = 100
 	}
+	not, args := "", []any{model.ExternalPayProvider}
+	if len(skip) > 0 {
+		not = ` AND o.provider NOT IN (?` + strings.Repeat(`, ?`, len(skip)-1) + `)`
+		for _, p := range skip {
+			args = append(args, p)
+		}
+	}
+	args = append(args, limit)
 	return s.listPaymentOrders(
 		`SELECT `+orderCols+`
 		 FROM payment_orders o`+orderJoins+`
-		 WHERE o.status = 'pending' AND o.provider != '' AND o.provider_id != '' AND o.provider != ?
-		 ORDER BY o.created_at ASC LIMIT ?`, model.ExternalPayProvider, limit)
+		 WHERE o.status = 'pending' AND o.provider != '' AND o.provider_id != '' AND o.provider != ?`+not+`
+		 ORDER BY o.created_at ASC LIMIT ?`, args...)
 }
 
 // periodsJSON stores the multi-period discounts; none is ”.

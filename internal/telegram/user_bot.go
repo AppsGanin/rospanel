@@ -28,8 +28,9 @@ type UserService struct {
 	mu          sync.Mutex
 	client      *Client
 	clientToken string
-	clientProxy string // proxy the cached client was built with; a change rebuilds it
-	commandsFor string // token whose command menu was already published
+	clientProxy string         // proxy the cached client was built with; a change rebuilds it
+	commandsFor string         // token (and plugin commands) whose command menu was already published
+	pluginChats map[int64]bool // chats with a plugin's answer being worked out (offLoop)
 	offset      int64
 	pending     map[int64]string // chatID → "reg" (awaiting display name), "promo", "topup"
 
@@ -318,6 +319,9 @@ func (s *UserService) handleMessage(ctx context.Context, client *Client, m *Mess
 		s.handleStart(ctx, client, set, chatID, args)
 		return
 	}
+	if strings.HasPrefix(cmd, "/") && s.handlePluginCommand(ctx, client, m, cmd, args) {
+		return
+	}
 	pending := s.takePending(chatID)
 	if u, ok := s.findLinkedUser(chatID); ok {
 		switch pending {
@@ -498,6 +502,9 @@ func (s *UserService) handleCallback(ctx context.Context, client *Client, cb *Ca
 		return
 	}
 	s.clearPending(chatID)
+	if s.handlePluginCallback(ctx, client, cb) {
+		return
+	}
 
 	if u, ok := s.findLinkedUser(chatID); ok {
 		s.handleUserCallback(ctx, client, cb, set, u)
@@ -562,6 +569,13 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 	if s.panel.RegistrationBlacklisted(chatID) {
 		log.Printf("telegram user: registration refused to blacklisted chat %d", chatID)
 		s.send(ctx, client, chatID, i18n.T(lang, "user.regRefused"))
+		return
+	}
+	if ok, reason := s.panel.SignupAllowed(ctx, model.SignupCheck{Channel: "bot", TelegramID: chatID, Lang: string(lang)}); !ok {
+		if reason == "" {
+			reason = i18n.T(lang, "user.regRefused")
+		}
+		s.send(ctx, client, chatID, esc(reason))
 		return
 	}
 	// A chat that already has a pending moderated request must not re-tap its way
@@ -1109,7 +1123,7 @@ func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msg
 		}
 		// A discount code the user entered, or devices held, show in the price it buys.
 		label := planButtonLabel(p, lang)
-		if q.DiscountRub > 0 || q.Devices > 0 {
+		if q.DiscountRub > 0 || q.PluginDiscountRub > 0 || q.Devices > 0 {
 			shown := p
 			shown.PriceRub = q.TotalRub
 			label = "🏷 " + planButtonLabel(shown, lang)
@@ -1388,8 +1402,13 @@ func userBotCommands(lang i18n.Lang) []BotCommand {
 // publishCommands pushes the command menu once per token. Re-publishing on every
 // poll would spend an API call a cycle to send Telegram what it already has.
 func (s *UserService) publishCommands(ctx context.Context, client *Client, token string) {
+	// Latched on the plugins' commands too: switching one on or off republishes.
+	key := token
+	for _, c := range s.pluginCommands(i18n.EN) {
+		key += "|" + c.Command
+	}
 	s.mu.Lock()
-	done := s.commandsFor == token
+	done := s.commandsFor == key
 	s.mu.Unlock()
 	if done {
 		return
@@ -1415,7 +1434,8 @@ func (s *UserService) publishCommands(ctx context.Context, client *Client, token
 		{i18n.RU, "be"},
 		{i18n.RU, "uk"},
 	} {
-		if err := client.SetMyCommands(ctx, userBotCommands(pub.lang), pub.scope); err != nil {
+		cmds := append(userBotCommands(pub.lang), s.pluginCommands(pub.lang)...)
+		if err := client.SetMyCommands(ctx, cmds, pub.scope); err != nil {
 			log.Printf("telegram user: publish commands (scope %q): %v", pub.scope, err)
 			return // not latched: retried next cycle
 		}
@@ -1424,7 +1444,7 @@ func (s *UserService) publishCommands(ctx context.Context, client *Client, token
 		return // retried next cycle
 	}
 	s.mu.Lock()
-	s.commandsFor = token
+	s.commandsFor = key
 	s.mu.Unlock()
 }
 

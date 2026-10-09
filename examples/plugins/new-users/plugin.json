@@ -1,0 +1,26 @@
+{
+  "id": "new-users",
+  "version": "1.0.0",
+  "api": 1,
+  "panel": ">=5.0.0",
+  "name": {"ru": "Новые пользователи — в Telegram", "en": "New users to Telegram"},
+  "description": {
+    "ru": "Пишет в ваш чат Telegram о каждом новом пользователе и раз в день присылает сводку.",
+    "en": "Tells your Telegram chat about every new user and sends a summary once a day."
+  },
+  "author": "RosPanel",
+  "license": "MIT",
+  "permissions": ["users.view"],
+  "net": ["api.telegram.org"],
+  "settings": [
+    {"key": "bot_token", "kind": "secret", "label": {"ru": "Токен бота", "en": "Bot token"},
+     "help": {"ru": "Создайте бота у @BotFather", "en": "Create a bot with @BotFather"}},
+    {"key": "chat_id", "kind": "text", "label": {"ru": "ID чата", "en": "Chat ID"}, "placeholder": "-1001234567890"},
+    {"key": "lang", "kind": "select", "label": {"ru": "Язык сообщений", "en": "Message language"}, "default": "ru",
+     "options": [{"value": "ru", "label": "Русский"}, {"value": "en", "label": "English"}]}
+  ],
+  "provides": {
+    "events": ["user.created", "user.registered"],
+    "cron": [{"name": "summary", "schedule": "0 9 * * *"}]
+  }
+}

@@ -1,3 +1,4 @@
+import { UserPluginPanel } from "./PluginSurfaces";
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
@@ -1031,6 +1032,9 @@ export function UserDetail({
             )}
           </Panel>
           </ReadOnly>
+
+          {/* What plugins know about this account, and their buttons for it. */}
+          <UserPluginPanel userId={user.id} onChanged={onChanged} />
 
           {/* The balance, its ledger and the referral standing — billing's to see. */}
           {billingOn && canBillingView && <UserWallet userId={user.id} onOpenUser={onOpenUser} />}

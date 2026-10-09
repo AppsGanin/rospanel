@@ -234,7 +234,7 @@ export interface UserEvent {
   user_id: number
   user_name: string
   action: string
-  actor_kind: 'admin' | 'apikey' | 'telegram' | 'user' | 'system'
+  actor_kind: 'admin' | 'apikey' | 'telegram' | 'user' | 'system' | 'plugin'
   actor_name: string
   details: Record<string, unknown> | null
   created_at: number
@@ -747,6 +747,8 @@ export type Perm =
   | 'logs.view'
   | 'audit.view'
   | 'system.update'
+  | 'plugins.view'
+  | 'plugins.manage'
 
 // PermSection is one row of the role editor, as the server's catalog lists it: a
 // section with a view and/or manage permission, or a permission of its own.
@@ -3302,3 +3304,380 @@ export const resetConnections = () =>
   api<ConnectionsStatus>('api/connections/reset', { method: 'POST' })
 export const resetNodeConnections = (id: number) =>
   api<ConnectionsStatus>(`api/nodes/${id}/connections/reset`, { method: 'POST' })
+
+// --- Plugins (internal/plugin) ---
+
+// PluginText is a user-facing string a plugin wrote: plain, or per language.
+export type PluginText = string | Record<string, string>
+
+export interface PluginField {
+  key: string
+  kind: 'text' | 'secret' | 'bool' | 'number' | 'textarea' | 'select'
+  label: PluginText
+  help?: PluginText
+  placeholder?: string
+  optional?: boolean
+  default?: string
+  options?: { value: string; label: PluginText }[]
+}
+
+export interface PluginManifest {
+  id: string
+  version: string
+  api: number
+  panel?: string
+  name: PluginText
+  description?: PluginText
+  author?: string
+  homepage?: string
+  license?: string
+  permissions?: Perm[]
+  net?: string[]
+  settings?: PluginField[]
+  provides: {
+    events?: string[]
+    hooks?: string[]
+    cron?: { name: string; schedule: string }[]
+    payment?: { label: PluginText }
+    http?: boolean
+    channel?: { label: PluginText }
+    user_fields?: { key: string; label: PluginText }[]
+    actions?: { key: string; label: PluginText; scope: string }[]
+    widgets?: { key: string; label: PluginText }[]
+    sub_blocks?: boolean
+    bot?: { menu?: boolean; commands?: string[] }
+    price?: boolean
+    subscription?: boolean
+    theme?: boolean
+  }
+  db_quota_mb?: number
+  memory_mb?: number
+  experimental?: string[]
+}
+
+export type PluginStatus = 'active' | 'paused' | 'error' | 'disabled'
+
+export interface PluginInfo {
+  id: string
+  version: string
+  manifest: PluginManifest | null
+  enabled: boolean
+  status: PluginStatus
+  status_error?: string
+  config: Record<string, string>
+  secrets_set?: string[]
+  prev_version?: string
+  installed_at: number
+  updated_at: number
+  sha256: string
+  db_bytes: number
+  missing_setup?: string[]
+  http_url?: string
+  payment_key?: string
+  payment_webhook?: string
+  retry_at?: number
+}
+
+export interface PluginInspection {
+  sha256: string
+  size: number
+  manifest: PluginManifest
+  readme?: string
+  risky_perms?: Perm[]
+  exports: string[]
+  installed?: string
+  added_perms?: Perm[]
+  added_net?: string[]
+  bumped_to?: string // the editor raised the draft's version to this (it was not above the installed one)
+  added_points?: string[]
+}
+
+export interface PluginLogLine {
+  at: number
+  level: 'info' | 'warn' | 'error'
+  msg: string
+}
+
+export const listPlugins = () => api<{ plugins: PluginInfo[] }>('api/plugins')
+
+export const inspectPluginFile = async (file: Blob): Promise<PluginInspection> => {
+  const res = await fetch('api/plugins/inspect', {
+    method: 'POST',
+    body: file,
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/zip', ...CSRF_HEADER },
+  })
+  if (res.status === 401) onUnauthorized?.()
+  const data = parseBody(await res.text(), res.status, res.ok)
+  if (!res.ok) throw apiError(data, res.status)
+  return data as unknown as PluginInspection
+}
+
+export const inspectPluginURL = (url: string) =>
+  api<PluginInspection>('api/plugins/inspect', { method: 'POST', body: JSON.stringify({ url }) })
+
+const consentBody = (p: PluginInspection, currentPassword: string) =>
+  JSON.stringify({
+    sha256: p.sha256,
+    perms: p.manifest.permissions ?? [],
+    net: p.manifest.net ?? [],
+    current_password: currentPassword,
+  })
+
+export const installPlugin = (p: PluginInspection, currentPassword: string) =>
+  api<PluginInfo>('api/plugins', { method: 'POST', body: consentBody(p, currentPassword) })
+
+export const updatePlugin = (id: string, p: PluginInspection, currentPassword: string) =>
+  api<PluginInfo>(`api/plugins/${encodeURIComponent(id)}/update`, {
+    method: 'POST',
+    body: consentBody(p, currentPassword),
+  })
+
+const pluginPost = (id: string, what: string) =>
+  api<PluginInfo>(`api/plugins/${encodeURIComponent(id)}/${what}`, { method: 'POST' })
+
+export const enablePlugin = (id: string) => pluginPost(id, 'enable')
+export const disablePlugin = (id: string) => pluginPost(id, 'disable')
+// A rollback puts back the data of before the update: the password again.
+export const rollbackPlugin = (id: string, currentPassword: string) =>
+  api<PluginInfo>(`api/plugins/${encodeURIComponent(id)}/rollback`, {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword }),
+  })
+
+export const configurePlugin = (id: string, values: Record<string, string>, clear: string[] = []) =>
+  api<PluginInfo>(`api/plugins/${encodeURIComponent(id)}/config`, {
+    method: 'POST',
+    body: JSON.stringify({ values, clear }),
+  })
+
+export const uninstallPlugin = (id: string, keepData: boolean, currentPassword: string) =>
+  api<{ ok: boolean }>(`api/plugins/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ keep_data: keepData, current_password: currentPassword }),
+  })
+
+export const getPluginLogs = (id: string) =>
+  api<{ lines: PluginLogLine[] }>(`api/plugins/${encodeURIComponent(id)}/logs`)
+
+
+// --- plugins written in the panel (drafts) ---
+
+export type DraftMode = 'builder' | 'code'
+
+export interface PluginDraft {
+  id: number
+  name: string
+  mode: DraftMode
+  plugin_id: string
+  version: string
+  created_by: string
+  created_at: number
+  updated_at: number
+  // In the list: whether a plugin of this ID is installed, and runs this very code.
+  installed?: boolean
+  applied?: boolean
+}
+
+export interface DraftFile {
+  path: string
+  text?: string
+  base64?: string // a binary file (a theme's image)
+}
+
+export type RuleOp = 'eq' | 'ne' | 'contains' | 'gt' | 'lt' | 'empty' | 'not_empty'
+export type RuleActionType = 'telegram' | 'discord' | 'http' | 'extend' | 'enable' | 'disable' | 'tag' | 'untag' | 'log'
+
+export interface RuleCondition {
+  field: string
+  op: RuleOp
+  value?: string
+}
+
+export interface RuleAction {
+  type: RuleActionType
+  text?: string
+  url?: string
+  method?: string
+  body?: string
+  auth?: boolean
+  days?: number
+  tag?: string
+}
+
+export interface Rule {
+  name?: string
+  event?: string
+  schedule?: string
+  match?: 'all' | 'any'
+  conditions?: RuleCondition[]
+  actions: RuleAction[]
+}
+
+export interface RuleSpec {
+  id: string
+  version: string
+  name: string
+  description?: string
+  rules: Rule[]
+}
+
+export interface DraftView {
+  draft: PluginDraft
+  files: DraftFile[]
+  spec?: RuleSpec
+  problems?: string[]
+  events: string[]
+  // What each event carries: the fields a rule can read, with samples.
+  catalog: EventCatalog
+  // The plugin of this ID the panel runs, and whether it runs this very code.
+  installed?: { version: string; applied: boolean }
+}
+
+// EventField is one value a rule can read: user.name, data.days_left, event.
+export interface EventField {
+  path: string
+  type: "text" | "number" | "bool" | "time" | "bytes" | "kop" | "rub" | "list" | "object"
+  hint: string // evField.<hint> in the dictionaries
+  example: unknown
+  maybe?: boolean // not on every such event
+}
+
+export interface EventInfo {
+  event: string
+  // Where its user comes from: the event's own fields, data.user, only data.user_id,
+  // or none.
+  user: "data" | "nested" | "id" | ""
+  // acts: actions on the user (extend, tag…) can run — not on user.deleted.
+  acts: boolean
+  fields: EventField[] | null
+  sample: Record<string, unknown>
+}
+
+export interface EventCatalog {
+  context: EventField[]
+  user: EventField[]
+  events: EventInfo[]
+}
+
+export interface DraftCheck {
+  ok: boolean
+  problems?: string[]
+  manifest?: PluginManifest
+  exports?: string[]
+  skipped?: string[]
+  size: number
+}
+
+export interface DraftTestResult {
+  name: string
+  ok: boolean
+  error: string
+  stack: string
+}
+
+export interface DraftCall {
+  kind: 'http' | 'api'
+  method: string
+  url: string
+  body: string
+}
+
+export interface DraftRun {
+  result?: unknown
+  error?: string
+  logs: PluginLogLine[]
+  calls: DraftCall[]
+}
+
+const draftPath = (id: number, what = '') => `api/plugin-drafts/${id}${what ? `/${what}` : ''}`
+
+export const listPluginDrafts = () => api<{ drafts: PluginDraft[] }>('api/plugin-drafts')
+
+export const getPluginDraftTypes = () => apiText('api/plugin-drafts/types')
+
+export const createPluginDraft = (from: 'template' | 'builder' | 'installed', pluginId: string) =>
+  api<DraftView>('api/plugin-drafts', { method: 'POST', body: JSON.stringify({ from, plugin_id: pluginId }) })
+
+export const importPluginDraft = async (file: Blob): Promise<DraftView> => {
+  const res = await fetch('api/plugin-drafts', {
+    method: 'POST',
+    body: file,
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/zip', ...CSRF_HEADER },
+  })
+  if (res.status === 401) onUnauthorized?.()
+  const data = parseBody(await res.text(), res.status, res.ok)
+  if (!res.ok) throw apiError(data, res.status)
+  return data as unknown as DraftView
+}
+
+export const getPluginDraft = (id: number) => api<DraftView>(draftPath(id))
+
+export const savePluginDraft = (
+  id: number,
+  change: { name?: string; spec?: RuleSpec; files?: DraftFile[]; mode?: 'code' },
+) => api<DraftView>(draftPath(id), { method: 'PUT', body: JSON.stringify(change) })
+
+export const deletePluginDraft = (id: number) => api<{ ok: boolean }>(draftPath(id), { method: 'DELETE' })
+
+export const checkPluginDraft = (id: number) => api<DraftCheck>(draftPath(id, 'check'), { method: 'POST' })
+
+export const testPluginDraft = (id: number) =>
+  api<{ results: DraftTestResult[]; output: string; error?: string }>(draftPath(id, 'test'), { method: 'POST' })
+
+export const runPluginDraft = (
+  id: number,
+  req: { event?: string; data?: unknown; export?: string; arg?: unknown; real_http?: boolean; real_api?: boolean },
+) => api<DraftRun>(draftPath(id, 'run'), { method: 'POST', body: JSON.stringify(req) })
+
+export const inspectPluginDraft = (id: number) =>
+  api<PluginInspection>(draftPath(id, 'inspect'), { method: 'POST' })
+
+export const pluginDraftDownloadURL = (id: number, kind: 'package' | 'sources') =>
+  `${draftPath(id, 'download')}${kind === 'package' ? '?kind=package' : ''}`
+
+export interface PluginAction {
+  plugin: string
+  key: string
+  label: string
+  scope: 'user' | 'users' | 'global'
+  perm: Perm
+  confirm: boolean
+}
+
+export const listPluginActions = () =>
+  api<{ actions: PluginAction[] }>(`api/plugin-actions?lang=${i18n.language === 'en' ? 'en' : 'ru'}`)
+
+export const runPluginAction = (plugin: string, key: string, userIds: number[]) =>
+  api<{ ok: boolean; message: string }>(
+    `api/plugin-actions/${encodeURIComponent(plugin)}/${encodeURIComponent(key)}`,
+    { method: 'POST', body: JSON.stringify({ user_ids: userIds }) },
+  )
+
+export type PluginWidgetData =
+  | { type: 'stat'; value: string | number; hint?: string }
+  | { type: 'table'; columns: string[]; rows: (string | number)[][] }
+  | { type: 'list'; items: (string | number)[] }
+
+export interface PluginWidget {
+  plugin: string
+  key: string
+  label: string
+  data?: PluginWidgetData
+  error?: string
+}
+
+export const getPluginWidgets = () =>
+  api<{ widgets: PluginWidget[] }>(`api/plugin-widgets?lang=${i18n.language === 'en' ? 'en' : 'ru'}`)
+
+export interface PluginFieldsBlock {
+  plugin: string
+  name: string
+  fields: { key: string; label: string; value: string }[]
+}
+
+export const getUserPluginFields = (userId: number) =>
+  api<{ plugins: PluginFieldsBlock[] }>(
+    `api/users/${userId}/plugin-fields?lang=${i18n.language === 'en' ? 'en' : 'ru'}`,
+  )

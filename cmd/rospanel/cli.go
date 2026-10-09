@@ -55,6 +55,8 @@ Commands:
   rescue <sub>       Regain access when locked out: list, password <login>,
                      unlock <login> (password + clear 2FA), owner <login>.
   reset [-y]         Factory reset — wipes the entire database.
+  plugin <sub>       Tools for plugin authors: new, validate, pack, test, dev
+                     (see rospanel plugin help).
   version            Show the version.
   help               Show this help.
 

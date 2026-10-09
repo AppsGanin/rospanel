@@ -304,6 +304,10 @@ func (m *Manager) ConfirmStarsPayment(payload, currency string, total int64, raw
 	return err
 }
 
+// EnsureCallbackSecret makes the public callback segment exist — what a plugin
+// with onHttp or a payment method is reached under, as a provider is.
+func (m *Manager) EnsureCallbackSecret() error { return m.ensureWebhookSecret() }
+
 func (m *Manager) ensureWebhookSecret() error {
 	set, err := m.Settings()
 	if err != nil {
@@ -426,7 +430,9 @@ func (m *Manager) startProviderOrder(ctx context.Context, lang i18n.Lang, d stor
 	adminLang := m.botLang()
 	// A separate timeout context for the outbound provider call — ctx carries the
 	// actor for the audit row and must not be cancelled along with the HTTP request.
-	callCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	// WithoutCancel keeps the request's values (a plugin's own call chain among
+	// them, so a plugin opening an order paid with itself is refused, not deadlocked).
+	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
 	if strings.TrimSpace(returnURL) == "" {
 		returnURL = "https://t.me/"
@@ -627,7 +633,7 @@ const providerOrderReuseWindow = 5 * time.Minute
 // status endpoint (ErrNoStatusAPI) are left to their webhook — for those, a missed
 // callback is only ever resolved by the abandoned sweep or by hand.
 func (m *Manager) PollPendingPayments() {
-	orders, err := m.store.PendingProviderOrders(100)
+	orders, err := m.store.PendingProviderOrders(100, m.stoppedPluginProviders())
 	if err != nil || len(orders) == 0 {
 		return
 	}
@@ -644,7 +650,10 @@ func (m *Manager) PollPendingPayments() {
 		// looks abandoned, including the ones that were paid while we were down. So
 		// age only ever decides what to do with an order the provider has already been
 		// asked about — cancelling first and asking later is how money goes missing.
-		stale := o.CreatedAt > 0 && o.CreatedAt < staleBefore
+		// A plugin's payment method that is installed but stopped (paused by its
+		// breaker, failed to start) comes back when the operator resumes it: its
+		// orders wait for that, whatever their age.
+		stale := o.CreatedAt > 0 && o.CreatedAt < staleBefore && !m.pluginPaymentStopped(o.Provider)
 		client, ok := clients[o.Provider]
 		if !ok {
 			// A provider that's since been switched off or unconfigured has no client —
@@ -661,6 +670,9 @@ func (m *Manager) PollPendingPayments() {
 		}
 		res, err := client.Status(ctx, o.ProviderID)
 		if err != nil {
+			if errors.Is(err, payments.ErrUnavailable) {
+				continue // busy or starting: next cycle asks again, nothing is decided by age
+			}
 			if errors.Is(err, payments.ErrNoStatusAPI) {
 				// Webhook-only provider: there is no way to ask, so the age sweep is the
 				// only thing that ever stops this order being polled.

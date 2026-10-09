@@ -1,0 +1,25 @@
+{
+  "id": "announcement",
+  "version": "1.0.0",
+  "api": 1,
+  "panel": ">=5.0.0",
+  "name": {"ru": "Объявление на странице подписки", "en": "Announcement on the subscription page"},
+  "description": {
+    "ru": "Показывает ваш текст наверху страницы подписки — всем или только тем, у кого подписка скоро закончится.",
+    "en": "Shows your text at the top of the subscription page — to everyone, or only to those whose subscription ends soon."
+  },
+  "author": "RosPanel",
+  "license": "MIT",
+  "settings": [
+    {"key": "text", "kind": "textarea", "label": {"ru": "Текст (Markdown)", "en": "Text (Markdown)"}},
+    {"key": "button_label", "kind": "text", "label": {"ru": "Кнопка: надпись", "en": "Button label"}, "optional": true},
+    {"key": "button_url", "kind": "text", "label": {"ru": "Кнопка: ссылка (https)", "en": "Button link (https)"}, "optional": true},
+    {"key": "who", "kind": "select", "label": {"ru": "Кому показывать", "en": "Show to"}, "default": "all",
+     "options": [{"value": "all", "label": {"ru": "Всем", "en": "Everyone"}}, {"value": "expiring", "label": {"ru": "Подписка кончается в 3 дня", "en": "Subscription ends within 3 days"}}]}
+  ],
+  "permissions": ["users.view"],
+  "provides": {
+    "sub_blocks": true,
+    "actions": [{"key": "preview", "label": {"ru": "Как это выглядит", "en": "Preview"}, "scope": "global", "perm": "settings.view"}]
+  }
+}

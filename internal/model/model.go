@@ -686,6 +686,13 @@ const (
 	// Mailings switched on or off for the user — by the bot's switch, the operator or
 	// the API; data.mailing is the new state.
 	WebhookUserMailing = "user.mailing"
+	// The servers: a node stopped reporting (node.down) or is back (node.up); Xray
+	// stopped or is back on a server (xray.down / xray.up, data.node_id 0 being the
+	// master). Sent when the admin alert is, its throttle included.
+	WebhookNodeDown = "node.down"
+	WebhookNodeUp   = "node.up"
+	WebhookXrayDown = "xray.down"
+	WebhookXrayUp   = "xray.up"
 )
 
 // WebhookEventCatalog is the stable key list the settings UI iterates over (display
@@ -730,6 +737,10 @@ var WebhookEventCatalog = []string{
 	WebhookUserAutoMessage,
 	WebhookBroadcastSent,
 	WebhookUserMailing,
+	WebhookNodeDown,
+	WebhookNodeUp,
+	WebhookXrayDown,
+	WebhookXrayUp,
 }
 
 // ValidWebhookEvent reports whether k is a known webhook event key.
@@ -1376,6 +1387,9 @@ const (
 	// AdminEventUpdate reports what the scheduled auto-update did: installed a
 	// release, sent the servers to one, or failed.
 	AdminEventUpdate int64 = 1 << 11
+	// AdminEventPlugins reports a plugin the panel had to pause (its breaker, its
+	// database quota, an event storm).
+	AdminEventPlugins int64 = 1 << 12
 )
 
 // AdminEventCatalog is the stable key→flag mapping the settings API/UI iterate
@@ -1396,6 +1410,7 @@ var AdminEventCatalog = []struct {
 	{"login", AdminEventLogin},
 	{"node_traffic", AdminEventNodeTraffic},
 	{"update", AdminEventUpdate},
+	{"plugins", AdminEventPlugins},
 }
 
 // AdminEventEnabled reports whether the given AdminEvent* flag is enabled.
