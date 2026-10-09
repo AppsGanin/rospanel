@@ -145,8 +145,10 @@ sees the values in `panel.config` — **always as strings**.
 | `options` | For `select`: `[{"value", "label"}]`. |
 
 A `secret` is stored encrypted and never shown in the panel again; saving the form with it
-empty keeps the stored one. A value is up to 16 KB. Changing the settings restarts the
-plugin's VM; the next call sees the new `panel.config`.
+empty keeps the stored one. The cross in a field clears its value; a secret is then marked
+"to be removed" and is gone on save. A required setting of a plugin that is on cannot be cleared — switch it off
+first. A value is up to 16 KB. Changing the settings restarts the plugin's VM; the next call
+sees the new `panel.config`.
 
 ### What it answers
 

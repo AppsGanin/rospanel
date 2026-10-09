@@ -33,7 +33,7 @@ rospanel plugin dev .           # a console that reloads on save
 rospanel plugin pack .          # my-plugin-0.1.0.zip
 ```
 
-Install the zip in the panel: **Settings → Plugins → Install**. Or write the plugin in the
+Install the zip in the panel: **Settings → Plugins → Add**. Or write the plugin in the
 panel itself — see [the editor](editor.md).
 
 ```js
