@@ -1,0 +1,191 @@
+package core
+
+import (
+	"context"
+	"slices"
+	"time"
+)
+
+// Plugins subscribe to the webhook events (internal/plugin) and are delivered to
+// through the same outbox, with the same retries — but by their own dispatcher and
+// workers. A plugin call may take its full ten seconds; sharing the endpoints'
+// workers, a slow plugin would hold every external webhook back behind it.
+
+// PluginEvents is what the manager needs from the plugin host.
+type PluginEvents interface {
+	// EventSubscribers lists the active plugins subscribed to event.
+	EventSubscribers(event string) []string
+	// DeliverEvent hands one stored delivery to a plugin. gone means the plugin is
+	// not there to take it any more (removed, off, paused): the delivery is dropped
+	// rather than retried.
+	DeliverEvent(ctx context.Context, plugin string, body []byte) (gone bool, err error)
+	// EventPlugins lists the active plugins that take events (onEvent or a channel).
+	EventPlugins() []string
+}
+
+const (
+	// pluginWorkers deliver to that many plugins at once (each plugin takes one
+	// event at a time): a plugin slow to answer holds one worker, not all of them.
+	pluginWorkers = 4
+	pluginTimeout = 30 * time.Second // onEvent and channel.send, each within its own deadline
+)
+
+// SetPluginEvents connects the plugin host. Until it is set no event goes to a
+// plugin.
+func (m *Manager) SetPluginEvents(p PluginEvents) {
+	m.pluginsMu.Lock()
+	m.plugins = p
+	m.pluginsMu.Unlock()
+	select {
+	case m.pluginKick <- struct{}{}: // deliver what a restart left behind
+	default:
+	}
+}
+
+func (m *Manager) pluginHost() PluginEvents {
+	m.pluginsMu.RLock()
+	defer m.pluginsMu.RUnlock()
+	return m.plugins
+}
+
+func (m *Manager) pluginSubscribers(event string) []string {
+	if p := m.pluginHost(); p != nil {
+		return p.EventSubscribers(event)
+	}
+	return nil
+}
+
+// DropPluginDeliveries clears what is waiting for a plugin that stopped.
+func (m *Manager) DropPluginDeliveries(plugin string) {
+	if err := m.store.DropPluginDeliveries(plugin); err != nil {
+		logErr("plugin events: dropping deliveries failed", "plugin", plugin, "err", err)
+	}
+}
+
+type pluginJob struct {
+	outboxID int64
+	plugin   string
+	event    string
+	body     []byte
+	attempt  int
+}
+
+func (m *Manager) startPluginEventWorkers() {
+	ch := make(chan pluginJob, pluginWorkers)
+	for i := 0; i < pluginWorkers; i++ {
+		m.runAsync(func() {
+			for {
+				select {
+				case <-m.done:
+					return // what is leased comes back with the lease
+				case job := <-ch:
+					m.deliverPluginEvent(job)
+				}
+			}
+		})
+	}
+	m.runAsync(func() {
+		tick := time.NewTicker(webhookPoll)
+		defer tick.Stop()
+		for {
+			for m.dispatchPluginEvents(ch) {
+			}
+			select {
+			case <-m.done:
+				return
+			case <-m.pluginKick:
+			case <-tick.C:
+			}
+		}
+	})
+}
+
+// dispatchPluginEvents leases one batch of plugin deliveries, reporting whether it
+// was full. Nothing is leased before the host is connected.
+func (m *Manager) dispatchPluginEvents(ch chan<- pluginJob) bool {
+	if m.pluginHost() == nil {
+		return false
+	}
+	busy := m.busyPlugins()
+	var idle []string
+	for _, p := range m.pluginHost().EventPlugins() {
+		if !slices.Contains(busy, p) {
+			idle = append(idle, p)
+		}
+	}
+	ds, err := m.store.LeasePluginDeliveries(time.Now().Unix(), int64(webhookLease.Seconds()), webhookBatch, idle)
+	if err != nil {
+		logErr("plugin events: leasing deliveries failed", "err", err)
+		return false
+	}
+	for _, d := range ds {
+		m.claimPlugin(d.PluginID) // in flight from here until its worker is done
+		select {
+		case ch <- pluginJob{outboxID: d.ID, plugin: d.PluginID, event: d.Event, body: d.Body, attempt: d.Attempt + 1}:
+		case <-m.done:
+			return false
+		}
+	}
+	return len(ds) == webhookBatch
+}
+
+func (m *Manager) deliverPluginEvent(job pluginJob) {
+	// The dispatcher claimed the plugin when it leased this row and leases nothing
+	// more for it until this is done; done, it asks for the plugin's next row.
+	defer func() {
+		m.releasePlugin(job.plugin)
+		select {
+		case m.pluginKick <- struct{}{}:
+		default:
+		}
+	}()
+	host := m.pluginHost()
+	if host == nil {
+		return // leased; back after the lease
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), pluginTimeout)
+	gone, err := host.DeliverEvent(ctx, job.plugin, job.body)
+	cancel()
+	if err == nil || gone || job.attempt >= webhookMaxAttempts {
+		if err != nil && !gone {
+			logWarn("plugin events: giving up", "plugin", job.plugin, "event", job.event, "attempts", job.attempt, "err", err)
+		}
+		if e := m.store.FinishWebhookDelivery(job.outboxID); e != nil {
+			logErr("plugin events: clearing a delivery failed", "plugin", job.plugin, "err", e)
+		}
+		return
+	}
+	delay := webhookBackoff[len(webhookBackoff)-1]
+	if job.attempt-1 < len(webhookBackoff) {
+		delay = webhookBackoff[job.attempt-1]
+	}
+	if e := m.store.RetryWebhookDelivery(job.outboxID, job.attempt, time.Now().Add(delay).Unix()); e != nil {
+		logErr("plugin events: scheduling a retry failed", "plugin", job.plugin, "err", e)
+	}
+}
+
+func (m *Manager) claimPlugin(plugin string) {
+	m.pluginBusyMu.Lock()
+	defer m.pluginBusyMu.Unlock()
+	if m.pluginBusy == nil {
+		m.pluginBusy = map[string]bool{}
+	}
+	m.pluginBusy[plugin] = true
+}
+
+// busyPlugins are the plugins with a delivery in flight.
+func (m *Manager) busyPlugins() []string {
+	m.pluginBusyMu.Lock()
+	defer m.pluginBusyMu.Unlock()
+	out := make([]string, 0, len(m.pluginBusy))
+	for p := range m.pluginBusy {
+		out = append(out, p)
+	}
+	return out
+}
+
+func (m *Manager) releasePlugin(plugin string) {
+	m.pluginBusyMu.Lock()
+	delete(m.pluginBusy, plugin)
+	m.pluginBusyMu.Unlock()
+}

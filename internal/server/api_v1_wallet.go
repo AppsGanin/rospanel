@@ -189,6 +189,9 @@ func (rt *Router) apiUserSubscription(w http.ResponseWriter, r *http.Request, id
 	view.TGLink = rt.buildAccess(r, *u, set).TGLink
 	view.TGLinked = u.TgChatID != 0
 	view.TermsURL, view.PrivacyURL = rt.legalLinks(set)
+	for _, b := range rt.pluginBlocks(r.Context(), *u, lang) {
+		view.Blocks = append(view.Blocks, sub.ViewBlock{Type: b.Type, Text: b.Text, Label: b.Label, URL: b.URL})
+	}
 	writeAPIData(w, http.StatusOK, view)
 }
 

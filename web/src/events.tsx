@@ -81,7 +81,7 @@ export function actionMeta(action: string): { label: string; color: Color } {
   return { label, color: ACTION_COLORS[action] ?? "gray" };
 }
 
-const ACTOR_KINDS = ["admin", "apikey", "telegram", "user", "system"] as const;
+const ACTOR_KINDS = ["admin", "apikey", "telegram", "user", "system", "plugin"] as const;
 
 function actorKindLabel(kind: string): string {
   return (ACTOR_KINDS as readonly string[]).includes(kind)

@@ -1,0 +1,9 @@
+{
+  "join": "Sign-up is open to our channel's subscribers. Subscribe and try again.",
+  "need_telegram": "Sign-up is available through Telegram only.",
+  "check_button": "📣 Check subscription",
+  "member": "You are subscribed to {channel}. Thank you!",
+  "not_member": "You are not subscribed to {channel}.",
+  "unknown": "Could not check the subscription. Try again later.",
+  "open": "Open the channel"
+}

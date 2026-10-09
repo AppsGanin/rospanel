@@ -55,6 +55,17 @@ type View struct {
 	// (GET /v1/legal has their text); absent while a document is empty.
 	TermsURL   string `json:"terms_url,omitempty"`
 	PrivacyURL string `json:"privacy_url,omitempty"`
+	// Blocks are what plugins add to the page: {type: text|markdown|notice|button,
+	// text, label, url} — for a page of your own to show as it sees fit.
+	Blocks []ViewBlock `json:"blocks"`
+}
+
+// ViewBlock is one plugin block, as plain values.
+type ViewBlock struct {
+	Type  string `json:"type"`
+	Text  string `json:"text,omitempty"`
+	Label string `json:"label,omitempty"`
+	URL   string `json:"url,omitempty"`
 }
 
 // ViewTexts are a View's figures in words.
@@ -120,7 +131,7 @@ func PageView(u model.User, local *model.Settings, servers []Server, billing Bil
 		ExpireAt: u.ExpireAt, HoldSeconds: u.HoldSeconds,
 		Texts:  ViewTexts{Used: d.Used, Limit: d.Limit, Expire: d.Expire, Reset: d.ResetText, LastSeen: d.LastSeen},
 		SubURL: d.SubURL, ShowConfigs: d.ShowConfigs, Maintenance: local.MaintenanceMode,
-		Apps: []ViewApp{}, Links: []ViewLink{}, AWG: []ViewAWG{}, Turn: []ViewTurn{},
+		Apps: []ViewApp{}, Links: []ViewLink{}, AWG: []ViewAWG{}, Turn: []ViewTurn{}, Blocks: []ViewBlock{},
 		Brand:   ViewBrand{Name: d.BrandName, Accent: d.Brand, Text: d.Ink, Muted: d.Muted, Bg: d.Bg, Surface: d.Surface},
 		Devices: devices,
 	}

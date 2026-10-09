@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "checkJs": true, "target": "ES2023", "module": "ES2022", "noEmit": true },
+  "include": ["main.js", "test.js", "rospanel.d.ts"]
+}

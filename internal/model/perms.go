@@ -41,6 +41,8 @@ const (
 	PermLogs           = "logs.view"
 	PermAudit          = "audit.view"
 	PermUpdate         = "system.update"
+	PermPluginsView    = "plugins.view"
+	PermPluginsManage  = "plugins.manage"
 
 	// PermOwner is not a permission anyone is granted: it marks what only the owner
 	// (and a full-access API key, which only the owner can mint) may do — backups and
@@ -71,6 +73,7 @@ var PermCatalog = []PermSection{
 	{Key: "settings", View: PermSettingsView, Manage: PermSettingsManage},
 	{Key: "security", View: PermSecurityView, Manage: PermSecurityManage},
 	{Key: "stats", View: PermStatsView, Manage: PermStatsManage},
+	{Key: "plugins", View: PermPluginsView, Manage: PermPluginsManage},
 	{Key: "logs", View: PermLogs},
 	{Key: "audit", View: PermAudit},
 	{Key: "usersDelete", Manage: PermUsersDelete},

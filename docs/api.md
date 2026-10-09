@@ -461,6 +461,7 @@ invite code, `POST /v1/users/{id}/referrer` with `{"ref_code": "r_…"}` (with o
 `GET /v1/users/{id}/wallet` (`ref_link` too, while the panel's user bot is on). A cabinet
 that signs people in by their subscription link finds them with `?sub_token=`.
 `GET /v1/users/{id}/subscription` has everything the subscription page shows — status,
+`blocks` (what plugins add to the page: `{type: text|markdown|notice|button, text, label, url}`),
 traffic, term, `sub_url`, one-tap imports per app (`apps`), every config (`links`), the Clash
 download (`clash_url`), devices, the payment block (`billing`), the operator's colours
 (`brand`), `terms_url` / `privacy_url` (the operator's documents, while they have text — `GET /v1/legal`
@@ -1201,6 +1202,10 @@ body is never read).
 | `user.message` | the operator wrote to the user from the panel: `data.text` (Telegram HTML), `data.buttons` (`text`, `url`), `data.media_kind`/`data.media_name` (the file goes only to Telegram), `data.telegram_sent` — false when the bot did not deliver it (no Telegram, a blocked bot, the bot off), then it is yours to deliver. With this event subscribed the panel can write to users without Telegram |
 | `user.auto_message` | an automatic message came due: `data.rule_id`, `data.rule`, `data.trigger`, `data.text` (Telegram HTML, variables filled in), `data.buttons`, `data.code`/`data.percent`/`data.code_expires_at` (a personal discount), `data.telegram_sent`. With this event subscribed the rules also cover the accounts the bot does not reach — all of them with the bot off — except who turned mailings off in the bot; each account hears a rule once per occurrence, whichever way |
 | `user.mailing` | mailings switched on or off for the user — by the bot's switch, the operator or `PATCH /v1/users/{id}`; `data.mailing` |
+| `node.down` | a server stopped reporting; `data.node_id`, `name`, `host`, `last_seen` |
+| `node.up` | the server is back; `data.down_seconds` |
+| `xray.down` | Xray stopped on a server (`data.node_id` 0 is the master); `data.reason` on the master |
+| `xray.up` | Xray is back; `data.down_seconds` |
 | `broadcast.sent` | a broadcast went out — one delivery per broadcast: `data.id`, `data.text`, `data.buttons`, `data.audience`, `data.media_kind`/`data.media_name`, `data.telegram_recipients` (chats the bot sends it to), `data.users` (`id`, `external_id`) — the accounts in the audience the bot does not reach, except who turned mailings off in the bot. With this event subscribed broadcasts work with the bot off (text only) |
 
 ## Delivery format

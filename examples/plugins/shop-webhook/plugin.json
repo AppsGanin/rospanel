@@ -1,0 +1,20 @@
+{
+  "id": "shop-webhook",
+  "version": "1.0.0",
+  "api": 1,
+  "panel": ">=5.0.0",
+  "name": {"ru": "Продажа через свой магазин", "en": "Sales through your own shop"},
+  "description": {
+    "ru": "Магазин после оплаты вызывает адрес плагина — плагин создаёт пользователя на тарифе и отдаёт ссылку на подписку.",
+    "en": "After a sale your shop calls the plugin's address — the plugin creates a user on a plan and answers with the subscription link."
+  },
+  "author": "RosPanel",
+  "license": "MIT",
+  "permissions": ["users.view", "users.manage"],
+  "settings": [
+    {"key": "secret", "kind": "secret", "label": {"ru": "Общий секрет с магазином", "en": "Secret shared with the shop"},
+     "help": {"ru": "Магазин подписывает тело запроса: HMAC-SHA256, hex, в заголовке X-Signature", "en": "The shop signs the request body: HMAC-SHA256, hex, in the X-Signature header"}},
+    {"key": "plan_id", "kind": "number", "label": {"ru": "ID тарифа", "en": "Plan ID"}}
+  ],
+  "provides": {"http": true}
+}

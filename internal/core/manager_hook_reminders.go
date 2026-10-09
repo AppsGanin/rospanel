@@ -22,6 +22,9 @@ func (m *Manager) hookReminders(_ *model.Settings) (horizon int64, percent int) 
 }
 
 func (m *Manager) webhookWanted(event string) bool {
+	if len(m.pluginSubscribers(event)) > 0 {
+		return true // a plugin takes it — the work that builds the event is needed
+	}
 	hooks, err := m.store.EnabledWebhooksForEvent(event)
 	return err == nil && len(hooks) > 0
 }

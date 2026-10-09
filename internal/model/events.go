@@ -23,6 +23,7 @@ const (
 	ActorTelegram = "telegram" // the admin Telegram bot
 	ActorUser     = "user"     // the VPN user themself (user bot / subscription page)
 	ActorSystem   = "system"   // the panel itself (cron, provider webhook)
+	ActorPlugin   = "plugin"   // an installed plugin, through panel.api
 )
 
 // Audit event keys. Stable strings persisted in user_events.action — never renamed

@@ -57,11 +57,13 @@ func (s *UserService) botName(ctx context.Context, client *Client) string {
 // menuRows is the account menu: the plain rows plus whatever the wallet offers.
 func (s *UserService) menuRows(set *model.Settings, u model.User, lang i18n.Lang) [][]InlineButton {
 	rows := userMenuRows(set, u, lang)
-	// Above the last row, the refresh button: the documents, then the mailing switch.
-	extraRows := s.mailingRows(set, u.TgChatID, lang)
+	// Above the last row, the refresh button: the plugins' buttons, the documents,
+	// then the mailing switch.
+	extraRows := s.pluginMenuRows(u, lang)
 	if row := s.legalMenuRow(set, lang); row != nil {
-		extraRows = append([][]InlineButton{row}, extraRows...)
+		extraRows = append(extraRows, row)
 	}
+	extraRows = append(extraRows, s.mailingRows(set, u.TgChatID, lang)...)
 	rows = append(append(rows[:len(rows)-1:len(rows)-1], extraRows...), rows[len(rows)-1])
 	if !set.BillingEnabled {
 		return rows
@@ -411,12 +413,19 @@ func refRewardText(set *model.Settings, lang i18n.Lang) string {
 // quoteLines explains a price that is not simply the plan's: the discount, the part
 // the balance pays, and what is left. Empty when the plan costs its price in money.
 func quoteLines(q core.PlanQuote, lang i18n.Lang) string {
-	if q.DiscountRub == 0 && q.BalanceKop == 0 && q.PeriodDiscountRub == 0 {
+	if q.DiscountRub == 0 && q.BalanceKop == 0 && q.PeriodDiscountRub == 0 && q.PluginDiscountRub == 0 {
 		return ""
 	}
 	var b strings.Builder
 	if q.PeriodDiscountRub > 0 {
 		b.WriteString("\n" + i18n.T(lang, "user.quotePeriods", q.Periods, q.PeriodDiscountRub))
+	}
+	if q.PluginDiscountRub > 0 {
+		note := q.PluginNote
+		if note == "" {
+			note = i18n.T(lang, "sub.yourPrice")
+		}
+		b.WriteString("\n" + i18n.T(lang, "user.quotePlugin", esc(note), q.PluginDiscountRub))
 	}
 	if q.DiscountRub > 0 {
 		b.WriteString("\n" + i18n.T(lang, "user.quoteDiscount", esc(q.PromoCode), q.DiscountRub))

@@ -81,6 +81,7 @@ func (s *Store) ReencryptSensitiveFields() error {
 		{"admin second factors", s.reencryptAdminTOTP},
 		{"pending second factors", s.reencryptAdminTOTPPending},
 		{"payment providers", s.reencryptPaymentProviders},
+		{"plugin settings", s.reencryptPlugins},
 		{"user tunnel keys", s.reencryptUserWGKeys},
 		{"node keys", s.reencryptNodes},
 		{"webhook secrets", s.reencryptWebhooks},
@@ -354,6 +355,45 @@ func (s *Store) reencryptPaymentProviders() error {
 			continue
 		}
 		if _, err := s.db.Exec(`UPDATE payment_providers SET config = ? WHERE key = ?`, enc, r.key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// reencryptPlugins wraps a plugin's settings still stored as plaintext JSON, as
+// reencryptPaymentProviders does for the providers'.
+func (s *Store) reencryptPlugins() error {
+	type row struct{ id, config string }
+	var rows []row
+	res, err := s.db.Query(`SELECT id, config FROM plugins`)
+	if err != nil {
+		return err
+	}
+	for res.Next() {
+		var r row
+		if err := res.Scan(&r.id, &r.config); err != nil {
+			res.Close()
+			return err
+		}
+		rows = append(rows, r)
+	}
+	if err := res.Close(); err != nil {
+		return err
+	}
+	if err := res.Err(); err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if r.config == "" || strings.HasPrefix(r.config, "enc:v1:") {
+			continue
+		}
+		enc := encField(r.config)
+		if !secretRoundtripOK(enc) {
+			log.Printf("[ERROR] reencrypt: plugins.%s roundtrip failed — leaving plaintext", r.id)
+			continue
+		}
+		if _, err := s.db.Exec(`UPDATE plugins SET config = ? WHERE id = ?`, enc, r.id); err != nil {
 			return err
 		}
 	}

@@ -85,6 +85,9 @@ type nodeAlertState struct {
 type nodeAlertMsg struct {
 	bit  int64
 	html string
+	// event, when set, also goes out as a webhook/plugin event with data.
+	event string
+	data  map[string]any
 }
 
 // nodeWatchLoop drives the node alert sweep. The first pass only records a
@@ -151,6 +154,9 @@ func (m *Manager) sweepAlerts(nodes []model.Node, local *sysstat.Stats, now time
 		}
 		for _, msg := range m.nodeAlertsFor(n, now, diskUsed, diskTotal) {
 			m.notifyAdminEvent(msg.bit, msg.html)
+			if msg.event != "" {
+				m.EmitWebhook(msg.event, msg.data)
+			}
 		}
 	}
 	if local != nil {
@@ -253,16 +259,20 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time, diskUsed, diskTota
 	switch {
 	case st.online && !online:
 		st.offlineAlerted, st.offlineSince = true, n.LastSeen
-		out = append(out, nodeAlertMsg{model.AdminEventXrayDown, fmt.Sprintf(
+		out = append(out, nodeAlertMsg{bit: model.AdminEventXrayDown, html: fmt.Sprintf(
 			i18n.T(lang, "notify.nodeOffline"),
-			nodeLabel(n), fmtDowntime(now.Sub(time.Unix(n.LastSeen, 0)), lang))})
+			nodeLabel(n), fmtDowntime(now.Sub(time.Unix(n.LastSeen, 0)), lang)),
+			event: model.WebhookNodeDown, data: nodeEventData(n, map[string]any{"last_seen": n.LastSeen})})
 	case !st.online && online && st.offlineAlerted:
 		st.offlineAlerted = false
 		msg := i18n.T(lang, "notify.nodeBack") + "\n" + nodeLabel(n)
+		var downFor int64
 		if st.offlineSince > 0 {
+			downFor = int64(now.Sub(time.Unix(st.offlineSince, 0)).Seconds())
 			msg += "\n" + i18n.T(lang, "notify.downtime", fmtDowntime(now.Sub(time.Unix(st.offlineSince, 0)), lang))
 		}
-		out = append(out, nodeAlertMsg{model.AdminEventXrayDown, msg})
+		out = append(out, nodeAlertMsg{bit: model.AdminEventXrayDown, html: msg,
+			event: model.WebhookNodeUp, data: nodeEventData(n, map[string]any{"down_seconds": downFor})})
 	}
 	st.online = online
 
@@ -273,7 +283,7 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time, diskUsed, diskTota
 	// have no reason to be logged into.
 	if next, msg := diskAlert(st.diskLowAlerted, diskUsed, diskTotal, nodeLabel(n), lang); msg != "" {
 		st.diskLowAlerted = next
-		out = append(out, nodeAlertMsg{model.AdminEventXrayDown, msg})
+		out = append(out, nodeAlertMsg{bit: model.AdminEventXrayDown, html: msg})
 	}
 
 	// Everything below reads what the node reported. While it is silent that report
@@ -291,17 +301,19 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time, diskUsed, diskTota
 		// all-clear is sent for an outage nobody was told about.
 		if now.Sub(st.lastXrayNotify) >= nodeXrayNotifyThrottle {
 			st.lastXrayNotify, st.xrayAlerted, st.xrayDownAt = now, true, now
-			out = append(out, nodeAlertMsg{model.AdminEventXrayDown, fmt.Sprintf(
+			out = append(out, nodeAlertMsg{bit: model.AdminEventXrayDown, html: fmt.Sprintf(
 				i18n.T(lang, "notify.nodeXrayCrashed"),
-				nodeLabel(n))})
+				nodeLabel(n)), event: model.WebhookXrayDown, data: nodeEventData(n, nil)})
 		}
 	case !st.xrayUp && n.XrayRunning && st.xrayAlerted:
 		st.xrayAlerted = false
 		msg := i18n.T(lang, "notify.nodeXrayBack") + "\n" + nodeLabel(n)
-		if down := now.Sub(st.xrayDownAt); down > time.Second {
+		down := now.Sub(st.xrayDownAt)
+		if down > time.Second {
 			msg += "\n" + i18n.T(lang, "notify.downtime", fmtDowntime(down, lang))
 		}
-		out = append(out, nodeAlertMsg{model.AdminEventXrayDown, msg})
+		out = append(out, nodeAlertMsg{bit: model.AdminEventXrayDown, html: msg,
+			event: model.WebhookXrayUp, data: nodeEventData(n, map[string]any{"down_seconds": int64(down.Seconds())})})
 	}
 	st.xrayUp = n.XrayRunning
 
@@ -322,11 +334,11 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time, diskUsed, diskTota
 				if awg.Err != "" {
 					msg += "\n" + escHTML(awg.Err)
 				}
-				out = append(out, nodeAlertMsg{model.AdminEventXrayDown, msg})
+				out = append(out, nodeAlertMsg{bit: model.AdminEventXrayDown, html: msg})
 			case awg.Running && st.awgDownAlerted:
 				st.awgDownAlerted = false
-				out = append(out, nodeAlertMsg{model.AdminEventXrayDown,
-					fmt.Sprintf(i18n.T(lang, "notify.nodeAWGBack"), nodeLabel(n))})
+				out = append(out, nodeAlertMsg{bit: model.AdminEventXrayDown,
+					html: fmt.Sprintf(i18n.T(lang, "notify.nodeAWGBack"), nodeLabel(n))})
 			}
 		}
 	} else {
@@ -347,13 +359,13 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time, diskUsed, diskTota
 		if days := certDaysLeft(n.CertExpiresAt, now); days >= 0 {
 			msg += "\n" + i18n.TN(lang, "notify.validForDays", days)
 		}
-		out = append(out, nodeAlertMsg{model.AdminEventCert, msg})
+		out = append(out, nodeAlertMsg{bit: model.AdminEventCert, html: msg})
 	}
 	st.certSHA, st.certSelf = n.CertSHA256, n.CertSelfSigned
 
 	if st.certErr != "" && now.Sub(st.lastCertErrAt) >= certErrNotifyThrottle {
 		st.lastCertErrAt = now
-		out = append(out, nodeAlertMsg{model.AdminEventCert, fmt.Sprintf(
+		out = append(out, nodeAlertMsg{bit: model.AdminEventCert, html: fmt.Sprintf(
 			i18n.T(lang, "notify.nodeCertFailed"),
 			nodeLabel(n), escHTML(st.certErr))})
 	}
@@ -473,4 +485,13 @@ func diskAlert(alerted bool, used, total int64, label string, lang i18n.Lang) (b
 		return false, fmt.Sprintf(i18n.T(lang, "notify.diskBack"), label, freePct)
 	}
 	return alerted, ""
+}
+
+// nodeEventData is the payload of the server events: which server, plus extra.
+func nodeEventData(n *model.Node, extra map[string]any) map[string]any {
+	d := map[string]any{"node_id": n.ID, "name": n.Name, "host": n.Host}
+	for k, v := range extra {
+		d[k] = v
+	}
+	return d
 }

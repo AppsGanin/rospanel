@@ -1,0 +1,22 @@
+{
+  "id": "{{ID}}",
+  "version": "0.1.0",
+  "api": 1,
+  "panel": ">={{PANEL}}",
+  "name": {"ru": "{{NAME}}", "en": "{{NAME}}"},
+  "description": {"ru": "Что делает плагин", "en": "What the plugin does"},
+  "author": "",
+  "license": "MIT",
+
+  "permissions": ["users.view"],
+  "net": [],
+
+  "settings": [
+    {"key": "greeting", "kind": "text", "label": {"ru": "Приветствие", "en": "Greeting"}, "default": "Hello"}
+  ],
+
+  "provides": {
+    "events": ["user.created"],
+    "cron": [{"name": "daily", "schedule": "0 9 * * *"}]
+  }
+}

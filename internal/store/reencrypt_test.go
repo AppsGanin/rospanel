@@ -78,6 +78,12 @@ func TestReencryptCoversEverySecretColumn(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if err := st.SavePlugin(model.Plugin{ID: "crm", Version: "1.0.0", Manifest: "{}", Package: []byte("z"), Status: model.PluginDisabled}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec(`UPDATE plugins SET config = '{"token":"plain-plugin"}' WHERE id = 'crm'`); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.ReencryptSensitiveFields(); err != nil {
 		t.Fatalf("reencrypt: %v", err)
 	}
@@ -101,6 +107,7 @@ func TestReencryptCoversEverySecretColumn(t *testing.T) {
 		{"node eab secret", raw(`SELECT zerossl_eab_hmac FROM nodes WHERE id = ?`, n.ID)},
 		{"webhook secret", raw(`SELECT secret FROM webhooks WHERE id = ?`, w.ID)},
 		{"master awg key", raw(`SELECT awg_private_key FROM settings WHERE id = 1`)},
+		{"plugin settings", raw(`SELECT config FROM plugins WHERE id = 'crm'`)},
 	} {
 		if !strings.HasPrefix(c.got, "enc:v1:") {
 			t.Errorf("%s left in plaintext: %q", c.what, c.got)
@@ -133,6 +140,9 @@ func TestReencryptCoversEverySecretColumn(t *testing.T) {
 	if err != nil || gotNode.RealityPrivateKey != "plain-reality" || gotNode.WarpPrivateKey != "plain-warp" ||
 		gotNode.AWGPrivateKey != "plain-awg" || gotNode.ZeroSSLEABHMAC != "plain-eab" {
 		t.Fatalf("node keys not readable: %+v (%v)", gotNode, err)
+	}
+	if p, err := st.GetPlugin("crm"); err != nil || p.Config["token"] != "plain-plugin" {
+		t.Fatalf("plugin settings not readable: %+v (%v)", p, err)
 	}
 	hooks, err := st.ListWebhooks()
 	if err != nil || len(hooks) != 1 || hooks[0].Secret != "plain-hook" {

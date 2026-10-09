@@ -53,6 +53,9 @@ func TestNodeOfflineTransition(t *testing.T) {
 	if !strings.Contains(got.html, "NL") || !strings.Contains(got.html, "203.0.113.7") {
 		t.Fatalf("alert does not name the node: %s", got.html)
 	}
+	if got.event != model.WebhookNodeDown || got.data["node_id"] != n.ID || got.data["host"] != "203.0.113.7" {
+		t.Fatalf("no node.down event with the alert: %+v", got)
+	}
 
 	if out := m.nodeAlertsFor(n, later.Add(time.Minute), 0, 0); out != nil {
 		t.Fatalf("still-offline node re-alerted: %v", out)
@@ -62,6 +65,9 @@ func TestNodeOfflineTransition(t *testing.T) {
 	back := only(t, m.nodeAlertsFor(n, later.Add(2*time.Minute), 0, 0))
 	if !strings.Contains(back.html, "восстановлена") {
 		t.Fatalf("expected a recovery alert, got %+v", back)
+	}
+	if back.event != model.WebhookNodeUp || back.data["down_seconds"] == nil {
+		t.Fatalf("no node.up event with the all-clear: %+v", back)
 	}
 }
 

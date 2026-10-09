@@ -1,0 +1,29 @@
+{
+  "id": "notify-discord",
+  "version": "1.0.0",
+  "api": 1,
+  "panel": ">=5.0.0",
+  "name": {"ru": "Уведомления в Discord", "en": "Discord notifications"},
+  "description": {
+    "ru": "Пишет в канал Discord о новых пользователях, оплатах и серверах, которые перестали отвечать.",
+    "en": "Posts new users, payments and servers that stopped answering to a Discord channel."
+  },
+  "author": "RosPanel",
+  "license": "MIT",
+
+  "net": ["discord.com"],
+
+  "settings": [
+    {"key": "webhook_url", "kind": "secret", "label": {"ru": "Вебхук канала Discord", "en": "Discord channel webhook"},
+     "help": {"ru": "Настройки канала → Интеграции → Вебхуки", "en": "Channel settings → Integrations → Webhooks"}},
+    {"key": "payments", "kind": "bool", "label": {"ru": "Сообщать об оплатах", "en": "Report payments"}, "default": "true"},
+    {"key": "lang", "kind": "select", "label": {"ru": "Язык сообщений", "en": "Message language"}, "default": "ru",
+     "options": [{"value": "ru", "label": "Русский"}, {"value": "en", "label": "English"}]}
+  ],
+
+  "permissions": ["users.view", "billing.view"],
+
+  "provides": {
+    "events": ["user.created", "payment.paid", "node.down", "node.up"]
+  }
+}

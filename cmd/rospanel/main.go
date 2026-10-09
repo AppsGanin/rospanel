@@ -29,6 +29,13 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
 	log.SetPrefix("rospanel: ")
 
+	// Plugin author tools first: they run on an author's own machine, which has no
+	// data directory to log into (see runPlugin).
+	if len(os.Args) > 1 && os.Args[1] == "plugin" {
+		runPlugin(os.Args[2:])
+		return
+	}
+
 	dataDir := resolveDataDir()
 
 	// Stamp log lines in the operator's timezone rather than the server's system one

@@ -165,7 +165,11 @@ func (rt *Router) apiHandler() http.Handler {
 	// document is also what stops the generated tool list from handing an assistant a
 	// tool that calls the tool server.
 	mux.HandleFunc(mcpPathPrefix+"{key}", rt.handleMCP)
-	mux.Handle("/", rt.apiAuth(rt.apiMux()))
+	routes := rt.apiMux()
+	// Plugins reach the same routes in-process, past the key check (they hold no
+	// key: PluginAPI stamps their permissions on the request instead).
+	rt.apiInner = rt.notingWrites(routes)
+	mux.Handle("/", rt.apiAuth(routes))
 	return rt.notingWrites(mux)
 }
 

@@ -64,7 +64,7 @@ func (rt *Router) factoryReset(w http.ResponseWriter, r *http.Request) {
 	for _, name := range []string{"rospanel.db", "rospanel.db-wal", "rospanel.db-shm"} {
 		_ = os.Remove(filepath.Join(rt.dataDir, name))
 	}
-	for _, dir := range []string{"certs", "acme", "xray"} {
+	for _, dir := range []string{"certs", "acme", "xray", "plugins", "cache"} {
 		_ = os.RemoveAll(filepath.Join(rt.dataDir, dir))
 	}
 	// Mirror bootstrapTLS's host resolution so the redirect points where the panel

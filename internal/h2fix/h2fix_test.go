@@ -24,9 +24,11 @@ func TestHeldHTTP2ResponseOutlivesReadHeaderTimeout(t *testing.T) {
 		wantHeld bool
 	}{
 		{name: "wrapped", wrap: true, wantHeld: true},
-		// The unwrapped case pins the net/http behaviour this package exists for: if
-		// it ever starts holding, the wrapper has become dead weight and can go.
-		{name: "unwrapped", wrap: false, wantHeld: false},
+		// The unwrapped case pins net/http's behaviour. Up to Go 1.26.8 it tore the
+		// connection down (wantHeld false); Go 1.26.9 — the floor go.mod sets now —
+		// holds it by itself, so the wrapper is dead weight and can go. Should a
+		// later Go break it again, this case fails and the wrapper is needed again.
+		{name: "unwrapped", wrap: false, wantHeld: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ln, err := net.Listen("tcp", "127.0.0.1:0")

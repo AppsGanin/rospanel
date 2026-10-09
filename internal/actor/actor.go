@@ -29,12 +29,13 @@ type ctxKey struct{}
 // background poller, a provider webhook. A context with no actor means exactly this.
 var System = Actor{Kind: model.ActorSystem}
 
-// Admin / APIKey / Telegram / UserSelf name the four external entry points, so
+// Admin / APIKey / Telegram / UserSelf / Plugin name the external entry points, so
 // callers don't hand-roll the kind strings.
 func Admin(username string) Actor { return Actor{Kind: model.ActorAdmin, Name: username} }
 func APIKey(name string) Actor    { return Actor{Kind: model.ActorAPIKey, Name: name} }
 func Telegram(name string) Actor  { return Actor{Kind: model.ActorTelegram, Name: name} }
 func UserSelf(name string) Actor  { return Actor{Kind: model.ActorUser, Name: name} }
+func Plugin(id string) Actor      { return Actor{Kind: model.ActorPlugin, Name: id} }
 
 // With stamps the actor onto ctx for the mutating calls made under it.
 func With(ctx context.Context, a Actor) context.Context {

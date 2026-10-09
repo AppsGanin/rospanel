@@ -97,6 +97,14 @@ func (s *Store) RegisterDevice(userID int64, d model.Device, limit int) (DeviceA
 	return out, err
 }
 
+// DeviceBound reports whether a device is bound to a user, and how many are.
+func (s *Store) DeviceBound(userID int64, hwid string) (bool, int, error) {
+	var bound, n int
+	err := s.rdb.QueryRow(`SELECT EXISTS (SELECT 1 FROM devices WHERE user_id = ? AND hwid = ?),
+		(SELECT COUNT(*) FROM devices WHERE user_id = ?)`, userID, hwid, userID).Scan(&bound, &n)
+	return bound == 1, n, err
+}
+
 // CountDevices returns how many devices are bound to a user.
 func (s *Store) CountDevices(userID int64) (int, error) { return countDevicesOn(s.rdb, userID) }
 

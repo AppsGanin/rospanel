@@ -83,6 +83,16 @@ const (
 	AuditWebhookUpdated = "webhook.updated"
 	AuditWebhookDeleted = "webhook.deleted"
 
+	// Plugins: code the operator installed, with its own lifecycle.
+	AuditPluginInstalled   = "plugin.installed"
+	AuditPluginUpdated     = "plugin.updated"
+	AuditPluginRolledBack  = "plugin.rolled_back"
+	AuditPluginEnabled     = "plugin.enabled"
+	AuditPluginDisabled    = "plugin.disabled"
+	AuditPluginConfigured  = "plugin.configured"
+	AuditPluginUninstalled = "plugin.uninstalled"
+	AuditPluginAction      = "plugin.action" // an admin pressed a plugin's button
+
 	// Mass broadcasts. Kept as their own actions rather than folded into
 	// AuditSettings: "who sent a message to every user, and what was in it" is the
 	// question this journal exists to answer, and it must not need reading a
@@ -123,6 +133,7 @@ const (
 	AuditCatAPI       = "api"
 	AuditCatBroadcast = "broadcast"
 	AuditCatPanel     = "panel"
+	AuditCatPlugins   = "plugins"
 )
 
 // AdminAuditCategories is the filter's list, in the order it renders. Keys only —
@@ -135,6 +146,7 @@ var AdminAuditCategories = []string{
 	AuditCatPlans,
 	AuditCatAPI,
 	AuditCatBroadcast,
+	AuditCatPlugins,
 	AuditCatPanel,
 }
 
@@ -181,6 +193,15 @@ var AdminAuditCatalog = []AdminAuditEntry{
 	{AuditWebhookCreated, AuditCatAPI},
 	{AuditWebhookUpdated, AuditCatAPI},
 	{AuditWebhookDeleted, AuditCatAPI},
+
+	{AuditPluginInstalled, AuditCatPlugins},
+	{AuditPluginUpdated, AuditCatPlugins},
+	{AuditPluginRolledBack, AuditCatPlugins},
+	{AuditPluginEnabled, AuditCatPlugins},
+	{AuditPluginDisabled, AuditCatPlugins},
+	{AuditPluginConfigured, AuditCatPlugins},
+	{AuditPluginUninstalled, AuditCatPlugins},
+	{AuditPluginAction, AuditCatPlugins},
 
 	{AuditBroadcastStarted, AuditCatBroadcast},
 	{AuditBroadcastChanged, AuditCatBroadcast},

@@ -192,6 +192,7 @@ type captureWriter struct {
 	header http.Header
 	body   bytes.Buffer
 	status int
+	over   bool // the answer outgrew maxCapture
 }
 
 func (c *captureWriter) Header() http.Header { return c.header }
@@ -200,8 +201,17 @@ func (c *captureWriter) Write(b []byte) (int, error) {
 	if c.status == 0 {
 		c.status = http.StatusOK
 	}
+	// Past the most any in-process caller takes (a plugin's 4 MB, MCP's own cap) the
+	// rest is dropped, not buffered: the caller sees the size and refuses it.
+	if c.body.Len()+len(b) > maxCapture {
+		c.over = true
+		return len(b), nil
+	}
 	return c.body.Write(b)
 }
+
+// maxCapture bounds what an in-process call buffers.
+const maxCapture = 8 << 20
 
 func (c *captureWriter) WriteHeader(status int) {
 	if c.status == 0 {

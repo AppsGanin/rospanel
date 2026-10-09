@@ -51,6 +51,10 @@ type Panel interface {
 	// Request creates the user, RejectRegistrationRequest drops it.
 	RequestRegistration(ctx context.Context, chatID int64, name string) (bool, error)
 	RegistrationPending(chatID int64) bool
+	// SignupAllowed asks the plugins about a new account; reason is what to tell the person.
+	SignupAllowed(ctx context.Context, req model.SignupCheck) (bool, string)
+	// PluginBot is the plugins' buttons and commands; nil when there are none.
+	PluginBot() core.PluginBot
 	// RegistrationBlacklisted: the account is on the shared blacklist and the operator
 	// refuses such accounts a signup.
 	RegistrationBlacklisted(tgID int64) bool
