@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.0.0](https://github.com/AppsGanin/rospanel/compare/v4.4.0...v5.0.0) (2026-10-09)
+
+
+### Features
+
+* **plugins:** community plugins — sandboxed engine, extension points, in-panel editor ([#108](https://github.com/AppsGanin/rospanel/issues/108)) ([4453864](https://github.com/AppsGanin/rospanel/commit/4453864e2044ebfc6322cf3f756018918fbe8f5f))
+
+
+### Bug Fixes
+
+* **webhooks:** size the delivery batch by the items, not a product of two lengths ([bd6e8e3](https://github.com/AppsGanin/rospanel/commit/bd6e8e38611c2c7f5c82ae46c16c1a6ccb46a51c))
+
+
+### Miscellaneous Chores
+
+* release 5.0.0 ([ac62d48](https://github.com/AppsGanin/rospanel/commit/ac62d48e738c030116adf44bc772e6ce57304e58))
+
 ## [4.4.0](https://github.com/AppsGanin/rospanel/compare/v4.3.0...v4.4.0) (2026-10-06)
 
 
