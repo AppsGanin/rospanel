@@ -144,3 +144,30 @@ func TestConnTrackerPublicPortSurvivesNewPorts(t *testing.T) {
 		}
 	}
 }
+
+// A lane on a unix socket has no port of its own: it is tracked, and its connections
+// are closed on the front's port; until a front claims it, there is nothing to close
+// them on. A custom inbound with no port is not tracked at all.
+func TestConnTrackerSocketLaneUsesThePublicPort(t *testing.T) {
+	t.Parallel()
+	ports := tcpUserPorts([]byte(`{"inbounds":[
+		{"tag":"vless-in","listen":"@rospanel-vless","port":0,"protocol":"vless","streamSettings":{"network":"tcp","security":"tls"}},
+		{"tag":"custom-1","listen":"0.0.0.0","port":0,"protocol":"vless"}
+	]}`))
+	if p, ok := ports["vless-in"]; !ok || p != 0 || len(ports) != 1 {
+		t.Fatalf("ports %v, want only vless-in, at 0", ports)
+	}
+	line := "x from tcp:203.0.113.1:1000 accepted tcp:a.com:443 [vless-in >> direct] email: u1"
+	alone := newConnTracker(ports, nil)
+	alone.observe("u1", line)
+	if got := alone.take([]string{"u1"}, nil); len(got) != 0 {
+		t.Fatalf("without a front took %v, want nothing", got)
+	}
+	fronted := newConnTracker(ports, map[string]uint16{"vless-in": 443})
+	fronted.observe("u1", line)
+	want := connEnd{netip.MustParseAddrPort("203.0.113.1:1000"), 443}
+	got := fronted.take([]string{"u1"}, nil)
+	if _, ok := got[want]; !ok || len(got) != 1 {
+		t.Fatalf("took %v, want %v", got, want)
+	}
+}

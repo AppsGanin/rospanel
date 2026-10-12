@@ -19,7 +19,7 @@ func TestClaimWireGuardGivesAllowedUsersAnIdentity(t *testing.T) {
 	if err != nil || len(users) != 2 {
 		t.Fatalf("users: %v %v", users, err)
 	}
-	wg := model.Inbound{ID: 5, Protocol: model.InbWireGuard, Enabled: true}
+	wg := model.Inbound{ID: 5, Protocol: model.InbTurnVK, Enabled: true}
 
 	// No WireGuard inbound: nothing to claim, the same slice back.
 	if out, claimed, ok := m.claimWireGuard(users, nil, nil); !ok || claimed || &out[0] != &users[0] {
@@ -62,10 +62,10 @@ func TestClaimWireGuardGivesAllowedUsersAnIdentity(t *testing.T) {
 func TestTurnRelaySpecs(t *testing.T) {
 	t.Parallel()
 	custom := []model.Inbound{
-		{ID: 1, Protocol: model.InbWireGuard, Enabled: true, Port: 56000, Opts: model.InboundOpts{WGLocalPort: 20001, TurnMaskKey: "k1"}},
-		{ID: 2, Protocol: model.InbWireGuard, Enabled: false, Port: 56001, Opts: model.InboundOpts{WGLocalPort: 20002}},
+		{ID: 1, Protocol: model.InbTurnVK, Enabled: true, Port: 56000, Opts: model.InboundOpts{WGLocalPort: 20001, TurnMaskKey: "k1"}},
+		{ID: 2, Protocol: model.InbTurnVK, Enabled: false, Port: 56001, Opts: model.InboundOpts{WGLocalPort: 20002}},
 		{ID: 3, Protocol: model.InbHysteria, Enabled: true, Port: 443},
-		{ID: 4, Protocol: model.InbWireGuard, Enabled: true, Port: 56002}, // no local port yet
+		{ID: 4, Protocol: model.InbTurnVK, Enabled: true, Port: 56002}, // no local port yet
 	}
 	specs := turnRelaySpecs(custom)
 	if len(specs) != 1 || specs[0] != (turnrelay.Spec{Port: 56000, Target: "127.0.0.1:20001", MaskKey: "k1"}) {
@@ -97,7 +97,7 @@ func TestAssignWGLocalPortAvoidsTakenPorts(t *testing.T) {
 			break
 		}
 	}
-	in := model.Inbound{ServerID: model.LocalNodeID, Protocol: model.InbWireGuard, Port: 56000}
+	in := model.Inbound{ServerID: model.LocalNodeID, Protocol: model.InbTurnVK, Port: 56000}
 	for range 50 {
 		in.Opts.WGLocalPort = 0
 		if err := m.assignWGLocalPort(&in, 0); err != nil {

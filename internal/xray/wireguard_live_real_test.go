@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/awg"
-	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/turnrelay"
 	"github.com/AppsGanin/rospanel/internal/turnrelay/freeturnref/rtpopus"
 	"github.com/AppsGanin/rospanel/internal/turnrelay/freeturnref/rtpopus3"
@@ -87,7 +86,7 @@ func TestSyncWireGuardAgainstRealXray(t *testing.T) {
 	}
 	inbound := func(p []WireGuardInboundPeer) Inbound {
 		return Inbound{
-			Tag: "wg-in", Listen: "127.0.0.1", Port: wgPort, Protocol: model.InbWireGuard,
+			Tag: "wg-in", Listen: "127.0.0.1", Port: wgPort, Protocol: ProtoWireGuard,
 			Settings: WireGuardInboundSettings{SecretKey: serverPriv, Address: []string{awg.ServerAddr.String()}, MTU: WireGuardTURNMTU, Peers: p},
 		}
 	}

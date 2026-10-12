@@ -258,3 +258,19 @@ func seedUser(t *testing.T, st *Store) int64 {
 	}
 	return u.ID
 }
+
+// Whether a node's agent serves NaiveProxy is kept with the node, so its link survives a
+// panel restart; an agent that stops saying so loses it.
+func TestNodeServesNaivePersists(t *testing.T) {
+	t.Parallel()
+	st := openNodeStore(t)
+	n, _ := st.CreateNode("naive", "n.example.com", "")
+	for _, serves := range []bool{true, false} {
+		if err := st.UpdateNodeStatus(n.ID, model.NodeStatusUpdate{LastSeen: 1, ConfigHash: "h", ServesNaive: serves}); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := st.GetNode(n.ID); got.ServesNaive != serves {
+			t.Fatalf("ServesNaive = %v, want %v", got.ServesNaive, serves)
+		}
+	}
+}

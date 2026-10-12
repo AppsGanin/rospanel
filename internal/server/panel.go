@@ -99,11 +99,14 @@ func makeUserView(u model.User, set *model.Settings, userBotUsername string, cus
 		v.Hysteria2 = link.Hysteria2(u, set)
 		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoHysteria, &u), v.Hysteria2})
 	}
+	if link.NaiveOn(set) && access.AllowsBuiltin(model.LocalNodeID, model.LaneNaive) {
+		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoNaive, &u), link.Naive(u, set)})
+	}
 	for _, in := range custom {
 		if !access.AllowsInbound(in.ID) {
 			continue
 		}
-		if in.Protocol == model.InbWireGuard {
+		if in.Protocol == model.InbTurnVK {
 			// No share-link form either: the config file, as for AmneziaWG below.
 			v.Links = append(v.Links, namedLink{link.CustomLabelFor(in, u, set), sub.TurnConfURL(set, u.SubToken, in.ID)})
 			continue
@@ -529,6 +532,7 @@ func (rt *Router) panelMux() http.Handler {
 	canBillingManage("GET /api/payments/callbacks", rt.listPaymentCallbacks)
 	canStatsOrUsersView("GET /api/stats/series", rt.statsSeries)
 	canStatsOrUsersView("GET /api/stats/nodes", rt.statsNodes)
+	canStatsView("GET /api/stats/lanes", rt.statsLanes)
 	canStatsView("GET /api/stats/users", rt.statsByUser)
 	canStatsView("GET /api/stats/abuse", rt.statsAbuse)
 	canStatsView("GET /api/stats/countries", rt.statsCountries)

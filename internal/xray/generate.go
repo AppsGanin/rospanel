@@ -60,7 +60,7 @@ type Options struct {
 	Access   map[int64]model.Access
 
 	// FrontVLESS puts the TCP-TLS lane behind the panel's front (see tlsfront): Xray
-	// listens on VLESSInnerAddr and takes a PROXY header, and the front holds the
+	// listens on VLESSInnerAddr (inner.go) and takes a PROXY header, and the front holds the
 	// public port. Only the process that runs the front sets it — a node's agent moves
 	// the lane itself (FrontVLESSRaw), so an agent too old to run a front never
 	// receives a config that needs one.
@@ -69,12 +69,6 @@ type Options struct {
 	// Relays are the external servers this server carries traffic on to (relay.go).
 	Relays []Relay
 }
-
-// VLESSInnerPort is where the TCP-TLS lane listens, on loopback, behind the front.
-const VLESSInnerPort = 18443
-
-// VLESSInnerAddr is VLESSInnerPort on loopback, the front's target.
-var VLESSInnerAddr = fmt.Sprintf("127.0.0.1:%d", VLESSInnerPort)
 
 // acceptProxy is the socket option that has Xray read the front's PROXY header.
 var acceptProxy = json.RawMessage(`{"acceptProxyProtocol":true}`)
@@ -171,7 +165,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		Sniffing: sniff,
 	}
 	if opts.FrontVLESS {
-		vless.Listen, vless.Port = "127.0.0.1", VLESSInnerPort
+		vless.Listen, vless.Port = InnerListen(VLESSInnerAddr)
 		vless.StreamSettings.Sockopt = acceptProxy
 	}
 
@@ -340,6 +334,15 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 			ProbeInterval:     probeInterval,
 			EnableConcurrency: true,
 		}
+	}
+
+	// NaiveProxy's way back into Xray (see internal/naive): the decoy behind :443 turns
+	// each authenticated CONNECT into a VLESS connection here. Only while the lane is on —
+	// a loopback port nobody uses is one more thing that can keep Xray from starting —
+	// and last, so its port can step past every TCP listener above.
+	if set.NaiveEnabled {
+		listen, port := naiveListen(inbounds)
+		inbounds = append(inbounds, naiveInbound(listen, port, naiveClients(set, users, opts.allowsBuiltin), sniff))
 	}
 
 	return &Config{
@@ -529,7 +532,102 @@ const (
 	TagVLESS    = "vless-in"
 	TagHysteria = "hysteria-in"
 	TagReality  = "vless-reality-in"
+	TagNaive    = "naive-in"
 )
+
+// ProtoWireGuard is Xray's name for the protocol of a TURN-VK inbound.
+const ProtoWireGuard = "wireguard"
+
+// naiveListen is where naive-in listens: NaiveInnerAddr, or, where that is a loopback
+// port, the first port from it no TCP listener of the config holds — an inbound created
+// on it before it was reserved must not cost the lane, nor keep Xray from starting.
+func naiveListen(inbounds []Inbound) (string, int) {
+	listen, p := InnerListen(NaiveInnerAddr)
+	if p == 0 {
+		return listen, 0
+	}
+	taken := map[int]bool{}
+	for _, in := range inbounds {
+		switch in.Protocol {
+		case "hysteria", ProtoWireGuard: // UDP: no clash with a TCP port
+		default:
+			taken[in.Port] = true
+		}
+	}
+	for taken[p] {
+		p++
+	}
+	return listen, p
+}
+
+// naiveInbound is the internal VLESS inbound NaiveProxy tunnels enter Xray through.
+// No TLS — it ended on :443 — and a PROXY header carrying the client's address, so the
+// access log names the client and not the panel.
+func naiveInbound(listen string, port int, clients []VLESSClient, sniff *Sniffing) Inbound {
+	return Inbound{
+		Tag:      TagNaive,
+		Listen:   listen,
+		Port:     port,
+		Protocol: "vless",
+		Settings: VLESSInboundSettings{Clients: clients, Decryption: "none"},
+		StreamSettings: &StreamSettings{
+			Network: "tcp",
+			Sockopt: acceptProxy,
+		},
+		Sniffing: sniff,
+	}
+}
+
+// naiveClients are the users the NaiveProxy lane lets in: their UUID, no flow.
+func naiveClients(set *model.Settings, users []model.User, allowBuiltin func(userID int64, lane string) bool) []VLESSClient {
+	out := []VLESSClient{}
+	if !set.NaiveEnabled {
+		return out
+	}
+	for _, u := range users {
+		if allowBuiltin == nil || allowBuiltin(u.ID, model.LaneNaive) {
+			out = append(out, VLESSClient{ID: u.UUID, Email: model.UserEmail(u.ID)})
+		}
+	}
+	return out
+}
+
+// NaiveClients are naive-in's clients in cfg — who internal/naive lets in — and the
+// address it listens on ("" when the lane is off).
+func NaiveClients(cfg *Config) ([]VLESSClient, string) {
+	for _, in := range cfg.Inbounds {
+		if in.Tag != TagNaive {
+			continue
+		}
+		if st, ok := in.Settings.(VLESSInboundSettings); ok {
+			return st.Clients, innerAddr(in.Listen, in.Port)
+		}
+	}
+	return nil, ""
+}
+
+// NaiveClientsRaw is NaiveClients for a config as JSON, the form a node receives.
+func NaiveClientsRaw(data []byte) ([]VLESSClient, string) {
+	var doc struct {
+		Inbounds []struct {
+			Tag      string `json:"tag"`
+			Listen   string `json:"listen"`
+			Port     int    `json:"port"`
+			Settings struct {
+				Clients []VLESSClient `json:"clients"`
+			} `json:"settings"`
+		} `json:"inbounds"`
+	}
+	if json.Unmarshal(data, &doc) != nil {
+		return nil, ""
+	}
+	for _, in := range doc.Inbounds {
+		if in.Tag == TagNaive {
+			return in.Settings.Clients, innerAddr(in.Listen, in.Port)
+		}
+	}
+	return nil, ""
+}
 
 // realityInbound builds the built-in VLESS + XHTTP + REALITY inbound from settings.
 //
@@ -596,9 +694,10 @@ func customInbound(in model.Inbound, set *model.Settings, users []model.User,
 			Network:  "tcp,udp",
 			Users:    customShadowsocksClients(in, allowed),
 		}
-	case model.InbWireGuard:
+	case model.InbTurnVK:
 		// Reached only through the relay, which holds the public port: Xray listens on
 		// loopback at the inbound's local port.
+		out.Protocol = ProtoWireGuard
 		out.Listen = "127.0.0.1"
 		out.Port = in.Opts.WGLocalPort
 		out.Settings = WireGuardInboundSettings{
@@ -629,7 +728,7 @@ func customStream(in model.Inbound, set *model.Settings, cert []Certificate, min
 	// carries no streamSettings at all — the tcp+udp choice lives in its settings
 	// (see ShadowsocksInboundSettings.Network). A streamSettings with network
 	// "shadowsocks" would be a transport Xray doesn't know.
-	if in.Protocol == model.InbShadowsocks || in.Protocol == model.InbWireGuard {
+	if in.Protocol == model.InbShadowsocks || in.Protocol == model.InbTurnVK {
 		return nil // WireGuard is plain UDP to Xray; the relay in front does the DTLS
 	}
 	o := in.Opts
@@ -897,6 +996,10 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 	if len(rc) > 0 {
 		in = append(in, Inbound{Tag: TagReality, Port: set.RealityPort, Protocol: "vless", Settings: VLESSInboundSettings{Clients: rc, Decryption: "none"}})
 	}
+	if nc := naiveClients(set, users, allowBuiltin); len(nc) > 0 {
+		listen, port := InnerListen(NaiveInnerAddr)
+		in = append(in, Inbound{Tag: TagNaive, Listen: listen, Port: port, Protocol: "vless", Settings: VLESSInboundSettings{Clients: nc, Decryption: "none"}})
+	}
 	if len(users) == 0 {
 		return in
 	}
@@ -930,7 +1033,7 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 		case model.InbHysteria:
 			// Same as the built-in lane above: rebuilt, not live-updated.
 			continue
-		case model.InbWireGuard:
+		case model.InbTurnVK:
 			// The CLI refuses this inbound type as it does Hysteria2; its users go
 			// through Supervisor.SyncWireGuard (see WireGuardInbounds).
 			continue
@@ -963,7 +1066,7 @@ func HysteriaInbounds(cfg *Config) []Inbound {
 func WireGuardInbounds(cfg *Config) []Inbound {
 	var out []Inbound
 	for _, in := range cfg.Inbounds {
-		if in.Protocol == model.InbWireGuard {
+		if in.Protocol == ProtoWireGuard {
 			out = append(out, in)
 		}
 	}
@@ -983,8 +1086,11 @@ func EnabledInboundTags(set *model.Settings, custom []model.Inbound) []string {
 	if set.RealityEnabled {
 		tags = append(tags, TagReality)
 	}
+	if set.NaiveEnabled {
+		tags = append(tags, TagNaive)
+	}
 	for _, c := range custom {
-		if c.Protocol == model.InbHysteria || c.Protocol == model.InbWireGuard {
+		if c.Protocol == model.InbHysteria || c.Protocol == model.InbTurnVK {
 			continue // SyncHysteria's and SyncWireGuard's (see above)
 		}
 		tags = append(tags, c.Tag())

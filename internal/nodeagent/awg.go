@@ -133,6 +133,7 @@ func (a *Agent) sampleAWG() {
 			if addDown > 0 {
 				d.Down += addDown
 			}
+			a.addLaneLocked(awgLane, addUp, addDown)
 		}
 		if st.LastHandshake > 0 && now-st.LastHandshake <= awgOnlineWindow {
 			if ip := awg.EndpointIP(st.Endpoint); ip != "" {

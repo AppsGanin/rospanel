@@ -373,8 +373,13 @@ func (s *Store) StatsByUser(from, to string) ([]model.UserTotal, error) {
 
 // ResetDailyStats clears the entire per-day traffic history.
 func (s *Store) ResetDailyStats() error {
-	_, err := s.db.Exec(`DELETE FROM traffic_daily`)
-	return err
+	return s.withTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM traffic_daily`); err != nil {
+			return err
+		}
+		_, err := tx.Exec(`DELETE FROM lane_traffic_daily`)
+		return err
+	})
 }
 
 // SetResetPeriod sets a user's automatic quota-reset period and anchors the
@@ -632,20 +637,24 @@ func (s *Store) PurgeConnections(before int64) (int64, error) {
 // statement and stall every query queued behind it.
 func (s *Store) PurgeTrafficDaily(beforeDay string) (int64, error) {
 	var total int64
-	for {
-		res, err := s.db.Exec(
-			`DELETE FROM traffic_daily WHERE rowid IN (
-				SELECT rowid FROM traffic_daily WHERE day < ? LIMIT ?
-			)`, beforeDay, purgeBatch)
-		if err != nil {
-			return total, err
-		}
-		n, _ := res.RowsAffected()
-		total += n
-		if n < purgeBatch {
-			return total, nil
+	for _, table := range []string{"traffic_daily", "lane_traffic_daily"} {
+		for {
+			// table is one of the two literals above.
+			res, err := s.db.Exec(
+				`DELETE FROM `+table+` WHERE rowid IN (
+					SELECT rowid FROM `+table+` WHERE day < ? LIMIT ?
+				)`, beforeDay, purgeBatch)
+			if err != nil {
+				return total, err
+			}
+			n, _ := res.RowsAffected()
+			total += n
+			if n < purgeBatch {
+				break
+			}
 		}
 	}
+	return total, nil
 }
 
 // RecentConnections returns a user's source IPs, most recent first.

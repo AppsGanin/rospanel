@@ -154,6 +154,16 @@ func buildConnectionsStatus(set *model.Settings) *ConnectionsStatus {
 				Enabled:     set.HysteriaEnabled,
 			},
 			{
+				Key:         "naive",
+				Name:        model.ProtoNaive,
+				DisplayName: set.NaiveName,
+				Transport:   "HTTP/2 CONNECT",
+				Security:    "TLS",
+				Port:        strconv.Itoa(vlessPort),
+				Note:        "",
+				Enabled:     set.NaiveEnabled,
+			},
+			{
 				Key:         "awg",
 				Name:        model.ProtoAWG,
 				DisplayName: set.AWGName,
@@ -212,6 +222,7 @@ var connNameKeys = []struct{ key, proto string }{
 	{"reality", model.ProtoReality},
 	{"hysteria2", model.ProtoHysteria},
 	{"awg", model.ProtoAWG},
+	{"naive", model.ProtoNaive},
 }
 
 // validateConnNames trims and checks the custom node names, returning them keyed
@@ -477,6 +488,9 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 		return err
 	}
 	if err := m.store.SetProtocolNames(connNames["vless"], connNames["reality"], connNames["hysteria2"]); err != nil {
+		return err
+	}
+	if err := m.store.SetNaiveName(connNames["naive"]); err != nil {
 		return err
 	}
 	if err := m.store.SetHysteriaPorts(u.HysteriaPort, u.HopStart, u.HopEnd, interval, obfs); err != nil {

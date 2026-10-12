@@ -18,6 +18,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/ipblock"
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/naive"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/opera"
 	"github.com/AppsGanin/rospanel/internal/shaper"
@@ -167,6 +168,9 @@ type Manager struct {
 	quota       quotaWatch
 	quotaStale  atomic.Bool // a user changed since the watch was read
 	statsSource func() (map[string]xray.Traffic, error)
+	// lanesUnsaved is lane traffic read off Xray's counters (which the read resets) that
+	// the database refused; the next write carries it. Under statsMu.
+	lanesUnsaved map[string]xray.Traffic
 	// clock, when set, is the time the enforcement pass judges users at (now).
 	clock func() time.Time
 
@@ -407,6 +411,9 @@ type Manager struct {
 	// turn runs the master's TURN relays, one per WireGuard inbound (manager_wireguard.go).
 	turn *turnrelay.Relay
 
+	// naive answers NaiveProxy tunnels in front of the decoy (manager_naive.go).
+	naive *naive.Server
+
 	// nodeLogs holds the most recent log tail reported by each node, plus which
 	// nodes an operator is currently viewing (so the panel asks them for logs).
 	nodeLogsMu     sync.Mutex
@@ -481,6 +488,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		nodeHostStats:  map[int64]nodeapi.HostStats{},
 		nodeAWG:        map[int64]nodeAWGState{},
 		awg:            awg.New(),
+		naive:          naive.New(xray.NaiveInnerAddr),
 		turn:           turnrelay.New(),
 		probeBlock:     ipblock.New(ipblock.TableProbes),
 		policyBlock:    ipblock.New(ipblock.TablePolicy),
@@ -1030,6 +1038,7 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 		return true, err
 	}
 	m.syncAWGLocked(set, users)
+	m.syncNaive(cfg)
 	return true, m.store.MarkConfigApplied()
 }
 
@@ -1101,6 +1110,7 @@ func (m *Manager) reconcileLocked() error {
 	logInfo("reconcile: config applied", "users", len(users))
 	m.syncTurnLocked(opts.Custom)
 	m.syncAWGLocked(set, users)
+	m.syncNaive(cfg)
 	return m.store.MarkConfigApplied()
 }
 

@@ -133,6 +133,7 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		CertIssuer:     req.CertIssuer,
 		CertExpiresAt:  req.CertExpiresAt,
 		ConfigHash:     req.ConfigHash,
+		ServesNaive:    req.Naive,
 	})
 
 	// Everything below names users, and a node is believed only about its own (see
@@ -185,7 +186,11 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 				SeenAt: now.Unix(),
 			})
 		}
-		claimed, err := m.store.ApplyNodeReport(n.ID, req.ReportID, deltas)
+		lanes, err := m.nodeLanes(n.ID, today, req.Lanes)
+		claimed := false
+		if err == nil {
+			claimed, err = m.store.ApplyNodeReport(n.ID, req.ReportID, deltas, lanes...)
+		}
 		switch {
 		case err != nil:
 			// Nothing was committed — watermark included — so do NOT ack: the node keeps

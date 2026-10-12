@@ -74,7 +74,7 @@ func (t *connTracker) portOf(tag string) (uint16, bool) {
 	if q, ok := t.public[tag]; ok {
 		return q, true
 	}
-	return p, true
+	return p, p != 0
 }
 
 // forget drops one remembered connection. Caller holds mu.
@@ -102,6 +102,7 @@ func tcpUserPorts(cfg []byte) map[string]uint16 {
 	var doc struct {
 		Inbounds []struct {
 			Tag            string          `json:"tag"`
+			Listen         string          `json:"listen"`
 			Port           json.RawMessage `json:"port"`
 			Protocol       string          `json:"protocol"`
 			StreamSettings struct {
@@ -128,7 +129,12 @@ func tcpUserPorts(cfg []byte) map[string]uint16 {
 			}
 		}
 		p, err := strconv.ParseUint(strings.Trim(string(in.Port), `"`), 10, 16)
-		if err != nil || p == 0 || in.Tag == "" {
+		if err != nil || in.Tag == "" {
+			continue
+		}
+		// A unix socket has no port: its clients come through a front, on the public
+		// port setPublic gives the tag. Kept at 0 until then.
+		if p == 0 && InnerNetwork(in.Listen) != "unix" {
 			continue
 		}
 		out[in.Tag] = uint16(p)
@@ -148,7 +154,7 @@ func (t *connTracker) observe(email, line string) {
 	tag := accessInbound(line)
 	now := time.Now()
 	t.mu.Lock()
-	if _, ok := t.ports[tag]; !ok {
+	if _, ok := t.portOf(tag); !ok {
 		t.mu.Unlock()
 		return
 	}
@@ -248,8 +254,9 @@ func (t *connTracker) takeInbounds(tags []string) map[connEnd]struct{} {
 			if !gone[ref.tag] {
 				continue
 			}
-			port, _ := t.portOf(ref.tag)
-			out[connEnd{ref.client, port}] = struct{}{}
+			if port, ok := t.portOf(ref.tag); ok {
+				out[connEnd{ref.client, port}] = struct{}{}
+			}
 			t.forget(email, ref)
 		}
 	}
@@ -270,8 +277,9 @@ func (t *connTracker) take(emails []string, tags map[string]bool) map[connEnd]st
 			if tags != nil && !tags[ref.tag] {
 				continue
 			}
-			port, _ := t.portOf(ref.tag)
-			out[connEnd{ref.client, port}] = struct{}{}
+			if port, ok := t.portOf(ref.tag); ok {
+				out[connEnd{ref.client, port}] = struct{}{}
+			}
 			t.forget(email, ref)
 		}
 	}

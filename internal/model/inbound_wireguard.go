@@ -70,7 +70,7 @@ func (o *InboundOpts) clearWireGuard() {
 
 // NeedsWireGuardKey reports whether a WireGuard inbound still needs its server key.
 func (in *Inbound) NeedsWireGuardKey() bool {
-	return in.Protocol == InbWireGuard && !validWGKey(in.Opts.WGPrivateKey)
+	return in.Protocol == InbTurnVK && !validWGKey(in.Opts.WGPrivateKey)
 }
 
 // TurnMaskProfile is the Free Turn Proxy wire profile the panel hands its clients: the
@@ -80,7 +80,7 @@ const TurnMaskProfile = "rtpopus3"
 
 // NeedsTurnMaskKey reports whether a WireGuard inbound still needs its masking key.
 func (in *Inbound) NeedsTurnMaskKey() bool {
-	return in.Protocol == InbWireGuard && !validMaskKey(in.Opts.TurnMaskKey)
+	return in.Protocol == InbTurnVK && !validMaskKey(in.Opts.TurnMaskKey)
 }
 
 // validMaskKey reports whether s is a masking key: hex of 32 bytes.

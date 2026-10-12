@@ -21,6 +21,7 @@ func splitFixture() (*model.Settings, []model.Inbound) {
 	set.RealityEnabled, set.RealityPrivateKey, set.RealityDest, set.RealityShortID, set.RealityPath =
 		true, "priv", "www.apple.com", "aa", "/s"
 	set.ProxySocksEnabled, set.ProxySocksPort = true, 1080
+	set.NaiveEnabled = true
 	set.ProxyAccounts = []model.SystemProxyAccount{{User: "u9", Pass: "not-a-panel-user"}}
 	var custom []model.Inbound
 	for i, protocol := range model.InboundProtocols {
@@ -32,7 +33,7 @@ func splitFixture() (*model.Settings, []model.Inbound) {
 			in.Opts = model.InboundOpts{Transport: model.TrWS, Security: model.SecTLS, Path: "/p"}
 		case model.InbShadowsocks:
 			in.Opts = model.InboundOpts{Method: model.SS2022AES128, ShadowKey: "AAAAAAAAAAAAAAAAAAAAAA=="}
-		case model.InbWireGuard:
+		case model.InbTurnVK:
 			in.Opts = model.InboundOpts{WGPrivateKey: testWGKey(0), WGPublicKey: testWGKey(1), WGLocalPort: 20000 + i}
 		}
 		in.Normalize()
@@ -172,8 +173,8 @@ func TestRenderedUsersAreTheGeneratedConfig(t *testing.T) {
 		if !reflect.DeepEqual(decoded(t, got), decoded(t, want)) {
 			t.Errorf("%d users: the rendered config differs from the generated one\n got %.2000s\nwant %.2000s", n, got, want)
 		}
-		if want := 3 + len(model.InboundProtocols) + 1; len(sc.Slots) != want {
-			t.Errorf("%d users: %d slots, want %d (3 lanes, one per custom protocol, the locked one)", n, len(sc.Slots), want)
+		if want := 4 + len(model.InboundProtocols) + 1; len(sc.Slots) != want {
+			t.Errorf("%d users: %d slots, want %d (4 lanes, one per custom protocol, the locked one)", n, len(sc.Slots), want)
 		}
 		// The split is not vacuous: the skeleton carries no user's credential.
 		for _, u := range users {

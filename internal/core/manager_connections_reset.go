@@ -20,7 +20,7 @@ import (
 // DefaultConnections is the factory state, as an update.
 func DefaultConnections() ConnectionsUpdate {
 	return ConnectionsUpdate{
-		Protocols:    map[string]bool{"vless": true, "reality": true, "hysteria2": true, "awg": false},
+		Protocols:    map[string]bool{"vless": true, "reality": true, "hysteria2": true, "awg": false, "naive": true},
 		Fingerprints: map[string]string{"vless": "firefox", "reality": "firefox"},
 		Names:        map[string]string{},
 		HysteriaPort: 443, HopStart: 443, HopEnd: 443, HopInterval: "5-10",

@@ -1,8 +1,11 @@
 package sub
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -103,7 +106,7 @@ func TestSingBoxTemplateRemovedFields(t *testing.T) {
 		if !errors.As(err, &legacy) || legacy.Path != c.path {
 			t.Errorf("%s: validate = %v, want a removed-field error at %s", name, err, c.path)
 		}
-		out, err := SingBoxWithTemplate(tplUser(), tplServers(), c.tpl)
+		out, err := SingBoxWithTemplate(tplUser(), tplServers(), c.tpl, false)
 		if !errors.Is(err, ErrSingBoxLegacy) || out != SingBoxJSONMulti(tplUser(), tplServers()) {
 			t.Errorf("%s: a stored template with a removed field must serve the generated profile (err %v)", name, err)
 		}
@@ -118,7 +121,175 @@ func TestSingBoxTemplateRemovedFields(t *testing.T) {
 	if err := ValidateSingBoxTemplate(modern); err != nil {
 		t.Errorf("a current template was refused: %v", err)
 	}
-	if out, err := SingBoxWithTemplate(tplUser(), tplServers(), modern); err != nil || !strings.Contains(out, `"tag": "r"`) {
+	if out, err := SingBoxWithTemplate(tplUser(), tplServers(), modern, false); err != nil || !strings.Contains(out, `"tag": "r"`) {
 		t.Errorf("a current template did not render (err %v)", err)
+	}
+}
+
+func TestSingBoxNaiveClients(t *testing.T) {
+	for ua, want := range map[string]bool{
+		"SFA (sing-box 1.13.21; language en_US)":                    true,
+		"SFI (sing-box 1.14.3; language ru_RU)":                     true,
+		"SFM (sing-box 2.0.0; language en)":                         true,
+		"SFT (sing-box 1.13.0; language en)":                        true,
+		"SFA (sing-box 1.12.9; language en_US)":                     false,
+		"sing-box 1.14.3":                                           false, // the CLI: cronet is not in every build
+		"HiddifyNext/2.5.7 (android) like ClashMeta v2ray sing-box": false,
+		"": false,
+	} {
+		if got := SingBoxNaive(ua); got != want {
+			t.Errorf("%q: %v, want %v", ua, got, want)
+		}
+	}
+}
+
+// NaiveProxy is an outbound like the others — in the selector and in urltest — and carries
+// UDP over TCP.
+func TestSingBoxNaiveOutbound(t *testing.T) {
+	set := &model.Settings{Host: "203.0.113.5", SNI: "vpn.example.com", VLESSPort: 443,
+		VLESSEnabled: true, NaiveEnabled: true}
+	u := model.User{ID: 3, UUID: "11111111-2222-3333-4444-555555555555"}
+	servers := []Server{{Set: set, Access: model.UnrestrictedAccess()}}
+
+	var doc struct {
+		Outbounds []map[string]any `json:"outbounds"`
+	}
+	if err := json.Unmarshal([]byte(singboxJSON(u, servers, true)), &doc); err != nil {
+		t.Fatal(err)
+	}
+	var naive, selector, auto map[string]any
+	for _, o := range doc.Outbounds {
+		switch o["type"] {
+		case "naive":
+			naive = o
+		case "selector":
+			selector = o
+		case "urltest":
+			auto = o
+		}
+	}
+	if naive == nil {
+		t.Fatal("no naive outbound")
+	}
+	tls := naive["tls"].(map[string]any)
+	if naive["server"] != "203.0.113.5" || naive["server_port"] != float64(443) || naive["username"] != "u3" ||
+		naive["password"] != u.UUID || tls["server_name"] != "vpn.example.com" {
+		t.Fatalf("naive outbound %v", naive)
+	}
+	if !strings.Contains(fmt.Sprint(selector["outbounds"]), fmt.Sprint(naive["tag"])) {
+		t.Fatalf("selector %v lacks %v", selector["outbounds"], naive["tag"])
+	}
+	if !strings.Contains(fmt.Sprint(auto["outbounds"]), fmt.Sprint(naive["tag"])) {
+		t.Fatalf("urltest %v lacks %v", auto["outbounds"], naive["tag"])
+	}
+	if naive["udp_over_tcp"] != true {
+		t.Fatalf("naive outbound without UDP over TCP: %v", naive)
+	}
+
+	// Not for a client that cannot load it, nor on a self-signed certificate.
+	if strings.Contains(singboxJSON(u, servers, false), `"naive"`) {
+		t.Fatal("naive outbound without client support")
+	}
+	set.TLSInsecure = true
+	if strings.Contains(singboxJSON(u, servers, true), `"naive"`) {
+		t.Fatal("naive outbound on a self-signed certificate")
+	}
+}
+
+// With VLESS-TCP-TLS off and NaiveProxy on, the user gets NaiveProxy alone.
+func TestNaiveWithoutVLESS(t *testing.T) {
+	set := &model.Settings{Host: "vpn.example.com", SNI: "vpn.example.com", VLESSPort: 443, NaiveEnabled: true}
+	u := model.User{ID: 3, UUID: "11111111-2222-3333-4444-555555555555"}
+	srv := Server{Set: set, Access: model.UnrestrictedAccess()}
+	links := ShareLinks(u, srv)
+	if len(links) != 1 || !strings.HasPrefix(links[0], "naive+https://u3:11111111-2222-3333-4444-555555555555@vpn.example.com:443#") {
+		t.Fatalf("links %v", links)
+	}
+	var doc struct {
+		Outbounds []map[string]any `json:"outbounds"`
+	}
+	if err := json.Unmarshal([]byte(singboxJSON(u, []Server{srv}, true)), &doc); err != nil {
+		t.Fatal(err)
+	}
+	var types []any
+	for _, o := range doc.Outbounds {
+		types = append(types, o["type"])
+	}
+	if fmt.Sprint(types) != "[selector urltest naive direct]" {
+		t.Fatalf("outbounds %v", types)
+	}
+}
+
+// A template whose DNS would leave the naive outbound's server unresolvable — two
+// servers, no default resolver — gets no naive outbound: sing-box would refuse the
+// whole profile over it.
+func TestSingBoxTemplateNaiveNeedsAResolver(t *testing.T) {
+	set := &model.Settings{Host: "vpn.example.com", SNI: "vpn.example.com", VLESSPort: 443,
+		VLESSEnabled: true, NaiveEnabled: true}
+	u := model.User{ID: 3, UUID: "11111111-2222-3333-4444-555555555555"}
+	servers := []Server{{Set: set, Access: model.UnrestrictedAccess()}}
+	const body = `"outbounds": [{"type": "selector", "tag": "x", "outbounds": ["{{tags}}"]}, "{{proxies}}"]`
+	for name, c := range map[string]struct {
+		tpl   string
+		naive bool
+	}{
+		"two servers, no resolver": {`{"dns": {"servers": [{"type": "https", "tag": "a", "server": "1.1.1.1"}, {"type": "local", "tag": "b"}]}, ` + body + `}`, false},
+		"two servers, a resolver":  {`{"dns": {"servers": [{"type": "https", "tag": "a", "server": "1.1.1.1"}, {"type": "local", "tag": "b"}]}, "route": {"default_domain_resolver": "b"}, ` + body + `}`, true},
+		"one server":               {`{"dns": {"servers": [{"type": "local", "tag": "b"}]}, ` + body + `}`, true},
+		"no dns":                   {`{` + body + `}`, true},
+	} {
+		out, err := SingBoxWithTemplate(u, servers, c.tpl, true)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := strings.Contains(out, `"naive"`); got != c.naive {
+			t.Errorf("%s: naive outbound %v, want %v", name, got, c.naive)
+		}
+	}
+}
+
+// Shadowrocket gets its NaiveProxy server as http2://base64(user:pass@host:port), the
+// form its HTTP2 type imports; every other client naive+https://.
+func TestNaiveLinkForShadowrocket(t *testing.T) {
+	set := &model.Settings{Host: "203.0.113.5", SNI: "vpn.example.com", VLESSPort: 443, NaiveEnabled: true}
+	u := model.User{ID: 3, UUID: "11111111-2222-3333-4444-555555555555"}
+	servers := []Server{{Set: set, Access: model.UnrestrictedAccess()}}
+
+	links := ShareLinksFor(u, servers, "Shadowrocket/2070 CFNetwork/1568.200.51 Darwin/24.1.0")
+	if len(links) != 1 || !strings.HasPrefix(links[0], "http2://") {
+		t.Fatalf("Shadowrocket links %v", links)
+	}
+	pu, err := url.Parse(links[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth, err := base64.StdEncoding.DecodeString(pu.Host)
+	if err != nil {
+		t.Fatalf("payload %q: %v", pu.Host, err)
+	}
+	if string(auth) != "u3:11111111-2222-3333-4444-555555555555@203.0.113.5:443" {
+		t.Fatalf("payload %q", auth)
+	}
+	if q := pu.Query(); q.Get("padding") != "1" || q.Get("peer") != "vpn.example.com" {
+		t.Fatalf("query %v", q)
+	}
+	if pu.Fragment != "NAIVEPROXY" {
+		t.Fatalf("label %q", pu.Fragment)
+	}
+
+	// The clients whose parsers read naive+https:// get it; an empty UA is a hand-made
+	// request and gets it too.
+	for _, ua := range []string{"v2rayN/7.25.6", "Karing/1.2.25.2802 platform/android",
+		"NekoBox/Android/1.4.2 (Prefer ClashMeta Format)", ""} {
+		if l := ShareLinksFor(u, servers, ua); len(l) != 1 || !strings.HasPrefix(l[0], "naive+https://") {
+			t.Fatalf("%q: links %v", ua, l)
+		}
+	}
+	// Clients without NaiveProxy get no such line at all.
+	for _, ua := range []string{"Happ/3.5.1/ios/18.2", "v2rayNG/2.3.11", "INCY/1.4.0/android",
+		"v2raytun/5.25.81 (android)", "V2Box/10.1.9", "Streisand/1.6.76"} {
+		if l := ShareLinksFor(u, servers, ua); len(l) != 0 {
+			t.Fatalf("%q got %v", ua, l)
+		}
 	}
 }

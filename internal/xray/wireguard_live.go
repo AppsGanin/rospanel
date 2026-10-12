@@ -10,8 +10,6 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
-
-	"github.com/AppsGanin/rospanel/internal/model"
 )
 
 // WireGuard users are changed in the running Xray the way Hysteria2 users are, through
@@ -50,7 +48,7 @@ func readWireGuardLive(cfg []byte) (map[string]map[string]wireGuardPeerState, er
 	}
 	out := map[string]map[string]wireGuardPeerState{}
 	for _, in := range doc.Inbounds {
-		if in.Protocol != model.InbWireGuard || in.Tag == "" {
+		if in.Protocol != ProtoWireGuard || in.Tag == "" {
 			continue
 		}
 		var settings WireGuardInboundSettings

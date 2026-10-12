@@ -34,7 +34,7 @@ func TestTurnWireGuardEndpointsAndPageCard(t *testing.T) {
 	port := pc.LocalAddr().(*net.UDPAddr).Port
 	pc.Close()
 	view, err := mgr.CreateInbound(t.Context(), model.Inbound{
-		ServerID: model.LocalNodeID, Enabled: true, Name: "Calls", Protocol: model.InbWireGuard, Port: port,
+		ServerID: model.LocalNodeID, Enabled: true, Name: "Calls", Protocol: model.InbTurnVK, Port: port,
 		Opts: model.InboundOpts{TurnLink: "https://vk.com/call/join/first"},
 	})
 	if err != nil {

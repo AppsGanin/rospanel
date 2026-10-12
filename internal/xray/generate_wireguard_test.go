@@ -11,7 +11,7 @@ import (
 
 func wireGuardFixture() model.Inbound {
 	in := model.Inbound{
-		ID: 21, Enabled: true, Name: "Calls", Protocol: model.InbWireGuard, Port: 56000,
+		ID: 21, Enabled: true, Name: "Calls", Protocol: model.InbTurnVK, Port: 56000,
 		Opts: model.InboundOpts{WGPrivateKey: testWGKey(9), WGPublicKey: testWGKey(10), WGLocalPort: 20021},
 	}
 	in.Normalize()

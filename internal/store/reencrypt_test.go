@@ -63,7 +63,7 @@ func TestReencryptCoversEverySecretColumn(t *testing.T) {
 		t.Fatal(err)
 	}
 	wgIn, err := st.CreateInbound(model.Inbound{
-		ServerID: model.LocalNodeID, Name: "calls", Protocol: model.InbWireGuard, Port: 56000, Enabled: true,
+		ServerID: model.LocalNodeID, Name: "calls", Protocol: model.InbTurnVK, Port: 56000, Enabled: true,
 		Opts: model.InboundOpts{Transport: model.TrTURN, Security: model.SecNone, WGPrivateKey: "plain-wg-inb", WGLocalPort: 20000},
 	})
 	if err != nil {

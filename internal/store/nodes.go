@@ -50,7 +50,7 @@ const nodeColumns = `id, name, host, enabled,
 	proxy_accounts, traffic_coefficient,
 	country, sort_weight, capacity, hide_when_full,
 	traffic_limit, traffic_period, hide_when_over, traffic_reset_day,
-	awg_enabled, awg_private_key, awg_public_key, awg_params`
+	awg_enabled, awg_private_key, awg_public_key, awg_params, naive_enabled, serves_naive`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
 func generateNodeToken() (string, error) {
@@ -65,10 +65,10 @@ func generateNodeToken() (string, error) {
 // and mapping the nullable protocol overrides to *bool.
 func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	var n model.Node
-	var enabled, xrayRunning, certSelfSigned, warpEn, operaEn int
+	var enabled, xrayRunning, certSelfSigned, warpEn, operaEn, servesNaive int
 	var proxySocksEn, proxyHTTPEn, hideFull, hideOver int
 	var proxyAccounts string
-	var vlessEn, hysteriaEn, realityEn, awgEn sql.NullBool
+	var vlessEn, hysteriaEn, realityEn, awgEn, naiveEn sql.NullBool
 	var awgParamsJSON string
 	var routingJSON, connectionsJSON string
 	var xrayDNS sql.NullString
@@ -89,7 +89,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&proxyAccounts, &n.TrafficCoefficient,
 		&n.Country, &n.Weight, &n.Capacity, &hideFull,
 		&n.TrafficLimit, &n.TrafficPeriod, &hideOver, &n.TrafficResetDay,
-		&awgEn, &n.AWGPrivateKey, &n.AWGPublicKey, &awgParamsJSON,
+		&awgEn, &n.AWGPrivateKey, &n.AWGPublicKey, &awgParamsJSON, &naiveEn, &servesNaive,
 	); err != nil {
 		return nil, err
 	}
@@ -104,6 +104,8 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	n.RealityPrivateKey = decField(n.RealityPrivateKey)
 	n.AWGPrivateKey = decField(n.AWGPrivateKey)
 	n.AWGEnabled = nullBoolPtr(awgEn)
+	n.NaiveEnabled = nullBoolPtr(naiveEn)
+	n.ServesNaive = servesNaive != 0
 	if awgParamsJSON != "" {
 		_ = json.Unmarshal([]byte(awgParamsJSON), &n.AWGParams)
 	}
@@ -189,6 +191,7 @@ func (s *Store) CreateNode(name, host, decoyTemplate string) (*model.Node, error
 		return nil, err
 	}
 	id, _ := res.LastInsertId()
+	naiveOn := true
 	return &model.Node{
 		ID:                id,
 		Name:              name,
@@ -202,6 +205,7 @@ func (s *Store) CreateNode(name, host, decoyTemplate string) (*model.Node, error
 		CreatedAt:         now.Unix(),
 		JoinExpiresAt:     exp,
 		RawJoinToken:      joinToken,
+		NaiveEnabled:      &naiveOn, // the column's default
 	}, nil
 }
 
@@ -560,13 +564,13 @@ func (s *Store) UpdateNodeStatus(id int64, st model.NodeStatusUpdate) error {
 			cert_self_signed = CASE WHEN ? <> '' THEN ? ELSE cert_self_signed END,
 			cert_issuer      = CASE WHEN ? <> '' THEN ? ELSE cert_issuer      END,
 			cert_expires_at  = CASE WHEN ? <> '' THEN ? ELSE cert_expires_at  END,
-			config_hash = ? WHERE id = ?`,
+			config_hash = ?, serves_naive = ? WHERE id = ?`,
 		st.LastSeen, st.NodeVersion, st.XrayVersion, boolToInt(st.XrayRunning),
 		st.CertSHA256, st.CertSHA256,
 		st.CertSHA256, boolToInt(st.CertSelfSigned),
 		st.CertSHA256, st.CertIssuer,
 		st.CertSHA256, st.CertExpiresAt,
-		st.ConfigHash, id,
+		st.ConfigHash, boolToInt(st.ServesNaive), id,
 	)
 	return err
 }
@@ -618,14 +622,19 @@ func claimNodeReportOn(ex execer, id, reportID int64) (bool, error) {
 // traffic writes then failed or the process died, that batch is gone for good and
 // no retry can bring it back. Rolled back together, the node simply resends and the
 // traffic is counted on the next attempt.
-func (s *Store) ApplyNodeReport(nodeID, reportID int64, deltas []TrafficDelta) (bool, error) {
+//
+// lanes, what the node's lanes carried in the same report, commit with it.
+func (s *Store) ApplyNodeReport(nodeID, reportID int64, deltas []TrafficDelta, lanes ...LaneDelta) (bool, error) {
 	var claimed bool
 	err := s.withTx(func(tx *sql.Tx) error {
 		var err error
 		if claimed, err = claimNodeReportOn(tx, nodeID, reportID); err != nil || !claimed {
 			return err
 		}
-		return applyTrafficDeltasOn(tx, deltas)
+		if err := applyTrafficDeltasOn(tx, deltas); err != nil {
+			return err
+		}
+		return applyLaneDeltasOn(tx, lanes)
 	})
 	if err != nil {
 		return false, err
@@ -660,6 +669,12 @@ func (s *Store) PurgeDeletedNodes(before int64) (int64, error) {
 // its other protocols).
 func (s *Store) SetNodeAWGEnabled(id int64, enabled bool) error {
 	_, err := s.db.Exec(`UPDATE nodes SET awg_enabled = ? WHERE id = ?`, boolToInt(enabled), id)
+	return err
+}
+
+// SetNodeNaiveEnabled flips a node's NaiveProxy lane.
+func (s *Store) SetNodeNaiveEnabled(id int64, enabled bool) error {
+	_, err := s.db.Exec(`UPDATE nodes SET naive_enabled = ? WHERE id = ?`, boolToInt(enabled), id)
 	return err
 }
 

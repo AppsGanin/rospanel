@@ -119,6 +119,23 @@ func (rt *Router) statsNodes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rows)
 }
 
+// statsLanes is what each protocol of each server carried over the range.
+func (rt *Router) statsLanes(w http.ResponseWriter, r *http.Request) {
+	from, to, ok := rt.dateRange(w, r)
+	if !ok {
+		return
+	}
+	rows, err := rt.mgr.LaneTrafficBreakdown(from, to)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if rows == nil {
+		rows = []core.LaneTraffic{}
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
 func (rt *Router) statsByUser(w http.ResponseWriter, r *http.Request) {
 	from, to, ok := rt.dateRange(w, r)
 	if !ok {

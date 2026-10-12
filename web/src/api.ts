@@ -591,6 +591,22 @@ export const getNodeTraffic = (p: { user_id?: number; from?: string; to?: string
   if (p.to) q.set('to', p.to)
   return api<NodeTraffic[]>('api/stats/nodes?' + q.toString())
 }
+// LaneTraffic is what one protocol of one server carried over a period. node_id 0 is
+// the panel's own server; name is the protocol (or the custom inbound's own name).
+export type LaneTraffic = {
+  node_id: number
+  node_name: string
+  lane: string
+  name: string
+  up: number
+  down: number
+}
+export const getLaneTraffic = (p: { from?: string; to?: string }) => {
+  const q = new URLSearchParams()
+  if (p.from) q.set('from', p.from)
+  if (p.to) q.set('to', p.to)
+  return api<LaneTraffic[]>('api/stats/lanes?' + q.toString())
+}
 export const getStatsByUser = (from?: string, to?: string) => {
   const q = new URLSearchParams()
   if (from) q.set('from', from)

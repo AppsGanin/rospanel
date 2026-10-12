@@ -326,11 +326,6 @@ export function ConnectionsEditor({
                 <Mono className="shrink-0 text-[11px] font-normal text-ink-muted">
                   {p.port}
                 </Mono>
-                {!on && (
-                  <span className="shrink-0 text-[11px] font-normal text-ink-muted">
-                    {t("conn.off")}
-                  </span>
-                )}
               </button>
             }
             action={
@@ -590,6 +585,8 @@ export function ConnectionsEditor({
                   ) : (
                     <SettingRow hint={t("conn.enableAwg")} />
                   ))}
+
+                {p.key === "naive" && <SettingRow hint={t("conn.naiveHint")} />}
               </>
             )}
           </Section>

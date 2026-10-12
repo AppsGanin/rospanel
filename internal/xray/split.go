@@ -92,7 +92,7 @@ func slotOf(in Inbound, custom map[string]*model.Inbound) (nodeapi.UserSlot, boo
 	switch in.Tag {
 	case TagVLESS:
 		s = nodeapi.UserSlot{Kind: "vless", Flow: VisionFlow}
-	case TagReality:
+	case TagReality, TagNaive:
 		s = nodeapi.UserSlot{Kind: "vless"}
 	case TagHysteria:
 		s = nodeapi.UserSlot{Kind: "hysteria"}
@@ -108,7 +108,7 @@ func slotOf(in Inbound, custom map[string]*model.Inbound) (nodeapi.UserSlot, boo
 			s = nodeapi.UserSlot{Kind: "trojan"}
 		case model.InbHysteria:
 			s = nodeapi.UserSlot{Kind: "hysteria"}
-		case model.InbWireGuard:
+		case model.InbTurnVK:
 			s = nodeapi.UserSlot{Kind: "wireguard"}
 		case model.InbShadowsocks:
 			locked, err := json.Marshal(ShadowsocksClient{

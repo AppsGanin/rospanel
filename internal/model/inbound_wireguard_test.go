@@ -13,7 +13,7 @@ func wgKey(b byte) string {
 
 func wgInbound() Inbound {
 	return Inbound{
-		ID: 7, Enabled: true, Name: "Calls", Protocol: InbWireGuard, Port: 56000,
+		ID: 7, Enabled: true, Name: "Calls", Protocol: InbTurnVK, Port: 56000,
 		Opts: InboundOpts{Transport: TrTURN, Security: SecNone, WGPrivateKey: wgKey('a'), WGPublicKey: wgKey('b'), WGLocalPort: 20001,
 			TurnMaskKey: strings.Repeat("ab", 32)},
 	}
@@ -136,5 +136,17 @@ func TestWireGuardPortsInTheSet(t *testing.T) {
 	second.Opts.WGLocalPort = 20002
 	if code := fieldCode(ValidateInboundSet([]Inbound{wg, second}, NewReservedPorts(), nil)); code != "err.portTakenByInbound" {
 		t.Errorf("a relay on another inbound's loopback port: code %q", code)
+	}
+}
+
+// "wireguard" is what TURN-VK was called before; it still means TURN-VK on input.
+func TestTurnVKOldNameIsAccepted(t *testing.T) {
+	in := Inbound{Protocol: " WireGuard "}
+	in.Normalize()
+	if in.Protocol != InbTurnVK {
+		t.Fatalf("protocol %q, want %q", in.Protocol, InbTurnVK)
+	}
+	if CanonicalProtocol("vless") != "vless" {
+		t.Fatal("an unrelated protocol was renamed")
 	}
 }

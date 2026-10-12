@@ -3,9 +3,12 @@ package sub
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/AppsGanin/rospanel/internal/extsub"
 	"net"
+	"regexp"
+	"strconv"
 	"strings"
+
+	"github.com/AppsGanin/rospanel/internal/extsub"
 
 	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -172,12 +175,22 @@ func singboxCustom(u model.User, in model.Inbound, set *model.Settings) (map[str
 // groups. servers[0] is the local server, used for the group title + DNS bootstrap
 // anchor.
 func SingBoxJSONMulti(u model.User, servers []Server) string {
+	return singboxJSON(u, servers, false)
+}
+
+// singboxJSON is SingBoxJSONMulti with the NaiveProxy outbounds when the client can load
+// them (SingBoxNaive).
+func singboxJSON(u model.User, servers []Server, naive bool) string {
 	if len(servers) == 0 {
 		return "{}"
 	}
 	local := servers[0].Set
 
 	proxies, tags := singboxProxiesAll(u, servers)
+	if naive {
+		naiveOut, naiveTags := singboxNaiveAll(u, servers, tags)
+		proxies, tags = append(proxies, naiveOut...), append(tags, naiveTags...)
+	}
 
 	group := SubTitle(u, local)
 	// Nothing allowed ⇒ no tags. A urltest with an empty outbound list and a selector
@@ -286,25 +299,31 @@ func SingBoxJSONMulti(u model.User, servers []Server) string {
 // one: unparseable, or the user has no servers to put in it. A client that cannot
 // parse a profile drops all of it, so serving the plain one is always better than
 // serving a broken document.
-func SingBoxWithTemplate(u model.User, servers []Server, template string) (string, error) {
+//
+// naive adds the NaiveProxy outbounds (see SingBoxNaive).
+func SingBoxWithTemplate(u model.User, servers []Server, template string, naive bool) (string, error) {
 	if strings.TrimSpace(template) == "" {
-		return SingBoxJSONMulti(u, servers), nil
+		return singboxJSON(u, servers, naive), nil
 	}
 	if len(servers) == 0 {
-		return SingBoxJSONMulti(u, servers), nil
+		return singboxJSON(u, servers, naive), nil
 	}
 	// A template saved before sing-box removed a field it uses parses fine and renders
 	// fine, and every client refuses it. Refused at save now, but one already stored
 	// still has to be caught here — the generated profile works on every current client.
 	if err := singboxLegacyErr(template); err != nil {
-		return SingBoxJSONMulti(u, servers), err
+		return singboxJSON(u, servers, naive), err
 	}
 	proxies, tags := singboxProxiesAll(u, servers)
+	if naive && naiveResolvable(template) {
+		naiveOut, naiveTags := singboxNaiveAll(u, servers, tags)
+		proxies, tags = append(proxies, naiveOut...), append(tags, naiveTags...)
+	}
 	// Nothing allowed: the generated profile has a direct-only answer for this, which
 	// is valid and honest. A template spliced with an empty proxy list would leave a
 	// selector pointing at nothing, which sing-box refuses outright.
 	if len(tags) == 0 {
-		return SingBoxJSONMulti(u, servers), nil
+		return singboxJSON(u, servers, naive), nil
 	}
 	tagList := make([]any, len(tags))
 	for i, t := range tags {
@@ -315,10 +334,82 @@ func SingBoxWithTemplate(u model.User, servers []Server, template string) (strin
 		map[string][]any{TplProxies: proxies, TplTags: tagList},
 	)
 	if err != nil {
-		return SingBoxJSONMulti(u, servers), err
+		return singboxJSON(u, servers, naive), err
 	}
 	return out, nil
 }
+
+// singboxNaiveAll builds every server's NaiveProxy outbound, tagged apart from taken —
+// a duplicate tag makes sing-box refuse the whole profile.
+func singboxNaiveAll(u model.User, servers []Server, taken []string) ([]any, []string) {
+	used := make(map[string]bool, len(taken))
+	for _, t := range taken {
+		used[t] = true
+	}
+	seen := map[string]int{}
+	var proxies []any
+	var tags []string
+	for _, srv := range servers {
+		set := srv.Set
+		if !link.NaiveOn(set) || !srv.allowsBuiltin(model.LaneNaive) {
+			continue
+		}
+		tag := uniqueLabel(seen, link.LabelFor(model.ProtoNaive, u, set))
+		for used[tag] {
+			tag = uniqueLabel(seen, link.LabelFor(model.ProtoNaive, u, set))
+		}
+		used[tag] = true
+		proxies = append(proxies, map[string]any{
+			"type": "naive", "tag": tag, "server": set.Host, "server_port": set.VLESSPort,
+			"username": model.UserEmail(u.ID), "password": u.UUID,
+			"tls": map[string]any{"enabled": true, "server_name": link.NaiveServerName(set)},
+			// UDP rides the tunnel too (internal/naive, uot.go); without it the outbound
+			// refuses UDP, and calls, games and QUIC behind it fail.
+			"udp_over_tcp": true,
+		})
+		tags = append(tags, tag)
+	}
+	return proxies, tags
+}
+
+// naiveResolvable reports whether a template leaves sing-box a way to resolve a naive
+// outbound's server. The naive outbound always looks its server up as a domain, IP or
+// not, and with two or more DNS servers and no route.default_domain_resolver sing-box
+// 1.13+ refuses the whole profile over it ("missing domain resolver for domain server
+// address") — where every other outbound only draws a warning. Such a template gets no
+// naive outbound; the generated profile always has one server or the resolver.
+func naiveResolvable(template string) bool {
+	var doc struct {
+		DNS struct {
+			Servers []any `json:"servers"`
+		} `json:"dns"`
+		Route struct {
+			DefaultDomainResolver any `json:"default_domain_resolver"`
+		} `json:"route"`
+	}
+	if json.Unmarshal([]byte(template), &doc) != nil {
+		return false
+	}
+	return len(doc.DNS.Servers) < 2 || doc.Route.DefaultDomainResolver != nil
+}
+
+// SingBoxNaive reports whether a sing-box client can load a naive outbound: the
+// official apps (SFA on Android, SFI/SFM/SFT on Apple — the platforms whose builds
+// carry cronet) from sing-box 1.13. Anything else would refuse the whole profile over
+// the unknown outbound type, so it gets none.
+func SingBoxNaive(userAgent string) bool {
+	m := singboxAppUA.FindStringSubmatch(userAgent)
+	if m == nil {
+		return false
+	}
+	major, _ := strconv.Atoi(m[1])
+	minor, _ := strconv.Atoi(m[2])
+	return major > 1 || major == 1 && minor >= 13
+}
+
+// singboxAppUA matches the official apps' User-Agent, "SFA (sing-box 1.13.0; language
+// en_US)" — the app name, then the core version.
+var singboxAppUA = regexp.MustCompile(`^SF[AIMT] \(sing-box (\d+)\.(\d+)`)
 
 // singboxProxiesAll gathers every server's outbounds, giving each a tag no other
 // outbound shares. A duplicate tag is fatal in sing-box — the selector would name it

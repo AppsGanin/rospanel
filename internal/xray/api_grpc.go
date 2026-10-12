@@ -129,6 +129,18 @@ func pbField(b []byte, field int, v []byte) []byte {
 	return append(b, v...)
 }
 
+// queryStatsReset is queryStats that zeroes what it reads (QueryStatsRequest.reset = 2),
+// so each call returns what moved since the last one.
+func (a *xrayAPI) queryStatsReset(pattern string) (map[string]Traffic, error) {
+	req := pbField(nil, 1, []byte(pattern))
+	req = append(req, 0x10, 1) // field 2 (reset), varint: true
+	_, answer, err := a.callOnce(statsQueryStats, req)
+	if err != nil {
+		return nil, err
+	}
+	return decodeInboundStats(answer)
+}
+
 // queryStats reads the counters whose names contain pattern, in one call and without
 // asking again: the stats poll that uses it would rather be late than wait.
 func (a *xrayAPI) queryStats(pattern string) (map[string]Traffic, error) {

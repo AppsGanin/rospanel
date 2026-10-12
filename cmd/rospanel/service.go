@@ -29,6 +29,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/h2fix"
 	"github.com/AppsGanin/rospanel/internal/http80"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/naive"
 	"github.com/AppsGanin/rospanel/internal/netinfo"
 	"github.com/AppsGanin/rospanel/internal/payments"
 	"github.com/AppsGanin/rospanel/internal/plugin"
@@ -344,8 +345,10 @@ func runServer(dataDir string) {
 	protocols.SetHTTP1(true)
 	protocols.SetUnencryptedHTTP2(true)
 	httpSrv := &http.Server{
-		Handler:           handler,
+		// NaiveProxy tunnels arrive through the same fallback as the decoy (internal/naive).
+		Handler:           mgr.NaiveHandler(handler),
 		Protocols:         protocols,
+		HTTP2:             naive.HTTP2Config(),
 		ReadHeaderTimeout: 10 * time.Second,  // slowloris: bound how long request headers may dribble in
 		IdleTimeout:       120 * time.Second, // reap idle keep-alive connections so they can't be held open indefinitely
 		// ReadTimeout / WriteTimeout are intentionally unset: a server-wide read
@@ -792,10 +795,15 @@ func printFirstRunBanner(host, secret, username, password string) {
 // for the VLESS default fallback (":8080" → "127.0.0.1:8080").
 // wantFront reports whether the TCP-TLS lane goes behind the front. Not when the
 // operator switched it off (ROSPANEL_TLS_FRONT=off), and not while a custom inbound from
-// before the inner port was reserved still holds it: Xray keeps the public port then.
+// before the inner port was reserved still holds it (where the inner address is a port,
+// see xray/inner.go): Xray keeps the public port then.
 func wantFront(st *store.Store, set *model.Settings) bool {
 	if env("ROSPANEL_TLS_FRONT", "on") == "off" || set.VLESSPort <= 0 {
 		return false
+	}
+	inner := xray.InnerPort(xray.VLESSInnerAddr)
+	if inner == 0 {
+		return true
 	}
 	list, err := st.EnabledInbounds(model.LocalNodeID)
 	if err != nil {
@@ -803,14 +811,14 @@ func wantFront(st *store.Store, set *model.Settings) bool {
 		return false
 	}
 	for _, in := range list {
-		if in.Port == xray.VLESSInnerPort {
-			log.Printf("tlsfront: custom inbound %q holds port %d, leaving :%d to Xray", in.Name, xray.VLESSInnerPort, set.VLESSPort)
+		if in.Port == inner {
+			log.Printf("tlsfront: custom inbound %q holds port %d, leaving :%d to Xray", in.Name, inner, set.VLESSPort)
 			return false
 		}
 	}
 	for _, p := range []int{set.RealityPort, set.ProxySocksPort, set.ProxyHTTPPort, set.OperaPortOr()} {
-		if p == xray.VLESSInnerPort {
-			log.Printf("tlsfront: port %d is taken by the settings, leaving :%d to Xray", xray.VLESSInnerPort, set.VLESSPort)
+		if p == inner {
+			log.Printf("tlsfront: port %d is taken by the settings, leaving :%d to Xray", inner, set.VLESSPort)
 			return false
 		}
 	}

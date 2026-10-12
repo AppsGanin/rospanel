@@ -30,6 +30,9 @@ func (m *Manager) GetNode(id int64) (*model.Node, error) { return m.store.GetNod
 // ensuring the node-API surface exists. The returned node carries RawJoinToken.
 // The name must be unique (it becomes a subscription proxy name/tag).
 func (m *Manager) CreateNode(name, host string) (*model.Node, error) {
+	if !model.ValidServerHost(host) {
+		return nil, invalidCode("err.nodeHostInvalid", "адрес ноды — домен или IP, без пробелов и спецсимволов")
+	}
 	if taken, err := m.store.NodeNameTaken(name, 0); err != nil {
 		return nil, err
 	} else if taken {
@@ -47,6 +50,9 @@ func (m *Manager) CreateNode(name, host string) (*model.Node, error) {
 
 // UpdateNode edits a node and wakes it so config/link changes apply promptly.
 func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
+	if !model.ValidServerHost(e.Host) {
+		return invalidCode("err.nodeHostInvalid", "адрес ноды — домен или IP, без пробелов и спецсимволов")
+	}
 	if taken, err := m.store.NodeNameTaken(e.Name, id); err != nil {
 		return err
 	} else if taken {
@@ -302,6 +308,12 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 	if err := m.store.SetNodeAWGEnabled(id, u.Protocols["awg"]); err != nil {
 		return err
 	}
+	// Only when asked: a caller that predates the lane leaves it as it is.
+	if on, ok := u.Protocols["naive"]; ok {
+		if err := m.store.SetNodeNaiveEnabled(id, on); err != nil {
+			return err
+		}
+	}
 	if u.Protocols["awg"] || u.RegenAWGKeys {
 		if err := m.ensureNodeAWGIdentity(n, u.RegenAWGKeys); err != nil {
 			return err
@@ -348,6 +360,7 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		AWGPort:            awgPort,
 		AWGName:            connNames["awg"],
 		AWGDNS:             awgDNS,
+		NaiveName:          connNames["naive"],
 	}
 	if err := m.store.SetNodeConnections(id, blob); err != nil {
 		return err

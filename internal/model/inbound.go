@@ -20,7 +20,10 @@ const (
 	InbTrojan      = "trojan"
 	InbHysteria    = "hysteria2"
 	InbShadowsocks = "shadowsocks"
-	InbWireGuard   = "wireguard"
+	// InbTurnVK is WireGuard behind a TURN relay (Xray's "wireguard" inbound).
+	InbTurnVK = "turn-vk"
+	// inbTurnVKOld is what InbTurnVK was called until 5.1; still accepted on input.
+	inbTurnVKOld = "wireguard"
 )
 
 // Shadowsocks-2022 AEAD methods, the only ones offered. The pre-2022 ciphers
@@ -350,8 +353,18 @@ var inboundServiceRe = regexp.MustCompile(`^[A-Za-z0-9_.\-]{1,64}$`)
 // inboundHopRe matches the port-hopping interval "min-max" (seconds).
 var inboundHopRe = regexp.MustCompile(`^\d+-\d+$`)
 
+// CanonicalProtocol is an inbound protocol as the panel stores it: lower case, and the
+// name a protocol had before a rename mapped to the current one.
+func CanonicalProtocol(p string) string {
+	p = strings.ToLower(strings.TrimSpace(p))
+	if p == inbTurnVKOld {
+		return InbTurnVK
+	}
+	return p
+}
+
 // InboundProtocols lists the offered protocols, in UI order.
-var InboundProtocols = []string{InbVLESS, InbTrojan, InbHysteria, InbShadowsocks, InbWireGuard}
+var InboundProtocols = []string{InbVLESS, InbTrojan, InbHysteria, InbShadowsocks, InbTurnVK}
 
 // InboundTransports returns the transports valid for a protocol. Hysteria2 has
 // exactly one (its own QUIC), so the UI shows no transport control for it, and
@@ -365,7 +378,7 @@ func InboundTransports(protocol string) []string {
 		return []string{TrHysteria}
 	case InbShadowsocks:
 		return []string{TrShadowsocks}
-	case InbWireGuard:
+	case InbTurnVK:
 		return []string{TrTURN}
 	}
 	return nil
@@ -383,7 +396,7 @@ func InboundSecurities(protocol, transport string) []string {
 	if protocol == InbHysteria {
 		return []string{SecTLS}
 	}
-	if protocol == InbShadowsocks || protocol == InbWireGuard {
+	if protocol == InbShadowsocks || protocol == InbTurnVK {
 		// Shadowsocks-2022 brings its own AEAD, and WireGuard its own Noise handshake
 		// (wrapped in DTLS by the relay); there is no TLS/REALITY layer to pick, so
 		// "none" is the only (and derived, not operator-chosen) value.
@@ -563,7 +576,7 @@ func (o InboundOpts) HopIntervalOr() string {
 // Called before Validate on every write.
 func (in *Inbound) Normalize() {
 	in.Name = strings.TrimSpace(in.Name)
-	in.Protocol = strings.ToLower(strings.TrimSpace(in.Protocol))
+	in.Protocol = CanonicalProtocol(in.Protocol)
 	o := &in.Opts
 	o.Transport = strings.ToLower(strings.TrimSpace(o.Transport))
 	o.Security = strings.ToLower(strings.TrimSpace(o.Security))
@@ -590,7 +603,7 @@ func (in *Inbound) Normalize() {
 		return
 	}
 
-	if in.Protocol == InbWireGuard {
+	if in.Protocol == InbTurnVK {
 		in.normalizeWireGuard()
 		return
 	}
@@ -734,7 +747,7 @@ func (in *Inbound) Validate() error {
 		return nil
 	}
 
-	if in.Protocol == InbWireGuard {
+	if in.Protocol == InbTurnVK {
 		return in.validateWireGuard()
 	}
 
@@ -865,7 +878,7 @@ var RealityHostRe = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0
 // SupportsClash reports whether mihomo / Clash Meta can express this combination.
 func SupportsClash(protocol, transport string) bool {
 	switch protocol {
-	case InbWireGuard:
+	case InbTurnVK:
 		return false // a WireGuard config file plus a TURN client, not a proxy entry
 	case InbHysteria, InbShadowsocks:
 		return true
@@ -880,7 +893,7 @@ func SupportsClash(protocol, transport string) bool {
 // SupportsSingBox reports whether sing-box can express this combination.
 func SupportsSingBox(protocol, transport string) bool {
 	switch protocol {
-	case InbWireGuard:
+	case InbTurnVK:
 		return false // as in SupportsClash
 	case InbHysteria, InbShadowsocks:
 		return true
@@ -895,7 +908,7 @@ func SupportsSingBox(protocol, transport string) bool {
 func (in *Inbound) UnsupportedFormats() []string {
 	// A WireGuard inbound is in no subscription format at all: users get a config file
 	// for it from the subscription page. The editor says that on its own.
-	if in.Protocol == InbWireGuard {
+	if in.Protocol == InbTurnVK {
 		return nil
 	}
 	var out []string
@@ -957,7 +970,7 @@ func (r ReservedPorts) OnUDP(port int) (string, bool) { who, ok := r.UDP[port]; 
 // ProtoOf is the transport an inbound listens on: Hysteria2 is QUIC over UDP and
 // WireGuard's relay takes DTLS over UDP; everything else the panel offers is TCP.
 func ProtoOf(protocol string) string {
-	if protocol == InbHysteria || protocol == InbWireGuard {
+	if protocol == InbHysteria || protocol == InbTurnVK {
 		return "udp"
 	}
 	return "tcp"
@@ -1033,7 +1046,7 @@ func ValidateInboundSet(list []Inbound, reserved ReservedPorts, takenNames []str
 		// WireGuard holds a second UDP port, Xray's loopback listener behind the relay.
 		// Loopback or not, it is a socket on this box, and a port another listener has
 		// stops Xray from starting.
-		if in.Protocol == InbWireGuard {
+		if in.Protocol == InbTurnVK {
 			if who, taken := reserved.OnUDP(in.Opts.WGLocalPort); taken {
 				return fieldErr("err.portTakenBy", "порт {{port}} уже занят ({{who}}) — выберите другой", map[string]any{"port": in.Opts.WGLocalPort, "who": who})
 			}

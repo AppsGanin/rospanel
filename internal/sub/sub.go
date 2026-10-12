@@ -26,6 +26,18 @@ import (
 // enabled built-in lanes first, then each custom inbound in its display order.
 // Protocols switched off in the Connections panel are omitted.
 func ShareLinks(u model.User, srv Server) []string {
+	return shareLinks(u, srv, linkForms{naive: link.Naive})
+}
+
+// linkForms are the per-client link forms of the lanes not every client reads; a nil
+// form leaves the lane out of the list.
+type linkForms struct {
+	naive func(model.User, *model.Settings) string
+	awg   func(model.User, *model.Settings) string
+}
+
+// shareLinks is ShareLinks with the given forms of the client-dependent lanes.
+func shareLinks(u model.User, srv Server, f linkForms) []string {
 	set := srv.Set
 	links := make([]string, 0, 3+len(srv.Custom))
 	if set.VLESSEnabled && srv.allowsBuiltin(model.LaneVLESS) {
@@ -40,6 +52,14 @@ func ShareLinks(u model.User, srv Server) []string {
 	}
 	if set.HysteriaEnabled && srv.allowsBuiltin(model.LaneHysteria) {
 		links = append(links, link.Hysteria2(u, set))
+	}
+	if f.naive != nil && link.NaiveOn(set) && srv.allowsBuiltin(model.LaneNaive) {
+		links = append(links, f.naive(u, set))
+	}
+	if f.awg != nil && set.AWGEnabled && set.AWGPort != 0 && set.AWGPublicKey != "" && srv.allowsBuiltin(model.LaneAWG) {
+		if l := f.awg(u, set); l != "" {
+			links = append(links, l)
+		}
 	}
 	for _, in := range srv.Custom {
 		if !srv.allowsInbound(in.ID) {
@@ -65,11 +85,43 @@ func ShareLinks(u model.User, srv Server) []string {
 // Each settings clone carries its own host/ports/keys and a NodeLabel that
 // disambiguates the links.
 func ShareLinksAll(u model.User, servers []Server) []string {
+	return ShareLinksFor(u, servers, "")
+}
+
+// ShareLinksFor is ShareLinksAll for the client that asked. The NaiveProxy link goes only
+// to clients known to import it (NaiveLinkFor): the others — Happ, v2RayTun, V2Box,
+// Streisand, v2rayNG, INCY — have no NaiveProxy, and how each treats a line it cannot
+// read is not documented for all of them, so none is risked.
+func ShareLinksFor(u model.User, servers []Server, userAgent string) []string {
+	f := linkForms{naive: NaiveLinkFor(userAgent)}
+	if AWGLinkFor(userAgent) {
+		f.awg = AWGIncyLink
+	}
 	var links []string
 	for _, srv := range servers {
-		links = append(links, ShareLinks(u, srv)...)
+		links = append(links, shareLinks(u, srv, f)...)
 	}
 	return links
+}
+
+// NaiveLinkFor is the NaiveProxy link form a subscription client imports, or nil for a
+// client that has none — checked against each client's own parser:
+//
+//   - Shadowrocket: its HTTP2 (NaiveProxy) type, http2://base64(…) — link.NaiveShadowrocket;
+//   - v2rayN (sing-box core), Karing, NekoBox (with its naive plugin): naive+https://.
+//
+// An empty User-Agent is a hand-made request, which gets the universal form.
+func NaiveLinkFor(userAgent string) func(model.User, *model.Settings) string {
+	ua := strings.ToLower(userAgent)
+	switch {
+	case ua == "":
+		return link.Naive
+	case strings.Contains(ua, "shadowrocket"):
+		return link.NaiveShadowrocket
+	case strings.HasPrefix(ua, "v2rayn/"), strings.Contains(ua, "karing"), strings.HasPrefix(ua, "nekobox/"):
+		return link.Naive
+	}
+	return nil
 }
 
 // Base64Payload is the universal v2ray-style subscription body: the links joined

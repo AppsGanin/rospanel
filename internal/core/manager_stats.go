@@ -216,6 +216,7 @@ func (m *Manager) pollStatsWith(stats map[string]xray.Traffic) error {
 			return t.Up, t.Down
 		})
 	}
+	m.recordLocalLanes(today)
 	return m.enforceTraffic()
 }
 

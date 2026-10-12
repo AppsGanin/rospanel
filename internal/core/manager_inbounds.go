@@ -140,7 +140,13 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 	r.HoldTCP(set.RealityPort, "VLESS-XHTTP-REALITY")
 	r.HoldUDP(set.HysteriaPort, "HYSTERIA-UDP")
 	r.Hold(xray.APIPort, "Xray internal API")
-	r.HoldTCP(xray.VLESSInnerPort, "VLESS-Vision behind the front")
+	// Loopback ports only off Linux; abstract sockets there hold none (xray/inner.go).
+	if p := xray.InnerPort(xray.VLESSInnerAddr); p != 0 {
+		r.HoldTCP(p, "VLESS-Vision behind the front")
+	}
+	if p := xray.InnerPort(xray.NaiveInnerAddr); p != 0 {
+		r.HoldTCP(p, "NaiveProxy (internal)")
+	}
 	if set.HopEnd > set.HysteriaPort {
 		// The built-in hop range is a UDP funnel onto the Hysteria port: anything
 		// inside it would have its traffic silently stolen by the nftables redirect.
@@ -250,7 +256,7 @@ func (m *Manager) UpdateInbound(ctx context.Context, in model.Inbound) (*Inbound
 	}
 	// And the WireGuard identity and loopback port: a new key would strand every
 	// imported config, and a new port would move the relay's target for nothing.
-	if in.Protocol == model.InbWireGuard && cur.Protocol == model.InbWireGuard {
+	if in.Protocol == model.InbTurnVK && cur.Protocol == model.InbTurnVK {
 		in.Opts.WGPrivateKey = cur.Opts.WGPrivateKey
 		in.Opts.WGPublicKey = cur.Opts.WGPublicKey
 		in.Opts.WGLocalPort = cur.Opts.WGLocalPort
@@ -424,7 +430,7 @@ func (m *Manager) validateAgainstSet(ctx context.Context, in model.Inbound, excl
 		}
 	}
 	// A WireGuard inbound's loopback listener is a second port on the same box.
-	if in.Enabled && in.Protocol == model.InbWireGuard &&
+	if in.Enabled && in.Protocol == model.InbTurnVK &&
 		(prev == nil || !prev.Enabled || prev.Opts.WGLocalPort != in.Opts.WGLocalPort) {
 		if err := m.probePort(ctx, in.ServerID, "udp", in.Opts.WGLocalPort); err != nil {
 			return err
