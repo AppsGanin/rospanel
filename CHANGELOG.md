@@ -1,5 +1,19 @@
 # Changelog
 
+## [5.1.0](https://github.com/AppsGanin/rospanel/compare/v5.0.1...v5.1.0) (2026-10-12)
+
+
+### Features
+
+* **naive:** NaiveProxy lane through the :443 decoy ([24ece96](https://github.com/AppsGanin/rospanel/commit/24ece965d7cbbb3bd285e6efbc0a5f105f4b2d9d))
+* **stats:** traffic by protocol, per server ([24ece96](https://github.com/AppsGanin/rospanel/commit/24ece965d7cbbb3bd285e6efbc0a5f105f4b2d9d))
+* **sub:** AmneziaWG 3.1 in the Clash profile for mihomo 1.19.30+ and FlClash 0.8.99+, and an amneziawg:// line for INCY ([24ece96](https://github.com/AppsGanin/rospanel/commit/24ece965d7cbbb3bd285e6efbc0a5f105f4b2d9d))
+
+
+### Bug Fixes
+
+* **nodes:** validate a server's host on create and edit ([24ece96](https://github.com/AppsGanin/rospanel/commit/24ece965d7cbbb3bd285e6efbc0a5f105f4b2d9d))
+
 ## [5.0.1](https://github.com/AppsGanin/rospanel/compare/v5.0.0...v5.0.1) (2026-10-09)
 
 
