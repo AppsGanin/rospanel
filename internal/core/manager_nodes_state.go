@@ -42,6 +42,7 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns.AWGPublicKey = n.AWGPublicKey
 	ns.AWGParams = n.AWGParams
 	ns.AWGPort, ns.AWGName, ns.AWGDNS = 0, "", ""
+	ns.NaiveEnabled, ns.NaiveName = derefBool(n.NaiveEnabled), ""
 	// REALITY donor: the node's own if set, otherwise inherit the panel's (a node
 	// needs some donor for REALITY to work).
 	if n.RealityDest != "" {
@@ -117,6 +118,7 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 		ns.AWGPort = c.AWGPort
 		ns.AWGName = c.AWGName
 		ns.AWGDNS = c.AWGDNS
+		ns.NaiveName = c.NaiveName
 	}
 	return &ns
 }

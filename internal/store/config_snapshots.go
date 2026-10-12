@@ -178,7 +178,7 @@ func (s *Store) RestoreServerConfig(c *model.ServerConfigSnapshot) error {
 				INSERT INTO inbounds (id, server_id, enabled, sort, name, protocol, port, opts, created_at)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, 0), unixepoch()))`,
 				idArg, model.LocalNodeID, boolToInt(in.Enabled), in.Sort, in.Name,
-				in.Protocol, in.Port, opts, in.CreatedAt); err != nil {
+				model.CanonicalProtocol(in.Protocol), in.Port, opts, in.CreatedAt); err != nil {
 				return mapInboundConflict(err)
 			}
 		}

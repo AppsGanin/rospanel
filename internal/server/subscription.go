@@ -142,15 +142,16 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		case "clash":
 			// Mihomo/Clash ignores the routing header — inject the routing rules
 			// straight into the YAML by merging proxies into the template.
-			body := sub.ClashYAMLMulti(*u, allServers)
+			ua := r.Header.Get("User-Agent")
+			body := sub.ClashYAMLFor(*u, allServers, ua)
 			// The operator's own stored template wins over the fetched one: they wrote
 			// it, and a remote URL that has quietly changed under them is exactly what
 			// storing it is meant to avoid.
 			if tpl := strings.TrimSpace(set.SubTplClash); tpl != "" {
-				body = sub.ClashWithTemplateMulti(*u, allServers, tpl)
+				body = sub.ClashWithTemplateFor(*u, allServers, tpl, ua)
 			} else if set.SubRouting && strings.TrimSpace(set.SubRoutingMihomo) != "" {
 				if tpl, err := rt.mgr.FetchRoutingTemplate(set.SubRoutingMihomo); err == nil {
-					body = sub.ClashWithTemplateMulti(*u, allServers, tpl)
+					body = sub.ClashWithTemplateFor(*u, allServers, tpl, ua)
 				}
 			}
 			w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
@@ -165,7 +166,8 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			// A template that fails here has already passed validation on save, so a
 			// failure now is worth a log line — but never worth a broken profile: the
 			// renderer hands back the generated one and the user keeps working.
-			body, err := sub.SingBoxWithTemplate(*u, allServers, set.SubTplSingBox)
+			body, err := sub.SingBoxWithTemplate(*u, allServers, set.SubTplSingBox,
+				sub.SingBoxNaive(r.Header.Get("User-Agent")))
 			if err != nil {
 				slog.Warn("subscription: sing-box template failed, serving the generated profile", "err", err)
 			}
@@ -179,7 +181,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			_, _ = w.Write([]byte(rt.pluginConfig(r.Context(), *u, plugin.SubXray, body)))
 		default:
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			links := rt.pluginLinks(r.Context(), *u, sub.ShareLinksAll(*u, allServers))
+			links := rt.pluginLinks(r.Context(), *u, sub.ShareLinksFor(*u, allServers, r.Header.Get("User-Agent")))
 			var body string
 			if set.SubBase64 {
 				body = sub.Base64Payload(links)
@@ -784,7 +786,7 @@ func isBrowser(r *http.Request) bool {
 func hasTurnInbound(servers []sub.Server) bool {
 	for _, s := range servers {
 		for _, in := range s.Custom {
-			if in.Protocol == model.InbWireGuard && s.Access.AllowsInbound(in.ID) {
+			if in.Protocol == model.InbTurnVK && s.Access.AllowsInbound(in.ID) {
 				return true
 			}
 		}
@@ -1140,7 +1142,7 @@ func (rt *Router) serveTurnWG(w http.ResponseWriter, r *http.Request, u *model.U
 	var in *model.Inbound
 	for i := range servers {
 		for j := range servers[i].Custom {
-			if c := &servers[i].Custom[j]; c.ID == id && c.Protocol == model.InbWireGuard {
+			if c := &servers[i].Custom[j]; c.ID == id && c.Protocol == model.InbTurnVK {
 				srv, in = &servers[i], c
 			}
 		}

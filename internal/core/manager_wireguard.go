@@ -30,7 +30,7 @@ const (
 func wireGuardInboundIDs(custom []model.Inbound) []int64 {
 	var out []int64
 	for _, in := range custom {
-		if in.Protocol == model.InbWireGuard {
+		if in.Protocol == model.InbTurnVK {
 			out = append(out, in.ID)
 		}
 	}
@@ -82,7 +82,7 @@ func (m *Manager) claimWireGuard(users []model.User, custom []model.Inbound, acc
 // master, where it can be asked — nothing on the box holds. It is kept for the life of
 // the inbound (UpdateInbound carries it forward), so the relay's target never moves.
 func (m *Manager) assignWGLocalPort(in *model.Inbound, excludeID int64) error {
-	if in.Protocol != model.InbWireGuard || in.Opts.WGLocalPort != 0 {
+	if in.Protocol != model.InbTurnVK || in.Opts.WGLocalPort != 0 {
 		return nil
 	}
 	set, err := m.effectiveSettings(in.ServerID)
@@ -124,7 +124,7 @@ func (m *Manager) assignWGLocalPort(in *model.Inbound, excludeID int64) error {
 func turnRelaySpecs(custom []model.Inbound) []turnrelay.Spec {
 	var out []turnrelay.Spec
 	for _, in := range custom {
-		if in.Protocol == model.InbWireGuard && in.Enabled && in.Opts.WGLocalPort > 0 {
+		if in.Protocol == model.InbTurnVK && in.Enabled && in.Opts.WGLocalPort > 0 {
 			out = append(out, turnrelay.Spec{
 				Port:    in.Port,
 				Target:  net.JoinHostPort("127.0.0.1", strconv.Itoa(in.Opts.WGLocalPort)),
@@ -166,7 +166,7 @@ func (m *Manager) StopTurn() { m.turn.Close() }
 // the relay. Fails when the user cannot be a peer of it; a file the inbound will not
 // accept is worse than none.
 func (m *Manager) WireGuardClientConfig(u *model.User, s *model.Settings, in *model.Inbound) (string, error) {
-	if in.Protocol != model.InbWireGuard || in.Opts.WGPublicKey == "" {
+	if in.Protocol != model.InbTurnVK || in.Opts.WGPublicKey == "" {
 		return "", fmt.Errorf("wireguard: inbound %d is not a wireguard inbound", in.ID)
 	}
 	if err := m.claimAWG([]*model.User{u}); err != nil {

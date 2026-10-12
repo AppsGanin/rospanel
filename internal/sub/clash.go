@@ -44,7 +44,7 @@ type clashProxy struct {
 // voice UDP left untunneled and the censor dropped it. Xray-core clients have no such
 // flag and were never affected, and Hysteria2 escaped it only because mihomo hardcodes
 // UDP support for that protocol — hence "calls work only on the Hysteria lane".
-func clashProxies(u model.User, srv Server) []clashProxy {
+func clashProxies(u model.User, srv Server, awgTunnel bool) []clashProxy {
 	set := srv.Set
 	sv := "false" // skip-cert-verify: true only for a self-signed/IP cert
 	if set.TLSInsecure {
@@ -69,6 +69,13 @@ func clashProxies(u model.User, srv Server) []clashProxy {
 		out = append(out, clashProxy{n, fmt.Sprintf(
 			"  - {name: %q, type: hysteria2, server: %q, port: %d, password: %q, sni: %q, alpn: [h3], skip-cert-verify: %s%s%s}",
 			n, set.Host, set.HysteriaPort, u.Password, set.SNI, sv, hop, clashObfs(set.HysteriaObfs))})
+	}
+	// AmneziaWG only for a client whose core reads 3.1 (ClashAWG).
+	if awgTunnel && set.AWGEnabled && set.AWGPort != 0 && set.AWGPublicKey != "" && srv.allowsBuiltin(model.LaneAWG) {
+		n := link.LabelFor(model.ProtoAWG, u, set)
+		if line, ok := clashAWGLine(n, u, set); ok {
+			out = append(out, clashProxy{n, line})
+		}
 	}
 	for _, in := range srv.Custom {
 		if !srv.allowsInbound(in.ID) {
@@ -224,11 +231,11 @@ func firstShortID(o model.InboundOpts) string {
 // each node), giving each a name no other entry shares. The node label keeps servers
 // apart on its own; what needs de-duplicating is two lanes on one server whose names
 // carry variables that happen to resolve alike (see uniqueLabel).
-func clashProxiesAll(u model.User, servers []Server) []clashProxy {
+func clashProxiesAll(u model.User, servers []Server, awgTunnel bool) []clashProxy {
 	var out []clashProxy
 	seen := map[string]int{}
 	for _, srv := range servers {
-		for _, p := range clashProxies(u, srv) {
+		for _, p := range clashProxies(u, srv, awgTunnel) {
 			uniq := uniqueLabel(seen, p.name)
 			if uniq != p.name {
 				// The name is the first %q-quoted field of the line, so replacing its
@@ -251,11 +258,21 @@ func ClashYAML(u model.User, set *model.Settings) string {
 // ClashYAMLMulti renders a Clash-Meta (Mihomo) config spanning every server: all
 // proxies under one select group. servers[0] is the local server (group title + rules).
 func ClashYAMLMulti(u model.User, servers []Server) string {
+	return clashYAML(u, servers, false)
+}
+
+// ClashYAMLFor is ClashYAMLMulti for the client that asked: with the AmneziaWG tunnel
+// when its core reads 3.1 (ClashAWG).
+func ClashYAMLFor(u model.User, servers []Server, userAgent string) string {
+	return clashYAML(u, servers, ClashAWG(userAgent))
+}
+
+func clashYAML(u model.User, servers []Server, awgTunnel bool) string {
 	if len(servers) == 0 {
 		return ""
 	}
 	local := servers[0].Set
-	proxies := clashProxiesAll(u, servers)
+	proxies := clashProxiesAll(u, servers, awgTunnel)
 	var b strings.Builder
 	// Encrypted DNS (DoH) to defeat DNS poisoning/blocking on plaintext UDP/53.
 	b.WriteString("dns:\n" +
@@ -320,9 +337,19 @@ const (
 // (proxy node names). Falls back to the plain config if the template has no proxies
 // marker.
 func ClashWithTemplateMulti(u model.User, servers []Server, template string) string {
-	proxies := clashProxiesAll(u, servers)
+	return clashWithTemplate(u, servers, template, false)
+}
+
+// ClashWithTemplateFor is ClashWithTemplateMulti for the client that asked (see
+// ClashYAMLFor).
+func ClashWithTemplateFor(u model.User, servers []Server, template, userAgent string) string {
+	return clashWithTemplate(u, servers, template, ClashAWG(userAgent))
+}
+
+func clashWithTemplate(u model.User, servers []Server, template string, awgTunnel bool) string {
+	proxies := clashProxiesAll(u, servers, awgTunnel)
 	if len(proxies) == 0 || !strings.Contains(template, clashProxiesMarker) {
-		return ClashYAMLMulti(u, servers)
+		return clashYAML(u, servers, awgTunnel)
 	}
 
 	defs := make([]string, len(proxies))

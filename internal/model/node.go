@@ -1,5 +1,10 @@
 package model
 
+import (
+	"net"
+	"strings"
+)
+
 // LocalNodeID is the virtual node the panel's own Xray runs as. It has no row in
 // `nodes` — its identity is the settings singleton — but it carries an ID so that
 // traffic history, link generation and the UI can treat every server uniformly.
@@ -79,6 +84,10 @@ type Node struct {
 	HysteriaEnabled *bool `json:"hysteria_enabled"`
 	RealityEnabled  *bool `json:"reality_enabled"`
 	AWGEnabled      *bool `json:"awg_enabled"`
+	NaiveEnabled    *bool `json:"naive_enabled"`
+	// ServesNaive is whether the node's agent said it answers NaiveProxy tunnels
+	// (nodeapi.SyncRequest.Naive); an older agent does not, and gets no NaiveProxy link.
+	ServesNaive bool `json:"-"`
 
 	DecoyTemplate string `json:"decoy_template"`
 
@@ -176,6 +185,7 @@ type NodeConnections struct {
 	AWGPort            int    `json:"awg_port"`
 	AWGName            string `json:"awg_name"`
 	AWGDNS             string `json:"awg_dns"`
+	NaiveName          string `json:"naive_name"`
 }
 
 // Joined reports whether the node has exchanged its join token for a permanent
@@ -202,4 +212,31 @@ type NodeStatusUpdate struct {
 	CertIssuer     string
 	CertExpiresAt  int64
 	ConfigHash     string
+	ServesNaive    bool
+}
+
+// ValidServerHost reports whether h can be a server's address: an IP literal, or a
+// name of letters, digits, hyphens and underscores (a trailing dot allowed). The host goes verbatim into every
+// subscription line and AmneziaWG config the server hands out — a newline in it would
+// add lines of its own there (an awg-quick PreUp that runs as root on the user's
+// machine, links of anyone's choosing) — so anything else is refused where it is typed.
+func ValidServerHost(h string) bool {
+	if h == "" || len(h) > 253 {
+		return false
+	}
+	if ip := net.ParseIP(h); ip != nil {
+		return true
+	}
+	for _, l := range strings.Split(strings.TrimSuffix(h, "."), ".") {
+		if l == "" || len(l) > 63 || l[0] == '-' || l[len(l)-1] == '-' {
+			return false
+		}
+		for i := 0; i < len(l); i++ {
+			c := l[i]
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+				return false
+			}
+		}
+	}
+	return true
 }

@@ -26,7 +26,7 @@ func TestTurnImportLink(t *testing.T) {
 	maskKey := strings.Repeat("0f", 32)
 	u := model.User{ID: 4, WGPrivateKey: priv, AWGSlot: 5}
 	s := &model.Settings{Host: "vpn.example.com", XrayDNS: "9.9.9.9"}
-	in := model.Inbound{ID: 3, Name: "Calls", Protocol: model.InbWireGuard, Port: 56000,
+	in := model.Inbound{ID: 3, Name: "Calls", Protocol: model.InbTurnVK, Port: 56000,
 		Opts: model.InboundOpts{WGPublicKey: serverPub, TurnMaskKey: maskKey, TurnLink: "https://vk.com/call/join/abc"}}
 
 	decode := func(l string) (link struct {
@@ -94,7 +94,7 @@ func TestFreeTurnImportLink(t *testing.T) {
 	maskKey := strings.Repeat("a1", 32)
 	u := model.User{ID: 4, WGPrivateKey: priv, AWGSlot: 5}
 	s := &model.Settings{Host: "vpn.example.com", XrayDNS: "9.9.9.9"}
-	in := model.Inbound{ID: 3, Name: "Calls", Protocol: model.InbWireGuard, Port: 56000,
+	in := model.Inbound{ID: 3, Name: "Calls", Protocol: model.InbTurnVK, Port: 56000,
 		Opts: model.InboundOpts{WGPublicKey: serverPub, TurnMaskKey: maskKey, TurnLink: "https://vk.ru/call/join/xyz"}}
 
 	conf := TurnClientConf(u, s, in)
@@ -185,7 +185,7 @@ func TestWingsVImportLink(t *testing.T) {
 	_, serverPub, _ := awg.GenerateKey()
 	u := model.User{ID: 4, WGPrivateKey: priv, AWGSlot: 5}
 	s := &model.Settings{Host: "vpn.example.com", XrayDNS: "9.9.9.9, 1.1.1.1"}
-	in := model.Inbound{ID: 3, Name: "Calls", Protocol: model.InbWireGuard, Port: 56000,
+	in := model.Inbound{ID: 3, Name: "Calls", Protocol: model.InbTurnVK, Port: 56000,
 		Opts: model.InboundOpts{WGPublicKey: serverPub, TurnLink: "https://vk.com/call/join/abc"}}
 
 	l := WingsVImportLink(u, s, in)

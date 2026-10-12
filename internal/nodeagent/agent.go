@@ -33,6 +33,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/ipblock"
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/naive"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/nodestate"
 	"github.com/AppsGanin/rospanel/internal/opera"
@@ -175,8 +176,12 @@ type Agent struct {
 	lastCounters map[string]xray.Traffic         // last raw Xray counter per user email
 	pending      map[int64]*nodeapi.TrafficDelta // accumulated, not yet sent
 	inflight     map[int64]*nodeapi.TrafficDelta // sent, awaiting ack
-	inflightID   int64                           // report id of inflight (0 = none)
-	reportSeq    int64                           // monotonic report-id source
+	// Lane traffic rides in the same report as the users' (see lanes.go).
+	pendingLanes      map[string]*nodeapi.LaneDelta
+	inflightLanes     map[string]*nodeapi.LaneDelta
+	pendingLanesSince time.Time // when the oldest pending lane traffic was sampled
+	inflightID        int64     // report id of inflight (0 = none)
+	reportSeq         int64     // monotonic report-id source
 	// The quota watch between samples (see quota.go), under statsMu too: what the
 	// panel last said each watched user has left, when each user's traffic was last
 	// seen moving, and whether a report is owed for a user who ran out.
@@ -266,6 +271,10 @@ type Agent struct {
 
 	// turn runs the TURN relays in front of this node's WireGuard inbounds.
 	turn *turnrelay.Relay
+
+	// naive answers NaiveProxy tunnels in front of the decoy (internal/naive); its
+	// users are naive-in's clients in the config last applied.
+	naive *naive.Server
 }
 
 // Run loads the node identity and runs the agent until the context is cancelled
@@ -517,6 +526,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		seen:         newSeenAddrs(),
 		shaper:       shaper.New(),
 		awg:          awg.New(),
+		naive:        naive.New(xray.NaiveInnerAddr),
 		turn:         turnrelay.New(),
 		policyBlock:  ipblock.New(ipblock.TablePolicy),
 		ipBan:        ipblock.NewPermanent(ipblock.TableBanned),
@@ -1080,18 +1090,26 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 	// Nothing in flight and new traffic waiting → promote it to a fresh batch. An
 	// unacked in-flight batch is resent unchanged (same id) instead.
 	promoted := false
-	if len(a.inflight) == 0 && len(a.pending) > 0 {
+	if a.inflightID == 0 && (len(a.pending) > 0 || a.lanesDueLocked()) {
 		a.reportSeq++
 		a.inflightID = a.reportSeq
 		a.inflight = takeTrafficChunk(&a.pending, trafficChunkMax)
+		a.inflightLanes, a.pendingLanes, a.pendingLanesSince = a.pendingLanes, nil, time.Time{}
 		promoted = true
 	}
 	var traffic []nodeapi.TrafficDelta
 	for _, d := range a.inflight {
 		traffic = append(traffic, *d)
 	}
+	var lanes []nodeapi.LaneDelta
+	for _, d := range a.inflightLanes {
+		lanes = append(lanes, *d)
+	}
 	rid := a.inflightID
-	quotaUsers, quotaCrossed, quotaNew := a.takeQuotaUsers(promoted || len(a.inflight) == 0)
+	// Settled: this request carries all the user traffic sampled so far, or there is none.
+	// A report in flight carrying lanes alone does not count as nothing in flight — the
+	// users' traffic waiting behind it has not gone out.
+	quotaUsers, quotaCrossed, quotaNew := a.takeQuotaUsers(promoted || (a.inflightID == 0 && len(a.pending) == 0))
 	// A full chunk with traffic still waiting is a backlog; a partial one is not, even
 	// if a sample has landed in pending since — that goes out on the next poll.
 	trafficMore := len(a.inflight) >= trafficChunkMax && len(a.pending) > 0
@@ -1119,6 +1137,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 	req := nodeapi.SyncRequest{
 		ConfigHash:  hash,
 		DeltaRev:    nodeapi.DeltaRev,
+		Naive:       true,
 		StateTag:    a.splitTag(),
 		NodeVersion: version.Version,
 		XrayVersion: a.sup.Version(),
@@ -1137,6 +1156,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		AWGError:       awgErr,
 		ReportID:       rid,
 		Traffic:        traffic,
+		Lanes:          lanes,
 		TrafficMore:    trafficMore,
 		QuotaUsers:     quotaUsers,
 		QuotaCrossed:   quotaCrossed,
@@ -1328,6 +1348,7 @@ func (a *Agent) applyUsers(st *nodeapi.NodeState) error {
 	if err != nil {
 		return fmt.Errorf("apply xray config: %w", err)
 	}
+	a.syncNaive(data)
 	switch how {
 	case xray.RawUnchanged:
 		slog.Info("node: state applied without an Xray restart (config unchanged)")
@@ -1496,13 +1517,16 @@ func (a *Agent) ensureDecoy(dest, template string) error {
 	protocols.SetUnencryptedHTTP2(true)
 	// The server dispatches to whatever handler is currently stored, so a later
 	// template change is a pointer swap, not a listener restart.
+	decoyHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hp := a.decoyHandler.Load(); hp != nil {
+			(*hp).ServeHTTP(w, r)
+		}
+	})
 	srv := &http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if hp := a.decoyHandler.Load(); hp != nil {
-				(*hp).ServeHTTP(w, r)
-			}
-		}),
+		// NaiveProxy tunnels arrive through the same fallback (internal/naive).
+		Handler:           a.naiveHandler(decoyHandler),
 		Protocols:         protocols,
+		HTTP2:             naive.HTTP2Config(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	a.decoySrv = srv

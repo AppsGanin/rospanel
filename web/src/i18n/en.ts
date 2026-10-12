@@ -332,6 +332,7 @@ const en: Dict = {
     messageTooLong: "the text is longer than {{limit}} characters ({{count}} now) — Telegram will reject it",
     needPngJpeg: "a PNG or JPEG is required",
     noAdminChats: "no admin chats are linked — link one under Telegram to receive tests",
+    nodeHostInvalid: "the node's address is a domain or an IP, with no spaces or special characters",
     nodeNameTaken: "a node with that name already exists — names must be unique",
     nodeWarpFailed: "WARP registration for the node failed: {{detail}}",
     notSupergroup: "that chat is not a supergroup — create a group and turn Topics on in it",
@@ -1101,6 +1102,8 @@ const en: Dict = {
     unknownCountry: "Unknown",
     noCountryData: "No connection data yet.",
     byServer: "By server",
+    byProtocol: "By protocol",
+    allServers: "All servers",
   },
 
   overview: {
@@ -3240,6 +3243,7 @@ const en: Dict = {
     awgParams: "Obfuscation parameters",
     awgHint: "AmneziaWG 3.1 — WireGuard with a masked handshake and header protection (AmneziaVPN and AmneziaWG clients from 5.0.1.5). The panel mints the keys; after a regen the configs already handed out stop working.",
     enableAwg: "Turn AmneziaWG on to set the port and DNS.",
+    naiveHint: "NaiveProxy on the VLESS-TCP-TLS port: same certificate and decoy site, login u<id> and the user's UUID. The link is handed out when the server's certificate is trusted.",
     off: "disabled",
     name: "Connection name",
     nameHint:

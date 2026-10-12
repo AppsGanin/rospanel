@@ -633,11 +633,14 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 		if s.HysteriaEnabled && srv.allowsBuiltin(model.LaneHysteria) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoHysteria, &u), link.Hysteria2(u, s)})
 		}
+		if link.NaiveOn(s) && srv.allowsBuiltin(model.LaneNaive) {
+			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoNaive, &u), link.Naive(u, s)})
+		}
 		for _, in := range srv.Custom {
 			if !srv.allowsInbound(in.ID) {
 				continue
 			}
-			if in.Protocol == model.InbWireGuard {
+			if in.Protocol == model.InbTurnVK {
 				peer := net.JoinHostPort(s.Host, strconv.Itoa(in.Port))
 				turnCards = append(turnCards, turnCard{
 					Label:   link.CustomLabelFor(in, u, s),

@@ -11,13 +11,14 @@ import (
 // VLESSInnerAddr and taking a PROXY header, and the public port it had, for the front.
 //
 // 0 and the config as given when there is no such lane, when another inbound already
-// holds VLESSInnerPort (a custom inbound from before the port was reserved), or when
-// the config does not parse: the lane then stays where it was, on its own.
+// holds the inner port (where it is one: a custom inbound from before it was reserved),
+// or when the config does not parse: the lane then stays where it was, on its own.
 func FrontVLESSRaw(data []byte) ([]byte, int) {
 	cfg, err := decodeRaw(data)
 	if err != nil {
 		return data, 0
 	}
+	listen, inner := InnerListen(VLESSInnerAddr)
 	inbounds, _ := cfg["inbounds"].([]any)
 	var lane map[string]any
 	for _, raw := range inbounds {
@@ -26,7 +27,7 @@ func FrontVLESSRaw(data []byte) ([]byte, int) {
 			lane = in
 			continue
 		}
-		if p, ok := inboundPort(in); ok && p == VLESSInnerPort {
+		if p, ok := inboundPort(in); ok && inner != 0 && p == inner {
 			return data, 0
 		}
 	}
@@ -34,7 +35,7 @@ func FrontVLESSRaw(data []byte) ([]byte, int) {
 		return data, 0
 	}
 	public, ok := inboundPort(lane)
-	if !ok || public == VLESSInnerPort {
+	if !ok || public == 0 || public == inner {
 		return data, 0
 	}
 	stream, _ := lane["streamSettings"].(map[string]any)
@@ -47,7 +48,7 @@ func FrontVLESSRaw(data []byte) ([]byte, int) {
 	}
 	sockopt["acceptProxyProtocol"] = true
 	stream["sockopt"] = sockopt
-	lane["listen"], lane["port"] = "127.0.0.1", VLESSInnerPort
+	lane["listen"], lane["port"] = listen, inner
 	out, err := json.Marshal(cfg)
 	if err != nil {
 		return data, 0

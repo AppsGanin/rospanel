@@ -13,6 +13,7 @@ import { useCan } from './role'
 import { ShareBar, TrafficArea } from './charts'
 import { ABUSE_WINDOW_DAYS, AbuseList } from './AbuseList'
 import { ConnectionCountries } from './CountryMap'
+import { LaneTrafficSplit } from './LaneTrafficSplit'
 import { NodeTrafficSplit } from './NodeTrafficSplit'
 import { BlockedList, ProbeList } from './SecurityLists'
 import {
@@ -176,6 +177,8 @@ export function StatsPanel() {
       {/* Only ever rendered on a fleet: with one server the split repeats the total
           above it, and the component says so by rendering nothing. */}
       <NodeTrafficSplit from={from} to={to} title={t('stats.byServer')} refresh={tick} />
+
+      <LaneTrafficSplit from={from} to={to} refresh={tick} />
 
       {/* Two short reports, side by side where there is room: neither fills a row. */}
       <div className="grid gap-3.5 lg:grid-cols-2">

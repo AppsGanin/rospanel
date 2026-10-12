@@ -11,6 +11,8 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/AppsGanin/rospanel/internal/sub"
+	"github.com/AppsGanin/rospanel/internal/xray"
 )
 
 // The AmneziaWG lane. The master runs its own tunnel from here (internal/awg);
@@ -231,6 +233,14 @@ func (m *Manager) PollAWG() error {
 	if err := m.store.ApplyTrafficDeltas(deltas); err != nil {
 		return err
 	}
+	lane := store.LaneDelta{NodeID: model.LocalNodeID, Lane: xray.LaneAWG, Day: today}
+	for _, d := range deltas {
+		lane.Up += d.AddUp
+		lane.Down += d.AddDown
+	}
+	if err := m.store.ApplyLaneTraffic([]store.LaneDelta{lane}); err != nil {
+		logErr("awg: lane traffic failed", "err", err)
+	}
 	return m.enforceTraffic()
 }
 
@@ -328,21 +338,18 @@ func (m *Manager) AWGClientConfig(u *model.User, s *model.Settings) (string, err
 	if err := m.claimAWG([]*model.User{u}); err != nil {
 		return "", err
 	}
-	addr, ok := awg.ClientAddr(u.AWGSlot)
-	if !ok {
+	if _, ok := awg.ClientAddr(u.AWGSlot); !ok {
 		return "", fmt.Errorf("awg: no address left on the tunnel subnet for user %d", u.ID)
 	}
 	if u.WGPrivateKey == "" {
 		return "", fmt.Errorf("awg: stored key for user %d is unreadable", u.ID)
 	}
-	return awg.ClientConfig{
-		PrivateKey:      u.WGPrivateKey,
-		Address:         addr,
-		DNS:             awg.TunnelDNS(s),
-		Params:          awgParams(s.AWGParams),
-		ServerPublicKey: s.AWGPublicKey,
-		Endpoint:        net.JoinHostPort(s.Host, strconv.Itoa(s.AWGPort)),
-	}.Render(), nil
+	// The same file the amneziawg:// line of the subscription carries (sub.AWGIncyLink).
+	conf := sub.AWGClientConf(*u, s)
+	if conf == "" {
+		return "", fmt.Errorf("awg: the parameters of server %d are unreadable", s.ServerID)
+	}
+	return conf, nil
 }
 
 // nodeAWGState is what a node needs to run its tunnel: its own identity and the

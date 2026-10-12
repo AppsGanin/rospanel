@@ -229,6 +229,7 @@ func (a *Agent) ackReportLocked(ackReport int64) {
 	}
 	if a.inflightID != 0 && ackReport >= a.inflightID {
 		a.inflight = nil
+		a.inflightLanes = nil
 		a.inflightID = 0
 	}
 }
@@ -261,6 +262,7 @@ func (a *Agent) sampleStats() {
 	if !a.sup.Running() {
 		return
 	}
+	a.sampleLanes()
 	stats, err := a.sup.QueryStatsLive(a.sup.APIAddr())
 	if err != nil {
 		if stats, err = a.sup.QueryStats(a.sup.APIAddr()); err != nil {

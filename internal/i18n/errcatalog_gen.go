@@ -226,6 +226,7 @@ var errEN = map[string]string{
 	"err.noLinkedChats":            "no linked chats — link one with a code first",
 	"err.noQuota":                  "the plan has no traffic limit — nothing to add",
 	"err.noUsersSelected":          "no users selected",
+	"err.nodeHostInvalid":          "the node's address is a domain or an IP, with no spaces or special characters",
 	"err.nodeHostRequired":         "enter the node's domain or IP",
 	"err.nodeNameRequired":         "enter a node name",
 	"err.nodeNameTaken":            "a node with that name already exists — names must be unique",

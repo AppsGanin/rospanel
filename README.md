@@ -265,7 +265,13 @@ status treat it exactly like the Xray lanes. Needs `/dev/net/tun` and `CAP_NET_A
 the installed service has; in Docker pass them yourself (`--device /dev/net/tun --cap-add
 NET_ADMIN`), as a container is given no TUN device by default. `nftables` for the tunnel's NAT.
 
-**WireGuard over calls (TURN)** *(experimental: it may change or be removed in a future
+**NaiveProxy** is a built-in lane on the VLESS-TCP-TLS port: a client with Chrome's network stack,
+served by the decoy site behind :443 with the same certificate. Routing, traffic accounting, limits
+and cut-off work as on the other lanes. The login is `u<id>`, the password the user's UUID. In the
+subscription it goes to the clients that import it — Shadowrocket (as `http2://`), v2rayN, Karing —
+when the certificate is trusted (a domain or a Let's Encrypt IP certificate).
+
+**TURN-VK (WireGuard over calls)** *(experimental: it may change or be removed in a future
 release)* is a custom-inbound protocol for mobile networks that let
 through nothing but a whitelist. To the network it is a call. The relay speaks
 [Free Turn Proxy](https://github.com/samosvalishe/free-turn-proxy)'s masked wire — every datagram
@@ -276,7 +282,7 @@ and hands the packets to Xray's own WireGuard inbound on loopback, so the lane i
 like any other: users added and removed live without touching anyone else's session, access
 groups, routing (WARP, proxy lanes, blocks), per-user traffic and online status. Users are peers
 by the same key and tunnel address they have on AmneziaWG — nothing new to issue. Create it under
-*Connections → custom inbounds* (protocol *WireGuard (TURN)*, UDP port 56000 by default, an
+*Connections → custom inbounds* (protocol *TURN-VK*, UDP port 56000 by default, an
 optional VK call link to hand out); on the subscription page users get one-tap import links that
 add the whole server to an app with WireGuard built in — `vkturnproxy://` for
 [VK Turn Proxy](https://github.com/anton48/vk-turn-proxy-ios) on iOS (TestFlight), `freeturn://` for
@@ -516,7 +522,7 @@ and install the agent — with a live install log. **The node reaches out to the
 (outbound HTTPS long-poll), so the panel needs no access to the nodes, and moving the panel
 doesn't detach them. Users, limits and plans roll out to every node; traffic and devices count
 against **shared** limits, while statistics and the user card show **how much traffic went
-through each server**. Each node also has a **traffic multiplier** — a coefficient that scales
+through each server**, and statistics through each protocol as well. Each node also has a **traffic multiplier** — a coefficient that scales
 how fast traffic through it spends a user's quota (2× on an expensive location, 0.5× on a promo
 one); it bends only the quota, never the per-node byte statistics.
 

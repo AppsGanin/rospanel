@@ -50,7 +50,7 @@ const PROTOCOL_LABELS: Record<string, string> = {
   trojan: "Trojan",
   hysteria2: "Hysteria2",
   shadowsocks: "Shadowsocks",
-  wireguard: "WireGuard (TURN)",
+  "turn-vk": "TURN-VK",
 };
 
 const TRANSPORT_LABELS: Record<string, string> = {
@@ -336,7 +336,7 @@ function InboundRow({
   const [open, setOpen] = useState(false);
   const o = v.opts;
   const isSS = v.protocol === "shadowsocks";
-  const isWG = v.protocol === "wireguard";
+  const isWG = v.protocol === "turn-vk";
   // Shadowsocks-2022 is encrypted by its own AEAD, so "no TLS" would misread as
   // insecure, and its transport slug just repeats the protocol. Show the method
   // instead — dropping the "2022-blake3-" prefix every method shares.
@@ -366,7 +366,6 @@ function InboundRow({
               <span className="text-warning">{t("inb.noTls")}</span>
             )}
             <Mono>{v.port}</Mono>
-            {!v.enabled && <span>{t("conn.off")}</span>}
           </span>
         </button>
       }
@@ -881,7 +880,7 @@ function InboundForm({
       security: first?.securities[0] ?? "tls",
       // vk-turn-proxy's own default port, so the command users copy from its README
       // matches a fresh inbound.
-      port: p === "wireguard" && !v.port ? 56000 : v.port,
+      port: p === "turn-vk" && !v.port ? 56000 : v.port,
     });
   };
   const pickTransport = (t: string) => {
@@ -895,7 +894,7 @@ function InboundForm({
 
   const isHysteria = v.protocol === "hysteria2";
   const isShadowsocks = v.protocol === "shadowsocks";
-  const isWireGuard = v.protocol === "wireguard";
+  const isWireGuard = v.protocol === "turn-vk";
   // These protocols own their transport and security, so the editor shows neither
   // control for them — the difference from every other protocol is just this flag.
   const fixedTransport = isHysteria || isShadowsocks || isWireGuard;

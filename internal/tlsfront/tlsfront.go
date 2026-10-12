@@ -19,6 +19,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -61,7 +62,8 @@ type Front struct {
 	stop chan struct{} // closed to end the current port's listener
 }
 
-// New returns a front for Xray at target; it listens nowhere until Ensure.
+// New returns a front for Xray at target, an abstract unix socket ("@name") or a
+// loopback "host:port"; it listens nowhere until Ensure.
 func New(target string) *Front { return &Front{target: target} }
 
 // Ensure keeps the front on port, all addresses, IPv4 and IPv6 — as Xray listened; 0
@@ -177,7 +179,7 @@ func (f *Front) handle(c net.Conn) {
 		return
 	}
 	_ = c.SetReadDeadline(time.Time{})
-	up, err := net.DialTimeout("tcp", f.target, dialTimeout)
+	up, err := net.DialTimeout(targetNetwork(f.target), f.target, dialTimeout)
 	if err != nil {
 		// Xray is not there (restarting, crashed): reset, the nearest a connection
 		// already accepted can come to the refusal a port nobody listens on gives.
@@ -252,4 +254,13 @@ func reset(c net.Conn) {
 
 func isReset(err error) bool {
 	return errors.Is(err, syscall.ECONNRESET)
+}
+
+// targetNetwork is the network the target is dialed on: an abstract unix socket
+// ("@name") or a loopback "host:port".
+func targetNetwork(target string) string {
+	if strings.HasPrefix(target, "@") {
+		return "unix"
+	}
+	return "tcp"
 }

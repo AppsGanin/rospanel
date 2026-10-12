@@ -424,7 +424,7 @@ func TestMCPInboundWritesReachTheStore(t *testing.T) {
 		},
 		{ // WireGuard behind a TURN relay: the call link, and what the panel generates
 			body: map[string]any{
-				"enabled": true, "name": "land-wg", "protocol": model.InbWireGuard, "port": 21107,
+				"enabled": true, "name": "land-wg", "protocol": model.InbTurnVK, "port": 21107,
 				"turn_link": "https://vk.com/call/join/abcdef",
 			},
 			assert: func(t *testing.T, in model.Inbound) {

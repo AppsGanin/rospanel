@@ -34,7 +34,7 @@ func TestSingBoxTemplateSplicesProxies(t *testing.T) {
 	  ],
 	  "route": {"final": "{{group}}"}
 	}`
-	out, err := SingBoxWithTemplate(tplUser(), tplServers(), tpl)
+	out, err := SingBoxWithTemplate(tplUser(), tplServers(), tpl, false)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestSingBoxTemplateSplicesProxies(t *testing.T) {
 func TestSingBoxTemplateFallsBack(t *testing.T) {
 	generated := SingBoxJSONMulti(tplUser(), tplServers())
 
-	out, err := SingBoxWithTemplate(tplUser(), tplServers(), `{"outbounds": [`)
+	out, err := SingBoxWithTemplate(tplUser(), tplServers(), `{"outbounds": [`, false)
 	if err == nil {
 		t.Error("unparseable template reported success")
 	}
@@ -102,12 +102,12 @@ func TestSingBoxTemplateFallsBack(t *testing.T) {
 	// A user with no servers: the generated profile has a valid direct-only answer,
 	// while a template would leave a selector pointing at nothing.
 	empty := []Server{}
-	if out, _ := SingBoxWithTemplate(tplUser(), empty, `{"outbounds":["{{proxies}}"]}`); out != SingBoxJSONMulti(tplUser(), empty) {
+	if out, _ := SingBoxWithTemplate(tplUser(), empty, `{"outbounds":["{{proxies}}"]}`, false); out != SingBoxJSONMulti(tplUser(), empty) {
 		t.Error("a user with no servers did not get the generated profile")
 	}
 
 	// No template at all is the default path, byte for byte.
-	if out, err := SingBoxWithTemplate(tplUser(), tplServers(), "   "); err != nil || out != generated {
+	if out, err := SingBoxWithTemplate(tplUser(), tplServers(), "   ", false); err != nil || out != generated {
 		t.Errorf("a blank template changed the output (err=%v)", err)
 	}
 }
@@ -238,7 +238,7 @@ func TestTemplateExpansionIsBounded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	out, err := SingBoxWithTemplate(tplUser(), tplServers(), string(b))
+	out, err := SingBoxWithTemplate(tplUser(), tplServers(), string(b), false)
 	if !errors.Is(err, ErrTemplateTooBig) {
 		t.Errorf("an oversized render gave %v, want ErrTemplateTooBig", err)
 	}
@@ -311,7 +311,7 @@ func TestTemplatePlaceholderMustBeSubstitutable(t *testing.T) {
 	}
 	// And the render refuses it too, so a template stored before this rule cannot leak
 	// its own placeholder text to a client.
-	out, err := SingBoxWithTemplate(tplUser(), tplServers(), scalar)
+	out, err := SingBoxWithTemplate(tplUser(), tplServers(), scalar, false)
 	if err == nil {
 		t.Error("a scalar {{proxies}} rendered without error")
 	}
@@ -346,7 +346,7 @@ func TestTemplateRefusesASecondServersSlot(t *testing.T) {
 		t.Errorf("selector + urltest was refused: %v", err)
 	}
 	// And it renders with every tag naming a real outbound.
-	out, err := SingBoxWithTemplate(tplUser(), tplServers(), both)
+	out, err := SingBoxWithTemplate(tplUser(), tplServers(), both, false)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
