@@ -139,6 +139,7 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		ConfigHash:     req.ConfigHash,
 		ServesNaive:    req.Naive,
 		ServesMieru:    req.Mieru,
+		ServesAnyTLS:   req.AnyTLS,
 	})
 
 	// Everything below names users, and a node is believed only about its own (see

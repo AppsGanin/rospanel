@@ -152,6 +152,7 @@ func TestEveryWriteUnderAUsersIDEditsOnlyThatUser(t *testing.T) {
 		"POST /api/users/{id}/tags":             "that user's tags",
 		"POST /api/users/{id}/devices/unbind":   "that user's devices, counted per page",
 		"POST /api/users/{id}/rotate-sub":       "a token the list does not show",
+		"POST /api/users/{id}/reset-uuid":       "credentials the list does not show",
 		"POST /api/users/{id}/telegram/unlink":  "chat fields the list does not show",
 		"POST /api/users/{id}/telegram/link":    "chat fields the list does not show (another user losing the chat included)",
 		"POST /api/users/{id}/telegram/message": "a message, no row changes",

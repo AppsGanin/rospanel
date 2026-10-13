@@ -26,15 +26,20 @@ import (
 // enabled built-in lanes first, then each custom inbound in its display order.
 // Protocols switched off in the Connections panel are omitted.
 func ShareLinks(u model.User, srv Server) []string {
-	return shareLinks(u, srv, linkForms{naive: link.Naive, mieru: true})
+	return shareLinks(u, srv, linkForms{naive: link.Naive, mieru: true, anytls: true, vlessEnc: true})
 }
 
 // linkForms are the per-client link forms of the lanes not every client reads; a nil
 // form leaves the lane out of the list.
 type linkForms struct {
-	naive func(model.User, *model.Settings) string
-	awg   func(model.User, *model.Settings) string
-	mieru bool // the client imports mierus:// (MieruLinkFor)
+	naive  func(model.User, *model.Settings) string
+	awg    func(model.User, *model.Settings) string
+	mieru  bool // the client imports mierus:// (MieruLinkFor)
+	anytls bool // the client imports anytls:// (AnyTLSLinkFor)
+	// vlessEnc: the client hands a vless:// link's encryption to a core that speaks it
+	// (VLESSEncLinkFor); without it a VLESS Encryption inbound is left out, as a client
+	// dropping the parameter would only show an entry that never connects.
+	vlessEnc bool
 }
 
 // shareLinks is ShareLinks with the given forms of the client-dependent lanes.
@@ -57,6 +62,9 @@ func shareLinks(u model.User, srv Server, f linkForms) []string {
 	if f.naive != nil && link.NaiveOn(set) && srv.allowsBuiltin(model.LaneNaive) {
 		links = append(links, f.naive(u, set))
 	}
+	if f.anytls && link.AnyTLSOn(set) && srv.allowsBuiltin(model.LaneAnyTLS) {
+		links = append(links, link.AnyTLS(u, set))
+	}
 	if f.mieru && link.MieruOn(set) && srv.allowsBuiltin(model.LaneMieru) {
 		links = append(links, link.Mieru(u, set))
 	}
@@ -66,7 +74,7 @@ func shareLinks(u model.User, srv Server, f linkForms) []string {
 		}
 	}
 	for _, in := range srv.Custom {
-		if !srv.allowsInbound(in.ID) {
+		if !srv.allowsInbound(in.ID) || in.Opts.EncMode != "" && !f.vlessEnc {
 			continue
 		}
 		if l := link.Custom(u, in, set); l != "" {
@@ -97,7 +105,14 @@ func ShareLinksAll(u model.User, servers []Server) []string {
 // Streisand, v2rayNG, INCY — have no NaiveProxy, and how each treats a line it cannot
 // read is not documented for all of them, so none is risked.
 func ShareLinksFor(u model.User, servers []Server, userAgent string) []string {
-	f := linkForms{naive: NaiveLinkFor(userAgent), mieru: MieruLinkFor(userAgent), awg: awgLinkFor(userAgent)}
+	return ShareLinksRule(u, servers, userAgent, nil)
+}
+
+// ShareLinksRule is ShareLinksFor with a response rule's overrides (servers already
+// passed through Overrides.Apply).
+func ShareLinksRule(u model.User, servers []Server, userAgent string, o Overrides) []string {
+	f := o.links(linkForms{naive: NaiveLinkFor(userAgent), mieru: MieruLinkFor(userAgent), awg: awgLinkFor(userAgent),
+		anytls: AnyTLSLinkFor(userAgent), vlessEnc: VLESSEncLinkFor(userAgent)})
 	var links []string
 	for _, srv := range servers {
 		links = append(links, shareLinks(u, srv, f)...)
@@ -111,7 +126,7 @@ func ShareLinksFor(u model.User, servers []Server, userAgent string) []string {
 //   - Shadowrocket: its HTTP2 (NaiveProxy) type, http2://base64(…) — link.NaiveShadowrocket;
 //   - Throne (from 1.1.2, sing-box core): naive+https:// with uot=1, which it reads, so UDP
 //     rides the tunnel — link.NaiveUoT;
-//   - v2rayN (sing-box core), Karing, Exclave and NekoBox (with their naive plugin):
+//   - v2rayN from 7.20.0 (sing-box core), Karing, Exclave and NekoBox (with their naive plugin):
 //     naive+https:// — NekoBox when it asks for links (?format=), its User-Agent otherwise
 //     getting the Clash profile, which has no NaiveProxy.
 //
@@ -124,12 +139,18 @@ func NaiveLinkFor(userAgent string) func(model.User, *model.Settings) string {
 		}
 		return nil
 	}
+	if m := v2raynUA.FindStringSubmatch(userAgent); m != nil {
+		if versionAtLeast(m[1:], 7, 20, 0) {
+			return link.Naive
+		}
+		return nil
+	}
 	switch {
 	case ua == "":
 		return link.Naive
 	case strings.Contains(ua, "shadowrocket"):
 		return link.NaiveShadowrocket
-	case strings.HasPrefix(ua, "v2rayn/"), strings.Contains(ua, "karing"), strings.HasPrefix(ua, "exclave/"),
+	case strings.Contains(ua, "karing"), strings.HasPrefix(ua, "exclave/"),
 		strings.HasPrefix(ua, "nekobox/"):
 		return link.Naive
 	}

@@ -278,6 +278,11 @@ clients that import it — the Clash profile for clients whose version proves th
 (mihomo itself, FlClash, FlClashX, Koala Clash, Clash Verge Rev, Mihomo Party, Sparkle,
 ClashMetaForAndroid, ClashMi), a `mierus://` link for Shadowrocket, Throne, Exclave and Karing.
 
+**AnyTLS** is a built-in lane on the VLESS-TCP-TLS port, behind the same certificate and decoy
+site; the password is the user's UUID. It goes to sing-box clients, the Clash profile (mihomo
+cores that have it), v2rayN, Shadowrocket, Throne, Exclave, Karing and NekoBox, when the certificate is trusted.
+
+
 **TURN-VK (WireGuard over calls)** *(experimental: it may change or be removed in a future
 release)* is a custom-inbound protocol for mobile networks that let
 through nothing but a whitelist. To the network it is a call. The relay speaks
@@ -438,10 +443,11 @@ no longer load (`dns.servers[].address`, a `dns`/`wireguard` outbound, inbound `
 `geosite`/`geoip` and the like) is refused on save, and one saved earlier is replaced
 by the generated profile, with a line in the log.
 
-**Response rules** override the automatic format detection: an ordered list of operator rules
-matched against the request (User-Agent or an HWID header) — force a specific format for a given
-client / OS / version (contains, equals, prefix, regex), or **block** a client entirely (it is
-served the decoy). The first matching rule wins; no match falls through to normal detection.
+**Response rules** change the subscription for matching clients: an ordered list of operator rules
+matched against the request (User-Agent or an HWID header; contains, equals, prefix, regex). A rule
+forces a format, gives or hides individual protocols (the built-in lanes, custom inbounds, VLESS
+Encryption), or **blocks** the client (it is served the decoy). The first matching rule wins; no
+match falls through to detection by User-Agent. The editor shows what a given client would get.
 
 **A traffic limit per server** (on the server card, next to its capacity) is what the
 hosting sells you: a monthly or daily allowance in gigabytes. The month starts on the day the

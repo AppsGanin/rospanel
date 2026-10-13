@@ -79,6 +79,9 @@ var en = map[string]string{
 	"sub.pickApp":        "Pick an app",
 
 	"sub.currentPlan":      "Current plan",
+	"sub.planChange":       "Change plan",
+	"sub.planPick":         "Choose a plan",
+	"sub.plansTitle":       "Plans",
 	"sub.pay":              "Pay",
 	"sub.renew":            "Renew",
 	"sub.cancelSub":        "Cancel the subscription",

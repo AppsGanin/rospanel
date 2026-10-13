@@ -505,3 +505,40 @@ func TestNewPasswordAfterAGap(t *testing.T) {
 		again.Close()
 	}
 }
+
+// A new password for one user closes their connections alone: everyone else's open
+// sessions carry on, and the listener stays where it is.
+func TestNewPasswordLeavesOthersAlone(t *testing.T) {
+	t.Parallel()
+	s, _, l := startLane(t, TCP)
+	if err := s.Apply(l, "", []User{{Email: testEmail, UUID: testUUID}, {Email: "u8", UUID: otherUUID}}); err != nil {
+		t.Fatal(err)
+	}
+	other, err := dial(t, client(t, l, "u8", otherUUID), "tcp", "10.0.0.3:80")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	echoes(t, other, []byte("before"))
+	mine, err := dial(t, client(t, l, testEmail, testUUID), "tcp", "10.0.0.1:80")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mine.Close()
+	echoes(t, mine, []byte("mine"))
+
+	const thirdUUID = "33333333-3333-4333-8333-333333333333"
+	if err := s.Apply(l, "", []User{{Email: testEmail, UUID: thirdUUID}, {Email: "u8", UUID: otherUUID}}); err != nil {
+		t.Fatal(err)
+	}
+	echoes(t, other, []byte("still here"))
+	_ = mine.SetDeadline(time.Now().Add(3 * time.Second))
+	if _, err := mine.Write([]byte("x")); err == nil {
+		if _, err := mine.Read(make([]byte, 1)); err == nil {
+			t.Fatal("the reset user's old session carried on")
+		}
+	}
+	if s.Listening() != l {
+		t.Fatalf("listener moved: %+v", s.Listening())
+	}
+}

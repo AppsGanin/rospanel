@@ -100,6 +100,9 @@ type pageText struct {
 	TrafficUntil   string
 	PayProcessing  string
 	CurrentPlan    string
+	PlanChange     string
+	PlanPick       string
+	PlansTitle     string
 	Pay            string
 	Renew          string
 	CancelSub      string
@@ -200,6 +203,9 @@ func text(lang i18n.Lang) pageText {
 		TrafficUntil:   t("sub.trafficUntilPrefix"),
 		PayProcessing:  t("sub.payProcessing"),
 		CurrentPlan:    t("sub.currentPlan"),
+		PlanChange:     t("sub.planChange"),
+		PlanPick:       t("sub.planPick"),
+		PlansTitle:     t("sub.plansTitle"),
 		Pay:            t("sub.pay"),
 		Renew:          t("sub.renew"),
 		CancelSub:      t("sub.cancelSub"),
@@ -635,6 +641,9 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 		}
 		if link.NaiveOn(s) && srv.allowsBuiltin(model.LaneNaive) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoNaive, &u), link.Naive(u, s)})
+		}
+		if link.AnyTLSOn(s) && srv.allowsBuiltin(model.LaneAnyTLS) {
+			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoAnyTLS, &u), link.AnyTLS(u, s)})
 		}
 		if link.MieruOn(s) && srv.allowsBuiltin(model.LaneMieru) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoMieru, &u), link.Mieru(u, s)})

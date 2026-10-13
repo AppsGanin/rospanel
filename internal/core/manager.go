@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/abuse"
+	"github.com/AppsGanin/rospanel/internal/anytls"
 	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/connguard"
 	"github.com/AppsGanin/rospanel/internal/geo"
@@ -152,6 +153,12 @@ type Manager struct {
 
 	appliedMu sync.Mutex
 	applied   map[int64]struct{} // user IDs currently in the applied config
+	// rekeyed are users whose credentials changed while they stayed in the working set
+	// (ResetUserUUID), by the rekeySeq of the change: the live sync takes them off Xray
+	// and puts them back, cutting what the old key holds open. An apply clears the
+	// entries it read the credentials after.
+	rekeyed  map[int64]uint64
+	rekeySeq uint64
 
 	// enforceMu runs one traffic enforcement pass at a time, and enforcePending marks a
 	// pass already scheduled for node reports to share (see enforceTrafficSoon).
@@ -420,6 +427,8 @@ type Manager struct {
 	// error ("" when it listens or is off).
 	mieru    *mieru.Server
 	mieruErr atomic.Pointer[string]
+	// anytls is the master's AnyTLS lane (internal/anytls), behind the :443 fallback.
+	anytls *anytls.Server
 
 	// nodeLogs holds the most recent log tail reported by each node, plus which
 	// nodes an operator is currently viewing (so the panel asks them for logs).
@@ -475,6 +484,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		abusePending:   make(map[abusePendingKey]store.AbuseHit),
 		abuseAlerted:   make(map[abuseAlertKey]struct{}),
 		applied:        make(map[int64]struct{}),
+		rekeyed:        make(map[int64]uint64),
 		tz:             time.Local,
 		guard:          newBruteGuard(),
 		shaper:         shaper.New(),
@@ -559,6 +569,11 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	// NOTE: the initial proxy-pool load is done synchronously by main.go via
 	// SeedProxies() before the first reconcile, so Xray starts once (with proxies)
 	// rather than starting empty and restarting when a background fetch lands.
+	if at, err := anytls.New(xray.AnyTLSInnerAddr); err == nil {
+		m.anytls = at
+	} else {
+		logErr("anytls: lane not started", "err", err)
+	}
 	return m
 }
 
@@ -955,6 +970,7 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 	if !m.workingIDsChanged(ids) {
 		return false, nil
 	}
+	seq := m.rekeyedUpTo()
 	set, err := m.store.GetSettings()
 	if err != nil {
 		return false, err
@@ -980,13 +996,23 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 		}
 	}
 	for i := range users {
-		if _, ok := m.applied[users[i].ID]; !ok {
+		_, had := m.applied[users[i].ID]
+		if s, rk := m.rekeyed[users[i].ID]; had && rk && s <= seq {
+			// A new key: off with the old one (and what it holds open), on with the new.
+			removedEmails = append(removedEmails, model.UserEmail(users[i].ID))
+			had = false
+		}
+		if !had {
 			added = append(added, users[i])
 		}
 	}
 	m.appliedMu.Unlock()
 
 	if len(added) == 0 && len(removedEmails) == 0 {
+		// A rekey of someone out of the set (disabled, expired, deleted) changes nothing
+		// here: their new credentials are read when they come back. Done with, or every
+		// sync after would read every credential again for it.
+		m.clearRekeyed(seq)
 		return false, nil
 	}
 	logInfo("user sync (live)", "added", len(added), "removed", len(removedEmails))
@@ -1024,7 +1050,7 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 	if err := m.sup.WriteConfig(cfg); err != nil {
 		return true, err
 	}
-	m.setApplied(users)
+	m.setApplied(users, seq)
 	// Who a relayed external server lets through follows the users (xray/relay.go);
 	// first, so a Hysteria2 cut-off below rebuilds the rules with the new lists.
 	if err := m.sup.SyncRelayRules(apiAddr, cfg); err != nil {
@@ -1048,6 +1074,7 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 	m.syncAWGLocked(set, users)
 	m.syncNaive(cfg)
 	m.syncMieru(set, cfg)
+	m.syncAnyTLS(cfg)
 	return true, m.store.MarkConfigApplied()
 }
 
@@ -1089,6 +1116,7 @@ func (m *Manager) Reconcile() error {
 
 // reconcileLocked is the body of Reconcile; the caller must hold applyMu.
 func (m *Manager) reconcileLocked() error {
+	seq := m.rekeyedUpTo()
 	set, err := m.store.GetSettings()
 	if err != nil {
 		return err
@@ -1115,17 +1143,19 @@ func (m *Manager) reconcileLocked() error {
 		_ = m.store.SetConfigError(err.Error())
 		return err
 	}
-	m.setApplied(users)
+	m.setApplied(users, seq)
 	logInfo("reconcile: config applied", "users", len(users))
 	m.syncTurnLocked(opts.Custom)
 	m.syncAWGLocked(set, users)
 	m.syncNaive(cfg)
 	m.syncMieru(set, cfg)
+	m.syncAnyTLS(cfg)
 	return m.store.MarkConfigApplied()
 }
 
-// setApplied records which user IDs are in the freshly-applied config.
-func (m *Manager) setApplied(users []model.User) {
+// setApplied records which user IDs are in the freshly-applied config, whose
+// credentials were read after rekey seq: the rekeys up to it are in.
+func (m *Manager) setApplied(users []model.User, seq uint64) {
 	ids := make(map[int64]struct{}, len(users))
 	for _, u := range users {
 		ids[u.ID] = struct{}{}
@@ -1133,6 +1163,40 @@ func (m *Manager) setApplied(users []model.User) {
 	m.appliedMu.Lock()
 	m.applied = ids
 	m.appliedMu.Unlock()
+	m.clearRekeyed(seq)
+}
+
+// clearRekeyed forgets the rekeys up to seq: an apply that read the credentials after
+// them has them.
+func (m *Manager) clearRekeyed(seq uint64) {
+	m.appliedMu.Lock()
+	defer m.appliedMu.Unlock()
+	for id, s := range m.rekeyed {
+		if s <= seq {
+			delete(m.rekeyed, id)
+		}
+	}
+}
+
+// markRekeyed records that a user's credentials changed in the store (call it after
+// the write): the next sync replaces them on Xray, and the nodes are sent the new ones.
+func (m *Manager) markRekeyed(id int64) {
+	m.appliedMu.Lock()
+	if m.rekeyed == nil {
+		m.rekeyed = make(map[int64]uint64)
+	}
+	m.rekeySeq++
+	m.rekeyed[id] = m.rekeySeq
+	m.appliedMu.Unlock()
+	// The node inputs keep the credentials of an unchanged id set (readNodeInputsLocked).
+	m.dropNodeInputs()
+}
+
+// rekeyedUpTo is the latest rekey: credentials read after this call carry it.
+func (m *Manager) rekeyedUpTo() uint64 {
+	m.appliedMu.Lock()
+	defer m.appliedMu.Unlock()
+	return m.rekeySeq
 }
 
 // workingIDsChanged reports whether the given working set differs from what's
@@ -1141,7 +1205,7 @@ func (m *Manager) setApplied(users []model.User) {
 func (m *Manager) workingIDsChanged(ids []int64) bool {
 	m.appliedMu.Lock()
 	defer m.appliedMu.Unlock()
-	if len(ids) != len(m.applied) {
+	if len(ids) != len(m.applied) || len(m.rekeyed) > 0 {
 		return true
 	}
 	for _, id := range ids {

@@ -298,7 +298,9 @@ export function GroupsPanel() {
       >
         {editing && (
           <ReadOnly when={!canManage}>
-          <div className="flex flex-col gap-3.5">
+          {/* The table takes the drawer's height down to the footer; on a short
+              screen it keeps a usable minimum and the body scrolls instead. */}
+          <div className="flex h-full flex-col gap-3.5">
             <TextInput
               label={t("groups.name")}
               value={editing.name}
@@ -482,9 +484,9 @@ function GrantsTable({
     onChange(allPicked ? new Set() : new Set(rows.map((r) => r.token)));
 
   return (
-    <div className="-mx-5 flex flex-col">
+    <div className="-mx-4 flex min-h-[280px] flex-1 flex-col">
       <div
-        className={cn(MICRO, "grid items-center gap-3 border-b border-gray-100 px-5 py-2")}
+        className={cn(MICRO, "grid items-center gap-3 border-b border-gray-100 px-4 py-2")}
         style={{ gridTemplateColumns: GRANT_TPL }}
       >
         <CheckCell
@@ -497,7 +499,7 @@ function GrantsTable({
         <span className="truncate">{t("groups.colServer")}</span>
         <span className="truncate text-right">{t("groups.colState")}</span>
       </div>
-      <div className="max-h-[46vh] overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {rows.length === 0 ? (
           <EmptyState title={t("groups.noConnections")} />
         ) : (
@@ -507,7 +509,7 @@ function GrantsTable({
               <label
                 key={r.token}
                 className={cn(
-                  "grid cursor-pointer items-center gap-3 border-b border-gray-100 px-5 py-[7px] transition last:border-0",
+                  "grid cursor-pointer items-center gap-3 border-b border-gray-100 px-4 py-[7px] transition last:border-0",
                   on ? "accent-tint" : "hover:bg-gray-50",
                 )}
                 style={{ gridTemplateColumns: GRANT_TPL }}
@@ -598,16 +600,16 @@ function MembersTable({
   };
 
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex min-h-[320px] flex-1 flex-col gap-2.5">
       <TextInput
         nav
         value={query}
         onChange={setQuery}
         placeholder={t("groups.searchUsers")}
       />
-      <div className="-mx-5 flex flex-col">
+      <div className="-mx-4 flex min-h-0 flex-1 flex-col">
         <div
-          className={cn(MICRO, "grid items-center gap-3 border-b border-gray-100 px-5 py-2")}
+          className={cn(MICRO, "grid items-center gap-3 border-b border-gray-100 px-4 py-2")}
           style={{ gridTemplateColumns: MEMBER_TPL }}
         >
           <CheckCell
@@ -620,7 +622,7 @@ function MembersTable({
           <span className="truncate">{t("groups.colId")}</span>
           <span className="truncate text-right">{t("groups.colStatus")}</span>
         </div>
-        <div className="max-h-[38vh] overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {users.length === 0 ? (
             <EmptyState title={t("groups.noUsers")} />
           ) : filtered.length === 0 ? (
@@ -634,7 +636,7 @@ function MembersTable({
                   <label
                     key={u.id}
                     className={cn(
-                      "grid cursor-pointer items-center gap-3 border-b border-gray-100 px-5 py-[7px] transition last:border-0",
+                      "grid cursor-pointer items-center gap-3 border-b border-gray-100 px-4 py-[7px] transition last:border-0",
                       on ? "accent-tint" : "hover:bg-gray-50",
                     )}
                     style={{ gridTemplateColumns: MEMBER_TPL }}

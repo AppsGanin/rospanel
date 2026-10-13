@@ -433,6 +433,110 @@
         font-weight: 600;
         margin-top: 2px;
       }
+      /* The plans dialog: a plan is a card; the picked one opens its term, devices
+         and the button. */
+      .pick {
+        border: 1px solid color-mix(in srgb, var(--brand) 14%, transparent);
+        border-radius: 14px;
+        margin-top: 8px;
+        transition: border-color 0.15s;
+      }
+      .pick.on {
+        border-color: var(--brand);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 12%, transparent);
+      }
+      .pick-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 12px 14px;
+        border: 0;
+        background: none;
+        color: var(--ink);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .pick-head .plan-info {
+        display: flex;
+        flex-direction: column;
+      }
+      .pick .pname {
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+      .pick .pprice {
+        color: var(--muted);
+        font-size: 0.85rem;
+        margin-top: 2px;
+      }
+      .pick .ppromo {
+        color: #0f9d6b;
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-top: 2px;
+      }
+      .pick-dot {
+        flex: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid var(--line);
+      }
+      .pick.on .pick-dot {
+        border: 5px solid var(--brand);
+      }
+      .pick-body {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 0 14px 14px;
+      }
+      .pick-body[hidden] {
+        display: none;
+      }
+      .pick-body .btn {
+        margin-top: 2px;
+      }
+      /* Renew and change side by side; on a phone, or wherever both labels do not
+         fit on one line each, every button gets a row of its own instead of breaking
+         its label. */
+      .btn-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+      .btn-row .btn {
+        flex: 1 1 0;
+        margin: 0;
+        white-space: nowrap;
+      }
+      @media (max-width: 440px) {
+        .btn-row {
+          flex-direction: column;
+        }
+        .btn-row .btn {
+          flex: none;
+        }
+      }
+      .sect-dlg {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sect-dlg .sect-hint {
+        margin: 0;
+      }
+      .sect-dlg .ppromo {
+        color: #0f9d6b;
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+      .sect-dlg .btn {
+        margin-top: 2px;
+      }
       /* The sections of an active plan: renewal, a move, add-ons. */
       .sect {
         padding-top: 14px;
@@ -1195,59 +1299,17 @@
           </div>
           {{end}}
           {{if .Billing.Locked}}
-          <!-- An active plan: its renewal, a move to another plan, what can be added,
-               and — quietly, last — cancelling it. -->
-          {{range .Billing.Plans}}
-          <div class="sect">
-            <div class="sect-title">{{$.L.RenewTitle}}</div>
-            {{if not .Options}}<div class="sect-hint">{{if .OldPrice}}<s>{{.OldPrice}}</s> {{end}}{{.Label}}</div>{{else}}<div class="sect-hint"></div>{{end}}
-            {{if .Promo}}<div class="ppromo">{{.Promo}}</div>{{end}}
-            {{if .Options}}
-            <select class="periods" id="per-{{.ID}}" autocomplete="off" onchange="periodPicked({{.ID}})">
-              {{range .Options}}<option value="{{.Periods}}" data-fb="{{if .FromBalance}}1{{end}}" data-btn="{{.Button}}">{{.Label}}</option>{{end}}
-            </select>
-            {{end}}
-            <button class="btn" id="paybtn-{{.ID}}" data-fb="{{if .FromBalance}}1{{end}}" onclick="buyPlan({{.ID}}, this)">{{if .Button}}{{.Button}}{{else}}{{$.L.Renew}}{{end}}</button>
+          <!-- An active plan: its renewal and a move to another plan, each in a dialog;
+               what can be added, and — quietly, last — cancelling it. -->
+          {{if or .Billing.Plans .Billing.Changes}}
+          <div class="btn-row">
+            {{if .Billing.Plans}}<button class="btn" onclick="showModal('renewmodal')">{{.L.Renew}}</button>{{end}}
+            {{if .Billing.Changes}}<button class="btn alt" onclick="showModal('changemodal')">{{.L.ChangeTitle}}</button>{{end}}
           </div>
           {{end}}
-          {{else}}
-          {{range .Billing.Plans}}
-          <div class="plan">
-            <div class="plan-info">
-              <div class="pname">{{.Name}}</div>
-              <div class="pprice">{{if .OldPrice}}<s>{{.OldPrice}}</s> {{end}}{{.Label}}</div>
-              {{if .Promo}}<div class="ppromo">{{.Promo}}</div>{{end}}
-            </div>
-            <button class="btn" id="paybtn-{{.ID}}" data-fb="{{if .FromBalance}}1{{end}}" onclick="buyPlan({{.ID}}, this)">{{if .Button}}{{.Button}}{{else}}{{$.L.Pay}}{{end}}</button>
-            {{if .Options}}
-            <!-- The term on its own line under the plan and its button, full width. -->
-            <select class="periods" id="per-{{.ID}}" autocomplete="off" onchange="periodPicked({{.ID}})">
-              {{range .Options}}<option value="{{.Periods}}" data-fb="{{if .FromBalance}}1{{end}}" data-btn="{{.Button}}">{{.Label}}</option>{{end}}
-            </select>
-            {{end}}
-            {{if .Devices}}
-            <select class="periods" id="dev-{{.ID}}" autocomplete="off" onchange="devPicked({{.ID}})">
-              {{range .Devices}}<option value="{{.Extra}}">{{.Label}}</option>{{end}}
-            </select>
-            {{end}}
-          </div>
-          {{end}}
-          {{end}}
-          {{if .Billing.Changes}}
-          <div class="sect">
-            <div class="sect-title">{{.L.ChangeTitle}}</div>
-            <div class="sect-hint">{{.L.ChangeHint}}</div>
-            {{range .Billing.Changes}}
-            <div class="opt">
-              <div class="opt-info">
-                <div class="opt-name">{{.Name}}</div>
-                <div class="opt-sub">{{.Sub}}</div>
-                <span class="badge{{if .Up}} up{{else}} down{{end}}">{{.Badge}}</span>
-              </div>
-              <button class="btn alt" onclick="var b = this; askThen({{$.L.ChangeConfirm}} + '\n' + {{.Label}}, function () { buyExtra('{{.Kind}}', {{.PlanID}}, 0, '{{if .FromBalance}}1{{end}}', b); })">{{$.L.ChangeBtn}}</button>
-            </div>
-            {{end}}
-          </div>
+          {{else if .Billing.Plans}}
+          <!-- The plans open in a dialog: one is picked, then its term and devices. -->
+          <button class="btn" onclick="openPlans()">{{if .Billing.CurrentPlan}}{{.L.PlanChange}}{{else}}{{.L.PlanPick}}{{end}}</button>
           {{end}}
           {{if .Billing.Addons}}
           <div class="sect">
@@ -1439,6 +1501,96 @@
           <button class="btn alt" id="wz-back" onclick="wzGo(-1)">{{.L.WzBack}}</button>
           <button class="btn" id="wz-next" onclick="wzGo(1)">{{.L.WzNext}}</button>
         </div>
+      </div>
+    </div>
+    {{end}}
+
+    {{if and .Billing.Show .Billing.Locked .Billing.Plans}}
+    <div id="renewmodal" class="modal" onclick="if (event.target === this) this.classList.remove('show');">
+      <div class="modal-card">
+        <div class="modal-head">
+          <b>{{.L.RenewTitle}}</b>
+          <button class="x" onclick="document.getElementById('renewmodal').classList.remove('show')">✕</button>
+        </div>
+        {{range .Billing.Plans}}
+        <div class="sect-dlg">
+          {{if not .Options}}<div class="sect-hint">{{if .OldPrice}}<s>{{.OldPrice}}</s> {{end}}{{.Label}}</div>{{end}}
+          {{if .Promo}}<div class="ppromo">{{.Promo}}</div>{{end}}
+          {{if .Options}}
+          <select class="periods" id="per-{{.ID}}" autocomplete="off" onchange="periodPicked({{.ID}})">
+            {{range .Options}}<option value="{{.Periods}}" data-fb="{{if .FromBalance}}1{{end}}" data-btn="{{.Button}}">{{.Label}}</option>{{end}}
+          </select>
+          {{end}}
+          <button class="btn" id="paybtn-{{.ID}}" data-fb="{{if .FromBalance}}1{{end}}" onclick="buyPlan({{.ID}}, this)">{{if .Button}}{{.Button}}{{else}}{{$.L.Renew}}{{end}}</button>
+        </div>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+
+    {{if and .Billing.Show .Billing.Changes}}
+    <div id="changemodal" class="modal" onclick="if (event.target === this) this.classList.remove('show');">
+      <div class="modal-card">
+        <div class="modal-head">
+          <b>{{.L.ChangeTitle}}</b>
+          <button class="x" onclick="document.getElementById('changemodal').classList.remove('show')">✕</button>
+        </div>
+        <div class="sect-hint">{{.L.ChangeHint}}</div>
+        {{range .Billing.Changes}}
+        <div class="opt">
+          <div class="opt-info">
+            <div class="opt-name">{{.Name}}</div>
+            <div class="opt-sub">{{.Sub}}</div>
+            <span class="badge{{if .Up}} up{{else}} down{{end}}">{{.Badge}}</span>
+          </div>
+          <button class="btn alt" onclick="var b = this; askThen({{$.L.ChangeConfirm}} + '\n' + {{.Label}}, function () { buyExtra('{{.Kind}}', {{.PlanID}}, 0, '{{if .FromBalance}}1{{end}}', b); })">{{$.L.ChangeBtn}}</button>
+        </div>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+
+    {{if and .Billing.Show (not .Billing.Locked) .Billing.Plans}}
+    <div
+      id="plansmodal"
+      class="modal"
+      onclick="if (event.target === this) this.classList.remove('show');"
+    >
+      <div class="modal-card">
+        <div class="modal-head">
+          <b>{{.L.PlansTitle}}</b>
+          <button
+            class="x"
+            onclick="document.getElementById('plansmodal').classList.remove('show')"
+          >
+            ✕
+          </button>
+        </div>
+        {{range .Billing.Plans}}
+        <div class="pick" id="pick-{{.ID}}">
+          <button type="button" class="pick-head" onclick="pickPlan({{.ID}})">
+            <span class="plan-info">
+              <span class="pname">{{.Name}}</span>
+              <span class="pprice">{{if .OldPrice}}<s>{{.OldPrice}}</s> {{end}}{{.Label}}</span>
+              {{if .Promo}}<span class="ppromo">{{.Promo}}</span>{{end}}
+            </span>
+            <span class="pick-dot"></span>
+          </button>
+          <div class="pick-body" hidden>
+            {{if .Options}}
+            <select class="periods" id="per-{{.ID}}" autocomplete="off" onchange="periodPicked({{.ID}})">
+              {{range .Options}}<option value="{{.Periods}}" data-fb="{{if .FromBalance}}1{{end}}" data-btn="{{.Button}}">{{.Label}}</option>{{end}}
+            </select>
+            {{end}}
+            {{if .Devices}}
+            <select class="periods" id="dev-{{.ID}}" autocomplete="off" onchange="devPicked({{.ID}})">
+              {{range .Devices}}<option value="{{.Extra}}">{{.Label}}</option>{{end}}
+            </select>
+            {{end}}
+            <button class="btn" id="paybtn-{{.ID}}" data-fb="{{if .FromBalance}}1{{end}}" onclick="buyPlan({{.ID}}, this)">{{if .Button}}{{.Button}}{{else}}{{$.L.Pay}}{{end}}</button>
+          </div>
+        </div>
+        {{end}}
       </div>
     </div>
     {{end}}
@@ -1848,8 +2000,8 @@
         } catch (e) {}
         if (!TG.BackButton || !(TG.isVersionAtLeast && TG.isVersionAtLeast("6.1"))) return;
         var openModal = function () {
-          var m = document.querySelector(".modal.show");
-          return m || null;
+          var open = document.querySelectorAll(".modal.show");
+          return open.length ? open[open.length - 1] : null;
         };
         var onFirstTab = function () {
           var t = document.querySelector(".tab.active");
@@ -1924,6 +2076,27 @@
       // what a change or an add-on buys. The server pays from the balance whatever it
       // covers.
       var PAY_EXTRA = {};
+      function showModal(id) {
+        var m = document.getElementById(id);
+        if (m) m.classList.add("show");
+      }
+      // openPlans shows the plans; with one there is nothing to pick, so it opens.
+      function openPlans() {
+        var m = document.getElementById("plansmodal");
+        if (!m) return;
+        var picks = m.querySelectorAll(".pick");
+        if (picks.length === 1) pickPlan(picks[0].id.slice(5));
+        m.classList.add("show");
+      }
+      function pickPlan(planId) {
+        var picks = document.querySelectorAll("#plansmodal .pick");
+        for (var i = 0; i < picks.length; i++) {
+          var on = picks[i].id === "pick-" + planId;
+          picks[i].classList.toggle("on", on);
+          picks[i].querySelector(".pick-body").hidden = !on;
+        }
+        haptic();
+      }
       function buyPlan(planId, el) {
         var n = planPeriods(planId);
         var d = document.getElementById("dev-" + planId);

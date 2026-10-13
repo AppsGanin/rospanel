@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -31,7 +32,16 @@ func XrayOutbound(raw, tag string) (map[string]any, bool) {
 	out := map[string]any{"tag": tag}
 	switch strings.ToLower(l.Scheme) {
 	case "vless":
-		user := map[string]any{"id": cred, "encryption": "none"}
+		enc := q.Get("encryption")
+		if enc == "" {
+			enc = "none"
+		}
+		if enc != "none" && !validVLESSEncryption(enc) {
+			// A value Xray refuses fails the whole config it sits in — the server's
+			// own, for a relayed or upstream server — so the link is not taken.
+			return nil, false
+		}
+		user := map[string]any{"id": cred, "encryption": enc}
 		if flow := q.Get("flow"); flow != "" {
 			user["flow"] = flow
 		}
@@ -260,3 +270,9 @@ func firstNonEmpty(vals ...string) string {
 	}
 	return ""
 }
+
+// vlessEncClient matches a client-side VLESS Encryption string as Xray reads it:
+// mlkem768x25519plus.<native|xorpub|random>.<0rtt|1rtt>, then padding and key fields.
+var vlessEncClient = regexp.MustCompile(`^mlkem768x25519plus\.(native|xorpub|random)\.(0rtt|1rtt)(\.[A-Za-z0-9_-]+)+$`)
+
+func validVLESSEncryption(s string) bool { return vlessEncClient.MatchString(s) }

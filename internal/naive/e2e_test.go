@@ -459,7 +459,7 @@ func singboxThroughLane(t *testing.T, sbDir, work string, vlessPort, apiPort int
 	set := &model.Settings{Host: "127.0.0.1", SNI: "naive.test", VLESSPort: vlessPort, NaiveEnabled: true}
 	u := model.User{ID: 7, UUID: uuid}
 	servers := []sub.Server{{Set: set, Access: model.UnrestrictedAccess()}}
-	prof, err := sub.SingBoxWithTemplate(u, servers, "", true)
+	prof, err := sub.SingBoxWithTemplate(u, servers, "", sub.SingBoxCaps{Naive: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -473,7 +473,7 @@ func singboxThroughLane(t *testing.T, sbDir, work string, vlessPort, apiPort int
 	if out, err := exec.Command(bin, "check", "-c", path).CombinedOutput(); err != nil {
 		t.Fatalf("sing-box %s refuses the profile: %v\n%s\n%s", name, err, out, prof)
 	}
-	if plain, _ := sub.SingBoxWithTemplate(u, servers, "", false); strings.Contains(plain, `"naive"`) {
+	if plain, _ := sub.SingBoxWithTemplate(u, servers, "", sub.SingBoxCaps{}); strings.Contains(plain, `"naive"`) {
 		t.Fatal("a client without naive support was given a naive outbound")
 	}
 

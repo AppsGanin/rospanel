@@ -239,7 +239,7 @@ type WireGuardPeer struct {
 // VLESSInboundSettings is the "settings" object for a VLESS inbound.
 type VLESSInboundSettings struct {
 	Clients    []VLESSClient `json:"clients"`
-	Decryption string        `json:"decryption"` // always "none" for VLESS
+	Decryption string        `json:"decryption"` // "none", or a custom inbound's VLESS Encryption
 	Fallbacks  []Fallback    `json:"fallbacks,omitempty"`
 }
 

@@ -1512,21 +1512,36 @@ func parseStats(data []byte) map[string]Traffic {
 	return out
 }
 
-// foldStat puts one "user>>>u1>>>traffic>>>uplink" counter into out.
+// foldStat adds one "user>>>u1>>>traffic>>>uplink" counter into out, under the user's
+// own email: an alias the Hysteria2 lane gave them on a new key ("u01", see placeUsers)
+// is the same user, and its counter is added to theirs. Each counter only grows while
+// the process runs, so the sum does too.
 func foldStat(out map[string]Traffic, name string, val int64) {
 	parts := strings.Split(name, ">>>")
 	if len(parts) != 4 || parts[0] != "user" || parts[2] != "traffic" {
 		return
 	}
-	email, dir := parts[1], parts[3]
+	email, dir := CanonicalEmail(parts[1]), parts[3]
 	t := out[email]
 	switch dir {
 	case "uplink":
-		t.Up = val
+		t.Up += val
 	case "downlink":
-		t.Down = val
+		t.Down += val
 	}
 	out[email] = t
+}
+
+// CanonicalEmail is a user's own email for an alias of it ("u05" → "u5"); any other
+// email as it is.
+func CanonicalEmail(email string) string {
+	if len(email) < 3 || email[0] != 'u' || email[1] != '0' || strings.TrimLeft(email[1:], "0123456789") != "" {
+		return email
+	}
+	if id := strings.TrimLeft(email[1:], "0"); id != "" {
+		return "u" + id
+	}
+	return "u0"
 }
 
 // QueryStatsLive is QueryStats through Xray's gRPC API from this process: no CLI to

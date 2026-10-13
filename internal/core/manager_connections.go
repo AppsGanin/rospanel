@@ -174,6 +174,16 @@ func buildConnectionsStatus(set *model.Settings) *ConnectionsStatus {
 				Enabled:     set.NaiveEnabled,
 			},
 			{
+				Key:         "anytls",
+				Name:        model.ProtoAnyTLS,
+				DisplayName: set.AnyTLSName,
+				Transport:   "TLS (AnyTLS)",
+				Security:    "TLS",
+				Port:        strconv.Itoa(vlessPort),
+				Note:        "",
+				Enabled:     set.AnyTLSEnabled,
+			},
+			{
 				Key:         "mieru",
 				Name:        model.ProtoMieru,
 				DisplayName: set.MieruName,
@@ -244,6 +254,7 @@ var connNameKeys = []struct{ key, proto string }{
 	{"awg", model.ProtoAWG},
 	{"naive", model.ProtoNaive},
 	{"mieru", model.ProtoMieru},
+	{"anytls", model.ProtoAnyTLS},
 }
 
 // validateConnNames trims and checks the custom node names, returning them keyed
@@ -529,6 +540,9 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 		return err
 	}
 	if err := m.store.SetNaiveName(connNames["naive"]); err != nil {
+		return err
+	}
+	if err := m.store.SetAnyTLSName(connNames["anytls"]); err != nil {
 		return err
 	}
 	if err := m.store.SetHysteriaPorts(u.HysteriaPort, u.HopStart, u.HopEnd, interval, obfs); err != nil {

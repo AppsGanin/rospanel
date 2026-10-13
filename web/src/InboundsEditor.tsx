@@ -110,6 +110,10 @@ const blank = (): InboundInput => ({
   multi_mode: false,
   method: "2022-blake3-aes-128-gcm",
   turn_link: "",
+  enc_mode: "",
+  cdn_host: "",
+  cdn_port: 0,
+  pin_cert: false,
   xhttp_extra: {},
   sockopt: {},
   tls_extra: {},
@@ -148,6 +152,10 @@ function toInput(v: Inbound): InboundInput {
     multi_mode: o.multi_mode ?? false,
     method: o.method || "2022-blake3-aes-128-gcm",
     turn_link: o.turn_link ?? "",
+    enc_mode: o.enc_mode ?? "",
+    cdn_host: o.cdn_host ?? "",
+    cdn_port: o.cdn_port ?? 0,
+    pin_cert: o.pin_cert ?? false,
     // The advanced sections come pre-disassembled from the server.
     xhttp_extra: v.xhttp_extra_form ?? {},
     sockopt: v.sockopt_form ?? {},
@@ -362,7 +370,8 @@ function InboundRow({
             {!isSS && !isWG && <Mono>{TRANSPORT_LABELS[o.transport] ?? o.transport}</Mono>}
             {isSS && ssMethod && <Mono className="text-success">{ssMethod}</Mono>}
             {o.security === "reality" && <Mono className="text-success">REALITY</Mono>}
-            {o.security === "none" && !isSS && !isWG && (
+            {o.enc_mode && <Mono className="text-success">VLESS-ENC</Mono>}
+            {o.security === "none" && !isSS && !isWG && !o.enc_mode && (
               <span className="text-warning">{t("inb.noTls")}</span>
             )}
             <Mono>{v.port}</Mono>
@@ -985,6 +994,75 @@ function InboundForm({
         </div>
       )}
 
+      {v.protocol === "vless" && (
+        <div className="flex flex-col gap-2">
+          <Select
+            label="VLESS Encryption"
+            value={v.enc_mode || "off"}
+            onChange={(x) => set("enc_mode", x === "off" ? "" : x)}
+            data={[
+              { value: "off", label: t("inb.encOff") },
+              { value: "native", label: "native" },
+              { value: "xorpub", label: "xorpub" },
+              { value: "random", label: "random" },
+            ]}
+          />
+          <p className="text-xs text-ink-muted">{t("inb.encHint")}</p>
+        </div>
+      )}
+
+      {v.security === "tls" && !v.cdn_host && !isShadowsocks && !isWireGuard && (
+        <div className="flex flex-col gap-1">
+          <Switch
+            label={t("inb.pinCert")}
+            checked={v.pin_cert}
+            onChange={(x) => set("pin_cert", x)}
+          />
+          <p className="text-xs text-ink-muted">{t("inb.pinCertHint")}</p>
+        </div>
+      )}
+
+      {(v.protocol === "vless" || v.protocol === "trojan") && (
+        <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_8rem]">
+            <TextInput
+              label={t("inb.cdnHost")}
+              value={v.cdn_host}
+              onChange={(x) => set("cdn_host", x.trim())}
+              placeholder="cdn.example.ru"
+            />
+            <TextInput
+              label={t("inb.cdnPort")}
+              value={v.cdn_port ? String(v.cdn_port) : ""}
+              onChange={(x) => set("cdn_port", num(x))}
+              placeholder="443"
+            />
+          </div>
+          <p className="text-xs text-ink-muted">{t("inb.cdnHint")}</p>
+          {v.protocol === "vless" && (
+            <div>
+              <Button
+                size="xs"
+                variant="light"
+                onClick={() =>
+                  onChange({
+                    ...v,
+                    transport: "xhttp",
+                    security: "none",
+                    mode: "packet-up",
+                    enc_mode: v.enc_mode || "native",
+                    sni: "",
+                    host: "",
+                  })
+                }
+              >
+                {t("inb.cdnPreset")}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
       {combo?.unsupported && combo.unsupported.length > 0 && (
         <p className="rounded-lg bg-orange-50 px-3 py-2 text-xs text-orange-800">
           {t("inb.comboUnsupported", { clients: combo.unsupported.join(", ") })}
@@ -1026,7 +1104,9 @@ function InboundForm({
         />
       )}
 
-      {!fixedTransport && v.security !== "reality" && (
+      {/* Hysteria2 owns its transport, but its SNI is the operator's to set — the
+          fingerprint check (pin_cert) lets it be any name. */}
+      {(!fixedTransport || isHysteria) && v.security !== "reality" && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <TextInput
             label={t("inb.sni")}

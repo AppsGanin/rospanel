@@ -29,14 +29,20 @@ type Server struct {
 	// Relays are the external servers relayed through this server (RelayServerID is
 	// its ServerID): handed out as entries of one of its lanes (see relayEntries).
 	Relays []model.ExtServer
+	// Hidden are the protocols a response rule leaves out for the client that asked
+	// (Overrides.Apply): built-in lanes by key, the custom inbounds as model.SubProtoCustom.
+	Hidden map[string]bool
 }
 
-// allowsBuiltin / allowsInbound apply the user's access for THIS server.
+// allowsBuiltin / allowsInbound apply the user's access for THIS server, and what a
+// response rule hides from the client.
 func (s Server) allowsBuiltin(lane string) bool {
-	return s.Access.AllowsBuiltin(s.Set.ServerID, lane)
+	return !s.Hidden[lane] && s.Access.AllowsBuiltin(s.Set.ServerID, lane)
 }
-func (s Server) allowsInbound(id int64) bool { return s.Access.AllowsInbound(id) }
-func (s Server) allowsExt(id int64) bool     { return s.Access.AllowsExt(id) }
+func (s Server) allowsInbound(id int64) bool {
+	return !s.Hidden[model.SubProtoCustom] && s.Access.AllowsInbound(id)
+}
+func (s Server) allowsExt(id int64) bool { return s.Access.AllowsExt(id) }
 
 // externalEndpoints is the external servers the user may have, in the shape the
 // format converters read.

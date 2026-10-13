@@ -106,7 +106,7 @@ func TestSingBoxTemplateRemovedFields(t *testing.T) {
 		if !errors.As(err, &legacy) || legacy.Path != c.path {
 			t.Errorf("%s: validate = %v, want a removed-field error at %s", name, err, c.path)
 		}
-		out, err := SingBoxWithTemplate(tplUser(), tplServers(), c.tpl, false)
+		out, err := SingBoxWithTemplate(tplUser(), tplServers(), c.tpl, SingBoxCaps{})
 		if !errors.Is(err, ErrSingBoxLegacy) || out != SingBoxJSONMulti(tplUser(), tplServers()) {
 			t.Errorf("%s: a stored template with a removed field must serve the generated profile (err %v)", name, err)
 		}
@@ -121,7 +121,7 @@ func TestSingBoxTemplateRemovedFields(t *testing.T) {
 	if err := ValidateSingBoxTemplate(modern); err != nil {
 		t.Errorf("a current template was refused: %v", err)
 	}
-	if out, err := SingBoxWithTemplate(tplUser(), tplServers(), modern, false); err != nil || !strings.Contains(out, `"tag": "r"`) {
+	if out, err := SingBoxWithTemplate(tplUser(), tplServers(), modern, SingBoxCaps{}); err != nil || !strings.Contains(out, `"tag": "r"`) {
 		t.Errorf("a current template did not render (err %v)", err)
 	}
 }
@@ -156,7 +156,7 @@ func TestSingBoxNaiveOutbound(t *testing.T) {
 	var doc struct {
 		Outbounds []map[string]any `json:"outbounds"`
 	}
-	if err := json.Unmarshal([]byte(singboxJSON(u, servers, true)), &doc); err != nil {
+	if err := json.Unmarshal([]byte(singboxJSON(u, servers, SingBoxCaps{Naive: true})), &doc); err != nil {
 		t.Fatal(err)
 	}
 	var naive, selector, auto map[string]any
@@ -189,11 +189,11 @@ func TestSingBoxNaiveOutbound(t *testing.T) {
 	}
 
 	// Not for a client that cannot load it, nor on a self-signed certificate.
-	if strings.Contains(singboxJSON(u, servers, false), `"naive"`) {
+	if strings.Contains(singboxJSON(u, servers, SingBoxCaps{}), `"naive"`) {
 		t.Fatal("naive outbound without client support")
 	}
 	set.TLSInsecure = true
-	if strings.Contains(singboxJSON(u, servers, true), `"naive"`) {
+	if strings.Contains(singboxJSON(u, servers, SingBoxCaps{Naive: true}), `"naive"`) {
 		t.Fatal("naive outbound on a self-signed certificate")
 	}
 }
@@ -210,7 +210,7 @@ func TestNaiveWithoutVLESS(t *testing.T) {
 	var doc struct {
 		Outbounds []map[string]any `json:"outbounds"`
 	}
-	if err := json.Unmarshal([]byte(singboxJSON(u, []Server{srv}, true)), &doc); err != nil {
+	if err := json.Unmarshal([]byte(singboxJSON(u, []Server{srv}, SingBoxCaps{Naive: true})), &doc); err != nil {
 		t.Fatal(err)
 	}
 	var types []any
@@ -240,7 +240,7 @@ func TestSingBoxTemplateNaiveNeedsAResolver(t *testing.T) {
 		"one server":               {`{"dns": {"servers": [{"type": "local", "tag": "b"}]}, ` + body + `}`, true},
 		"no dns":                   {`{` + body + `}`, true},
 	} {
-		out, err := SingBoxWithTemplate(u, servers, c.tpl, true)
+		out, err := SingBoxWithTemplate(u, servers, c.tpl, SingBoxCaps{Naive: true})
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}

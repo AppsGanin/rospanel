@@ -202,6 +202,22 @@ func (rt *Router) rotateSubToken(w http.ResponseWriter, r *http.Request, id int6
 	writeJSON(w, http.StatusOK, rt.userViewFor(*u, set, botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL())))
 }
 
+// resetUserUUID gives a user new proxy credentials; the subscription link stays.
+func (rt *Router) resetUserUUID(w http.ResponseWriter, r *http.Request, id int64) {
+	u, err := rt.mgr.ResetUserUUID(r.Context(), id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	set, err := rt.mgr.Store().GetSettings()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	rt.applyTLSHints(set)
+	writeJSON(w, http.StatusOK, rt.userViewFor(*u, set, botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL())))
+}
+
 // userHappLink returns the user's subscription as an encrypted Happ link, "" while
 // encrypted links are switched off. Asked for one user at a time, not carried in the
 // user list: each link is an RSA-4096 encryption, and a list of thousands would pay

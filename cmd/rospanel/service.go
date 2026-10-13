@@ -370,7 +370,9 @@ func runServer(dataDir string) {
 	// HTTP/2 connection, which is how a browser arrives through that same fallback:
 	// without it every held response — the dashboard's SSE stream — dies after ten
 	// seconds. See internal/h2fix.
-	ln = h2fix.Listener{Listener: &proxyproto.Listener{Listener: ln}}
+	// AnyTLS takes the sessions that authenticate before HTTP sees the connection;
+	// everything else reaches the panel with the bytes it sent (see internal/anytls).
+	ln = h2fix.Listener{Listener: mgr.AnyTLSListener(&proxyproto.Listener{Listener: ln})}
 
 	go func() {
 		log.Printf("admin API listening on %s", adminAddr)

@@ -22,7 +22,7 @@ func TestEnforceAfterTrafficSyncsWhenTheWorkingSetMoves(t *testing.T) {
 	if err != nil || len(working) != 2 {
 		t.Fatalf("working set before: %d users (err %v)", len(working), err)
 	}
-	m.setApplied(working)
+	m.setApplied(working, 0)
 
 	signalled := func() bool {
 		select {

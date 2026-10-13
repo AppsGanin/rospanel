@@ -61,6 +61,17 @@ type inboundReq struct {
 	// generated, so they are not request fields either.
 	TurnLink string `json:"turn_link"`
 
+	// EncMode is VLESS Encryption's mode ("" = off); its keys are generated, so they
+	// are not request fields.
+	EncMode string `json:"enc_mode"`
+
+	// CDNHost / CDNPort put the inbound behind a CDN (see model.InboundOpts.CDNHost).
+	CDNHost string `json:"cdn_host"`
+	CDNPort int    `json:"cdn_port"`
+
+	// PinCert has clients check the certificate by fingerprint, so SNI can be any name.
+	PinCert bool `json:"pin_cert"`
+
 	// Advanced. Each transport knob is its own typed field; the three JSON-blob
 	// sections (XHTTP extra, sockopt, extra TLS) arrive as structured forms that the
 	// server assembles into the blob Xray reads. Every form carries a Raw escape hatch
@@ -108,6 +119,10 @@ func (r inboundReq) toModel(serverID, id int64) (model.Inbound, error) {
 			MultiMode:   r.MultiMode,
 			Method:      r.Method,
 			TurnLink:    r.TurnLink,
+			EncMode:     r.EncMode,
+			CDNHost:     r.CDNHost,
+			CDNPort:     r.CDNPort,
+			PinCert:     r.PinCert,
 		},
 	}
 	if r.RealityAntiReplay {

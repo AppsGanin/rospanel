@@ -44,6 +44,7 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns.AWGPort, ns.AWGName, ns.AWGDNS = 0, "", ""
 	ns.NaiveEnabled, ns.NaiveName = derefBool(n.NaiveEnabled), ""
 	ns.MieruEnabled, ns.MieruPort, ns.MieruTransport, ns.MieruName = derefBool(n.MieruEnabled), 0, model.MieruTCP, ""
+	ns.AnyTLSEnabled, ns.AnyTLSName = derefBool(n.AnyTLSEnabled), ""
 	// REALITY donor: the node's own if set, otherwise inherit the panel's (a node
 	// needs some donor for REALITY to work).
 	if n.RealityDest != "" {
@@ -58,6 +59,7 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	// TLS hints for this node's share links come from what the node reported about
 	// its live cert — the panel can't read the remote node's disk.
 	ns.TLSInsecure = n.CertSelfSigned
+	ns.CertSHA256 = n.CertSHA256
 	ns.TLSPinSHA256 = ""
 	if n.CertSelfSigned {
 		ns.TLSPinSHA256 = n.CertSHA256
@@ -123,6 +125,7 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 		ns.MieruPort = c.MieruPort
 		ns.MieruTransport = model.MieruTransportOr(c.MieruTransport)
 		ns.MieruName = c.MieruName
+		ns.AnyTLSName = c.AnyTLSName
 	}
 	if ns.MieruPort == 0 {
 		// Nothing chosen: the node's own default, clear of its other listeners.
@@ -383,10 +386,10 @@ func (m *Manager) readNodeInputsLocked(ws *workingSet) (*nodeInputs, error) {
 	ids, capped := ws.ids, ws.caps
 	var err error
 	// The credentials cost several times the rest of this read put together, in time
-	// and in garbage both, and nothing can change one for a user already in the set:
-	// a uuid and a password are written when the account is made and never again, and
-	// a tunnel identity is claimed once — by a path that forgets this snapshot (see
-	// claimAWG). So while the set is the same, last read's credentials are the same.
+	// and in garbage both, and they change only by paths that forget this snapshot: a
+	// uuid and a password are written when the account is made and again only by a
+	// UUID reset (markRekeyed), and a tunnel identity is claimed once (see claimAWG).
+	// So while the set is the same, last read's credentials are the same.
 	if prev != nil && slices.Equal(prev.ids, ids) {
 		in.users, in.ids = prev.users, prev.ids
 	} else {

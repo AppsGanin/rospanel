@@ -24,10 +24,6 @@ import { subPathError } from "./validate";
 import {
   CenterLoader,
   cn,
-  IconButton,
-  IconChevron,
-  IconPlus,
-  IconTrash,
   Panel,
   SaveBar,
   Select,
@@ -38,6 +34,7 @@ import {
   ToggleRow,
 } from "./ui";
 import { SubDPICard } from "./SubDPICard";
+import { SubRulesEditor } from "./SubRulesEditor";
 import { SubTemplatesCard } from "./SubTemplatesCard";
 
 const ROUTING_REPO = "https://github.com/hydraponique/roscomvpn-routing";
@@ -482,142 +479,3 @@ export function SubscriptionsPanel() {
   );
 }
 
-// SubRulesEditor edits the ordered response rules: each matches a request attribute
-// (User-Agent or an HWID header) and forces a subscription format or blocks the
-// client. Its own endpoint, but not its own Save: the draft belongs to the page, so
-// everything on this screen is saved and cancelled together.
-function SubRulesEditor({
-  value: rules,
-  onChange,
-}: {
-  value: SubRule[];
-  onChange: (v: SubRule[]) => void;
-}) {
-  const { t } = useTranslation();
-  const setRules = (fn: (rs: SubRule[]) => SubRule[]) => onChange(fn(rules));
-
-  const patchRule = (i: number, p: Partial<SubRule>) =>
-    setRules((rs) => rs.map((r, j) => (j === i ? { ...r, ...p } : r)));
-  const addRule = () =>
-    setRules((rs) => [
-      ...rs,
-      { field: "user_agent", op: "contains", value: "", action: "clash", enabled: true },
-    ]);
-  const removeRule = (i: number) => setRules((rs) => rs.filter((_, j) => j !== i));
-  const move = (i: number, d: -1 | 1) =>
-    setRules((rs) => {
-      const j = i + d;
-      if (j < 0 || j >= rs.length) return rs;
-      const out = [...rs];
-      [out[i], out[j]] = [out[j], out[i]];
-      return out;
-    });
-
-  // Literal keys (not template strings) so the typed i18n accepts them.
-  const fieldOpts: { value: SubRule["field"]; label: string }[] = [
-    { value: "user_agent", label: t("subs.ruleField.user_agent") },
-    { value: "device_os", label: t("subs.ruleField.device_os") },
-    { value: "ver_os", label: t("subs.ruleField.ver_os") },
-    { value: "device_model", label: t("subs.ruleField.device_model") },
-  ];
-  const opOpts: { value: SubRule["op"]; label: string }[] = [
-    { value: "contains", label: t("subs.ruleOp.contains") },
-    { value: "not_contains", label: t("subs.ruleOp.not_contains") },
-    { value: "equals", label: t("subs.ruleOp.equals") },
-    { value: "prefix", label: t("subs.ruleOp.prefix") },
-    { value: "regex", label: t("subs.ruleOp.regex") },
-  ];
-  const actionOpts: { value: SubRule["action"]; label: string }[] = [
-    { value: "v2ray", label: t("subs.ruleAction.v2ray") },
-    { value: "clash", label: t("subs.ruleAction.clash") },
-    { value: "singbox", label: t("subs.ruleAction.singbox") },
-    { value: "xray-json", label: t("subs.ruleAction.xray-json") },
-    { value: "block", label: t("subs.ruleAction.block") },
-  ];
-
-  return (
-    <Panel
-      title={t("subs.rules")}
-      aside={
-        <IconButton
-          variant="filled"
-          color="brand"
-          title={t("subs.ruleAdd")}
-          onClick={addRule}
-        >
-          <IconPlus />
-        </IconButton>
-      }
-    >
-      <SettingRow hint={t("subs.rulesHint")} />
-      {rules.length === 0 ? (
-        <SettingRow hint={t("subs.rulesEmpty")} />
-      ) : (
-        rules.map((r, i) => (
-          // One rule per line: on/off, what is matched, how, against what, and what
-          // the panel answers with. Order matters, so each row can walk up or down.
-          <div
-            // biome-ignore lint/suspicious/noArrayIndexKey: the rule list is the wire payload — it carries no id, and a rule's position IS its precedence, which is what every mutator here addresses
-            key={i}
-            className="flex flex-wrap items-center gap-2 border-t border-gray-100 px-3.5 py-2"
-          >
-            <Switch checked={r.enabled} onChange={(v) => patchRule(i, { enabled: v })} />
-            <div className="w-36">
-              <Select
-                value={r.field}
-                onChange={(v) => patchRule(i, { field: v as SubRule["field"] })}
-                data={fieldOpts}
-              />
-            </div>
-            <div className="w-32">
-              <Select
-                value={r.op}
-                onChange={(v) => patchRule(i, { op: v as SubRule["op"] })}
-                data={opOpts}
-              />
-            </div>
-            <div className="min-w-32 flex-1">
-              <TextInput
-                value={r.value}
-                onChange={(v) => patchRule(i, { value: v })}
-                placeholder={t("subs.ruleValue")}
-                mono
-              />
-            </div>
-            <span className="text-ink-muted">→</span>
-            <div className="w-32">
-              <Select
-                value={r.action}
-                onChange={(v) => patchRule(i, { action: v as SubRule["action"] })}
-                data={actionOpts}
-              />
-            </div>
-            <div className="ml-auto flex items-center">
-              <IconButton
-                title={t("subs.ruleUp")}
-                disabled={i === 0}
-                onClick={() => move(i, -1)}
-              >
-                <IconChevron className="rotate-180" />
-              </IconButton>
-              <IconButton
-                title={t("subs.ruleDown")}
-                disabled={i === rules.length - 1}
-                onClick={() => move(i, 1)}
-              >
-                <IconChevron />
-              </IconButton>
-              <IconButton
-                color="red"
-                title={t("common.delete")}
-                onClick={() => removeRule(i)}
-              >
-                <IconTrash />
-              </IconButton>
-            </div>
-          </div>
-        ))
-      )}
-    </Panel>
-  );
-}

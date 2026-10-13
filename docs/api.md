@@ -636,6 +636,14 @@ and the Free Turn Proxy masking key (never returned) are generated. It is in no
 subscription format — users import it into an app from the subscription page
 (`vkturnproxy://`, `freeturn://`, `wingsv://`) or download `<sub>/wg/<inbound id>.conf` from the
 subscription page.
+`enc_mode` turns on VLESS Encryption on a `vless` inbound — `native`, `xorpub` or `random` (how
+the handshake looks on the wire), empty for off; the keys are generated (`encryption`, the
+clients' half, is in the response). With it `tcp` may go with `security: none`.
+`cdn_host` (and `cdn_port`, 443 when 0) puts a `vless` / `trojan` inbound on `ws` / `httpupgrade`
+/ `xhttp` behind a CDN: links point at that domain over TLS, the CDN reaches the
+inbound's own port (plain with `security: none`), and the inbound trusts its X-Forwarded-For.
+`pin_cert` (TLS, not behind a CDN) has clients check the server's certificate by its fingerprint
+rather than its name, so `sni` may be any domain — one on an operator's allowlist, say.
 Two formats the schema can only call `string`: `reality_dest` is a bare hostname
 (`www.microsoft.com` — a `host:port` form is rejected), and `hop_interval` is a range in
 seconds (`"5-10"`, not `"30"`).
@@ -686,7 +694,7 @@ by it — the stricter of the two applies. Omitted on an update, the cap is kept
 A **grant token** names one connection:
 
 - `builtin:<server_id>:<lane>` — a built-in lane, where `<lane>` is `vless`, `reality`,
-  `hysteria2`, `naive`, `mieru` or `awg` and `<server_id>` is `0` for the master or a node id
+  `hysteria2`, `naive`, `anytls`, `mieru` or `awg` and `<server_id>` is `0` for the master or a node id
   from `GET /v1/nodes`.
 - `inbound:<id>` — a custom inbound, by the id from `GET /v1/servers/{id}/inbounds`.
 
@@ -1179,6 +1187,7 @@ body is never read).
 | `user.expiring` | a term is running out — at 14, 7, 3 and 1 days before it ends, each once per term (a renewal starts over; a term given with fewer days left gets the nearest stage only); `data.stage` (14, 7, 3 or 1), `data.days_left` — act on the stages you want; with a paid plan the balance can renew, `data.auto_renew`, `data.renew_price_kop`, `data.balance_kop` |
 | `user.traffic_low` | a user has spent 80% of the quota — once until usage drops back under it; `data.used`, `data.percent` |
 | `user.sub_rotated` | the subscription link is reissued (panel, API, or a Telegram move) — the old one no longer works; `data.sub_url` |
+| `user.uuid_reset` | the user's UUID, protocol passwords and WireGuard key (AmneziaWG, TURN-VK) are reissued in the panel — links and configs built from the old ones stop working; the subscription link stays |
 | `user.telegram_linked` | a Telegram is bound to the account (panel, API, bot, Mini App); `data.telegram_id` |
 | `user.telegram_unlinked` | the account loses a Telegram — unlinked, the chat moved to another account, or the account moved to another Telegram; `data.telegram_id` |
 | `user.limits_changed` | the operator changed the limits or the term, or extended it (`data.extended_days` for a bulk extension), or a refund took the order's days back (`data.refund_order_id`) |

@@ -175,6 +175,23 @@ func TestSyncHysteriaAgainstRealXray(t *testing.T) {
 	}
 	assertRules(t, bin, apiAddr, []string{"live3-cut-0", "live3-0", "live3-1", "live3-2"})
 
+	// u3 is back, then given a new key (a UUID reset): the connection on the old key
+	// stops, the new key gets in, and u1 — on the same inbound — never notices.
+	sync("u1", "u3")
+	waitFor(t, "u3 to get through again once back", func() bool { return get("u3") == nil })
+	start := time.Now()
+	if err := sup.SyncHysteria(apiAddr, []Inbound{hysteria([]HysteriaClient{
+		{Auth: "pw-u1", Email: "u1"}, {Auth: "pw-u3-new", Email: "u3"},
+	})}); err != nil {
+		t.Fatalf("rekey u3: %v", err)
+	}
+	t.Logf("rekey took %v", time.Since(start))
+	if err := get("u3"); err == nil {
+		t.Error("u3's connection on the old key still carries traffic after the new key")
+	}
+	fetchers["u3-new"] = hysteriaClientAuth(t, bin, dir, "u3-new", "pw-u3-new", hyPort, pin)
+	waitFor(t, "u3 to get through on the new key", func() bool { return get("u3-new") == nil })
+
 	close(stop)
 	for s := range stalls {
 		t.Errorf("u1, who stayed throughout, had a request fail or stall: %s", s)
@@ -211,6 +228,12 @@ func assertRules(t *testing.T, bin, apiAddr string, want []string) {
 // goes through it.
 func hysteriaClient(t *testing.T, bin, dir, email string, hyPort int, pin string) *http.Client {
 	t.Helper()
+	return hysteriaClientAuth(t, bin, dir, email, "pw-"+email, hyPort, pin)
+}
+
+// hysteriaClientAuth is a client proving auth, its files named after name.
+func hysteriaClientAuth(t *testing.T, bin, dir, name, auth string, hyPort int, pin string) *http.Client {
+	t.Helper()
 	socks := freePort(t, "tcp")
 	cfg := map[string]any{
 		"log":      map[string]any{"loglevel": "warning"},
@@ -219,9 +242,9 @@ func hysteriaClient(t *testing.T, bin, dir, email string, hyPort int, pin string
 			"settings": map[string]any{"address": "127.0.0.1", "port": hyPort, "version": 2},
 			"streamSettings": map[string]any{"network": "hysteria", "security": "tls",
 				"tlsSettings":      map[string]any{"serverName": "test", "alpn": []string{"h3"}, "pinnedPeerCertSha256": pin},
-				"hysteriaSettings": map[string]any{"version": 2, "auth": "pw-" + email}}}},
+				"hysteriaSettings": map[string]any{"version": 2, "auth": auth}}}},
 	}
-	path := filepath.Join(dir, "client-"+email+".json")
+	path := filepath.Join(dir, "client-"+name+".json")
 	data, _ := json.Marshal(cfg)
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)

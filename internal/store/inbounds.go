@@ -56,14 +56,17 @@ func scanInbound(sc interface{ Scan(...any) error }) (*model.Inbound, error) {
 	}
 	in.Opts.RealityPrivateKey = decField(in.Opts.RealityPrivateKey)
 	in.Opts.WGPrivateKey = decField(in.Opts.WGPrivateKey)
+	in.Opts.Decryption = decField(in.Opts.Decryption)
 	return &in, nil
 }
 
-// marshalInboundOpts encodes the opts blob for storage, encrypting the REALITY and
-// WireGuard private keys at rest exactly as the settings/node rows do with theirs.
+// marshalInboundOpts encodes the opts blob for storage, encrypting the REALITY,
+// WireGuard and VLESS Encryption private keys at rest exactly as the settings/node rows
+// do with theirs.
 func marshalInboundOpts(o model.InboundOpts) (string, error) {
 	o.RealityPrivateKey = encField(o.RealityPrivateKey)
 	o.WGPrivateKey = encField(o.WGPrivateKey)
+	o.Decryption = encField(o.Decryption)
 	b, err := json.Marshal(o)
 	if err != nil {
 		return "", err

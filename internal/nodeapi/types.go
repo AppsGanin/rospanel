@@ -90,7 +90,9 @@ type SyncRequest struct {
 	Naive bool `json:"naive,omitempty"`
 	// Mieru ⇒ this agent answers mieru on the port the panel gives it (MieruState),
 	// and MieruError is why its listener is not up, when it is not.
-	Mieru       bool   `json:"mieru,omitempty"`
+	Mieru bool `json:"mieru,omitempty"`
+	// AnyTLS ⇒ this agent answers AnyTLS behind its decoy (internal/anytls).
+	AnyTLS      bool   `json:"anytls,omitempty"`
 	MieruError  string `json:"mieru_error,omitempty"`
 	XrayRunning bool   `json:"xray_running"`
 	// Revoked ⇒ this node already knows the panel switched it off and has stopped

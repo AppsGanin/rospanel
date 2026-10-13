@@ -70,6 +70,11 @@ func clashProxies(u model.User, srv Server, caps clashCaps) []clashProxy {
 			"  - {name: %q, type: hysteria2, server: %q, port: %d, password: %q, sni: %q, alpn: [h3], skip-cert-verify: %s%s%s}",
 			n, set.Host, set.HysteriaPort, u.Password, set.SNI, sv, hop, clashObfs(set.HysteriaObfs))})
 	}
+	// AnyTLS likewise.
+	if caps.anytls && link.AnyTLSOn(set) && srv.allowsBuiltin(model.LaneAnyTLS) {
+		n := link.LabelFor(model.ProtoAnyTLS, u, set)
+		out = append(out, clashProxy{n, clashAnyTLSLine(n, u, set)})
+	}
 	// mieru only for a client whose core has it.
 	if caps.mieru && link.MieruOn(set) && srv.allowsBuiltin(model.LaneMieru) {
 		n := link.LabelFor(model.ProtoMieru, u, set)
@@ -83,7 +88,7 @@ func clashProxies(u model.User, srv Server, caps clashCaps) []clashProxy {
 		}
 	}
 	for _, in := range srv.Custom {
-		if !srv.allowsInbound(in.ID) {
+		if !srv.allowsInbound(in.ID) || in.Opts.EncMode != "" && !caps.vlessEnc || in.Opts.PinCert && !caps.pin {
 			continue
 		}
 		if p, ok := clashCustom(u, in, set, sv); ok {
@@ -148,8 +153,8 @@ func clashCustom(u model.User, in model.Inbound, set *model.Settings, sv string)
 			hop = fmt.Sprintf(", ports: %q", fmt.Sprintf("%d-%d", model.HopAdvertised(in.Port, o.HopStart), o.HopEnd))
 		}
 		return clashProxy{n, fmt.Sprintf(
-			"  - {name: %q, type: hysteria2, server: %q, port: %d, password: %q, sni: %q, alpn: [h3], skip-cert-verify: %s%s%s}",
-			n, set.Host, in.Port, u.Password, clashSNI(in, set), sv, hop, clashObfs(o.Obfs))}, true
+			"  - {name: %q, type: hysteria2, server: %q, port: %d, password: %q, sni: %q, alpn: [h3], skip-cert-verify: %s%s%s%s}",
+			n, set.Host, in.Port, u.Password, clashSNI(in, set), clashSkipVerify(in, sv), clashPin(in, set), hop, clashObfs(o.Obfs))}, true
 	}
 
 	if in.Protocol == model.InbShadowsocks {
@@ -162,27 +167,34 @@ func clashCustom(u model.User, in model.Inbound, set *model.Settings, sv string)
 	}
 
 	var b strings.Builder
+	host, port := in.ClientEndpoint(set.Host)
 	fmt.Fprintf(&b, "  - {name: %q, type: %s, server: %q, port: %d",
-		n, in.Protocol, set.Host, in.Port)
+		n, in.Protocol, host, port)
 	if in.Protocol == model.InbVLESS {
 		fmt.Fprintf(&b, ", uuid: %q", u.UUID)
 		if o.Flow != "" {
 			fmt.Fprintf(&b, ", flow: %s", o.Flow)
+		}
+		if o.Encryption != "" { // mihomo reads VLESS Encryption from 1.19.13
+			fmt.Fprintf(&b, ", encryption: %q", o.Encryption)
 		}
 	} else {
 		fmt.Fprintf(&b, ", password: %q", u.Password)
 	}
 	fmt.Fprintf(&b, ", network: %s, udp: true", o.Transport)
 
-	switch o.Security {
+	if o.ViaCDN() {
+		sv = "false" // the CDN's certificate is publicly trusted
+	}
+	switch o.ClientSecurity() {
 	case model.SecTLS:
 		// Trojan spells the server name "sni", VLESS spells it "servername".
 		key := "servername"
 		if in.Protocol == model.InbTrojan {
 			key = "sni"
 		}
-		fmt.Fprintf(&b, ", tls: true, %s: %q, client-fingerprint: %s, skip-cert-verify: %s",
-			key, clashSNI(in, set), o.FPOr(), sv)
+		fmt.Fprintf(&b, ", tls: true, %s: %q, client-fingerprint: %s, skip-cert-verify: %s%s",
+			key, clashSNI(in, set), o.FPOr(), clashSkipVerify(in, sv), clashPin(in, set))
 	case model.SecReality:
 		fmt.Fprintf(&b, ", tls: true, servername: %q, client-fingerprint: %s, reality-opts: {public-key: %q, short-id: %q}",
 			o.RealitySNI(), o.FPOr(), o.RealityPublicKey, firstShortID(o))
@@ -207,13 +219,26 @@ func clashCustom(u model.User, in model.Inbound, set *model.Settings, sv string)
 	return clashProxy{n, b.String()}, true
 }
 
-// clashSNI is the server name a custom inbound's client should present.
-func clashSNI(in model.Inbound, set *model.Settings) string {
-	if in.Opts.SNI != "" {
-		return in.Opts.SNI
+// clashPin is the certificate pin of an inbound checked by fingerprint (PinCert):
+// mihomo then trusts the certificate by it, whatever name the SNI gives.
+func clashPin(in model.Inbound, set *model.Settings) string {
+	if in.Opts.PinCert && set.CertSHA256 != "" {
+		return fmt.Sprintf(", fingerprint: %q", set.CertSHA256)
 	}
-	return set.SNI
+	return ""
 }
+
+// clashSkipVerify is sv, but never for a pinned inbound: the pin is the check.
+func clashSkipVerify(in model.Inbound, sv string) string {
+	if in.Opts.PinCert && sv == "true" {
+		return "false"
+	}
+	return sv
+}
+
+// clashSNI is the server name a custom inbound's client should present (link.LinkSNI:
+// the inbound's override, a CDN's domain, or the server's).
+func clashSNI(in model.Inbound, set *model.Settings) string { return link.LinkSNI(in, set) }
 
 // clashHost is the Host header for the HTTP-shaped transports (defaults to the SNI).
 func clashHost(in model.Inbound, set *model.Settings) string {
@@ -263,13 +288,18 @@ func ClashYAML(u model.User, set *model.Settings) string {
 // ClashYAMLMulti renders a Clash-Meta (Mihomo) config spanning every server: all
 // proxies under one select group. servers[0] is the local server (group title + rules).
 func ClashYAMLMulti(u model.User, servers []Server) string {
-	return clashYAML(u, servers, clashCaps{})
+	return clashYAML(u, servers, clashCaps{pin: true})
 }
 
 // ClashYAMLFor is ClashYAMLMulti for the client that asked: with the lanes its core
 // reads (clashCapsFor).
 func ClashYAMLFor(u model.User, servers []Server, userAgent string) string {
-	return clashYAML(u, servers, clashCapsFor(userAgent))
+	return ClashYAMLRule(u, servers, userAgent, nil)
+}
+
+// ClashYAMLRule is ClashYAMLFor with a response rule's overrides.
+func ClashYAMLRule(u model.User, servers []Server, userAgent string, o Overrides) string {
+	return clashYAML(u, servers, o.clash(clashCapsFor(userAgent)))
 }
 
 func clashYAML(u model.User, servers []Server, caps clashCaps) string {
@@ -342,13 +372,18 @@ const (
 // (proxy node names). Falls back to the plain config if the template has no proxies
 // marker.
 func ClashWithTemplateMulti(u model.User, servers []Server, template string) string {
-	return clashWithTemplate(u, servers, template, clashCaps{})
+	return clashWithTemplate(u, servers, template, clashCaps{pin: true})
 }
 
 // ClashWithTemplateFor is ClashWithTemplateMulti for the client that asked (see
 // ClashYAMLFor).
 func ClashWithTemplateFor(u model.User, servers []Server, template, userAgent string) string {
-	return clashWithTemplate(u, servers, template, clashCapsFor(userAgent))
+	return ClashWithTemplateRule(u, servers, template, userAgent, nil)
+}
+
+// ClashWithTemplateRule is ClashWithTemplateFor with a response rule's overrides.
+func ClashWithTemplateRule(u model.User, servers []Server, template, userAgent string, o Overrides) string {
+	return clashWithTemplate(u, servers, template, o.clash(clashCapsFor(userAgent)))
 }
 
 func clashWithTemplate(u model.User, servers []Server, template string, caps clashCaps) string {

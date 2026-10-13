@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"github.com/AppsGanin/rospanel/internal/awg"
+	"github.com/AppsGanin/rospanel/internal/store"
 	"testing"
 	"time"
 
@@ -423,5 +425,72 @@ func TestEventPageLimit(t *testing.T) {
 		if got := EventPageLimit(c.in); got != c.want {
 			t.Errorf("EventPageLimit(%d) = %d, want %d", c.in, got, c.want)
 		}
+	}
+}
+
+// A UUID reset changes both proxy credentials and nothing a client fetches them by.
+func TestResetUserUUID(t *testing.T) {
+	t.Parallel()
+	m := bulkTestManager(t)
+	ctx := adminCtx()
+	u, _ := m.CreateUser(ctx, "Вася", 0, 0)
+	nu, err := m.ResetUserUUID(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if nu.UUID == u.UUID || nu.Password == u.Password {
+		t.Errorf("credentials unchanged: uuid %s→%s", u.UUID, nu.UUID)
+	}
+	if nu.SubToken != u.SubToken {
+		t.Error("the subscription link changed")
+	}
+
+	// With a tunnel identity: a new WireGuard key, the same tunnel address.
+	key, _, err := awg.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.store.ClaimUsersAWG([]store.AWGClaim{{UserID: u.ID, Key: key}}, awg.FirstSlot, awg.LastSlot); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := m.store.GetUser(u.ID)
+	after, err := m.ResetUserUUID(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.WGPrivateKey == "" || after.WGPrivateKey == before.WGPrivateKey || after.AWGSlot != before.AWGSlot {
+		t.Errorf("tunnel identity after reset: key changed %v, slot %d → %d",
+			after.WGPrivateKey != before.WGPrivateKey, before.AWGSlot, after.AWGSlot)
+	}
+	if !hasAction(trail(t, m, u.ID), model.EventUUIDReset) {
+		t.Error("no journal row")
+	}
+	if _, err := m.ResetUserUUID(ctx, u.ID+1000); err == nil {
+		t.Error("an unknown user was reset")
+	}
+}
+
+// A reset leaves the working set as it was, so the sync must notice the user by the
+// rekey alone; an apply that read the credentials before the reset must not clear it.
+func TestRekeyedBookkeeping(t *testing.T) {
+	t.Parallel()
+	m := bulkTestManager(t)
+	u := model.User{ID: 5}
+	m.setApplied([]model.User{u}, 0)
+	if m.workingIDsChanged([]int64{5}) {
+		t.Fatal("changed with nothing rekeyed")
+	}
+	before := m.rekeyedUpTo()
+	m.markRekeyed(5)
+	if !m.workingIDsChanged([]int64{5}) {
+		t.Fatal("a rekeyed user went unnoticed")
+	}
+	m.setApplied([]model.User{u}, before) // credentials read before the reset
+	if !m.workingIDsChanged([]int64{5}) {
+		t.Fatal("an apply older than the reset cleared it")
+	}
+	m.setApplied([]model.User{u}, m.rekeyedUpTo())
+	if m.workingIDsChanged([]int64{5}) {
+		t.Fatal("an apply after the reset left it pending")
 	}
 }

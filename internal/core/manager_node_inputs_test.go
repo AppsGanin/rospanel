@@ -181,7 +181,7 @@ func TestNodeTrafficSharesOneEnforcementPass(t *testing.T) {
 	}
 	n := servingNode(t, m, "n1", "nl1.example.com")
 	working, _ := m.store.WorkingCredentials(time.Now().Unix())
-	m.setApplied(working)
+	m.setApplied(working, 0)
 
 	for i := int64(1); i <= 3; i++ {
 		req := nodeapi.SyncRequest{ReportID: i, Traffic: []nodeapi.TrafficDelta{{UserID: u.ID, Up: 400, Down: 0}}}

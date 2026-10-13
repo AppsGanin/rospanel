@@ -349,6 +349,10 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		listen, port := innerLaneListen(MieruInnerAddr, inbounds)
 		inbounds = append(inbounds, innerInbound(TagMieru, listen, port, laneClients(set.MieruEnabled, model.LaneMieru, users, opts.allowsBuiltin), sniff))
 	}
+	if set.AnyTLSEnabled {
+		listen, port := innerLaneListen(AnyTLSInnerAddr, inbounds)
+		inbounds = append(inbounds, innerInbound(TagAnyTLS, listen, port, laneClients(set.AnyTLSEnabled, model.LaneAnyTLS, users, opts.allowsBuiltin), sniff))
+	}
 
 	return &Config{
 		Log:   &Log{Loglevel: "warning"},
@@ -539,6 +543,7 @@ const (
 	TagReality  = "vless-reality-in"
 	TagNaive    = "naive-in"
 	TagMieru    = "mieru-in"
+	TagAnyTLS   = "anytls-in"
 )
 
 // ProtoWireGuard is Xray's name for the protocol of a TURN-VK inbound.
@@ -613,6 +618,13 @@ func NaiveClientsRaw(data []byte) ([]VLESSClient, string) { return InnerClientsR
 
 // MieruClientsRaw is MieruClients for a config as JSON.
 func MieruClientsRaw(data []byte) ([]VLESSClient, string) { return InnerClientsRaw(data, TagMieru) }
+
+// AnyTLSClients are anytls-in's clients in cfg — who internal/anytls lets in — and the
+// address it listens on ("" when the lane is off).
+func AnyTLSClients(cfg *Config) ([]VLESSClient, string) { return InnerClients(cfg, TagAnyTLS) }
+
+// AnyTLSClientsRaw is AnyTLSClients for a config as JSON.
+func AnyTLSClientsRaw(data []byte) ([]VLESSClient, string) { return InnerClientsRaw(data, TagAnyTLS) }
 
 // InnerClients are the clients of the inner lane inbound tagged tag in cfg, and the
 // address it listens on ("" when the lane is off).
@@ -700,9 +712,13 @@ func customInbound(in model.Inbound, set *model.Settings, users []model.User,
 	}
 	switch in.Protocol {
 	case model.InbVLESS:
+		dec := in.Opts.Decryption
+		if dec == "" {
+			dec = "none"
+		}
 		out.Settings = VLESSInboundSettings{
 			Clients:    customVLESSClients(in, allowed),
-			Decryption: "none",
+			Decryption: dec,
 		}
 	case model.InbTrojan:
 		out.Settings = TrojanInboundSettings{Clients: customTrojanClients(allowed)}
@@ -778,6 +794,9 @@ func customStream(in model.Inbound, set *model.Settings, cert []Certificate, min
 		st.FinalMask = salamanderUDP(o.Obfs)
 	}
 	st.Sockopt = o.Sockopt
+	if o.ViaCDN() {
+		st.Sockopt = trustForwardedFor(o.Sockopt)
+	}
 
 	switch o.Security {
 	case model.SecTLS:
@@ -1026,6 +1045,10 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 		listen, port := InnerListen(MieruInnerAddr)
 		in = append(in, Inbound{Tag: TagMieru, Listen: listen, Port: port, Protocol: "vless", Settings: VLESSInboundSettings{Clients: mc, Decryption: "none"}})
 	}
+	if ac := laneClients(set.AnyTLSEnabled, model.LaneAnyTLS, users, allowBuiltin); len(ac) > 0 {
+		listen, port := InnerListen(AnyTLSInnerAddr)
+		in = append(in, Inbound{Tag: TagAnyTLS, Listen: listen, Port: port, Protocol: "vless", Settings: VLESSInboundSettings{Clients: ac, Decryption: "none"}})
+	}
 	if len(users) == 0 {
 		return in
 	}
@@ -1117,6 +1140,9 @@ func EnabledInboundTags(set *model.Settings, custom []model.Inbound) []string {
 	}
 	if set.MieruEnabled {
 		tags = append(tags, TagMieru)
+	}
+	if set.AnyTLSEnabled {
+		tags = append(tags, TagAnyTLS)
 	}
 	for _, c := range custom {
 		if c.Protocol == model.InbHysteria || c.Protocol == model.InbTurnVK {
@@ -1579,4 +1605,24 @@ func normDomains(entries []string) []string {
 		out = append(out, e)
 	}
 	return out
+}
+
+// trustForwardedFor is sockopt with the CDN's X-Forwarded-For trusted, so the access
+// log, the device limit and the online list see each client's own address rather than
+// the CDN's. The panel sets it, never the operator (SockoptKeys leaves it out), for an
+// inbound it was told sits behind a CDN. Xray's WebSocket, HTTPUpgrade and XHTTP read
+// the header without it too, and take its leftmost address — one the client can write
+// itself, a CDN appending to it — so it pins what Xray does today rather than making
+// the address trustworthy.
+func trustForwardedFor(sockopt json.RawMessage) json.RawMessage {
+	m := map[string]any{}
+	if len(sockopt) > 0 {
+		_ = json.Unmarshal(sockopt, &m)
+	}
+	m["trustedXForwardedFor"] = []string{"X-Forwarded-For"}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return sockopt
+	}
+	return b
 }

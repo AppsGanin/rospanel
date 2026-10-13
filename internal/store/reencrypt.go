@@ -223,8 +223,11 @@ func (s *Store) reencryptInbounds() error {
 		// Only the keys still in the clear: one already encrypted is kept as stored, since
 		// running it through the marshaller again would encrypt the ciphertext.
 		clear := func(k string) bool { return k != "" && !strings.HasPrefix(k, "enc:v1:") }
-		if !clear(opts.RealityPrivateKey) && !clear(opts.WGPrivateKey) {
+		if !clear(opts.RealityPrivateKey) && !clear(opts.WGPrivateKey) && !clear(opts.Decryption) {
 			continue
+		}
+		if clear(opts.Decryption) {
+			opts.Decryption = encField(opts.Decryption)
 		}
 		if clear(opts.RealityPrivateKey) {
 			opts.RealityPrivateKey = encField(opts.RealityPrivateKey)

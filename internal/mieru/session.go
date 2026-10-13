@@ -105,7 +105,7 @@ func (s *Server) handle(c net.Conn) {
 		return
 	}
 	u, ok := s.lookup(c)
-	if !ok {
+	if !ok || !s.raw.admit(c.RemoteAddr().String(), u.Email) {
 		_ = c.Close()
 		return
 	}

@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/AppsGanin/rospanel/internal/extsub"
+	"maps"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -23,8 +25,12 @@ import (
 // XrayJSONMulti renders the user's lanes across every server as an array of Xray
 // configs. dpi decides whether a fragment/noise outbound is chained in.
 func XrayJSONMulti(u model.User, servers []Server, dpi model.SubDPI) string {
+	return xrayJSON(ShareLinksAll(u, servers), dpi)
+}
+
+func xrayJSON(links []string, dpi model.SubDPI) string {
 	configs := make([]map[string]any, 0, 8)
-	for _, l := range ShareLinksAll(u, servers) {
+	for _, l := range links {
 		if cfg, _, ok := xrayConfigFromLink(l, dpi); ok {
 			configs = append(configs, cfg)
 		}
@@ -45,11 +51,42 @@ func XrayJSONMulti(u model.User, servers []Server, dpi model.SubDPI) string {
 // Falls back to the generated profile on an unparseable template or a lane that will
 // not render: a client that cannot parse the array drops every server in it.
 func XrayJSONWithTemplate(u model.User, servers []Server, dpi model.SubDPI, template string) (string, error) {
+	return xrayJSONTemplate(ShareLinksAll(u, servers), dpi, template)
+}
+
+// XrayJSONRule is XrayJSONWithTemplate for the client that asked, with a response rule's
+// overrides: the lanes it is handed follow the link list's (ShareLinksRule), except
+// that VLESS Encryption is read by the Xray core itself here, not by an app's link
+// parser — so an app whose bundled core is known to have it gets it too.
+func XrayJSONRule(u model.User, servers []Server, dpi model.SubDPI, template, userAgent string, o Overrides) (string, error) {
+	if o[model.SubProtoVLESSEnc] == "" && xrayCoreHasVLESSEnc(userAgent) {
+		o = maps.Clone(o)
+		if o == nil {
+			o = Overrides{}
+		}
+		o[model.SubProtoVLESSEnc] = model.SubProtoOn
+	}
+	return xrayJSONTemplate(ShareLinksRule(u, servers, userAgent, o), dpi, template)
+}
+
+// xrayCoreHasVLESSEnc reports whether an app's bundled Xray core reads VLESS Encryption
+// in Xray 25.8.31's form: Streisand from 1.6.62.
+func xrayCoreHasVLESSEnc(userAgent string) bool {
+	if m := streisandUA.FindStringSubmatch(userAgent); m != nil {
+		return versionAtLeast(m[1:], 1, 6, 62)
+	}
+	return false
+}
+
+// streisandUA matches Streisand ("Streisand/1.6.76").
+var streisandUA = regexp.MustCompile(`(?i)^streisand/v?(\d+)\.(\d+)\.(\d+)`)
+
+func xrayJSONTemplate(links []string, dpi model.SubDPI, template string) (string, error) {
 	if strings.TrimSpace(template) == "" {
-		return XrayJSONMulti(u, servers, dpi), nil
+		return xrayJSON(links, dpi), nil
 	}
 	configs := make([]any, 0, 8)
-	for _, l := range ShareLinksAll(u, servers) {
+	for _, l := range links {
 		cfg, remarks, ok := xrayConfigFromLink(l, dpi)
 		if !ok {
 			continue
@@ -61,7 +98,7 @@ func XrayJSONWithTemplate(u model.User, servers []Server, dpi model.SubDPI, temp
 		// the cost of being wrong here is a client that looks connected and is not.
 		outbounds, ok := cfg["outbounds"].([]map[string]any)
 		if !ok || len(outbounds) == 0 {
-			return XrayJSONMulti(u, servers, dpi), fmt.Errorf("lane %q produced no outbound chain", remarks)
+			return xrayJSON(links, dpi), fmt.Errorf("lane %q produced no outbound chain", remarks)
 		}
 		chain := make([]any, len(outbounds))
 		for i, o := range outbounds {
@@ -72,20 +109,20 @@ func XrayJSONWithTemplate(u model.User, servers []Server, dpi model.SubDPI, temp
 			map[string][]any{TplOutbounds: chain},
 		)
 		if err != nil {
-			return XrayJSONMulti(u, servers, dpi), err
+			return xrayJSON(links, dpi), err
 		}
 		var doc any
 		if err := json.Unmarshal([]byte(rendered), &doc); err != nil {
-			return XrayJSONMulti(u, servers, dpi), err
+			return xrayJSON(links, dpi), err
 		}
 		configs = append(configs, doc)
 	}
 	if len(configs) == 0 {
-		return XrayJSONMulti(u, servers, dpi), nil
+		return xrayJSON(links, dpi), nil
 	}
 	b, err := json.MarshalIndent(configs, "", "  ")
 	if err != nil {
-		return XrayJSONMulti(u, servers, dpi), err
+		return xrayJSON(links, dpi), err
 	}
 	return string(b), nil
 }

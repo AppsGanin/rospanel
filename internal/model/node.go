@@ -90,7 +90,10 @@ type Node struct {
 	ServesNaive  bool  `json:"-"`
 	MieruEnabled *bool `json:"mieru_enabled"`
 	// ServesMieru is ServesNaive for mieru (nodeapi.SyncRequest.Mieru).
-	ServesMieru bool `json:"-"`
+	ServesMieru   bool  `json:"-"`
+	AnyTLSEnabled *bool `json:"anytls_enabled"`
+	// ServesAnyTLS is ServesNaive for AnyTLS (nodeapi.SyncRequest.AnyTLS).
+	ServesAnyTLS bool `json:"-"`
 
 	DecoyTemplate string `json:"decoy_template"`
 
@@ -192,6 +195,7 @@ type NodeConnections struct {
 	MieruPort          int    `json:"mieru_port"`
 	MieruTransport     string `json:"mieru_transport"`
 	MieruName          string `json:"mieru_name"`
+	AnyTLSName         string `json:"anytls_name"`
 }
 
 // Joined reports whether the node has exchanged its join token for a permanent
@@ -220,6 +224,7 @@ type NodeStatusUpdate struct {
 	ConfigHash     string
 	ServesNaive    bool
 	ServesMieru    bool
+	ServesAnyTLS   bool
 }
 
 // ValidServerHost reports whether h can be a server's address: an IP literal, or a

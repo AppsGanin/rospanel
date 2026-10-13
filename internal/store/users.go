@@ -1250,6 +1250,23 @@ func (s *Store) SetSubToken(id int64, token string) error {
 	return err
 }
 
+// SetUserCredentials replaces a user's proxy credentials: the UUID (VLESS, NaiveProxy,
+// mieru, AnyTLS, Shadowsocks keys derived from it), the password (Hysteria2) and — when
+// wgKey is not "" — the WireGuard private key (AmneziaWG, WireGuard and TURN-VK
+// inbounds), keeping the tunnel address. The subscription link stays.
+func (s *Store) SetUserCredentials(id int64, uuid, password, wgKey string) error {
+	res, err := s.db.Exec(`UPDATE users SET uuid = ?, password = ?,
+		wg_private_key = CASE WHEN ? = '' THEN wg_private_key ELSE ? END WHERE id = ?`,
+		uuid, encField(password), wgKey, encField(wgKey), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // GetUserByTelegramChatID resolves a linked Telegram chat to its VPN user.
 func (s *Store) GetUserByTelegramChatID(chatID int64) (*model.User, error) {
 	if chatID == 0 {
