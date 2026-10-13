@@ -114,7 +114,50 @@ func configureInterface() error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("awg: nft load: %w: %s", err, bytes.TrimSpace(out))
 	}
+	allowIptablesForward()
 	return nil
+}
+
+// iptablesForward lets tunnel traffic through iptables' FORWARD chain. Our table's
+// accept does not outvote another table's drop on the same hook — a packet must pass
+// every base chain — and Docker and ufw both set FORWARD to DROP, so on such a host
+// clients handshake but reach nothing.
+var iptablesForward = [][]string{
+	{"-i", Iface, "-j", "ACCEPT"},
+	{"-o", Iface, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"},
+}
+
+// allowIptablesForward puts iptablesForward at the head of FORWARD when that chain
+// is managed — a DROP policy or any rule in it; a bare ACCEPT chain needs nothing.
+func allowIptablesForward() {
+	if _, err := exec.LookPath("iptables"); err != nil {
+		return
+	}
+	out, err := exec.Command("iptables", "-S", "FORWARD").Output()
+	if err != nil || strings.TrimSpace(string(out)) == "-P FORWARD ACCEPT" {
+		return
+	}
+	for _, r := range iptablesForward {
+		if exec.Command("iptables", append([]string{"-C", "FORWARD"}, r...)...).Run() == nil {
+			continue
+		}
+		if out, err := exec.Command("iptables", append([]string{"-I", "FORWARD", "1"}, r...)...).CombinedOutput(); err != nil {
+			slog.Warn("awg: could not open iptables FORWARD for the tunnel", "err", err, "out", string(bytes.TrimSpace(out)))
+		}
+	}
+}
+
+// dropIptablesForward removes what allowIptablesForward added.
+func dropIptablesForward() {
+	if _, err := exec.LookPath("iptables"); err != nil {
+		return
+	}
+	for _, r := range iptablesForward {
+		del := append([]string{"-D", "FORWARD"}, r...)
+		for i := 0; i < 8 && exec.Command("iptables", del...).Run() == nil; i++ {
+			// A duplicate can be left by an earlier run that died mid-way.
+		}
+	}
 }
 
 // Ruleset is the NAT/forward table: masquerade the tunnel subnet on its way out
@@ -172,5 +215,6 @@ func (d *linuxDevice) closeLocked() {
 	d.dev.Close() // closes the TUN too
 	d.dev, d.tun = nil, nil
 	_ = exec.Command("nft", "delete", "table", "inet", nftTable).Run()
+	dropIptablesForward()
 	slog.Info("awg: tunnel down", "iface", Iface)
 }
