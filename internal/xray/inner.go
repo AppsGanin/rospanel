@@ -7,7 +7,8 @@ import (
 )
 
 // The lanes behind the panel's own listeners — the TCP-TLS lane behind the front,
-// naive-in behind the NaiveProxy handler — listen on VLESSInnerAddr and NaiveInnerAddr:
+// naive-in behind the NaiveProxy handler, mieru-in behind the mieru server — listen on
+// VLESSInnerAddr, NaiveInnerAddr and MieruInnerAddr:
 // abstract unix sockets on Linux (inner_linux.go), with no port to reserve or collide
 // with, nothing reachable from the network, and no file a crash can leave behind;
 // loopback ports elsewhere (inner_other.go), on a development box.

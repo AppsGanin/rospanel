@@ -7,4 +7,5 @@ package xray
 const (
 	VLESSInnerAddr = "127.0.0.1:18443"
 	NaiveInnerAddr = "127.0.0.1:18444"
+	MieruInnerAddr = "127.0.0.1:18445"
 )

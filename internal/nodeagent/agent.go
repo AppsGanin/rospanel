@@ -32,6 +32,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/http80"
 	"github.com/AppsGanin/rospanel/internal/ipblock"
 	"github.com/AppsGanin/rospanel/internal/logbuf"
+	"github.com/AppsGanin/rospanel/internal/mieru"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/naive"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
@@ -275,6 +276,12 @@ type Agent struct {
 	// naive answers NaiveProxy tunnels in front of the decoy (internal/naive); its
 	// users are naive-in's clients in the config last applied.
 	naive *naive.Server
+
+	// mieru answers mieru on the port the panel gives (internal/mieru); its users are
+	// mieru-in's clients in the config last applied. mieruErr is why it does not listen.
+	mieru    *mieru.Server
+	mieruMu  sync.Mutex // a sync's Apply and a retry, so neither overwrites the other's outcome
+	mieruErr atomic.Pointer[string]
 }
 
 // Run loads the node identity and runs the agent until the context is cancelled
@@ -527,6 +534,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		shaper:       shaper.New(),
 		awg:          awg.New(),
 		naive:        naive.New(xray.NaiveInnerAddr),
+		mieru:        mieru.New(xray.MieruInnerAddr),
 		turn:         turnrelay.New(),
 		policyBlock:  ipblock.New(ipblock.TablePolicy),
 		ipBan:        ipblock.NewPermanent(ipblock.TableBanned),
@@ -1133,11 +1141,14 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 	}
 
 	awgUp, awgErr := a.awgState()
+	a.retryMieru()
 	conns, connsMore := a.takeConns(connsChunkMax)
 	req := nodeapi.SyncRequest{
 		ConfigHash:  hash,
 		DeltaRev:    nodeapi.DeltaRev,
 		Naive:       true,
+		Mieru:       true,
+		MieruError:  a.mieruError(),
 		StateTag:    a.splitTag(),
 		NodeVersion: version.Version,
 		XrayVersion: a.sup.Version(),
@@ -1349,6 +1360,7 @@ func (a *Agent) applyUsers(st *nodeapi.NodeState) error {
 		return fmt.Errorf("apply xray config: %w", err)
 	}
 	a.syncNaive(data)
+	a.syncMieru(data, m.Mieru)
 	switch how {
 	case xray.RawUnchanged:
 		slog.Info("node: state applied without an Xray restart (config unchanged)")
@@ -1544,6 +1556,9 @@ func (a *Agent) shutdown() {
 	if a.awg != nil {
 		a.awg.Close()
 	}
+	if a.mieru != nil {
+		a.mieru.Close()
+	}
 	a.turn.Close()
 	a.operaSup.Stop()
 	if a.redirectSrv != nil {
@@ -1619,6 +1634,9 @@ func (a *Agent) selfUpdate(parent context.Context) bool {
 	a.sup.Stop()
 	if a.awg != nil {
 		a.awg.Close()
+	}
+	if a.mieru != nil {
+		a.mieru.Close()
 	}
 	a.turn.Close()
 	return true

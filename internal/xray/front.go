@@ -72,3 +72,36 @@ func inboundPort(in map[string]any) (int, bool) {
 	p, err := strconv.Atoi(s)
 	return p, err == nil
 }
+
+// TCPListenerPorts is every TCP port an inbound of the config listens on, with the
+// inbound's tag — what a listener the panel opens itself on this server (mieru) must
+// stay off, or Xray cannot bind it on its next start.
+func TCPListenerPorts(cfg *Config) map[int]string {
+	out := map[int]string{}
+	for _, in := range cfg.Inbounds {
+		if in.Port > 0 && in.Protocol != "hysteria" && in.Protocol != ProtoWireGuard {
+			out[in.Port] = in.Tag
+		}
+	}
+	return out
+}
+
+// TCPListenerPortsRaw is TCPListenerPorts for a config as JSON, the form a node holds.
+func TCPListenerPortsRaw(data []byte) map[int]string {
+	out := map[int]string{}
+	cfg, err := decodeRaw(data)
+	if err != nil {
+		return out
+	}
+	inbounds, _ := cfg["inbounds"].([]any)
+	for _, raw := range inbounds {
+		in, tag := asInbound(raw)
+		if p, _ := in["protocol"].(string); p == "hysteria" || p == ProtoWireGuard {
+			continue
+		}
+		if port, ok := inboundPort(in); ok && port > 0 {
+			out[port] = tag
+		}
+	}
+	return out
+}

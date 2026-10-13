@@ -223,7 +223,12 @@ func (m *Manager) NodeConnectionsInfo(id int64) (*ConnectionsStatus, error) {
 	if n == nil {
 		return nil, invalidCode("err.nodeNotFound", "нода не найдена")
 	}
-	return buildConnectionsStatus(nodeSettings(set, n)), nil
+	st := buildConnectionsStatus(nodeSettings(set, n))
+	m.nodeGeoMu.Lock()
+	st.MieruError = m.nodeMieruErr[id]
+	m.nodeGeoMu.Unlock()
+	st.MieruRunning = n.ServesMieru && st.MieruError == "" && derefBool(n.MieruEnabled)
+	return st, nil
 }
 
 // ApplyNodeConnections applies a full connections update to a node: its protocols,
@@ -301,6 +306,31 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 			awgPort = pickAWGPort()
 		}
 	}
+	nodeCustom, err := m.store.Inbounds(id)
+	if err != nil {
+		return err
+	}
+	masterSet, err := m.store.GetSettings()
+	if err != nil {
+		return err
+	}
+	curMieruPort, curMieruTransport := 0, model.MieruTCP
+	if n.Connections != nil {
+		curMieruPort, curMieruTransport = n.Connections.MieruPort, model.MieruTransportOr(n.Connections.MieruTransport)
+	}
+	if curMieruPort == 0 {
+		curMieruPort = nodeSettings(masterSet, n).MieruPort // the default the node has been told so far
+	}
+	mieruOn, mieruAsked := u.Protocols["mieru"]
+	if !mieruAsked {
+		mieruOn = derefBool(n.MieruEnabled)
+	}
+	mieruPort, mieruTransport, err := resolveMieruPort(u.MieruPort, u.MieruTransport,
+		mieruOn, derefBool(n.MieruEnabled), curMieruPort, curMieruTransport,
+		mieruHeldOn(withConnPorts(*nodeSettings(masterSet, n), u, awgPort), nodeCustom), false)
+	if err != nil {
+		return err
+	}
 	if err := m.store.SetNodeProtocols(id,
 		u.Protocols["vless"], u.Protocols["hysteria2"], u.Protocols["reality"]); err != nil {
 		return err
@@ -311,6 +341,11 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 	// Only when asked: a caller that predates the lane leaves it as it is.
 	if on, ok := u.Protocols["naive"]; ok {
 		if err := m.store.SetNodeNaiveEnabled(id, on); err != nil {
+			return err
+		}
+	}
+	if mieruAsked {
+		if err := m.store.SetNodeMieruEnabled(id, mieruOn); err != nil {
 			return err
 		}
 	}
@@ -361,6 +396,9 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		AWGName:            connNames["awg"],
 		AWGDNS:             awgDNS,
 		NaiveName:          connNames["naive"],
+		MieruPort:          mieruPort,
+		MieruTransport:     mieruTransport,
+		MieruName:          connNames["mieru"],
 	}
 	if err := m.store.SetNodeConnections(id, blob); err != nil {
 		return err

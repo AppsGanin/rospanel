@@ -210,6 +210,8 @@ var errEN = map[string]string{
 	"err.masqHostRequired":         "give at least one host for HTTP masquerading",
 	"err.messageTooLong":           "the text is longer than {{limit}} characters ({{count}} now) — Telegram will reject it",
 	"err.methodNotSupported":       "the panel does not accept this request method here",
+	"err.mieruPortRange":           "the mieru port is outside 1–65535",
+	"err.mieruTransport":           "mieru runs on TCP only",
 	"err.mustChangePassword":       "change your password before using the panel",
 	"err.nameAndHostRequired":      "the name and the domain are required",
 	"err.nameEmpty":                "the name cannot be empty",

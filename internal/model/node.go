@@ -87,7 +87,10 @@ type Node struct {
 	NaiveEnabled    *bool `json:"naive_enabled"`
 	// ServesNaive is whether the node's agent said it answers NaiveProxy tunnels
 	// (nodeapi.SyncRequest.Naive); an older agent does not, and gets no NaiveProxy link.
-	ServesNaive bool `json:"-"`
+	ServesNaive  bool  `json:"-"`
+	MieruEnabled *bool `json:"mieru_enabled"`
+	// ServesMieru is ServesNaive for mieru (nodeapi.SyncRequest.Mieru).
+	ServesMieru bool `json:"-"`
 
 	DecoyTemplate string `json:"decoy_template"`
 
@@ -186,6 +189,9 @@ type NodeConnections struct {
 	AWGName            string `json:"awg_name"`
 	AWGDNS             string `json:"awg_dns"`
 	NaiveName          string `json:"naive_name"`
+	MieruPort          int    `json:"mieru_port"`
+	MieruTransport     string `json:"mieru_transport"`
+	MieruName          string `json:"mieru_name"`
 }
 
 // Joined reports whether the node has exchanged its join token for a permanent
@@ -213,6 +219,7 @@ type NodeStatusUpdate struct {
 	CertExpiresAt  int64
 	ConfigHash     string
 	ServesNaive    bool
+	ServesMieru    bool
 }
 
 // ValidServerHost reports whether h can be a server's address: an IP literal, or a

@@ -76,6 +76,7 @@ type Hy = {
 type Reality = { port: number; dests: string[]; antiReplay: boolean };
 type Anti = { fragment: boolean; min13: boolean; blockQuic: boolean };
 type Awg = { port: number; dns: string };
+type Mieru = { port: number; transport: string };
 
 // ConnectionsEditor is the full connection editor (protocols on/off + names +
 // fingerprints + ports + hop + WS + REALITY donor/keys/regen/port/anti-replay +
@@ -148,6 +149,7 @@ export function ConnectionsEditor({
   const [regenReality, setRegenReality] = useState(false);
   const [awgCfg, setAwgCfg] = useState<Awg>({ port: 0, dns: "" });
   const [regenAwg, setRegenAwg] = useState(false);
+  const [mieruCfg, setMieruCfg] = useState<Mieru>({ port: 0, transport: "TCP" });
   const [saved, setSaved] = useState<{
     enabled: Record<string, boolean>;
     fps: Record<string, string>;
@@ -156,6 +158,7 @@ export function ConnectionsEditor({
     reality: Reality;
     anti: Anti;
     awg: Awg;
+    mieru: Mieru;
   }>({
     enabled: {},
     fps: {},
@@ -164,6 +167,7 @@ export function ConnectionsEditor({
     reality: { port: 0, dests: [], antiReplay: false },
     anti: { fragment: false, min13: false, blockQuic: false },
     awg: { port: 0, dns: "" },
+    mieru: { port: 0, transport: "TCP" },
   });
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
@@ -188,6 +192,7 @@ export function ConnectionsEditor({
     };
     const a: Anti = { fragment: s.tls_fragment, min13: s.tls_min13, blockQuic: s.block_quic };
     const g: Awg = { port: s.awg_port, dns: s.awg_dns || "" };
+    const mi: Mieru = { port: s.mieru_port || 0, transport: s.mieru_transport || "TCP" };
     setEnabled(en);
     setFps(fp);
     setNames(nm);
@@ -195,9 +200,10 @@ export function ConnectionsEditor({
     setReality(r);
     setAnti(a);
     setAwgCfg(g);
+    setMieruCfg(mi);
     setRegenReality(false);
     setRegenAwg(false);
-    setSaved({ enabled: en, fps: fp, names: nm, hy: h, reality: r, anti: a, awg: g });
+    setSaved({ enabled: en, fps: fp, names: nm, hy: h, reality: r, anti: a, awg: g, mieru: mi });
   };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
@@ -224,9 +230,10 @@ export function ConnectionsEditor({
   const antiServerChanged = anti.min13 !== saved.anti.min13;
   const antiClientChanged = anti.fragment !== saved.anti.fragment || anti.blockQuic !== saved.anti.blockQuic;
   const awgChanged = awgCfg.port !== saved.awg.port || awgCfg.dns !== saved.awg.dns || regenAwg;
+  const mieruChanged = mieruCfg.port !== saved.mieru.port || mieruCfg.transport !== saved.mieru.transport;
   const dirty =
     fpsChanged || namesChanged || protocolsChanged || hyChanged ||
-    realityChanged || regenReality || antiServerChanged || antiClientChanged || awgChanged;
+    realityChanged || regenReality || antiServerChanged || antiClientChanged || awgChanged || mieruChanged;
   // Config-affecting changes restart Xray (on the master) or re-push to the node.
   const restartsXray =
     protocolsChanged || portsChanged || obfsChanged || realityChanged || regenReality || antiServerChanged;
@@ -277,6 +284,8 @@ export function ConnectionsEditor({
         awg_port: awgCfg.port,
         awg_dns: awgCfg.dns,
         regen_awg_keys: regenAwg,
+        mieru_port: mieruCfg.port,
+        mieru_transport: mieruCfg.transport,
       });
       applyStatus(s);
       notifySuccess(t("common.saved"));
@@ -293,6 +302,7 @@ export function ConnectionsEditor({
     setReality(saved.reality);
     setAnti(saved.anti);
     setAwgCfg(saved.awg);
+    setMieruCfg(saved.mieru);
     setRegenReality(false);
     setRegenAwg(false);
   };
@@ -587,6 +597,36 @@ export function ConnectionsEditor({
                   ))}
 
                 {p.key === "naive" && <SettingRow hint={t("conn.naiveHint")} />}
+
+                {p.key === "mieru" &&
+                  (on ? (
+                    <>
+                      <SettingRow
+                        label={t("conn.mieruPort")}
+                        field={
+                          <TextInput
+                            type="number"
+                            value={mieruCfg.port ? String(mieruCfg.port) : ""}
+                            placeholder={t("conn.awgPortAuto")}
+                            onChange={(v) =>
+                              setMieruCfg((m) => ({
+                                ...m,
+                                port: Number(v.replace(/\D/g, "")) || 0,
+                              }))
+                            }
+                          />
+                        }
+                      />
+                      {status.mieru_error && (
+                        <SettingRow
+                          hint={<span className="text-warning">{status.mieru_error}</span>}
+                        />
+                      )}
+                      <SettingRow hint={t("conn.mieruHint")} />
+                    </>
+                  ) : (
+                    <SettingRow hint={t("conn.enableMieru")} />
+                  ))}
               </>
             )}
           </Section>

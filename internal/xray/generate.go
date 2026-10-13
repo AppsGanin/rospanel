@@ -336,13 +336,18 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		}
 	}
 
-	// NaiveProxy's way back into Xray (see internal/naive): the decoy behind :443 turns
-	// each authenticated CONNECT into a VLESS connection here. Only while the lane is on —
-	// a loopback port nobody uses is one more thing that can keep Xray from starting —
-	// and last, so its port can step past every TCP listener above.
+	// The ways back into Xray of the lanes the panel answers itself: NaiveProxy (the
+	// decoy behind :443 turns each authenticated CONNECT into a VLESS connection here,
+	// see internal/naive) and mieru (its own port, see internal/mieru). Only while the
+	// lane is on — a listener nobody uses is one more thing that can keep Xray from
+	// starting — and last, so a loopback port can step past every TCP listener above.
 	if set.NaiveEnabled {
-		listen, port := naiveListen(inbounds)
-		inbounds = append(inbounds, naiveInbound(listen, port, naiveClients(set, users, opts.allowsBuiltin), sniff))
+		listen, port := innerLaneListen(NaiveInnerAddr, inbounds)
+		inbounds = append(inbounds, innerInbound(TagNaive, listen, port, laneClients(set.NaiveEnabled, model.LaneNaive, users, opts.allowsBuiltin), sniff))
+	}
+	if set.MieruEnabled {
+		listen, port := innerLaneListen(MieruInnerAddr, inbounds)
+		inbounds = append(inbounds, innerInbound(TagMieru, listen, port, laneClients(set.MieruEnabled, model.LaneMieru, users, opts.allowsBuiltin), sniff))
 	}
 
 	return &Config{
@@ -533,16 +538,18 @@ const (
 	TagHysteria = "hysteria-in"
 	TagReality  = "vless-reality-in"
 	TagNaive    = "naive-in"
+	TagMieru    = "mieru-in"
 )
 
 // ProtoWireGuard is Xray's name for the protocol of a TURN-VK inbound.
 const ProtoWireGuard = "wireguard"
 
-// naiveListen is where naive-in listens: NaiveInnerAddr, or, where that is a loopback
-// port, the first port from it no TCP listener of the config holds — an inbound created
-// on it before it was reserved must not cost the lane, nor keep Xray from starting.
-func naiveListen(inbounds []Inbound) (string, int) {
-	listen, p := InnerListen(NaiveInnerAddr)
+// innerLaneListen is where an inner lane's inbound listens: its inner address, or, where
+// that is a loopback port, the first port from it no TCP listener of the config holds —
+// an inbound created on it before it was reserved must not cost the lane, nor keep Xray
+// from starting.
+func innerLaneListen(addr string, inbounds []Inbound) (string, int) {
+	listen, p := InnerListen(addr)
 	if p == 0 {
 		return listen, 0
 	}
@@ -560,12 +567,13 @@ func naiveListen(inbounds []Inbound) (string, int) {
 	return listen, p
 }
 
-// naiveInbound is the internal VLESS inbound NaiveProxy tunnels enter Xray through.
-// No TLS — it ended on :443 — and a PROXY header carrying the client's address, so the
-// access log names the client and not the panel.
-func naiveInbound(listen string, port int, clients []VLESSClient, sniff *Sniffing) Inbound {
+// innerInbound is the internal VLESS inbound a lane the panel answers itself hands its
+// tunnels to (see vlessin). No TLS — the lane's own encryption ended in the panel — and
+// a PROXY header carrying the client's address, so the access log names the client and
+// not the panel.
+func innerInbound(tag, listen string, port int, clients []VLESSClient, sniff *Sniffing) Inbound {
 	return Inbound{
-		Tag:      TagNaive,
+		Tag:      tag,
 		Listen:   listen,
 		Port:     port,
 		Protocol: "vless",
@@ -578,14 +586,14 @@ func naiveInbound(listen string, port int, clients []VLESSClient, sniff *Sniffin
 	}
 }
 
-// naiveClients are the users the NaiveProxy lane lets in: their UUID, no flow.
-func naiveClients(set *model.Settings, users []model.User, allowBuiltin func(userID int64, lane string) bool) []VLESSClient {
+// laneClients are the users an inner lane lets in: their UUID, no flow.
+func laneClients(on bool, lane string, users []model.User, allowBuiltin func(userID int64, lane string) bool) []VLESSClient {
 	out := []VLESSClient{}
-	if !set.NaiveEnabled {
+	if !on {
 		return out
 	}
 	for _, u := range users {
-		if allowBuiltin == nil || allowBuiltin(u.ID, model.LaneNaive) {
+		if allowBuiltin == nil || allowBuiltin(u.ID, lane) {
 			out = append(out, VLESSClient{ID: u.UUID, Email: model.UserEmail(u.ID)})
 		}
 	}
@@ -594,9 +602,23 @@ func naiveClients(set *model.Settings, users []model.User, allowBuiltin func(use
 
 // NaiveClients are naive-in's clients in cfg — who internal/naive lets in — and the
 // address it listens on ("" when the lane is off).
-func NaiveClients(cfg *Config) ([]VLESSClient, string) {
+func NaiveClients(cfg *Config) ([]VLESSClient, string) { return InnerClients(cfg, TagNaive) }
+
+// MieruClients are mieru-in's clients in cfg — who internal/mieru lets in — and the
+// address it listens on ("" when the lane is off).
+func MieruClients(cfg *Config) ([]VLESSClient, string) { return InnerClients(cfg, TagMieru) }
+
+// NaiveClientsRaw is NaiveClients for a config as JSON, the form a node receives.
+func NaiveClientsRaw(data []byte) ([]VLESSClient, string) { return InnerClientsRaw(data, TagNaive) }
+
+// MieruClientsRaw is MieruClients for a config as JSON.
+func MieruClientsRaw(data []byte) ([]VLESSClient, string) { return InnerClientsRaw(data, TagMieru) }
+
+// InnerClients are the clients of the inner lane inbound tagged tag in cfg, and the
+// address it listens on ("" when the lane is off).
+func InnerClients(cfg *Config, tag string) ([]VLESSClient, string) {
 	for _, in := range cfg.Inbounds {
-		if in.Tag != TagNaive {
+		if in.Tag != tag {
 			continue
 		}
 		if st, ok := in.Settings.(VLESSInboundSettings); ok {
@@ -606,8 +628,8 @@ func NaiveClients(cfg *Config) ([]VLESSClient, string) {
 	return nil, ""
 }
 
-// NaiveClientsRaw is NaiveClients for a config as JSON, the form a node receives.
-func NaiveClientsRaw(data []byte) ([]VLESSClient, string) {
+// InnerClientsRaw is InnerClients for a config as JSON, the form a node receives.
+func InnerClientsRaw(data []byte, tag string) ([]VLESSClient, string) {
 	var doc struct {
 		Inbounds []struct {
 			Tag      string `json:"tag"`
@@ -622,7 +644,7 @@ func NaiveClientsRaw(data []byte) ([]VLESSClient, string) {
 		return nil, ""
 	}
 	for _, in := range doc.Inbounds {
-		if in.Tag == TagNaive {
+		if in.Tag == tag {
 			return in.Settings.Clients, innerAddr(in.Listen, in.Port)
 		}
 	}
@@ -996,9 +1018,13 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 	if len(rc) > 0 {
 		in = append(in, Inbound{Tag: TagReality, Port: set.RealityPort, Protocol: "vless", Settings: VLESSInboundSettings{Clients: rc, Decryption: "none"}})
 	}
-	if nc := naiveClients(set, users, allowBuiltin); len(nc) > 0 {
+	if nc := laneClients(set.NaiveEnabled, model.LaneNaive, users, allowBuiltin); len(nc) > 0 {
 		listen, port := InnerListen(NaiveInnerAddr)
 		in = append(in, Inbound{Tag: TagNaive, Listen: listen, Port: port, Protocol: "vless", Settings: VLESSInboundSettings{Clients: nc, Decryption: "none"}})
+	}
+	if mc := laneClients(set.MieruEnabled, model.LaneMieru, users, allowBuiltin); len(mc) > 0 {
+		listen, port := InnerListen(MieruInnerAddr)
+		in = append(in, Inbound{Tag: TagMieru, Listen: listen, Port: port, Protocol: "vless", Settings: VLESSInboundSettings{Clients: mc, Decryption: "none"}})
 	}
 	if len(users) == 0 {
 		return in
@@ -1088,6 +1114,9 @@ func EnabledInboundTags(set *model.Settings, custom []model.Inbound) []string {
 	}
 	if set.NaiveEnabled {
 		tags = append(tags, TagNaive)
+	}
+	if set.MieruEnabled {
+		tags = append(tags, TagMieru)
 	}
 	for _, c := range custom {
 		if c.Protocol == model.InbHysteria || c.Protocol == model.InbTurnVK {

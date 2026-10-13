@@ -268,8 +268,15 @@ NET_ADMIN`), as a container is given no TUN device by default. `nftables` for th
 **NaiveProxy** is a built-in lane on the VLESS-TCP-TLS port: a client with Chrome's network stack,
 served by the decoy site behind :443 with the same certificate. Routing, traffic accounting, limits
 and cut-off work as on the other lanes. The login is `u<id>`, the password the user's UUID. In the
-subscription it goes to the clients that import it — Shadowrocket (as `http2://`), v2rayN, Karing —
-when the certificate is trusted (a domain or a Let's Encrypt IP certificate).
+subscription it goes to the clients that import it — Shadowrocket (as `http2://`), v2rayN, Karing,
+Throne, Exclave — when the certificate is trusted (a domain or a Let's Encrypt IP certificate).
+
+**mieru** is a built-in lane on a TCP port of its own, picked automatically (open it in the
+server's firewall). The login is `u<id>`, the password the user's UUID; routing, traffic
+accounting, limits and cut-off work as on the other lanes. In the subscription it goes to the
+clients that import it — the Clash profile for clients whose version proves their core has it
+(mihomo itself, FlClash, FlClashX, Koala Clash, Clash Verge Rev, Mihomo Party, Sparkle,
+ClashMetaForAndroid, ClashMi), a `mierus://` link for Shadowrocket, Throne, Exclave and Karing.
 
 **TURN-VK (WireGuard over calls)** *(experimental: it may change or be removed in a future
 release)* is a custom-inbound protocol for mobile networks that let

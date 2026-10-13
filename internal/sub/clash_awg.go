@@ -25,13 +25,40 @@ var clashCoreUA = regexp.MustCompile(`(?i)^(?:clash\.meta|mihomo)/v?(\d+)\.(\d+)
 // v0.8.99 bundles a mihomo with the 3.1 options.
 var flClashUA = regexp.MustCompile(`(?i)^flclash/v?(\d+)\.(\d+)\.(\d+)`)
 
-// ClashAWG reports whether a Clash client's core reads AmneziaWG 3.1.
+// flClashXCoreUA reads the core FlClashX names ("FlClash X/v0.4.1 core/v1.19.28 …").
+var flClashXCoreUA = regexp.MustCompile(`(?i)^flclash ?x/\S*.*\bcore/v?(\d+)\.(\d+)\.(\d+)`)
+
+// ClashAWG reports whether a Clash client's core reads AmneziaWG 3.1 (mihomo 1.19.30,
+// 2026-08-16) — by the core's own version where the client names it (mihomo, ClashMi,
+// Sparkle, SlothClash, ClashFest, FlClashX), or by a client version whose bundled core is
+// that new: FlClash 0.8.99, ClashMetaForAndroid 2.11.33 (its core is the v1.19.30 tag),
+// Clash Verge Rev 2.5.4 (1.19.31), Mihomo Party 2.0.3, Koala Clash 1.4.0 — each of those
+// bundling the stable and alpha of its build day.
 func ClashAWG(userAgent string) bool {
 	if m := clashCoreUA.FindStringSubmatch(userAgent); m != nil {
 		return versionAtLeast(m[1:], 1, 19, 30)
 	}
+	if m := clashMiUA.FindStringSubmatch(userAgent); m != nil { // ClashMi names its core
+		return versionAtLeast(m[1:], 1, 19, 30)
+	}
 	if m := flClashUA.FindStringSubmatch(userAgent); m != nil {
 		return versionAtLeast(m[1:], 0, 8, 99)
+	}
+	if m := flClashXCoreUA.FindStringSubmatch(userAgent); m != nil {
+		return versionAtLeast(m[1:], 1, 19, 30)
+	}
+	for _, c := range []struct {
+		re   *regexp.Regexp
+		want []int
+	}{
+		{cmfaUA, []int{2, 11, 33}},
+		{vergeUA, []int{2, 5, 4}},
+		{partyUA, []int{2, 0, 3}},
+		{koalaUA, []int{1, 4, 0}},
+	} {
+		if m := c.re.FindStringSubmatch(userAgent); m != nil {
+			return versionAtLeast(m[1:], c.want...)
+		}
 	}
 	return false
 }

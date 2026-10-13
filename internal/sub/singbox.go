@@ -395,9 +395,13 @@ func naiveResolvable(template string) bool {
 
 // SingBoxNaive reports whether a sing-box client can load a naive outbound: the
 // official apps (SFA on Android, SFI/SFM/SFT on Apple — the platforms whose builds
-// carry cronet) from sing-box 1.13. Anything else would refuse the whole profile over
+// carry cronet) from sing-box 1.13, and husi from 0.15.3 (its core has naive from
+// 0.15.2, udp_over_tcp from 0.15.3). Anything else would refuse the whole profile over
 // the unknown outbound type, so it gets none.
 func SingBoxNaive(userAgent string) bool {
+	if m := husiUA.FindStringSubmatch(userAgent); m != nil {
+		return versionAtLeast(m[1:], 0, 15, 3)
+	}
 	m := singboxAppUA.FindStringSubmatch(userAgent)
 	if m == nil {
 		return false
@@ -406,6 +410,9 @@ func SingBoxNaive(userAgent string) bool {
 	minor, _ := strconv.Atoi(m[2])
 	return major > 1 || major == 1 && minor >= 13
 }
+
+// husiUA matches husi ("husi/0.15.5 (sing-box 1.13.4)"), by its own version.
+var husiUA = regexp.MustCompile(`(?i)^husi/v?(\d+)\.(\d+)\.(\d+)`)
 
 // singboxAppUA matches the official apps' User-Agent, "SFA (sing-box 1.13.0; language
 // en_US)" — the app name, then the core version.

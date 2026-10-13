@@ -346,6 +346,12 @@ export interface ConnectionsStatus {
   awg_dns: string
   awg_running: boolean
   awg_error?: string
+  // mieru: its port and transport; mieru_running/mieru_error describe whether the
+  // lane listens (the master's own, or as the node last reported).
+  mieru_port: number
+  mieru_transport: string
+  mieru_running: boolean
+  mieru_error?: string
 }
 
 // ConnectionsUpdate is the whole connection surface, applied in one request.
@@ -370,6 +376,8 @@ export interface ConnectionsUpdate {
   awg_port: number
   awg_dns: string
   regen_awg_keys: boolean
+  mieru_port: number
+  mieru_transport: string
 }
 
 export const applyConnections = (u: ConnectionsUpdate) =>

@@ -43,6 +43,7 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns.AWGParams = n.AWGParams
 	ns.AWGPort, ns.AWGName, ns.AWGDNS = 0, "", ""
 	ns.NaiveEnabled, ns.NaiveName = derefBool(n.NaiveEnabled), ""
+	ns.MieruEnabled, ns.MieruPort, ns.MieruTransport, ns.MieruName = derefBool(n.MieruEnabled), 0, model.MieruTCP, ""
 	// REALITY donor: the node's own if set, otherwise inherit the panel's (a node
 	// needs some donor for REALITY to work).
 	if n.RealityDest != "" {
@@ -119,6 +120,13 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 		ns.AWGName = c.AWGName
 		ns.AWGDNS = c.AWGDNS
 		ns.NaiveName = c.NaiveName
+		ns.MieruPort = c.MieruPort
+		ns.MieruTransport = model.MieruTransportOr(c.MieruTransport)
+		ns.MieruName = c.MieruName
+	}
+	if ns.MieruPort == 0 {
+		// Nothing chosen: the node's own default, clear of its other listeners.
+		ns.MieruPort = clearOf(mieruHeldOn(&ns, nil), ns.MieruTransport, defaultMieruPort(nodeMieruSeed(n)))
 	}
 	return &ns
 }
@@ -233,6 +241,9 @@ func (m *Manager) generateNodeState(n *model.Node, x *nodeStateInputs, users []m
 	if ns.RealityEnabled {
 		connGuardPorts = append(connGuardPorts, ns.RealityPort)
 	}
+	if l := mieruListen(ns); l.Port > 0 {
+		connGuardPorts = append(connGuardPorts, l.Port)
+	}
 	// Custom inbounds get the same per-IP flood guard as the built-in lanes — they are
 	// public listeners on the same box, and leaving them out would make "add a custom
 	// inbound" quietly the way to bypass the guard. Only the TCP ones: the guard's
@@ -270,6 +281,9 @@ func (m *Manager) generateNodeState(n *model.Node, x *nodeStateInputs, users []m
 		GeoRefreshHours:   n.GeoRefreshHours, // the node's OWN geo cadence
 		XrayPinnedVersion: xray.PinnedVersion,
 		SpeedLimits:       in.speed,
+	}
+	if l := mieruListen(ns); l.Port > 0 {
+		meta.Mieru = &nodeapi.MieruState{Port: l.Port, Transport: l.Transport}
 	}
 	var claimed bool
 	meta.AWG, claimed = m.nodeAWGStateClaimed(n, ns, users, in.access)

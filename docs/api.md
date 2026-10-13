@@ -685,8 +685,9 @@ by it — the stricter of the two applies. Omitted on an update, the cap is kept
 
 A **grant token** names one connection:
 
-- `builtin:<server_id>:<lane>` — a built-in lane, where `<lane>` is `vless`, `reality`
-  or `hysteria2` and `<server_id>` is `0` for the master or a node id from `GET /v1/nodes`.
+- `builtin:<server_id>:<lane>` — a built-in lane, where `<lane>` is `vless`, `reality`,
+  `hysteria2`, `naive`, `mieru` or `awg` and `<server_id>` is `0` for the master or a node id
+  from `GET /v1/nodes`.
 - `inbound:<id>` — a custom inbound, by the id from `GET /v1/servers/{id}/inbounds`.
 
 An empty `grants` array means the group **does not limit access**: saved that way it is a

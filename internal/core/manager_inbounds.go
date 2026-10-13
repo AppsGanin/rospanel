@@ -147,6 +147,9 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 	if p := xray.InnerPort(xray.NaiveInnerAddr); p != 0 {
 		r.HoldTCP(p, "NaiveProxy (internal)")
 	}
+	if p := xray.InnerPort(xray.MieruInnerAddr); p != 0 {
+		r.HoldTCP(p, "mieru (internal)")
+	}
 	if set.HopEnd > set.HysteriaPort {
 		// The built-in hop range is a UDP funnel onto the Hysteria port: anything
 		// inside it would have its traffic silently stolen by the nftables redirect.
@@ -170,6 +173,13 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 	}
 	if set.AWGEnabled && set.AWGPort > 0 {
 		r.HoldUDP(set.AWGPort, "AmneziaWG")
+	}
+	if set.MieruEnabled && set.MieruPort > 0 {
+		if model.MieruTransportOr(set.MieruTransport) == model.MieruUDP {
+			r.HoldUDP(set.MieruPort, "mieru")
+		} else {
+			r.HoldTCP(set.MieruPort, "mieru")
+		}
 	}
 	return r
 }
@@ -627,6 +637,9 @@ func HostConnGuardPorts(st *store.Store) ([]int, error) {
 	ports := []int{set.VLESSPort}
 	if set.RealityEnabled {
 		ports = append(ports, set.RealityPort)
+	}
+	if set.MieruEnabled && set.MieruPort > 0 {
+		ports = append(ports, set.MieruPort) // TCP: see model.MieruTransportOr
 	}
 	list, err := st.EnabledInbounds(model.LocalNodeID)
 	if err != nil {

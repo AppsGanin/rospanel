@@ -15,7 +15,7 @@ const LaneAWG = "awg"
 // laneTags are the built-in inbounds whose traffic is a lane's; custom inbounds count
 // under their own tags (custom-<id>). The API, the system proxies and the panel's
 // egress carry no user's tunnel and are left out.
-var laneTags = map[string]bool{TagVLESS: true, TagReality: true, TagHysteria: true, TagNaive: true}
+var laneTags = map[string]bool{TagVLESS: true, TagReality: true, TagHysteria: true, TagNaive: true, TagMieru: true}
 
 // IsLaneTag reports whether an inbound tag is a lane the split shows.
 func IsLaneTag(tag string) bool {

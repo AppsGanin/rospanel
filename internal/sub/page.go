@@ -636,6 +636,9 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 		if link.NaiveOn(s) && srv.allowsBuiltin(model.LaneNaive) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoNaive, &u), link.Naive(u, s)})
 		}
+		if link.MieruOn(s) && srv.allowsBuiltin(model.LaneMieru) {
+			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoMieru, &u), link.Mieru(u, s)})
+		}
 		for _, in := range srv.Custom {
 			if !srv.allowsInbound(in.ID) {
 				continue

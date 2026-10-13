@@ -73,6 +73,13 @@ type ConnectionsStatus struct {
 	AWGDNS       string          `json:"awg_dns"`
 	AWGRunning   bool            `json:"awg_running"`
 	AWGError     string          `json:"awg_error,omitempty"`
+
+	// mieru (see internal/mieru): its port and transport, and — for the master, whose
+	// lane this process runs — whether it listens.
+	MieruPort      int    `json:"mieru_port"`
+	MieruTransport string `json:"mieru_transport"`
+	MieruRunning   bool   `json:"mieru_running"`
+	MieruError     string `json:"mieru_error,omitempty"`
 }
 
 // ConnectionsInfo reports the master's enabled protocols and their connection
@@ -84,6 +91,7 @@ func (m *Manager) ConnectionsInfo() (*ConnectionsStatus, error) {
 	}
 	st := buildConnectionsStatus(set)
 	st.AWGRunning, st.AWGError = m.AWGStatus()
+	st.MieruRunning, st.MieruError = m.MieruStatus()
 	return st, nil
 }
 
@@ -120,6 +128,8 @@ func buildConnectionsStatus(set *model.Settings) *ConnectionsStatus {
 		AWGPublicKey:      set.AWGPublicKey,
 		AWGParams:         set.AWGParams,
 		AWGDNS:            set.AWGDNS,
+		MieruPort:         set.MieruPort,
+		MieruTransport:    model.MieruTransportOr(set.MieruTransport),
 		Protocols: []ConnInfo{
 			{
 				Key:         "vless",
@@ -164,6 +174,16 @@ func buildConnectionsStatus(set *model.Settings) *ConnectionsStatus {
 				Enabled:     set.NaiveEnabled,
 			},
 			{
+				Key:         "mieru",
+				Name:        model.ProtoMieru,
+				DisplayName: set.MieruName,
+				Transport:   model.MieruTransportOr(set.MieruTransport) + " (mieru)",
+				Security:    "XChaCha20-Poly1305",
+				Port:        awgPortLabel(set.MieruPort),
+				Note:        "",
+				Enabled:     set.MieruEnabled,
+			},
+			{
 				Key:         "awg",
 				Name:        model.ProtoAWG,
 				DisplayName: set.AWGName,
@@ -177,8 +197,8 @@ func buildConnectionsStatus(set *model.Settings) *ConnectionsStatus {
 	}
 }
 
-// awgPortLabel shows "—" for a tunnel that has never been switched on (no port
-// picked yet), the port otherwise.
+// awgPortLabel shows "—" for a lane with a port of its own (AmneziaWG, mieru) that has
+// never been switched on (no port picked yet), the port otherwise.
 func awgPortLabel(port int) string {
 	if port == 0 {
 		return "—"
@@ -223,6 +243,7 @@ var connNameKeys = []struct{ key, proto string }{
 	{"hysteria2", model.ProtoHysteria},
 	{"awg", model.ProtoAWG},
 	{"naive", model.ProtoNaive},
+	{"mieru", model.ProtoMieru},
 }
 
 // validateConnNames trims and checks the custom node names, returning them keyed
@@ -297,6 +318,10 @@ type ConnectionsUpdate struct {
 	AWGPort      int    `json:"awg_port"`
 	AWGDNS       string `json:"awg_dns"`
 	RegenAWGKeys bool   `json:"regen_awg_keys"`
+
+	// mieru: port (0 = keep / pick one) and transport ("TCP" or "UDP").
+	MieruPort      int    `json:"mieru_port"`
+	MieruTransport string `json:"mieru_transport"`
 }
 
 // resolveObfs decides the Salamander key a save lands on: a freshly minted one when
@@ -471,12 +496,25 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	} else if awgPort == 0 {
 		awgPort = set.AWGPort
 	}
+	localCustom, err := m.store.Inbounds(model.LocalNodeID)
+	if err != nil {
+		return err
+	}
+	mieruPort, mieruTransport, err := resolveMieruPort(u.MieruPort, u.MieruTransport,
+		u.Protocols["mieru"], set.MieruEnabled, set.MieruPort, model.MieruTransportOr(set.MieruTransport),
+		mieruHeldOn(withConnPorts(*set, u, awgPort), localCustom), true)
+	if err != nil {
+		return err
+	}
 	for key, en := range u.Protocols {
 		if err := m.store.SetProtocolEnabled(key, en); err != nil {
 			return err
 		}
 	}
 	if err := m.store.SetAWGConfig(awgPort, awgDNS, connNames["awg"]); err != nil {
+		return err
+	}
+	if err := m.store.SetMieruConfig(mieruPort, mieruTransport, connNames["mieru"]); err != nil {
 		return err
 	}
 	if u.Protocols["awg"] || u.RegenAWGKeys {

@@ -92,7 +92,7 @@ func slotOf(in Inbound, custom map[string]*model.Inbound) (nodeapi.UserSlot, boo
 	switch in.Tag {
 	case TagVLESS:
 		s = nodeapi.UserSlot{Kind: "vless", Flow: VisionFlow}
-	case TagReality, TagNaive:
+	case TagReality, TagNaive, TagMieru:
 		s = nodeapi.UserSlot{Kind: "vless"}
 	case TagHysteria:
 		s = nodeapi.UserSlot{Kind: "hysteria"}

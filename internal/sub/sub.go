@@ -26,7 +26,7 @@ import (
 // enabled built-in lanes first, then each custom inbound in its display order.
 // Protocols switched off in the Connections panel are omitted.
 func ShareLinks(u model.User, srv Server) []string {
-	return shareLinks(u, srv, linkForms{naive: link.Naive})
+	return shareLinks(u, srv, linkForms{naive: link.Naive, mieru: true})
 }
 
 // linkForms are the per-client link forms of the lanes not every client reads; a nil
@@ -34,6 +34,7 @@ func ShareLinks(u model.User, srv Server) []string {
 type linkForms struct {
 	naive func(model.User, *model.Settings) string
 	awg   func(model.User, *model.Settings) string
+	mieru bool // the client imports mierus:// (MieruLinkFor)
 }
 
 // shareLinks is ShareLinks with the given forms of the client-dependent lanes.
@@ -55,6 +56,9 @@ func shareLinks(u model.User, srv Server, f linkForms) []string {
 	}
 	if f.naive != nil && link.NaiveOn(set) && srv.allowsBuiltin(model.LaneNaive) {
 		links = append(links, f.naive(u, set))
+	}
+	if f.mieru && link.MieruOn(set) && srv.allowsBuiltin(model.LaneMieru) {
+		links = append(links, link.Mieru(u, set))
 	}
 	if f.awg != nil && set.AWGEnabled && set.AWGPort != 0 && set.AWGPublicKey != "" && srv.allowsBuiltin(model.LaneAWG) {
 		if l := f.awg(u, set); l != "" {
@@ -93,10 +97,7 @@ func ShareLinksAll(u model.User, servers []Server) []string {
 // Streisand, v2rayNG, INCY — have no NaiveProxy, and how each treats a line it cannot
 // read is not documented for all of them, so none is risked.
 func ShareLinksFor(u model.User, servers []Server, userAgent string) []string {
-	f := linkForms{naive: NaiveLinkFor(userAgent)}
-	if AWGLinkFor(userAgent) {
-		f.awg = AWGIncyLink
-	}
+	f := linkForms{naive: NaiveLinkFor(userAgent), mieru: MieruLinkFor(userAgent), awg: awgLinkFor(userAgent)}
 	var links []string
 	for _, srv := range servers {
 		links = append(links, shareLinks(u, srv, f)...)
@@ -108,17 +109,28 @@ func ShareLinksFor(u model.User, servers []Server, userAgent string) []string {
 // client that has none — checked against each client's own parser:
 //
 //   - Shadowrocket: its HTTP2 (NaiveProxy) type, http2://base64(…) — link.NaiveShadowrocket;
-//   - v2rayN (sing-box core), Karing, NekoBox (with its naive plugin): naive+https://.
+//   - Throne (from 1.1.2, sing-box core): naive+https:// with uot=1, which it reads, so UDP
+//     rides the tunnel — link.NaiveUoT;
+//   - v2rayN (sing-box core), Karing, Exclave and NekoBox (with their naive plugin):
+//     naive+https:// — NekoBox when it asks for links (?format=), its User-Agent otherwise
+//     getting the Clash profile, which has no NaiveProxy.
 //
 // An empty User-Agent is a hand-made request, which gets the universal form.
 func NaiveLinkFor(userAgent string) func(model.User, *model.Settings) string {
 	ua := strings.ToLower(userAgent)
+	if m := throneUA.FindStringSubmatch(userAgent); m != nil {
+		if versionAtLeast(m[1:], 1, 1, 2) {
+			return link.NaiveUoT
+		}
+		return nil
+	}
 	switch {
 	case ua == "":
 		return link.Naive
 	case strings.Contains(ua, "shadowrocket"):
 		return link.NaiveShadowrocket
-	case strings.HasPrefix(ua, "v2rayn/"), strings.Contains(ua, "karing"), strings.HasPrefix(ua, "nekobox/"):
+	case strings.HasPrefix(ua, "v2rayn/"), strings.Contains(ua, "karing"), strings.HasPrefix(ua, "exclave/"),
+		strings.HasPrefix(ua, "nekobox/"):
 		return link.Naive
 	}
 	return nil

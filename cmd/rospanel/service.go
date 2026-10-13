@@ -393,6 +393,7 @@ func runServer(dataDir string) {
 	// anything is what keeps an ordinary restart from paging the operator.
 	sup.Stop()
 	mgr.StopAWG()
+	mgr.StopMieru()
 	mgr.StopTurn()
 
 	// Let the background loops finish what they are in the middle of — a flush, a
@@ -528,8 +529,8 @@ func safeTick(name string, fn func()) {
 }
 
 // statsPollLoop accounts per-user traffic once a minute and, in between, watches
-// the quotas of the local Xray's users (see Manager.TickStats). AmneziaWG is polled
-// once a minute.
+// the quotas of the local Xray's users (see Manager.TickStats). AmneziaWG is polled,
+// and a mieru listener that could not start is retried, once a minute.
 func statsPollLoop(mgr *core.Manager) func(context.Context) {
 	return func(ctx context.Context) {
 		var awgAt time.Time
@@ -549,6 +550,7 @@ func statsPollLoop(mgr *core.Manager) func(context.Context) {
 					log.Printf("awg poll: %v", err)
 				}
 			})
+			safeTick("mieru retry", mgr.RetryMieru)
 		})
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/ipblock"
 	"github.com/AppsGanin/rospanel/internal/logbuf"
+	"github.com/AppsGanin/rospanel/internal/mieru"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/naive"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
@@ -381,6 +382,8 @@ type Manager struct {
 	// tunnel that is genuinely down — the difference between "nothing known" and "it
 	// is broken", and alerting on the first would page every operator mid-upgrade.
 	nodeAWG map[int64]nodeAWGState
+	// nodeMieruErr is each node's last-reported mieru listener error ("" ⇒ fine).
+	nodeMieruErr map[int64]string
 	// online is who is connected to which server right now (see manager_online.go).
 	online onlineGauge
 
@@ -413,6 +416,10 @@ type Manager struct {
 
 	// naive answers NaiveProxy tunnels in front of the decoy (manager_naive.go).
 	naive *naive.Server
+	// mieru is the master's mieru lane (internal/mieru), mieruErr its listener's last
+	// error ("" when it listens or is off).
+	mieru    *mieru.Server
+	mieruErr atomic.Pointer[string]
 
 	// nodeLogs holds the most recent log tail reported by each node, plus which
 	// nodes an operator is currently viewing (so the panel asks them for logs).
@@ -489,6 +496,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		nodeAWG:        map[int64]nodeAWGState{},
 		awg:            awg.New(),
 		naive:          naive.New(xray.NaiveInnerAddr),
+		mieru:          mieru.New(xray.MieruInnerAddr),
 		turn:           turnrelay.New(),
 		probeBlock:     ipblock.New(ipblock.TableProbes),
 		policyBlock:    ipblock.New(ipblock.TablePolicy),
@@ -1039,6 +1047,7 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 	}
 	m.syncAWGLocked(set, users)
 	m.syncNaive(cfg)
+	m.syncMieru(set, cfg)
 	return true, m.store.MarkConfigApplied()
 }
 
@@ -1111,6 +1120,7 @@ func (m *Manager) reconcileLocked() error {
 	m.syncTurnLocked(opts.Custom)
 	m.syncAWGLocked(set, users)
 	m.syncNaive(cfg)
+	m.syncMieru(set, cfg)
 	return m.store.MarkConfigApplied()
 }
 

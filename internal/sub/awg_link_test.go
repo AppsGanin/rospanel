@@ -3,6 +3,7 @@ package sub
 import (
 	"encoding/base64"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -99,5 +100,40 @@ func TestAWGConfRefusesABrokenHost(t *testing.T) {
 	u := model.User{ID: 7, WGPrivateKey: priv, AWGSlot: 9}
 	if conf := AWGClientConf(u, set); conf != "" {
 		t.Fatalf("config built for a broken host:\n%s", conf)
+	}
+}
+
+// Throne's wg:// carries the whole 3.1 set its parser reads, keys as they are, and is
+// handed to Throne from 1.3.0 only.
+func TestAWGThroneLink(t *testing.T) {
+	_, pub, _ := awg.GenerateKey()
+	priv, _, _ := awg.GenerateKey()
+	s := &model.Settings{Host: "vpn.example.com", AWGEnabled: true, AWGPort: 51999, AWGPublicKey: pub,
+		AWGParams: awg.ToModel(awg.RandomParams())}
+	u := model.User{ID: 7, UUID: "11111111-2222-3333-4444-555555555555", WGPrivateKey: priv, AWGSlot: 9}
+	l := AWGThroneLink(u, s)
+	pu, err := url.Parse(l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _ := awg.FromModel(s.AWGParams)
+	q := pu.Query()
+	if pu.Scheme != "wg" || pu.Port() != strconv.Itoa(s.AWGPort) || q.Get("enable_amnezia") != "true" ||
+		q.Get("h1") != p.H1.String() || q.Get("s3") != strconv.Itoa(p.S3) ||
+		q.Get("content_padding_addition") != p.Padding.String() || q.Get("i1") != "" {
+		t.Fatalf("link %s", l)
+	}
+	if p.Trailers && q.Get("random_trailers") != "true" {
+		t.Fatalf("no random_trailers: %s", l)
+	}
+	// Base64 as is: "+" would read as a space through url.Query, so compare the raw text.
+	if !strings.Contains(l, "private_key="+u.WGPrivateKey+"&") || !strings.Contains(l, "public_key="+s.AWGPublicKey+"&") ||
+		p.HeaderKey != "" && !strings.Contains(l, "header_protection_key="+p.HeaderKey+"&") {
+		t.Fatalf("keys not as they are: %s", l)
+	}
+	for ua, want := range map[string]bool{"Throne/1.3.0": true, "Throne/1.2.2": false, "INCY/3.7.0/android": true, "v2rayNG/1.10.0": false} {
+		if got := awgLinkFor(ua) != nil; got != want {
+			t.Errorf("%q: %v, want %v", ua, got, want)
+		}
 	}
 }
