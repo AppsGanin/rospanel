@@ -1,5 +1,14 @@
 # Changelog
 
+## [5.2.0](https://github.com/AppsGanin/rospanel/compare/v5.1.0...v5.2.0) (2026-10-13)
+
+
+### Features
+
+* AnyTLS lane, VLESS Encryption/CDN/pinned cert, UUID reset, per-client protocol rules ([64f96b6](https://github.com/AppsGanin/rospanel/commit/64f96b6d8840c60f839fc26e8ac994e0b744cac4))
+* **mieru:** mieru lane on a port of its own ([2655978](https://github.com/AppsGanin/rospanel/commit/26559789e2a52acb3041bddedcf13a0242cd4a9b))
+* **sub:** NaiveProxy for Throne (with UDP), Exclave and husi; AmneziaWG 3.1 for ClashMi, ClashMetaForAndroid, Clash Verge Rev, Mihomo Party, Koala Clash and Throne ([2655978](https://github.com/AppsGanin/rospanel/commit/26559789e2a52acb3041bddedcf13a0242cd4a9b))
+
 ## [5.1.0](https://github.com/AppsGanin/rospanel/compare/v5.0.1...v5.1.0) (2026-10-12)
 
 
