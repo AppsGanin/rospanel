@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/anytls"
 	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/connguard"
 	"github.com/AppsGanin/rospanel/internal/decoy"
@@ -282,6 +283,10 @@ type Agent struct {
 	mieru    *mieru.Server
 	mieruMu  sync.Mutex // a sync's Apply and a retry, so neither overwrites the other's outcome
 	mieruErr atomic.Pointer[string]
+
+	// anytls answers AnyTLS behind the decoy (internal/anytls); its users are
+	// anytls-in's clients in the config last applied.
+	anytls *anytls.Server
 }
 
 // Run loads the node identity and runs the agent until the context is cancelled
@@ -543,6 +548,11 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 	// watermark keeps accepting this node's traffic after a restart.
 	a.reportSeq = a.state.LastReportID
 	a.restoreSplit()
+	if at, err := anytls.New(xray.AnyTLSInnerAddr); err == nil {
+		a.anytls = at
+	} else {
+		slog.Warn("node: AnyTLS lane not started", "err", err)
+	}
 	// Tap Xray's access log so the panel can count this node's devices (mirrors the
 	// master's sup.SetOnAccess(RecordAccess)).
 	a.sup.SetOnAccess(a.recordConn)
@@ -637,6 +647,7 @@ const (
 // (email, ip); destinations are counted per (user, host). Both buffers are bounded
 // so a flood can't grow them without limit.
 func (a *Agent) recordConn(email, ip, dest string) {
+	email = xray.CanonicalEmail(email) // the shaper's caps and the panel know users by their own
 	if !strings.HasPrefix(email, "u") || ip == "" {
 		return
 	}
@@ -1148,6 +1159,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		DeltaRev:    nodeapi.DeltaRev,
 		Naive:       true,
 		Mieru:       true,
+		AnyTLS:      a.anytls != nil,
 		MieruError:  a.mieruError(),
 		StateTag:    a.splitTag(),
 		NodeVersion: version.Version,
@@ -1361,6 +1373,7 @@ func (a *Agent) applyUsers(st *nodeapi.NodeState) error {
 	}
 	a.syncNaive(data)
 	a.syncMieru(data, m.Mieru)
+	a.syncAnyTLS(data)
 	switch how {
 	case xray.RawUnchanged:
 		slog.Info("node: state applied without an Xray restart (config unchanged)")
@@ -1546,7 +1559,7 @@ func (a *Agent) ensureDecoy(dest, template string) error {
 		// h2fix: ReadHeaderTimeout is a raw read deadline net/http never disarms on an
 		// unencrypted HTTP/2 connection, so without it every h2 request to the decoy is
 		// capped at ten seconds. See internal/h2fix.
-		_ = srv.Serve(h2fix.Listener{Listener: &proxyproto.Listener{Listener: ln}})
+		_ = srv.Serve(h2fix.Listener{Listener: a.anytlsListener(&proxyproto.Listener{Listener: ln})})
 	}()
 	return nil
 }

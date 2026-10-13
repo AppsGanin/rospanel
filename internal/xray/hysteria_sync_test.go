@@ -504,9 +504,10 @@ func assertRebuiltWith(t *testing.T, dir string, n int, tag string, emails []str
 	}
 }
 
-// A user whose auth changed keeps the email of their old connection, so no rule can tell
-// the two apart: the inbound is rebuilt, and the users it had cut off need no rule after.
-func TestSyncHysteriaRebuildsForAChangedAuth(t *testing.T) {
+// A user whose auth changed (a UUID reset) comes back under an email that reads as the
+// same user, and the old one is cut off like a removed user's: their old connection
+// ends, nobody else's does — no rebuild.
+func TestSyncHysteriaGivesAChangedAuthANewEmail(t *testing.T) {
 	start := hyTestCfg{lane: []string{"u1", "u2", "u3"}, custom: []string{"u1"}}
 	sup, dir, api := hySupervisor(t, start.json(t))
 	if err := syncHy(t, sup, api, hyTestCfg{lane: []string{"u1", "u2"}, custom: []string{"u1"}}); err != nil {
@@ -515,24 +516,105 @@ func TestSyncHysteriaRebuildsForAChangedAuth(t *testing.T) {
 	cliCalls(t, dir)
 	api.reset()
 
+	key := "new-key"
 	rekeyed := hyTestCfg{lane: []string{"u1", "u2"}, custom: []string{"u1"}, authOf: func(e string) string {
 		if e == "u2" {
-			return "new-key"
+			return key
 		}
 		return "pw-" + e
 	}}
 	if err := syncHy(t, sup, api, rekeyed); err != nil {
 		t.Fatal(err)
 	}
+	if got, want := api.calls(), []string{"remove u2 from hysteria-in", "add u02:new-key to hysteria-in"}; !slices.Equal(got, want) {
+		t.Errorf("api calls %q, want %q", got, want)
+	}
+	if got, want := cliCalls(t, dir), []string{"api adrules -append", "api rmrules live1-2 live1-1 live1-0 live1-cut-0"}; !slices.Equal(got, want) {
+		t.Errorf("cli calls %q, want %q (no rebuild)", got, want)
+	}
+	if got := cutUsers(rulesSent(t, dir, 1)); !slices.Equal(got, []string{"u2", "u3"}) {
+		t.Errorf("cut off %q, want the old email with the removed user", got)
+	}
+
+	// Nothing changes on the next sync: the alias holds.
+	api.reset()
+	if err := syncHy(t, sup, api, rekeyed); err != nil {
+		t.Fatal(err)
+	}
 	if got := api.calls(); len(got) != 0 {
-		t.Errorf("api calls %q, want the rebuild alone", got)
+		t.Errorf("an unchanged set made api calls %q", got)
 	}
-	want := []string{"api rmi hysteria-in", "api adi", "api adrules -append", "api rmrules live1-2 live1-1 live1-0 live1-cut-0"}
-	if got := cliCalls(t, dir); !slices.Equal(got, want) {
-		t.Errorf("cli calls %q, want %q", got, want)
+
+	// A second reset moves on to the next name; the cut-off old ones are never reused.
+	key = "newer-key"
+	if err := syncHy(t, sup, api, rekeyed); err != nil {
+		t.Fatal(err)
 	}
-	if got := ruleTagsOf(rulesSent(t, dir, 1)); !slices.Equal(got, []string{"live2-0", "live2-1", "live2-2"}) {
-		t.Errorf("rules after the rebuild %q, want no cut-off rule", got)
+	if got, want := api.calls(), []string{"remove u02 from hysteria-in", "add u002:newer-key to hysteria-in"}; !slices.Equal(got, want) {
+		t.Errorf("second reset: api calls %q, want %q", got, want)
+	}
+}
+
+// cutUsers is the users the cut-off rules among rules name, sorted.
+func cutUsers(rules []map[string]any) []string {
+	var out []string
+	for _, r := range rules {
+		tag, _ := r["ruleTag"].(string)
+		if !strings.Contains(tag, "-cut-") {
+			continue
+		}
+		users, _ := r["user"].([]any)
+		for _, u := range users {
+			out = append(out, fmt.Sprint(u))
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// An email cut off with one auth is not taken back by a user with another: a user removed,
+// given a new key while away, and let back in comes back under a new email.
+func TestSyncHysteriaNeverRevivesACutOffKey(t *testing.T) {
+	sup, _, api := hySupervisor(t, hyTestCfg{lane: []string{"u1", "u2"}, custom: []string{"u1"}}.json(t))
+	if err := syncHy(t, sup, api, hyTestCfg{lane: []string{"u1"}, custom: []string{"u1"}}); err != nil {
+		t.Fatal(err)
+	}
+	api.reset()
+	back := hyTestCfg{lane: []string{"u1", "u2"}, custom: []string{"u1"}, authOf: func(e string) string {
+		if e == "u2" {
+			return "new-key"
+		}
+		return "pw-" + e
+	}}
+	if err := syncHy(t, sup, api, back); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := api.calls(), []string{"add u02:new-key to hysteria-in"}; !slices.Equal(got, want) {
+		t.Errorf("api calls %q, want %q", got, want)
+	}
+	// Back with the key they left with, a user takes their own email again.
+	api.reset()
+	if err := syncHy(t, sup, api, hyTestCfg{lane: []string{"u1"}, custom: []string{"u1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := syncHy(t, sup, api, back); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := api.calls(), []string{"remove u02 from hysteria-in", "add u02:new-key to hysteria-in"}; !slices.Equal(got, want) {
+		t.Errorf("api calls %q, want %q", got, want)
+	}
+}
+
+// The alias is for the process alone: an email of anything but "u" and digits has none.
+func TestHysteriaAlias(t *testing.T) {
+	for _, c := range []struct {
+		email string
+		zeros int
+		want  string
+	}{{"u5", 0, "u5"}, {"u5", 1, "u05"}, {"u12", 2, "u0012"}, {"admin", 1, ""}, {"u", 1, ""}} {
+		if got := hysteriaAlias(c.email, c.zeros); got != c.want {
+			t.Errorf("hysteriaAlias(%q, %d) = %q, want %q", c.email, c.zeros, got, c.want)
+		}
 	}
 }
 
@@ -694,8 +776,7 @@ func TestSyncHysteriaKeepsAKeylessUserOut(t *testing.T) {
 		t.Errorf("cli calls %q, want %q", got, want)
 	}
 
-	// A rebuild puts the keyless in with everyone else — it re-adds the inbound as
-	// given — and the change after it takes them off again.
+	// A new key changes nothing for them: the keyless stay off.
 	api.reset()
 	rekeyed := Inbound{Tag: "hysteria-in", Protocol: "hysteria", Settings: HysteriaInboundSettings{Version: 2, Users: []HysteriaClient{
 		{Auth: "new-key", Email: "u1"}, {Auth: "", Email: "u3"},
@@ -703,14 +784,8 @@ func TestSyncHysteriaKeepsAKeylessUserOut(t *testing.T) {
 	if err := sup.SyncHysteria(api.addr, []Inbound{rekeyed}); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := cliCalls(t, dir), []string{"api rmi hysteria-in", "api adi", "api adrules -append", "api rmrules live1-2 live1-1 live1-0 live1-cut-0"}; !slices.Equal(got, want) {
-		t.Errorf("cli calls %q, want %q", got, want)
-	}
-	if err := sup.SyncHysteria(api.addr, []Inbound{rekeyed}); err != nil {
-		t.Fatal(err)
-	}
-	if got, want := api.calls(), []string{"remove u3 from hysteria-in"}; !slices.Equal(got, want) {
-		t.Errorf("after the rebuild: api calls %q, want %q", got, want)
+	if got, want := api.calls(), []string{"remove u1 from hysteria-in", "add u01:new-key to hysteria-in"}; !slices.Equal(got, want) {
+		t.Errorf("api calls %q, want %q", got, want)
 	}
 }
 
@@ -760,5 +835,48 @@ func TestAccessTapSkipsStreamsTheRoutingCutsOff(t *testing.T) {
 	sup.tap(&proc{}, strings.NewReader(lines), io.Discard, true)
 	if len(seen) != 7 {
 		t.Errorf("with nobody cut off, %d of 7 lines counted", len(seen))
+	}
+}
+
+// An alias's counters are its user's: the stats read them under the user's own email.
+func TestFoldStatAddsAnAliasToItsUser(t *testing.T) {
+	out := map[string]Traffic{}
+	foldStat(out, "user>>>u5>>>traffic>>>uplink", 100)
+	foldStat(out, "user>>>u05>>>traffic>>>uplink", 20)
+	foldStat(out, "user>>>u005>>>traffic>>>downlink", 7)
+	foldStat(out, "user>>>u50>>>traffic>>>uplink", 1)
+	if got := out["u5"]; got.Up != 120 || got.Down != 7 {
+		t.Errorf("u5 = %+v, want up 120 down 7", got)
+	}
+	if out["u50"].Up != 1 || len(out) != 2 {
+		t.Errorf("stats %+v", out)
+	}
+}
+
+// Any number of new keys in one process: each takes the next name and cuts the last
+// one off, nobody else's connection is touched, and the inbound is never rebuilt.
+func TestSyncHysteriaManyResets(t *testing.T) {
+	sup, dir, api := hySupervisor(t, hyTestCfg{lane: []string{"u1", "u2"}, custom: []string{"u1"}}.json(t))
+	cliCalls(t, dir)
+	for i := 1; i <= 20; i++ {
+		key := fmt.Sprintf("key-%d", i)
+		api.reset()
+		if err := syncHy(t, sup, api, hyTestCfg{lane: []string{"u1", "u2"}, custom: []string{"u1"}, authOf: func(e string) string {
+			if e == "u2" {
+				return key
+			}
+			return "pw-" + e
+		}}); err != nil {
+			t.Fatal(err)
+		}
+		want := "add u0" + strings.Repeat("0", i-1) + "2:" + key + " to hysteria-in"
+		if got := api.calls(); len(got) != 2 || got[1] != want {
+			t.Fatalf("reset %d: api calls %q, want …%q", i, got, want)
+		}
+	}
+	for _, c := range cliCalls(t, dir) {
+		if strings.HasPrefix(c, "api rmi") {
+			t.Fatal("the inbound was rebuilt")
+		}
 	}
 }

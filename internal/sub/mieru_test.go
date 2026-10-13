@@ -28,7 +28,7 @@ func TestClashMieruByCore(t *testing.T) {
 		"ClashMetaForAndroid/2.11.25.Meta":            true,
 		"ClashMetaForAndroid/2.11.2":                  false,
 		"FlClash/v0.8.99 clash-verge Platform/ios":    true,
-		"FlClash/v0.8.90 clash-verge Platform/ios":    false,
+		"FlClash/v0.8.71 clash-verge Platform/ios":    false,
 		"clash-verge/v2.4.5":                          true,
 		"clash-verge/v2.5.4-rc":                       true,
 		"clash-verge/v2.0.2":                          false, // bundled mihomo 1.18.10

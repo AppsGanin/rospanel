@@ -107,20 +107,13 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		// block it (served the decoy, so a scraper learns nothing). Blocking here, ahead
 		// of admitDevice, means a refused client never takes a device slot. No matching
 		// rule falls through to the User-Agent detection below.
-		format := subFormat(r)
-		if action := model.EvalSubRules(set.SubRules, subRuleInput(r)); action != "" {
-			if action == model.SubActionBlock {
-				rt.currentDecoy().ServeHTTP(w, r)
-				return
-			}
-			format = action
-		} else if format == "v2ray" && r.URL.Query().Get("format") == "" &&
-			set.SubDPI.JSONClients && model.IsXrayCoreClient(r.Header.Get("User-Agent")) {
-			// Xray-core apps get full configs when the operator asked for it: the
-			// only form in which fragment/noise reach them. A rule or an explicit
-			// ?format= above still wins.
-			format = model.SubActionXrayJSON
+		// A rule may also only change protocols ("auto" keeps the detected format).
+		rule, _ := model.MatchSubRule(set.SubRules, subRuleInput(r))
+		if rule != nil && rule.Action == model.SubActionBlock {
+			rt.currentDecoy().ServeHTTP(w, r)
+			return
 		}
+		format, overrides := subResponse(r.URL.Query().Get("format"), r.Header.Get("User-Agent"), rule, set)
 		// Machine payload, format chosen by the client (User-Agent or ?format=).
 		// Device binding is checked here and not on the page: the page is a browser
 		// looking at an account, while this is an install asking for credentials — the
@@ -135,6 +128,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			rt.subUnavailable(w, u.ID, err)
 			return
 		}
+		allServers = overrides.Apply(allServers)
 		supportURL := rt.telegramSupportURL(r.Context(), set, *u)
 		setSubHeaders(w, *u, set, supportURL)
 		rt.setRoutingHeaders(w, r, set)
@@ -143,15 +137,15 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			// Mihomo/Clash ignores the routing header — inject the routing rules
 			// straight into the YAML by merging proxies into the template.
 			ua := r.Header.Get("User-Agent")
-			body := sub.ClashYAMLFor(*u, allServers, ua)
+			body := sub.ClashYAMLRule(*u, allServers, ua, overrides)
 			// The operator's own stored template wins over the fetched one: they wrote
 			// it, and a remote URL that has quietly changed under them is exactly what
 			// storing it is meant to avoid.
 			if tpl := strings.TrimSpace(set.SubTplClash); tpl != "" {
-				body = sub.ClashWithTemplateFor(*u, allServers, tpl, ua)
+				body = sub.ClashWithTemplateRule(*u, allServers, tpl, ua, overrides)
 			} else if set.SubRouting && strings.TrimSpace(set.SubRoutingMihomo) != "" {
 				if tpl, err := rt.mgr.FetchRoutingTemplate(set.SubRoutingMihomo); err == nil {
-					body = sub.ClashWithTemplateFor(*u, allServers, tpl, ua)
+					body = sub.ClashWithTemplateRule(*u, allServers, tpl, ua, overrides)
 				}
 			}
 			w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
@@ -167,21 +161,21 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			// failure now is worth a log line — but never worth a broken profile: the
 			// renderer hands back the generated one and the user keeps working.
 			body, err := sub.SingBoxWithTemplate(*u, allServers, set.SubTplSingBox,
-				sub.SingBoxNaive(r.Header.Get("User-Agent")))
+				overrides.SingBox(sub.SingBoxCapsFor(r.Header.Get("User-Agent"))))
 			if err != nil {
 				slog.Warn("subscription: sing-box template failed, serving the generated profile", "err", err)
 			}
 			_, _ = w.Write([]byte(rt.pluginConfig(r.Context(), *u, plugin.SubSingBox, body)))
 		case model.SubActionXrayJSON, "xray", "json":
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			body, err := sub.XrayJSONWithTemplate(*u, allServers, set.SubDPI, set.SubTplXray)
+			body, err := sub.XrayJSONRule(*u, allServers, set.SubDPI, set.SubTplXray, r.Header.Get("User-Agent"), overrides)
 			if err != nil {
 				slog.Warn("subscription: xray template failed, serving the generated profile", "err", err)
 			}
 			_, _ = w.Write([]byte(rt.pluginConfig(r.Context(), *u, plugin.SubXray, body)))
 		default:
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			links := rt.pluginLinks(r.Context(), *u, sub.ShareLinksFor(*u, allServers, r.Header.Get("User-Agent")))
+			links := rt.pluginLinks(r.Context(), *u, sub.ShareLinksRule(*u, allServers, r.Header.Get("User-Agent"), overrides))
 			var body string
 			if set.SubBase64 {
 				body = sub.Base64Payload(links)
@@ -1072,14 +1066,32 @@ func subRuleInput(r *http.Request) model.SubRuleInput {
 	}
 }
 
-// subFormat picks the subscription format: an explicit ?format= wins, otherwise
-// Clash-family clients (by User-Agent) get YAML; everyone else gets the
-// universal base64 v2ray list.
-func subFormat(r *http.Request) string {
-	if f := strings.ToLower(r.URL.Query().Get("format")); f != "" {
-		return f
+// subResponse is the format and protocol overrides a subscription request is answered
+// with: an explicit ?format= or a rule's format, else the one the User-Agent is detected
+// as — upgraded to full Xray configs for Xray-core apps when the operator asked for it,
+// the only form in which fragment/noise reach them. rule is the matched rule (nil for
+// none), never a blocking one.
+func subResponse(query, userAgent string, rule *model.SubRule, set *model.Settings) (string, sub.Overrides) {
+	format := strings.ToLower(query)
+	if format == "" {
+		format = subFormatFor(userAgent)
 	}
-	ua := strings.ToLower(r.Header.Get("User-Agent"))
+	var overrides sub.Overrides
+	if rule != nil {
+		overrides = rule.Protocols
+		if rule.Action != model.SubActionAuto {
+			return rule.Action, overrides
+		}
+	}
+	if format == "v2ray" && query == "" && set.SubDPI.JSONClients && model.IsXrayCoreClient(userAgent) {
+		format = model.SubActionXrayJSON
+	}
+	return format, overrides
+}
+
+// subFormatFor is the format a User-Agent gets with no ?format= and no rule.
+func subFormatFor(userAgent string) string {
+	ua := strings.ToLower(userAgent)
 	for _, k := range []string{"clash", "mihomo", "stash", "meta"} {
 		if strings.Contains(ua, k) {
 			return "clash"

@@ -882,6 +882,7 @@ func (m *Manager) SaveSubRules(rules []model.SubRule) error {
 			return err
 		}
 		rules[i].Value = strings.TrimSpace(r.Value)
+		rules[i].Normalize()
 	}
 	return m.store.SetSubRules(rules)
 }

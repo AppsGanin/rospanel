@@ -184,6 +184,7 @@ var events = []EventInfo{
 	{Event: model.WebhookUserSubRotated, User: "data", Fields: []Field{
 		maybe(f("sub_url", "text", "subUrl", "https://example.com/sub/abc123")),
 	}},
+	{Event: model.WebhookUserUUIDReset, User: "data"},
 	{Event: model.WebhookUserTelegramLinked, User: "data"},
 	{Event: model.WebhookUserTelegramUnlinked, User: "data"},
 	{Event: model.WebhookUserEnabled, User: "data"},

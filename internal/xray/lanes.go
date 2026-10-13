@@ -15,7 +15,7 @@ const LaneAWG = "awg"
 // laneTags are the built-in inbounds whose traffic is a lane's; custom inbounds count
 // under their own tags (custom-<id>). The API, the system proxies and the panel's
 // egress carry no user's tunnel and are left out.
-var laneTags = map[string]bool{TagVLESS: true, TagReality: true, TagHysteria: true, TagNaive: true, TagMieru: true}
+var laneTags = map[string]bool{TagVLESS: true, TagReality: true, TagHysteria: true, TagNaive: true, TagMieru: true, TagAnyTLS: true}
 
 // IsLaneTag reports whether an inbound tag is a lane the split shows.
 func IsLaneTag(tag string) bool {
@@ -24,7 +24,7 @@ func IsLaneTag(tag string) bool {
 
 // QueryLanesLive reads, and zeroes, the per-inbound counters through the gRPC API: what
 // each lane carried since the previous read. NaiveProxy reaches naive-in through the
-// fallback of the TCP-TLS inbound, which counts those bytes too; they are taken off
+// fallback of the TCP-TLS inbound, and so does AnyTLS, which counts those bytes too; they are taken off
 // VLESS so a tunnel is not counted on two lanes. The web traffic of the decoy and the
 // panel behind :443 stays in VLESS — it is not a lane of its own.
 func (s *Supervisor) QueryLanesLive(apiAddr string) (map[string]Traffic, error) {
@@ -44,7 +44,8 @@ func (s *Supervisor) QueryLanesLive(apiAddr string) (map[string]Traffic, error) 
 	return lanesOf(raw), nil
 }
 
-// lanesOf keeps the lane inbounds and takes NaiveProxy's share off VLESS.
+// lanesOf keeps the lane inbounds and takes the shares of the lanes behind the TCP-TLS
+// fallback — NaiveProxy and AnyTLS — off VLESS.
 func lanesOf(raw map[string]Traffic) map[string]Traffic {
 	out := make(map[string]Traffic, len(raw))
 	for tag, t := range raw {
@@ -52,7 +53,11 @@ func lanesOf(raw map[string]Traffic) map[string]Traffic {
 			out[tag] = t
 		}
 	}
-	if n, ok := out[TagNaive]; ok {
+	for _, behind := range []string{TagNaive, TagAnyTLS} {
+		n, ok := out[behind]
+		if !ok {
+			continue
+		}
 		if v, ok := out[TagVLESS]; ok {
 			v.Up, v.Down = max(v.Up-n.Up, 0), max(v.Down-n.Down, 0)
 			if v.Up == 0 && v.Down == 0 {

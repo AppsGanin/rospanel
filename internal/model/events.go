@@ -43,6 +43,7 @@ const (
 	EventQuotaReset     = "user.quota_reset"    // the automatic period rollover did
 	EventResetPeriod    = "user.reset_period"   // autoreset period changed
 	EventSubRotated     = "user.sub_rotated"    // subscription link reissued
+	EventUUIDReset      = "user.uuid_reset"     // proxy credentials reissued
 	EventUserExpired    = "user.expired"        // system: subscription lapsed
 	EventTermStarted    = "user.term_started"   // system: the first connection started a held term
 	EventUserLimited    = "user.limited"        // system: quota exhausted
@@ -100,6 +101,7 @@ var UserEventCatalog = []string{
 	EventQuotaReset,
 	EventResetPeriod,
 	EventSubRotated,
+	EventUUIDReset,
 	EventUserExpired,
 	EventTermStarted,
 	EventUserLimited,

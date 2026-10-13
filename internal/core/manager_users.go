@@ -17,6 +17,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/actor"
 	"github.com/AppsGanin/rospanel/internal/auth"
+	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sub"
@@ -699,6 +700,47 @@ func (m *Manager) RotateSubToken(ctx context.Context, id int64) (*model.User, er
 		d["sub_url"] = sub.URL(set, u.SubToken)
 	}
 	m.EmitWebhook(model.WebhookUserSubRotated, d)
+	return u, nil
+}
+
+// ResetUserUUID gives a user a new UUID, password and — if they have a tunnel identity —
+// WireGuard key (AmneziaWG, WireGuard, TURN-VK; the tunnel address stays): every lane's
+// key changes, the subscription link does not, so clients pick the new keys up on their next
+// refresh. The old keys stop working on the master and the nodes with the next sync,
+// and connections open on them are cut as for a removed user — theirs alone: Hysteria2
+// puts the user back under an alias of their email (xray placeUsers), mieru closes the
+// connections that carried them (mieru rawConns).
+func (m *Manager) ResetUserUUID(ctx context.Context, id int64) (*model.User, error) {
+	password, err := auth.RandomPassword()
+	if err != nil {
+		return nil, err
+	}
+	cur, err := m.store.GetUser(id)
+	if err != nil {
+		return nil, err
+	}
+	// A user with no tunnel identity yet gets one, new, when a lane first needs it.
+	var wgKey string
+	if cur.WGPrivateKey != "" {
+		if wgKey, _, err = awg.GenerateKey(); err != nil {
+			return nil, err
+		}
+	}
+	if err := m.store.SetUserCredentials(id, uuid.NewString(), password, wgKey); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			logErr("uuid reset failed", "id", id, "err", err)
+		}
+		return nil, err
+	}
+	u, err := m.store.GetUser(id)
+	if err != nil {
+		return nil, err
+	}
+	logInfo("uuid reset", "id", id)
+	m.markRekeyed(id)
+	m.TriggerUserSync()
+	m.audit(ctx, id, model.EventUUIDReset, nil)
+	m.EmitWebhook(model.WebhookUserUUIDReset, m.userEventData(*u))
 	return u, nil
 }
 

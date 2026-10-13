@@ -81,6 +81,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/settings/legal":                 set("legal"),
 	"POST /api/settings/legal/preview":         skip, // renders Markdown, changes nothing
 	"POST /api/settings/sub-rules":             set("subscriptions"),
+	"POST /api/settings/sub-rules/preview":     skip, // reads, writes nothing
 	"POST /api/settings/sub-templates":         set("subscriptions"),
 	"POST /api/settings/sub-dpi":               set("subscriptions"),
 	"POST /api/settings/hwid":                  set("deviceBinding"),
@@ -265,6 +266,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/users/{id}/mailing":         skip,
 	"POST /api/users/{id}/tags":            skip,
 	"POST /api/users/{id}/rotate-sub":      skip,
+	"POST /api/users/{id}/reset-uuid":      skip,
 	"POST /api/users/{id}/telegram/unlink": skip,
 	"POST /api/users/{id}/telegram/link":   skip,
 	// Writing to a customer is worth its own row: unlike the routes above, nothing

@@ -88,6 +88,9 @@ var ru = map[string]string{
 	"sub.pickApp":        "Выберите приложение",
 
 	"sub.currentPlan":      "Текущий тариф",
+	"sub.planChange":       "Сменить тариф",
+	"sub.planPick":         "Выбрать тариф",
+	"sub.plansTitle":       "Тарифы",
 	"sub.pay":              "Оплатить",
 	"sub.renew":            "Продлить",
 	"sub.cancelSub":        "Отменить подписку",

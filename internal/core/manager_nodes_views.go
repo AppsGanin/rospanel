@@ -301,6 +301,8 @@ func (m *Manager) NodeLinkSettings() ([]*model.Settings, error) {
 		// NaiveProxy needs the agent to answer it, and a certificate the client trusts:
 		// the client cannot be told to skip verification.
 		ns.NaiveEnabled = ns.NaiveEnabled && !ns.TLSInsecure && n.ServesNaive
+		// AnyTLS likewise (link.AnyTLSOn wants a trusted certificate too).
+		ns.AnyTLSEnabled = ns.AnyTLSEnabled && !ns.TLSInsecure && n.ServesAnyTLS
 		// mieru needs the agent to answer it, a port, and its listener up (as last said).
 		m.nodeGeoMu.Lock()
 		mieruDown := m.nodeMieruErr[n.ID] != ""

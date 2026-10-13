@@ -569,6 +569,8 @@ export const setResetPeriod = (id: number, period: string) =>
   })
 export const rotateSubToken = (id: number) =>
   api<User>(`api/users/${id}/rotate-sub`, { method: 'POST' })
+export const resetUserUUID = (id: number) =>
+  api<User>(`api/users/${id}/reset-uuid`, { method: 'POST' })
 export const unlinkUserTelegram = (id: number) =>
   api<{ ok: boolean }>(`api/users/${id}/telegram/unlink`, { method: 'POST' })
 export const genUserTelegramLink = (id: number) =>
@@ -1302,13 +1304,52 @@ export const saveSubSettings = (s: SubSettings) =>
   })
 
 // Subscription response rules: evaluated in order before format auto-detection.
+// SubProto is a protocol a response rule can give or hide (model.SubProtoKeys).
+export const SUB_PROTOS = [
+  'vless',
+  'reality',
+  'hysteria2',
+  'naive',
+  'anytls',
+  'mieru',
+  'awg',
+  'custom',
+  'vless_enc',
+] as const
+export type SubProto = (typeof SUB_PROTOS)[number]
+
 export interface SubRule {
   field: 'user_agent' | 'device_os' | 'ver_os' | 'device_model'
   op: 'contains' | 'equals' | 'prefix' | 'regex' | 'not_contains'
   value: string
-  action: 'v2ray' | 'clash' | 'singbox' | 'xray-json' | 'block'
+  // auto keeps the format the client is detected as: a rule that only changes protocols.
+  action: 'auto' | 'v2ray' | 'clash' | 'singbox' | 'xray-json' | 'block'
   enabled: boolean
+  // A protocol not named is decided by the client's User-Agent.
+  protocols?: Partial<Record<SubProto, 'on' | 'off'>>
 }
+
+// SubRulePreview is what a client with given headers is answered with under the rules
+// being edited: the rule that fires (-1 none), the format and the protocols it carries.
+export interface SubRulePreview {
+  rule: number
+  blocked?: boolean
+  format?: string
+  protocols?: Record<SubProto, boolean>
+}
+
+// SubRuleHeaders are the request attributes besides the User-Agent a rule can test.
+export interface SubRuleHeaders {
+  device_os?: string
+  ver_os?: string
+  device_model?: string
+}
+
+export const previewSubRules = (rules: SubRule[], userAgent: string, headers: SubRuleHeaders = {}) =>
+  api<SubRulePreview>('api/settings/sub-rules/preview', {
+    method: 'POST',
+    body: JSON.stringify({ rules, user_agent: userAgent, ...headers }),
+  })
 
 export const getSubRules = () =>
   api<{ rules: SubRule[] }>('api/settings/sub-rules').then((r) => r.rules)
@@ -2926,6 +2967,15 @@ export interface InboundOpts {
   wg_public_key?: string
   wg_local_port?: number
   turn_link?: string
+  // VLESS Encryption: the mode ("" / absent = off) and the clients' half, which goes
+  // into their links. The server's half carries its private key and is never sent.
+  enc_mode?: string
+  encryption?: string
+  // Behind a CDN: the domain clients connect to, and its port (443 when 0/absent).
+  cdn_host?: string
+  cdn_port?: number
+  // Clients check the certificate by fingerprint, so SNI may be any name.
+  pin_cert?: boolean
   // Advanced. header_* / authority / multi_mode are simple mirrored-into-links knobs.
   // The three JSON sections travel as typed forms, not on opts — see the *_form fields
   // on Inbound below (the server nils the raw blobs out of opts).
@@ -3060,6 +3110,12 @@ export interface InboundInput {
   method: string
   // WireGuard's VK call invite link; ignored for the others.
   turn_link: string
+  // VLESS Encryption mode, "" = off; ignored for the others.
+  enc_mode: string
+  // The CDN clients reach the inbound through ("" = none) and its port (0 = 443).
+  cdn_host: string
+  cdn_port: number
+  pin_cert: boolean
   // The three advanced sections as typed forms; the server assembles them into the
   // JSON blob Xray reads and validates that.
   xhttp_extra: XHTTPExtraForm

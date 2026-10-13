@@ -349,6 +349,11 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 			return err
 		}
 	}
+	if on, ok := u.Protocols["anytls"]; ok {
+		if err := m.store.SetNodeAnyTLSEnabled(id, on); err != nil {
+			return err
+		}
+	}
 	if u.Protocols["awg"] || u.RegenAWGKeys {
 		if err := m.ensureNodeAWGIdentity(n, u.RegenAWGKeys); err != nil {
 			return err
@@ -399,6 +404,7 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		MieruPort:          mieruPort,
 		MieruTransport:     mieruTransport,
 		MieruName:          connNames["mieru"],
+		AnyTLSName:         connNames["anytls"],
 	}
 	if err := m.store.SetNodeConnections(id, blob); err != nil {
 		return err

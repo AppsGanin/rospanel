@@ -49,8 +49,9 @@ func Custom(u model.User, in model.Inbound, set *model.Settings) string {
 // customAssemble is assemble() for a custom inbound: same shape, but the label is
 // the inbound's own name rather than a protocol constant.
 func customAssemble(scheme, cred string, u model.User, in model.Inbound, q url.Values, set *model.Settings) string {
+	host, port := in.ClientEndpoint(set.Host)
 	return fmt.Sprintf("%s://%s@%s:%d?%s#%s",
-		scheme, cred, set.Host, in.Port, q.Encode(), url.PathEscape(CustomLabelFor(in, u, set)))
+		scheme, cred, host, port, q.Encode(), url.PathEscape(CustomLabelFor(in, u, set)))
 }
 
 // transportParams writes the transport-specific query parameters (the ones that tell
@@ -107,7 +108,7 @@ func transportParams(q url.Values, in model.Inbound, set *model.Settings) {
 // certificate that isn't being presented.
 func securityParams(q url.Values, in model.Inbound, set *model.Settings) {
 	o := in.Opts
-	switch o.Security {
+	switch o.ClientSecurity() {
 	case model.SecTLS:
 		q.Set("security", "tls")
 		q.Set("sni", linkSNI(in, set))
@@ -115,7 +116,9 @@ func securityParams(q url.Values, in model.Inbound, set *model.Settings) {
 		if alpn := linkALPN(o.Transport); alpn != "" {
 			q.Set("alpn", alpn)
 		}
-		pinSelfSigned(q, set)
+		if !o.ViaCDN() { // a CDN shows its own, publicly trusted certificate
+			pinCert(q, in, set)
+		}
 	case model.SecReality:
 		q.Set("security", "reality")
 		q.Set("sni", o.RealitySNI())
@@ -130,14 +133,31 @@ func securityParams(q url.Values, in model.Inbound, set *model.Settings) {
 	}
 }
 
-// linkSNI is the server name a TLS-secured custom inbound presents: its own override
-// when set, else the server's.
+// pinCert pins the server's certificate in the link: always for an inbound that checks
+// it by fingerprint (PinCert — its SNI may be anyone's name), otherwise only when no CA
+// vouches for it (pinSelfSigned).
+func pinCert(q url.Values, in model.Inbound, set *model.Settings) {
+	if in.Opts.PinCert && set.CertSHA256 != "" {
+		q.Set("pcs", set.CertSHA256)
+		return
+	}
+	pinSelfSigned(q, set)
+}
+
+// linkSNI is the server name a client presents to reach a custom inbound: its own
+// override when set, else the CDN's domain when it sits behind one, else the server's.
 func linkSNI(in model.Inbound, set *model.Settings) string {
 	if in.Opts.SNI != "" {
 		return in.Opts.SNI
 	}
+	if in.Opts.ViaCDN() {
+		return in.Opts.CDNHost
+	}
 	return set.SNI
 }
+
+// LinkSNI is linkSNI for the other client formats (Clash, sing-box).
+func LinkSNI(in model.Inbound, set *model.Settings) string { return linkSNI(in, set) }
 
 // linkALPN mirrors the ALPN the inbound actually offers (see xray.customALPN), so
 // the client's ClientHello matches what the server will accept instead of proposing
@@ -157,7 +177,11 @@ func linkALPN(transport string) string {
 // customVLESS builds a vless:// link for a custom inbound.
 func customVLESS(u model.User, in model.Inbound, set *model.Settings) string {
 	q := url.Values{}
-	q.Set("encryption", "none")
+	enc := in.Opts.Encryption
+	if enc == "" {
+		enc = "none"
+	}
+	q.Set("encryption", enc)
 	securityParams(q, in, set)
 	transportParams(q, in, set)
 	if in.Opts.Flow != "" {
@@ -183,7 +207,10 @@ func customHysteria(u model.User, in model.Inbound, set *model.Settings) string 
 	q.Set("security", "tls")
 	q.Set("sni", linkSNI(in, set))
 	q.Set("alpn", "h3")
-	pinSelfSigned(q, set)
+	pinCert(q, in, set)
+	if in.Opts.PinCert && set.CertSHA256 != "" {
+		q.Set("pinSHA256", set.CertSHA256) // the Hysteria URI's own name for the pin
+	}
 	setObfs(q, in.Opts.Obfs)
 	if fm := fmParam(in.UsesHopping(), model.HopAdvertised(in.Port, in.Opts.HopStart), in.Opts.HopEnd, in.Opts.HopIntervalOr(), in.Opts.Obfs); fm != "" {
 		q.Set("fm", url.QueryEscape(fm))

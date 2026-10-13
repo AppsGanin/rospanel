@@ -2,6 +2,7 @@ package model
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -32,8 +33,10 @@ const (
 	SubOpNotContain = "not_contains"
 )
 
-// Sub-rule actions: a format to force, or "block".
+// Sub-rule actions: a format to force, "auto" to keep the detected one (a rule that only
+// changes protocols), or "block".
 const (
+	SubActionAuto     = "auto"
 	SubActionV2ray    = "v2ray"
 	SubActionClash    = "clash"
 	SubActionSingbox  = "singbox"
@@ -48,6 +51,30 @@ type SubRule struct {
 	Value   string `json:"value"`
 	Action  string `json:"action"`
 	Enabled bool   `json:"enabled"`
+	// Protocols overrides, for the clients the rule matches, which protocols the
+	// subscription carries: a SubProtoKeys key → SubProtoOn (give it even when the
+	// client is not known to read it) or SubProtoOff (leave it out). A protocol not
+	// named is decided by the client's User-Agent, as without a rule.
+	Protocols map[string]string `json:"protocols,omitempty"`
+}
+
+// Protocol override values (SubRule.Protocols).
+const (
+	SubProtoOn  = "on"
+	SubProtoOff = "off"
+)
+
+// Protocol keys a rule can override: the built-in lanes, the custom inbounds as a
+// whole, and VLESS Encryption (custom inbounds that have it).
+const (
+	SubProtoCustom   = "custom"
+	SubProtoVLESSEnc = "vless_enc"
+)
+
+// SubProtoKeys lists the overridable protocols in the order the editor shows them.
+var SubProtoKeys = []string{
+	LaneVLESS, LaneReality, LaneHysteria, LaneNaive, LaneAnyTLS, LaneMieru, LaneAWG,
+	SubProtoCustom, SubProtoVLESSEnc,
 }
 
 var (
@@ -60,7 +87,7 @@ var (
 		SubOpRegex: true, SubOpNotContain: true,
 	}
 	subActions = map[string]bool{
-		SubActionV2ray: true, SubActionClash: true,
+		SubActionAuto: true, SubActionV2ray: true, SubActionClash: true,
 		SubActionSingbox: true, SubActionXrayJSON: true, SubActionBlock: true,
 	}
 )
@@ -86,7 +113,23 @@ func (r SubRule) Valid() error {
 			return fieldErr("err.subRuleRegex", "неверное регулярное выражение: {{value}}", map[string]any{"value": err.Error()})
 		}
 	}
+	for k, v := range r.Protocols {
+		if !slices.Contains(SubProtoKeys, k) {
+			return fieldErr("err.subRuleProto", "неизвестный протокол правила {{value}}", map[string]any{"value": k})
+		}
+		if v != SubProtoOn && v != SubProtoOff {
+			return fieldErr("err.subRuleProto", "неизвестный протокол правила {{value}}", map[string]any{"value": k + "=" + v})
+		}
+	}
 	return nil
+}
+
+// Normalize drops what a rule stores for nothing: protocol overrides on a blocking
+// rule, which answers with the decoy whatever they say.
+func (r *SubRule) Normalize() {
+	if r.Action == SubActionBlock || len(r.Protocols) == 0 {
+		r.Protocols = nil
+	}
 }
 
 // SubRuleInput are the per-request header values a rule set is evaluated against.
@@ -135,10 +178,19 @@ func (r SubRule) matches(in SubRuleInput) bool {
 // EvalSubRules returns the action of the first enabled rule that fires, or "" when
 // none do — the signal to fall through to automatic format detection.
 func EvalSubRules(rules []SubRule, in SubRuleInput) string {
-	for _, r := range rules {
-		if r.Enabled && r.matches(in) {
-			return r.Action
-		}
+	if r, _ := MatchSubRule(rules, in); r != nil {
+		return r.Action
 	}
 	return ""
+}
+
+// MatchSubRule returns the first enabled rule that fires and its position, or nil and
+// -1 when none does.
+func MatchSubRule(rules []SubRule, in SubRuleInput) (*SubRule, int) {
+	for i := range rules {
+		if rules[i].Enabled && rules[i].matches(in) {
+			return &rules[i], i
+		}
+	}
+	return nil, -1
 }

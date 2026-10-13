@@ -23,6 +23,7 @@ const GROUPS: { key: string; events: string[] }[] = [
       "user.enabled",
       "user.disabled",
       "user.sub_rotated",
+      "user.uuid_reset",
       "user.telegram_linked",
       "user.telegram_unlinked",
     ],

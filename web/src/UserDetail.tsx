@@ -16,6 +16,7 @@ import {
   unbindUserDevice,
   resetUserTraffic,
   rotateSubToken,
+  resetUserUUID,
   messageUser,
   unlinkUserTelegram,
   setResetPeriod,
@@ -78,6 +79,7 @@ import {
   IconCopy,
   IconExternal,
   IconKey,
+  IconShield,
   IconPencil,
   IconRestart,
   IconSend,
@@ -639,6 +641,26 @@ export function UserDetail({
               }}
             >
               <IconKey />
+            </IconButton>
+            <IconButton
+              title={t('userDetail.resetUUID')}
+              onClick={async () => {
+                const ok = await confirm({
+                  title: t('userDetail.resetUUIDTitle'),
+                  body: t('userDetail.resetUUIDBody'),
+                  confirmLabel: t('userDetail.resetUUIDConfirm'),
+                  danger: true,
+                })
+                if (!ok) return
+                resetUserUUID(user.id)
+                  .then(() => {
+                    notifySuccess(t('userDetail.uuidReset'))
+                    onChanged()
+                  })
+                  .catch(fail)
+              }}
+            >
+              <IconShield size={16} />
             </IconButton>
             </>
             )}

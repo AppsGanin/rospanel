@@ -102,6 +102,9 @@ func makeUserView(u model.User, set *model.Settings, userBotUsername string, cus
 	if link.NaiveOn(set) && access.AllowsBuiltin(model.LocalNodeID, model.LaneNaive) {
 		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoNaive, &u), link.Naive(u, set)})
 	}
+	if link.AnyTLSOn(set) && access.AllowsBuiltin(model.LocalNodeID, model.LaneAnyTLS) {
+		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoAnyTLS, &u), link.AnyTLS(u, set)})
+	}
 	if link.MieruOn(set) && access.AllowsBuiltin(model.LocalNodeID, model.LaneMieru) {
 		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoMieru, &u), link.Mieru(u, set)})
 	}
@@ -156,6 +159,7 @@ func (rt *Router) applyTLSHints(set *model.Settings) {
 			set.MieruEnabled = false
 		}
 	}
+	set.CertSHA256 = rt.mgr.CertPinSHA256()
 	if rt.mgr.HasValidCert() {
 		return
 	}
@@ -390,6 +394,7 @@ func (rt *Router) panelMux() http.Handler {
 	canSettingsView("POST /api/settings/legal/preview", rt.previewLegal)
 	canSettingsView("GET /api/settings/sub-rules", rt.getSubRules)
 	canSettingsManage("POST /api/settings/sub-rules", rt.saveSubRules)
+	canSettingsView("POST /api/settings/sub-rules/preview", rt.previewSubRules)
 	canSettingsView("GET /api/settings/sub-templates", rt.getSubTemplates)
 	canSettingsManage("POST /api/settings/sub-templates", rt.saveSubTemplates)
 	canSettingsManage("POST /api/settings/sub-dpi", rt.saveSubDPI)
@@ -497,6 +502,7 @@ func (rt *Router) panelMux() http.Handler {
 	canUsersManage("POST /api/users/{id}/devices/unbind", withID(rt.unbindUserDevice))
 	canUsersView("GET /api/users/{id}/abuse", withID(rt.userAbuse))
 	canUsersManage("POST /api/users/{id}/rotate-sub", withID(rt.rotateSubToken))
+	canUsersManage("POST /api/users/{id}/reset-uuid", withID(rt.resetUserUUID))
 	canUsersView("GET /api/users/{id}/happ-link", withID(rt.userHappLink))
 	canUsersManage("POST /api/users/{id}/telegram/unlink", withID(rt.unlinkUserTelegram))
 	canUsersManage("POST /api/users/{id}/telegram/link", withID(rt.genUserTelegramLink))

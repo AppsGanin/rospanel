@@ -7,6 +7,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/abuse"
 	"github.com/AppsGanin/rospanel/internal/decoy"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/sub"
 )
 
 func (rt *Router) setupPassword(w http.ResponseWriter, r *http.Request) {
@@ -371,6 +372,38 @@ func (rt *Router) saveSubRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeOK(w)
+}
+
+// previewSubRules answers the rule editor's "what does this client get": the rule that
+// fires for the request headers given (against the rules being edited, saved or not),
+// the format and which protocols the subscription carries.
+func (rt *Router) previewSubRules(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Rules       []model.SubRule `json:"rules"`
+		UserAgent   string          `json:"user_agent"`
+		DeviceOS    string          `json:"device_os"`
+		VerOS       string          `json:"ver_os"`
+		DeviceModel string          `json:"device_model"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	set, err := rt.mgr.Store().GetSettings()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	rule, idx := model.MatchSubRule(req.Rules, model.SubRuleInput{
+		UserAgent: req.UserAgent, DeviceOS: req.DeviceOS, VerOS: req.VerOS, DeviceModel: req.DeviceModel,
+	})
+	if rule != nil && rule.Action == model.SubActionBlock {
+		writeJSON(w, http.StatusOK, map[string]any{"rule": idx, "blocked": true})
+		return
+	}
+	format, overrides := subResponse("", req.UserAgent, rule, set)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"rule": idx, "format": format, "protocols": sub.Protocols(format, req.UserAgent, overrides),
+	})
 }
 
 // getSubTemplates returns the three profile templates for the editor.

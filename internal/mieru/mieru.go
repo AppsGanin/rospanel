@@ -80,24 +80,27 @@ type Server struct {
 	// known is the last password each name had, kept after the name is gone: a client
 	// that connected with it may still hold that connection open (see Apply).
 	known map[string]string
+	raw   *rawConns // the listener's TCP connections, by the users they carried
 }
 
 // New returns a server that hands its tunnels to the mieru-in inbound at inner: an
 // abstract unix socket ("@name") or a loopback "host:port". It listens nowhere until
 // Apply.
 func New(inner string) *Server {
-	s := &Server{sessions: map[*session]struct{}{}, perUser: map[string]int{}, userSess: map[string]int{}, known: map[string]string{}}
+	s := &Server{sessions: map[*session]struct{}{}, perUser: map[string]int{}, userSess: map[string]int{}, known: map[string]string{},
+		raw: newRawConns()}
 	s.inner.Store(&inner)
 	return s
 }
 
 // Apply makes the lane answer on l for users, and ends the open sessions of anyone no
 // longer among them. A change of port or transport restarts the listener (and with it
-// every session); so does a name coming back with a password it did not have before —
-// even after it was gone a while: mieru checks a client's password once per connection,
-// so a client still connected with the old one would keep opening sessions on it under
-// that name. A change of users alone does not. addr is where mieru-in
-// listens in the same config; "" keeps the address the lane has.
+// every session); a change of users does not. A name with a password it did not have
+// before — a UUID reset, or one coming back after a while gone — has the connections
+// that carried its sessions closed (rawConns): mieru checks a client's password once
+// per connection, so one still connected with the old password would keep opening
+// sessions on it under that name. addr is where mieru-in listens in the same config;
+// "" keeps the address the lane has.
 func (s *Server) Apply(l Listen, addr string, users []User) error {
 	m := make(map[string]cred, len(users))
 	for _, u := range users {
@@ -115,10 +118,10 @@ func (s *Server) Apply(l Listen, addr string, users []User) error {
 	if addr != "" {
 		s.inner.Store(&addr)
 	}
-	rekeyed := false
+	var rekeyed []string
 	for name, c := range m {
 		if was, ok := s.known[name]; ok && was != c.UUID {
-			rekeyed = true
+			rekeyed = append(rekeyed, name)
 		}
 		s.known[name] = c.UUID
 	}
@@ -126,11 +129,11 @@ func (s *Server) Apply(l Listen, addr string, users []User) error {
 	s.want = l
 	var old *protocol.Mux
 	var err error
-	if l != s.listen || (s.mux == nil && l.Port > 0) || (rekeyed && s.mux != nil) {
+	if l != s.listen || (s.mux == nil && l.Port > 0) {
 		old, s.mux, s.listen = s.mux, nil, Listen{}
 		if l.Port > 0 {
 			var mux *protocol.Mux
-			if mux, err = start(l, m); err == nil {
+			if mux, err = start(l, m, s.raw); err == nil {
 				s.mux, s.listen = mux, l
 				go s.acceptLoop(mux)
 			}
@@ -148,6 +151,11 @@ func (s *Server) Apply(l Listen, addr string, users []User) error {
 	if old != nil {
 		_ = old.Close() // its sessions go with it
 	}
+	// After the new passwords are in: a connection made from here on proves the new one.
+	for _, name := range rekeyed {
+		s.raw.rekey(name)
+	}
+	s.raw.forget()
 	// Concurrently: mieru closes a session gracefully, waiting up to a second for what it
 	// has queued, and this runs on the way to applying the panel's config.
 	for _, ss := range gone {
@@ -168,7 +176,7 @@ func (s *Server) Retry() error {
 	if m == nil {
 		return nil
 	}
-	mux, err := start(s.want, *m)
+	mux, err := start(s.want, *m, s.raw)
 	if err != nil {
 		return err
 	}
@@ -211,7 +219,7 @@ func (s *Server) Open() int {
 }
 
 // start opens a multiplexer on l.
-func start(l Listen, users map[string]cred) (*protocol.Mux, error) {
+func start(l Listen, users map[string]cred, raw *rawConns) (*protocol.Mux, error) {
 	transport := appctlpb.TransportProtocol_TCP
 	switch l.Transport {
 	case TCP, "":
@@ -231,7 +239,8 @@ func start(l Listen, users map[string]cred) (*protocol.Mux, error) {
 	}
 	mux := protocol.NewMux(false).
 		SetTrafficPattern(pattern).
-		SetServerUsers(mieruUsers(users))
+		SetServerUsers(mieruUsers(users)).
+		SetStreamListenerFactory(newListenerFactory(raw))
 	mux.SetEndpoints(endpoints)
 	if err := mux.Start(); err != nil {
 		return nil, fmt.Errorf("mieru: listen on %s %d: %w", l.Transport, l.Port, err)

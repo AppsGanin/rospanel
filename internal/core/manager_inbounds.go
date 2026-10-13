@@ -57,6 +57,9 @@ func inboundView(in model.Inbound) InboundView {
 		TLSExtraForm:     model.DisassembleTLSExtra(in.Opts.TLSExtra),
 	}
 	v.Opts.RealityPrivateKey = ""
+	// The VLESS Encryption server string carries the private key; clients get only the
+	// encryption half, in their links.
+	v.Opts.Decryption = ""
 	// The Shadowsocks server key is generated, not edited: the client gets it inside
 	// its share link, and the editor has no field for it, so keep it off the view the
 	// same way the REALITY private key is kept off.
@@ -149,6 +152,9 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 	}
 	if p := xray.InnerPort(xray.MieruInnerAddr); p != 0 {
 		r.HoldTCP(p, "mieru (internal)")
+	}
+	if p := xray.InnerPort(xray.AnyTLSInnerAddr); p != 0 {
+		r.HoldTCP(p, "AnyTLS (internal)")
 	}
 	if set.HopEnd > set.HysteriaPort {
 		// The built-in hop range is a UDP funnel onto the Hysteria port: anything
@@ -264,6 +270,11 @@ func (m *Manager) UpdateInbound(ctx context.Context, in model.Inbound) (*Inbound
 	if in.Protocol == model.InbShadowsocks {
 		in.Opts.ShadowKey = cur.Opts.ShadowKey
 	}
+	// And the VLESS Encryption keys (the server's half is never shown either); a new
+	// mode re-dresses the same keypair in prepareInbound.
+	if in.Protocol == model.InbVLESS && in.Opts.EncMode != "" {
+		in.Opts.Decryption, in.Opts.Encryption = cur.Opts.Decryption, cur.Opts.Encryption
+	}
 	// And the WireGuard identity and loopback port: a new key would strand every
 	// imported config, and a new port would move the relay's target for nothing.
 	if in.Protocol == model.InbTurnVK && cur.Protocol == model.InbTurnVK {
@@ -367,6 +378,9 @@ func (m *Manager) prepareInbound(in *model.Inbound) error {
 		}
 		in.Opts.TurnMaskKey = hex.EncodeToString(key)
 	}
+	if err := prepareVLESSEnc(&in.Opts); err != nil {
+		return err
+	}
 	if !in.NeedsRealityKeys() {
 		return nil
 	}
@@ -381,6 +395,27 @@ func (m *Manager) prepareInbound(in *model.Inbound) error {
 	in.Opts.RealityPrivateKey = priv
 	in.Opts.RealityPublicKey = pub
 	in.Opts.RealityShortID = shortIDs
+	return nil
+}
+
+// prepareVLESSEnc puts the mode the operator picked into the inbound's VLESS Encryption
+// strings: the keypair it already has (a mode change keeps it, so links stay valid but
+// for the mode), or a new one; off clears both. X25519 authentication, as `xray
+// vlessenc` offers it: the key exchange is post-quantum either way, and the ML-KEM
+// alternative makes every link some 1.6 KB longer.
+func prepareVLESSEnc(o *model.InboundOpts) error {
+	if o.EncMode == "" {
+		o.Decryption, o.Encryption = "", ""
+		return nil
+	}
+	priv, pub := model.VLESSEncKey(o.Decryption), model.VLESSEncKey(o.Encryption)
+	if priv == "" || pub == "" {
+		var err error
+		if priv, pub, err = auth.GenerateRealityKeys(); err != nil { // the same X25519 pair
+			return err
+		}
+	}
+	o.Decryption, o.Encryption = model.VLESSEncStrings(o.EncMode, priv, pub)
 	return nil
 }
 

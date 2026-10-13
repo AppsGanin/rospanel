@@ -71,7 +71,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	var subShowConfigs, statusEn, maintenanceMode, probeDetect, watchdogEnabled int
 	var probeBlock int
 	var routingCfg, subRulesJSON, subDPIJSON string
-	var masterHideFull, masterHideOver, awgEn, naiveEn, mieruEn, hideOffline, subHappCrypt, subTGBind, subTGRebind, subShowClash, tgMailingSwitch int
+	var masterHideFull, masterHideOver, awgEn, naiveEn, mieruEn, anytlsEn, hideOffline, subHappCrypt, subTGBind, subTGRebind, subShowClash, tgMailingSwitch int
 	var awgParamsJSON, connPolicyJSON string
 	var walletEn, refFirstOnly, winbackEn, autoUpdateNodes, blacklistEn, planChange int
 	var trafficPacksJSON string
@@ -130,7 +130,8 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       traffic_packs, plan_change, miniapp_path, tg_menu_url, sub_tg_bind, sub_tg_rebind,
 		       sub_page_url, sub_show_clash, legal_path, tg_mailing_switch,
 		       naive_enabled, naive_name,
-		       mieru_enabled, mieru_port, mieru_transport, mieru_name
+		       mieru_enabled, mieru_port, mieru_transport, mieru_name,
+		       anytls_enabled, anytls_name
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -190,6 +191,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&st.SubPageURL, &subShowClash, &st.LegalPath, &tgMailingSwitch,
 		&naiveEn, &st.NaiveName,
 		&mieruEn, &st.MieruPort, &st.MieruTransport, &st.MieruName,
+		&anytlsEn, &st.AnyTLSName,
 	)
 	if err != nil {
 		return nil, err
@@ -217,6 +219,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	st.AWGEnabled = awgEn != 0
 	st.NaiveEnabled = naiveEn != 0
 	st.MieruEnabled = mieruEn != 0
+	st.AnyTLSEnabled = anytlsEn != 0
 	st.MieruTransport = model.MieruTransportOr(st.MieruTransport)
 	st.WalletEnabled = walletEn != 0
 	if billingPeriodsJSON != "" {
@@ -454,6 +457,9 @@ func (s *Store) SetFingerprints(vless, reality string) error {
 	return err
 }
 
+// SetAnyTLSName persists the AnyTLS lane's custom display name.
+func (s *Store) SetAnyTLSName(name string) error { return s.setSetting("anytls_name", name) }
+
 // SetNaiveName persists the NaiveProxy lane's custom display name.
 func (s *Store) SetNaiveName(name string) error { return s.setSetting("naive_name", name) }
 
@@ -654,6 +660,7 @@ var protocolColumn = map[string]string{
 	"awg":       "awg_enabled",
 	"naive":     "naive_enabled",
 	"mieru":     "mieru_enabled",
+	"anytls":    "anytls_enabled",
 }
 
 // SetProtocolEnabled flips a single protocol's on/off toggle.

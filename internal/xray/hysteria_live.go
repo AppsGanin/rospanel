@@ -70,8 +70,14 @@ type hysteriaInbound struct {
 // hysteriaLive is what one running process's QUIC inbounds and routing hold, as the panel
 // has changed them since the process read its config.
 type hysteriaLive struct {
-	users map[string]map[string]string   // inbound tag → email → auth
+	users map[string]map[string]string   // inbound tag → email (as the process has it) → auth
 	cut   map[string]map[string]struct{} // inbound tag → removed users whose streams are blocked
+	// cutAuth is the auth each cut-off email had: one that comes back with another may
+	// not take that name again, or the old key's open connection would carry on.
+	cutAuth map[string]map[string]string
+	// alias is the email a user has in the process where it is not their own (see
+	// placeUsers): inbound tag → config email → process email.
+	alias map[string]map[string]string
 
 	// routable: the process can take cut-off rules — its API serves routing, it has a
 	// block outbound, and every routing rule of its own carries a tag of its own.
@@ -108,7 +114,8 @@ func readHysteriaLive(cfg []byte) (*hysteriaLive, error) {
 	if err := json.Unmarshal(cfg, &doc); err != nil {
 		return nil, fmt.Errorf("read the running config: %w", err)
 	}
-	st := &hysteriaLive{users: map[string]map[string]string{}, cut: map[string]map[string]struct{}{}}
+	st := &hysteriaLive{users: map[string]map[string]string{}, cut: map[string]map[string]struct{}{},
+		cutAuth: map[string]map[string]string{}, alias: map[string]map[string]string{}}
 	for _, in := range doc.Inbounds {
 		if in.Protocol != "hysteria" || in.Tag == "" {
 			continue
@@ -248,38 +255,47 @@ func (s *Supervisor) syncHysteriaLocked(apiAddr string, want []hysteriaInbound) 
 		if keyless > 0 {
 			slog.Warn("xray: hysteria users with an empty auth are kept off the inbound", "tag", in.tag, "users", keyless)
 		}
+		cut := st.cut[in.tag]
+		target, aliases, rebuild := st.placeUsers(in.tag, have, next)
 		var gone, joined []string
-		rekeyed := false
-		for email, auth := range have {
-			switch now, kept := next[email]; {
-			case !kept:
+		for email := range have {
+			if _, kept := target[email]; !kept {
 				gone = append(gone, email)
-			case now != auth:
-				rekeyed = true
 			}
 		}
-		for email := range next {
+		for email := range target {
 			if _, had := have[email]; !had {
 				joined = append(joined, email)
 			}
 		}
-		if len(gone) == 0 && len(joined) == 0 && !rekeyed {
+		if len(gone) == 0 && len(joined) == 0 && !rebuild {
 			continue
 		}
-		cut := st.cut[in.tag]
-		if rekeyed || (len(gone) > 0 && !st.routable) || len(cut)+len(gone) > hysteriaCutMax {
+		if rebuild || (len(gone) > 0 && !st.routable) || len(cut)+len(gone) > hysteriaCutMax {
 			if err := s.replaceInbound(apiAddr, in.tag, in.whole); err != nil {
 				return err
 			}
-			// The rebuilt inbound holds everyone given, keyless users too; the next
-			// change finds those gone and takes them off.
+			// The rebuilt inbound holds everyone given, keyless users too, each under
+			// their own email; the next change finds those gone and takes them off.
 			st.users[in.tag] = all
+			delete(st.alias, in.tag)
+			delete(st.cutAuth, in.tag)
 			if len(cut) > 0 {
 				delete(st.cut, in.tag)
 				cutChanged = true
 			}
 			continue
 		}
+		if len(aliases) > 0 {
+			st.alias[in.tag] = aliases
+		} else {
+			delete(st.alias, in.tag)
+		}
+		goneAuth := make(map[string]string, len(gone))
+		for _, email := range gone {
+			goneAuth[email] = have[email]
+		}
+		next = target
 		slices.Sort(gone)
 		slices.Sort(joined)
 		for _, email := range gone {
@@ -297,6 +313,7 @@ func (s *Supervisor) syncHysteriaLocked(apiAddr string, want []hysteriaInbound) 
 		for _, email := range joined {
 			if _, was := cut[email]; was {
 				delete(cut, email)
+				delete(st.cutAuth[in.tag], email)
 				cutChanged = true
 			}
 		}
@@ -305,19 +322,109 @@ func (s *Supervisor) syncHysteriaLocked(apiAddr string, want []hysteriaInbound) 
 				cut = make(map[string]struct{}, len(gone))
 				st.cut[in.tag] = cut
 			}
+			auths := st.cutAuth[in.tag]
+			if auths == nil {
+				auths = make(map[string]string, len(gone))
+				st.cutAuth[in.tag] = auths
+			}
 			for _, email := range gone {
 				cut[email] = struct{}{}
+				auths[email] = goneAuth[email]
 			}
 			cutChanged = true
 		}
 		if len(cut) == 0 {
 			delete(st.cut, in.tag)
+			delete(st.cutAuth, in.tag)
 		}
 	}
 	if cutChanged && st.routable {
 		return s.replaceRulesLocked(apiAddr, p, st)
 	}
 	return nil
+}
+
+// placeUsers decides the email each user of an inbound has in the process: target is
+// process email → auth, aliases the config emails that are not their own.
+//
+// A user whose auth changed (a UUID reset) cannot keep their email: removing it would
+// leave their old connection open — a Hysteria2 client proves who it is once per
+// connection — and the routing rule that ends such a connection names the email, so it
+// would end the new one too. They are put back under another email that reads as the
+// same user — "u05" for "u5", which model.UserIDOfEmail and the stats read as user 5 —
+// and the old one is cut off like a removed user's, without touching anyone else's
+// connection. An email cut off with another auth is never taken again, for the same
+// reason. Each new key so adds one name to the cut-off list, which hysteriaCutMax bounds
+// as it does the removed users'. rebuild says this could not be done here (no cut-off
+// rules in this process): the caller rebuilds the inbound instead.
+func (st *hysteriaLive) placeUsers(tag string, have, next map[string]string) (target, aliases map[string]string, rebuild bool) {
+	target = make(map[string]string, len(next))
+	aliases = make(map[string]string)
+	old := st.alias[tag]
+	cut, cutAuth := st.cut[tag], st.cutAuth[tag]
+	free := func(email, auth string) bool {
+		if _, taken := target[email]; taken {
+			return false
+		}
+		if cur, held := have[email]; held && cur != auth {
+			return false
+		}
+		if _, was := cut[email]; was && cutAuth[email] != auth {
+			return false
+		}
+		return true
+	}
+	// The ones staying as they are first, so a newcomer never takes their name.
+	var moving []string
+	for email, auth := range next {
+		live := email
+		if a, ok := old[email]; ok {
+			live = a
+		}
+		if cur, held := have[live]; held && cur == auth {
+			target[live] = auth
+			if live != email {
+				aliases[email] = live
+			}
+			continue
+		}
+		moving = append(moving, email)
+	}
+	slices.Sort(moving)
+	for _, email := range moving {
+		auth := next[email]
+		// Every name taken is held by a user or the cut-off list, so one past their
+		// count is free.
+		live, ok := "", false
+		for zeros := 0; zeros <= len(have)+len(cut)+len(target)+1 && !ok; zeros++ {
+			live = hysteriaAlias(email, zeros)
+			ok = live != "" && free(live, auth)
+		}
+		if !ok {
+			return nil, nil, true // not "u" and digits: no alias to give
+		}
+		if live != email && !st.routable {
+			return nil, nil, true // the old email could not be cut off
+		}
+		target[live] = auth
+		if live != email {
+			aliases[email] = live
+		}
+	}
+	return target, aliases, false
+}
+
+// hysteriaAlias is email with zeros put before its number ("u5", 1 → "u05"), the same
+// user to everything that reads an email back as a user id; "" for an email that is not
+// "u" and digits.
+func hysteriaAlias(email string, zeros int) string {
+	if zeros == 0 {
+		return email
+	}
+	if len(email) < 2 || email[0] != 'u' || strings.TrimLeft(email[1:], "0123456789") != "" {
+		return ""
+	}
+	return "u" + strings.Repeat("0", zeros) + email[1:]
 }
 
 // replaceRulesLocked puts the cut-off rules for st.cut in front of process p's own rules:

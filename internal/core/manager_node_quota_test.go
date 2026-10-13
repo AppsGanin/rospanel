@@ -48,7 +48,7 @@ func TestNodeSyncEnforcesACrossedQuotaAtOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.setApplied(working)
+	m.setApplied(working, 0)
 
 	if _, err := m.IngestNodeSync(n, nodeapi.SyncRequest{
 		ReportID:     1,

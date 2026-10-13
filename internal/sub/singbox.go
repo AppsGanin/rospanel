@@ -90,7 +90,7 @@ func singboxProxies(u model.User, srv Server) (proxies []any, tags []string) {
 // — most notably it has no XHTTP at all). Dropped rather than approximated, for the
 // same reason as the Clash side.
 func singboxCustom(u model.User, in model.Inbound, set *model.Settings) (map[string]any, string, bool) {
-	if !model.SupportsSingBox(in.Protocol, in.Opts.Transport) {
+	if !in.SingBoxCarries() {
 		return nil, "", false
 	}
 	o := in.Opts
@@ -124,8 +124,9 @@ func singboxCustom(u model.User, in model.Inbound, set *model.Settings) (map[str
 		}, tag, true
 	}
 
+	host, port := in.ClientEndpoint(set.Host)
 	out := map[string]any{
-		"type": in.Protocol, "tag": tag, "server": set.Host, "server_port": in.Port,
+		"type": in.Protocol, "tag": tag, "server": host, "server_port": port,
 	}
 	if in.Protocol == model.InbVLESS {
 		out["uuid"] = u.UUID
@@ -136,10 +137,11 @@ func singboxCustom(u model.User, in model.Inbound, set *model.Settings) (map[str
 		out["password"] = u.Password
 	}
 
-	switch o.Security {
+	switch o.ClientSecurity() {
 	case model.SecTLS:
 		tls := map[string]any{
-			"enabled": true, "server_name": clashSNI(in, set), "insecure": set.TLSInsecure,
+			// A CDN's certificate is publicly trusted, whatever the server's own is.
+			"enabled": true, "server_name": clashSNI(in, set), "insecure": set.TLSInsecure && !o.ViaCDN(),
 			"utls": map[string]any{"enabled": true, "fingerprint": o.FPOr()},
 		}
 		if o.Transport == model.TrGRPC {
@@ -175,21 +177,25 @@ func singboxCustom(u model.User, in model.Inbound, set *model.Settings) (map[str
 // groups. servers[0] is the local server, used for the group title + DNS bootstrap
 // anchor.
 func SingBoxJSONMulti(u model.User, servers []Server) string {
-	return singboxJSON(u, servers, false)
+	return singboxJSON(u, servers, SingBoxCaps{})
 }
 
 // singboxJSON is SingBoxJSONMulti with the NaiveProxy outbounds when the client can load
 // them (SingBoxNaive).
-func singboxJSON(u model.User, servers []Server, naive bool) string {
+func singboxJSON(u model.User, servers []Server, caps SingBoxCaps) string {
 	if len(servers) == 0 {
 		return "{}"
 	}
 	local := servers[0].Set
 
 	proxies, tags := singboxProxiesAll(u, servers)
-	if naive {
+	if caps.Naive {
 		naiveOut, naiveTags := singboxNaiveAll(u, servers, tags)
 		proxies, tags = append(proxies, naiveOut...), append(tags, naiveTags...)
+	}
+	if caps.AnyTLS {
+		atOut, atTags := singboxAnyTLSAll(u, servers, tags)
+		proxies, tags = append(proxies, atOut...), append(tags, atTags...)
 	}
 
 	group := SubTitle(u, local)
@@ -300,30 +306,34 @@ func singboxJSON(u model.User, servers []Server, naive bool) string {
 // parse a profile drops all of it, so serving the plain one is always better than
 // serving a broken document.
 //
-// naive adds the NaiveProxy outbounds (see SingBoxNaive).
-func SingBoxWithTemplate(u model.User, servers []Server, template string, naive bool) (string, error) {
+// caps adds the outbounds of the lanes not every sing-box has (see SingBoxCapsFor).
+func SingBoxWithTemplate(u model.User, servers []Server, template string, caps SingBoxCaps) (string, error) {
 	if strings.TrimSpace(template) == "" {
-		return singboxJSON(u, servers, naive), nil
+		return singboxJSON(u, servers, caps), nil
 	}
 	if len(servers) == 0 {
-		return singboxJSON(u, servers, naive), nil
+		return singboxJSON(u, servers, caps), nil
 	}
 	// A template saved before sing-box removed a field it uses parses fine and renders
 	// fine, and every client refuses it. Refused at save now, but one already stored
 	// still has to be caught here — the generated profile works on every current client.
 	if err := singboxLegacyErr(template); err != nil {
-		return singboxJSON(u, servers, naive), err
+		return singboxJSON(u, servers, caps), err
 	}
 	proxies, tags := singboxProxiesAll(u, servers)
-	if naive && naiveResolvable(template) {
+	if caps.Naive && naiveResolvable(template) {
 		naiveOut, naiveTags := singboxNaiveAll(u, servers, tags)
 		proxies, tags = append(proxies, naiveOut...), append(tags, naiveTags...)
+	}
+	if caps.AnyTLS {
+		atOut, atTags := singboxAnyTLSAll(u, servers, tags)
+		proxies, tags = append(proxies, atOut...), append(tags, atTags...)
 	}
 	// Nothing allowed: the generated profile has a direct-only answer for this, which
 	// is valid and honest. A template spliced with an empty proxy list would leave a
 	// selector pointing at nothing, which sing-box refuses outright.
 	if len(tags) == 0 {
-		return singboxJSON(u, servers, naive), nil
+		return singboxJSON(u, servers, caps), nil
 	}
 	tagList := make([]any, len(tags))
 	for i, t := range tags {
@@ -334,7 +344,7 @@ func SingBoxWithTemplate(u model.User, servers []Server, template string, naive 
 		map[string][]any{TplProxies: proxies, TplTags: tagList},
 	)
 	if err != nil {
-		return singboxJSON(u, servers, naive), err
+		return singboxJSON(u, servers, caps), err
 	}
 	return out, nil
 }
@@ -480,4 +490,63 @@ func singboxVLESS(tag, uuid string, set *model.Settings) map[string]any {
 	// offering the same aligns the ClientHello with a real browser to that cert.
 	vless["tls"].(map[string]any)["alpn"] = []string{"h2", "http/1.1"}
 	return vless
+}
+
+// SingBoxCaps are the lanes a sing-box client is known to load beyond the ones every
+// sing-box has: a profile carries a lane only for a client that will not refuse it.
+type SingBoxCaps struct {
+	Naive  bool // NaiveProxy (SingBoxNaive)
+	AnyTLS bool // AnyTLS (SingBoxAnyTLS)
+}
+
+// SingBoxCapsFor is what the client that asked can load.
+func SingBoxCapsFor(userAgent string) SingBoxCaps {
+	return SingBoxCaps{Naive: SingBoxNaive(userAgent), AnyTLS: SingBoxAnyTLS(userAgent)}
+}
+
+// SingBoxAnyTLS reports whether a sing-box client has the anytls outbound: the official
+// apps from sing-box 1.12, husi from 0.10.9.
+func SingBoxAnyTLS(userAgent string) bool {
+	if m := husiUA.FindStringSubmatch(userAgent); m != nil {
+		return versionAtLeast(m[1:], 0, 10, 9)
+	}
+	m := singboxAppUA.FindStringSubmatch(userAgent)
+	if m == nil {
+		return false
+	}
+	major, _ := strconv.Atoi(m[1])
+	minor, _ := strconv.Atoi(m[2])
+	return major > 1 || major == 1 && minor >= 12
+}
+
+// singboxAnyTLSAll builds every server's AnyTLS outbound, tagged apart from taken.
+func singboxAnyTLSAll(u model.User, servers []Server, taken []string) ([]any, []string) {
+	used := make(map[string]bool, len(taken))
+	for _, t := range taken {
+		used[t] = true
+	}
+	seen := map[string]int{}
+	var proxies []any
+	var tags []string
+	for _, srv := range servers {
+		set := srv.Set
+		if !link.AnyTLSOn(set) || !srv.allowsBuiltin(model.LaneAnyTLS) {
+			continue
+		}
+		tag := uniqueLabel(seen, link.LabelFor(model.ProtoAnyTLS, u, set))
+		for used[tag] {
+			tag = uniqueLabel(seen, link.LabelFor(model.ProtoAnyTLS, u, set))
+		}
+		used[tag] = true
+		proxies = append(proxies, map[string]any{
+			"type": "anytls", "tag": tag, "server": set.Host, "server_port": set.VLESSPort,
+			"password": u.UUID,
+			"tls": map[string]any{
+				"enabled": true, "server_name": set.SNI,
+				"utls": map[string]any{"enabled": true, "fingerprint": set.VLESSFP()},
+			},
+		})
+		tags = append(tags, tag)
+	}
+	return proxies, tags
 }

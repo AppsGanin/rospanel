@@ -40,6 +40,7 @@ const ACTION_COLORS: Record<string, Color> = {
   "user.quota_reset": "gray",
   "user.reset_period": "gray",
   "user.sub_rotated": "brand",
+  "user.uuid_reset": "brand",
   "user.expired": "orange",
   "user.term_started": "green",
   "user.limited": "orange",
