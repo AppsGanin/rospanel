@@ -6,4 +6,5 @@ package xray
 const (
 	VLESSInnerAddr = "@rospanel-vless"
 	NaiveInnerAddr = "@rospanel-naive"
+	MieruInnerAddr = "@rospanel-mieru"
 )

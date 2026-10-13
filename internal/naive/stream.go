@@ -2,18 +2,16 @@ package naive
 
 import (
 	"context"
-	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"net/netip"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
+
+	"github.com/AppsGanin/rospanel/internal/vlessin"
 )
 
 // dialTimeout bounds the loopback dial to naive-in; Xray answers at once or not at all.
@@ -26,12 +24,6 @@ var bufPool = sync.Pool{New: func() any {
 	b := make([]byte, 3+bufSize+maxPadding)
 	return &b
 }}
-
-// VLESS request commands.
-const (
-	vlessTCP = 1
-	vlessUDP = 2
-)
 
 // stream is one open tunnel, tracked so SetUsers can end it. A TCP tunnel holds one
 // connection to Xray, a UDP one (see uot.go) one per destination.
@@ -242,7 +234,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, u cred) {
 
 // serveTCP joins the stream to one VLESS TCP connection to host:port.
 func (s *Server) serveTCP(r *http.Request, st *stream, body io.Reader, cw *clientWriter, u cred, host string, port uint16) {
-	conn, err := s.dialXray(r, st, u, vlessTCP, host, port)
+	conn, err := s.dialXray(r, st, u, vlessin.CmdTCP, host, port)
 	if err != nil {
 		return
 	}
@@ -289,7 +281,7 @@ func (s *Server) dialXray(r *http.Request, st *stream, u cred, cmd byte, host st
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), dialTimeout)
 	inner := *s.inner.Load()
-	raw, err := (&net.Dialer{}).DialContext(ctx, innerNetwork(inner), inner)
+	raw, err := (&net.Dialer{}).DialContext(ctx, vlessin.Network(inner), inner)
 	cancel()
 	if err != nil {
 		s.release(u.Email)
@@ -299,8 +291,8 @@ func (s *Server) dialXray(r *http.Request, st *stream, u cred, cmd byte, host st
 	if !st.attach(conn) {
 		return nil, net.ErrClosed
 	}
-	req := proxyHeader(r.RemoteAddr)
-	req = appendVLESSRequest(req, u.id, cmd, host, port)
+	req := vlessin.ProxyHeader(r.RemoteAddr)
+	req = vlessin.AppendRequest(req, u.id, cmd, host, port)
 	if _, err := conn.Write(req); err != nil {
 		st.detach(conn)
 		_ = conn.Close()
@@ -380,7 +372,7 @@ func (s *Server) release(email string) {
 
 // download copies Xray's side to the client.
 func download(cw io.Writer, conn net.Conn) {
-	if !readVLESSResponse(conn) {
+	if !vlessin.ReadResponse(conn) {
 		return
 	}
 	bp := bufPool.Get().(*[]byte)
@@ -430,65 +422,4 @@ func splitTarget(authority string) (string, uint16, uotVersion, error) {
 		return "", 0, uotNone, fmt.Errorf("bad host %q", host)
 	}
 	return host, uint16(port), uotNone, nil
-}
-
-// parseUUID turns the textual UUID into the 16 bytes VLESS sends.
-func parseUUID(s string) ([16]byte, bool) {
-	var id [16]byte
-	h := strings.ReplaceAll(s, "-", "")
-	if len(h) != 32 {
-		return id, false
-	}
-	if _, err := hex.Decode(id[:], []byte(h)); err != nil {
-		return id, false
-	}
-	return id, true
-}
-
-// appendVLESSRequest appends a VLESS request header to host:port: version 0, the user's
-// id, no addons (naive-in's clients carry no flow), the command.
-func appendVLESSRequest(b []byte, id [16]byte, cmd byte, host string, port uint16) []byte {
-	b = append(b, 0)
-	b = append(b, id[:]...)
-	b = append(b, 0, cmd)
-	b = binary.BigEndian.AppendUint16(b, port)
-	if ip, err := netip.ParseAddr(host); err == nil {
-		if ip.Is4() || ip.Is4In6() {
-			a := ip.Unmap().As4()
-			return append(append(b, 1), a[:]...)
-		}
-		a := ip.As16()
-		return append(append(b, 3), a[:]...)
-	}
-	b = append(b, 2, byte(len(host)))
-	return append(b, host...)
-}
-
-// readVLESSResponse consumes the VLESS response header: version, addons length, addons.
-func readVLESSResponse(r io.Reader) bool {
-	var hdr [2]byte
-	if _, err := io.ReadFull(r, hdr[:]); err != nil || hdr[0] != 0 {
-		return false
-	}
-	if hdr[1] > 0 {
-		if _, err := io.CopyN(io.Discard, r, int64(hdr[1])); err != nil {
-			return false
-		}
-	}
-	return true
-}
-
-// proxyHeader is a PROXY v1 line naming the client, so naive-in logs — and the access
-// log's consumers act on — the address the tunnel really came from. The destination is
-// a placeholder of the same family: Xray reads only the source.
-func proxyHeader(remote string) []byte {
-	ap, err := netip.ParseAddrPort(remote)
-	if err != nil {
-		return []byte("PROXY UNKNOWN\r\n") // no address to name; Xray keeps the socket's
-	}
-	ip := ap.Addr().Unmap().WithZone("") // a zone is no part of the PROXY grammar
-	if ip.Is4() {
-		return fmt.Appendf(nil, "PROXY TCP4 %s 127.0.0.1 %d 443\r\n", ip, ap.Port())
-	}
-	return fmt.Appendf(nil, "PROXY TCP6 %s ::1 %d 443\r\n", ip, ap.Port())
 }

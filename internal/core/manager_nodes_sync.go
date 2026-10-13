@@ -112,6 +112,10 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 	if req.AWGRunning || req.AWGError != "" {
 		m.nodeAWG[n.ID] = nodeAWGState{Running: req.AWGRunning, Err: req.AWGError, Reported: true}
 	}
+	if m.nodeMieruErr == nil {
+		m.nodeMieruErr = map[int64]string{}
+	}
+	m.nodeMieruErr[n.ID] = req.MieruError
 	// Always refreshed (a healthy node reports 0), so the "limping" badge clears the
 	// moment the transport recovers rather than sticking on a stale count.
 	m.nodeSyncFails[n.ID] = req.SyncFails
@@ -134,6 +138,7 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		CertExpiresAt:  req.CertExpiresAt,
 		ConfigHash:     req.ConfigHash,
 		ServesNaive:    req.Naive,
+		ServesMieru:    req.Mieru,
 	})
 
 	// Everything below names users, and a node is believed only about its own (see

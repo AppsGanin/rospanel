@@ -17,10 +17,23 @@ func TestClashAWGClients(t *testing.T) {
 		"clash.meta/v1.18.10": false,
 		"FlClash/v0.8.99 clash-verge Platform/android":              true,
 		"FlClash/v0.8.98 clash-verge Platform/android":              false,
-		"clash-verge/v2.4.2":                                        false, // its core version is not in the UA
+		"clash-verge/v2.4.2":                                        false, // bundles a core before 1.19.30
 		"ClashMetaForAndroid/2.11.13.Meta":                          false,
 		"HiddifyNext/4.1.1 (android) like ClashMeta v2ray sing-box": false,
 		"NekoBox/Android/1.4.2 (Prefer ClashMeta Format)":           false,
+		"ClashMeta/1.19.32; mihomo/1.19.32":                         true, // ClashMi
+		"ClashMeta/1.19.29; mihomo/1.19.29":                         false,
+		"ClashMeta/2.10.1.Meta-Alpha":                               false,
+		"ClashMetaForAndroid/2.11.33.Meta":                          true,
+		"ClashMetaForAndroid/2.11.32.Meta":                          false,
+		"clash-verge/v2.5.4-rc":                                     true,
+		"clash-verge/v2.5.2":                                        false, // core 1.19.29
+		"mihomo.party/v2.0.3 (clash.meta)":                          true,
+		"mihomo.party/v2.0.2 (clash.meta)":                          false,
+		"koala-clash/1.4.0":                                         true,
+		"koala-clash/1.3.1":                                         false,
+		"FlClash X/v0.4.1 core/v1.19.28 Platform/ios":               false,
+		"FlClash X/v0.5.0 core/v1.19.31 Platform/ios":               true,
 		"": false,
 	} {
 		if got := ClashAWG(ua); got != want {

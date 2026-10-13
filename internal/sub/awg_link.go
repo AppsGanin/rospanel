@@ -77,3 +77,79 @@ func AWGClientConf(u model.User, s *model.Settings) string {
 		Endpoint:        net.JoinHostPort(s.Host, strconv.Itoa(s.AWGPort)),
 	}.Render()
 }
+
+// AWGThroneLink is a user's tunnel on one server in the link form Throne imports (its
+// wireguard.cpp ParseFromLink, from 1.3.0, which reads the whole 3.1 set):
+// wg://host:port?private_key=…&local_address=…&public_key=…&enable_amnezia=true&jc=…#label.
+// The keys are base64 and written as they are — Qt reads "+", "/" and a value's "="
+// literally. I1/I2 are left out: the imitation packets are the client's own, the server
+// does not check them, and their "<…>" chains are not something to trust a URL decoder
+// with. "" when the user has no tunnel identity yet or the parameters are unreadable.
+func AWGThroneLink(u model.User, s *model.Settings) string {
+	if s.Host != "" && !model.ValidServerHost(s.Host) {
+		return ""
+	}
+	p, err := awg.FromModel(s.AWGParams)
+	if err != nil || p.IsZero() {
+		return ""
+	}
+	addr, ok := awg.ClientAddr(u.AWGSlot)
+	if !ok || u.WGPrivateKey == "" {
+		return ""
+	}
+	q := []string{
+		"private_key=" + u.WGPrivateKey,
+		"local_address=" + addr.String() + "/32",
+		"public_key=" + s.AWGPublicKey,
+		"persistent_keepalive_interval=" + strconv.Itoa(awg.Keepalive),
+		"enable_amnezia=true",
+		"jc=" + strconv.Itoa(p.Jc), "jmin=" + strconv.Itoa(p.Jmin), "jmax=" + strconv.Itoa(p.Jmax),
+		"s1=" + strconv.Itoa(p.S1), "s2=" + strconv.Itoa(p.S2),
+	}
+	if p.S3 > 0 {
+		q = append(q, "s3="+strconv.Itoa(p.S3))
+	}
+	if p.S4 > 0 {
+		q = append(q, "s4="+strconv.Itoa(p.S4))
+	}
+	q = append(q, "h1="+p.H1.String(), "h2="+p.H2.String(), "h3="+p.H3.String(), "h4="+p.H4.String())
+	if p.HeaderKey != "" {
+		q = append(q, "header_protection_key="+p.HeaderKey)
+	}
+	if !p.Padding.IsZero() {
+		q = append(q, "content_padding_addition="+p.Padding.String())
+	}
+	if p.Trailers {
+		q = append(q, "random_trailers=true")
+	}
+	for _, t := range []struct {
+		key string
+		val awg.Range
+	}{
+		{"rekey_after_time", p.RekeyAfter},
+		{"rekey_timeout", p.RekeyTimeout},
+		{"reject_after_time", p.RejectAfter},
+		{"keepalive_timeout", p.Keepalive},
+		{"max_handshake_attempts", p.Handshakes},
+	} {
+		if !t.val.IsZero() {
+			q = append(q, t.key+"="+t.val.String())
+		}
+	}
+	return "wg://" + net.JoinHostPort(s.Host, strconv.Itoa(s.AWGPort)) + "?" + strings.Join(q, "&") + "#" +
+		url.PathEscape(link.LabelFor(model.ProtoAWG, u, s))
+}
+
+// awgLinkFor is the AmneziaWG link form a subscription client imports, or nil: INCY
+// (AWGLinkFor) its amneziawg://, Throne from 1.3.0 (random trailers among the rest) its
+// wg://. The others with an AmneziaWG of their own speak 1.5 or 2.0 — Hiddify, Karing,
+// NyameBox, v2RayTun — and cannot finish a handshake with a 3.1 server.
+func awgLinkFor(userAgent string) func(model.User, *model.Settings) string {
+	if AWGLinkFor(userAgent) {
+		return AWGIncyLink
+	}
+	if m := throneUA.FindStringSubmatch(userAgent); m != nil && versionAtLeast(m[1:], 1, 3, 0) {
+		return AWGThroneLink
+	}
+	return nil
+}

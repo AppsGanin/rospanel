@@ -87,8 +87,12 @@ type SyncRequest struct {
 	XrayVersion string `json:"xray_version"`
 	// Naive ⇒ this agent answers NaiveProxy tunnels behind its decoy (internal/naive).
 	// An older agent does not, and the panel hands out no NaiveProxy link for it.
-	Naive       bool `json:"naive,omitempty"`
-	XrayRunning bool `json:"xray_running"`
+	Naive bool `json:"naive,omitempty"`
+	// Mieru ⇒ this agent answers mieru on the port the panel gives it (MieruState),
+	// and MieruError is why its listener is not up, when it is not.
+	Mieru       bool   `json:"mieru,omitempty"`
+	MieruError  string `json:"mieru_error,omitempty"`
+	XrayRunning bool   `json:"xray_running"`
 	// Revoked ⇒ this node already knows the panel switched it off and has stopped
 	// serving. It changes how the panel answers: a node that has yet to hear the bad
 	// news is told at once, but one that already knows has its request HELD like any
@@ -483,6 +487,16 @@ type NodeMeta struct {
 	// obfuscation parameters and every peer allowed on it. nil ⇒ the lane is off
 	// on this node and any running tunnel comes down. See internal/awg.
 	AWG *AWGState `json:"awg,omitempty"`
+
+	// Mieru is where the node's mieru lane listens; nil ⇒ the lane is off on this node.
+	// Its users are mieru-in's clients in the Xray config. See internal/mieru.
+	Mieru *MieruState `json:"mieru,omitempty"`
+}
+
+// MieruState is one server's mieru listener.
+type MieruState struct {
+	Port      int    `json:"port"`
+	Transport string `json:"transport"`
 }
 
 // AWGState is one server's tunnel: what the node feeds to awg.Device.Apply.

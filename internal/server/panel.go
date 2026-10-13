@@ -102,6 +102,9 @@ func makeUserView(u model.User, set *model.Settings, userBotUsername string, cus
 	if link.NaiveOn(set) && access.AllowsBuiltin(model.LocalNodeID, model.LaneNaive) {
 		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoNaive, &u), link.Naive(u, set)})
 	}
+	if link.MieruOn(set) && access.AllowsBuiltin(model.LocalNodeID, model.LaneMieru) {
+		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoMieru, &u), link.Mieru(u, set)})
+	}
 	for _, in := range custom {
 		if !access.AllowsInbound(in.ID) {
 			continue
@@ -140,11 +143,19 @@ func (rt *Router) userViewFor(u model.User, set *model.Settings, bot string) use
 	return v
 }
 
-// applyTLSHints fills the per-request TLS fields used by link/sub generation. When
-// the active cert isn't CA-trusted (a self-signed fallback), it flags TLSInsecure
-// and attaches the cert pin so Xray links can pin it (pinnedPeerCertSha256); a
-// trusted CA cert leaves verification on.
+// applyTLSHints fills in what link/sub generation needs and the stored settings cannot
+// say. When the active cert isn't CA-trusted (a self-signed fallback), it flags
+// TLSInsecure and attaches the cert pin so Xray links can pin it (pinnedPeerCertSha256);
+// a trusted CA cert leaves verification on. It also drops mieru while this process's
+// listener for it is not up.
 func (rt *Router) applyTLSHints(set *model.Settings) {
+	// mieru's listener is this process's own; while it is not up (its port taken, say)
+	// a link to it would be a dead entry in every client.
+	if set.MieruEnabled {
+		if up, _ := rt.mgr.MieruStatus(); !up {
+			set.MieruEnabled = false
+		}
+	}
 	if rt.mgr.HasValidCert() {
 		return
 	}

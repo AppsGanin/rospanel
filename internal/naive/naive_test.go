@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/proxyproto"
+	"github.com/AppsGanin/rospanel/internal/vlessin"
 )
 
 const (
@@ -114,29 +115,6 @@ func TestPaddingNegotiation(t *testing.T) {
 	}
 }
 
-func TestVLESSRequest(t *testing.T) {
-	id, ok := parseUUID(testUUID)
-	if !ok {
-		t.Fatal("uuid")
-	}
-	head := append([]byte{0}, id[:]...)
-	head = append(head, 0, 1, 0x01, 0xbb)
-	for host, tail := range map[string][]byte{
-		"1.2.3.4":        {1, 1, 2, 3, 4},
-		"::ffff:1.2.3.4": {1, 1, 2, 3, 4},
-		"2001:db8::1":    append([]byte{3}, net.ParseIP("2001:db8::1").To16()...),
-		"example.com":    append([]byte{2, 11}, "example.com"...),
-	} {
-		got := appendVLESSRequest(nil, id, vlessTCP, host, 443)
-		if want := append(append([]byte(nil), head...), tail...); !bytes.Equal(got, want) {
-			t.Errorf("%s: % x, want % x", host, got, want)
-		}
-	}
-	if _, ok := parseUUID("not-a-uuid"); ok {
-		t.Error("parsed a malformed uuid")
-	}
-}
-
 // fakeXray stands in for naive-in: it reads the PROXY line and the VLESS request, checks
 // the user and answers as an echo server for the requested target.
 type fakeXray struct {
@@ -180,8 +158,8 @@ func (f *fakeXray) serve(c net.Conn) {
 	if _, err := io.ReadFull(br, hdr); err != nil {
 		return
 	}
-	id, _ := parseUUID(testUUID)
-	if hdr[0] != 0 || !bytes.Equal(hdr[1:17], id[:]) || (hdr[18] != vlessTCP && hdr[18] != vlessUDP) {
+	id, _ := vlessin.ParseUUID(testUUID)
+	if hdr[0] != 0 || !bytes.Equal(hdr[1:17], id[:]) || (hdr[18] != vlessin.CmdTCP && hdr[18] != vlessin.CmdUDP) {
 		return
 	}
 	var host string
@@ -209,7 +187,7 @@ func (f *fakeXray) serve(c net.Conn) {
 	f.mu.Lock()
 	f.proxies = append(f.proxies, line)
 	target := net.JoinHostPort(host, strconv.Itoa(int(binary.BigEndian.Uint16(hdr[19:21]))))
-	if hdr[18] == vlessUDP {
+	if hdr[18] == vlessin.CmdUDP {
 		target = "udp:" + target
 	}
 	f.targets = append(f.targets, target)

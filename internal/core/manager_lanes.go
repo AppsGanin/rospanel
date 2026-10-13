@@ -112,6 +112,8 @@ func laneName(lane string, inbounds map[int64]string) string {
 		return model.ProtoHysteria
 	case xray.TagNaive:
 		return model.ProtoNaive
+	case xray.TagMieru:
+		return model.ProtoMieru
 	case xray.LaneAWG:
 		return model.ProtoAWG
 	}

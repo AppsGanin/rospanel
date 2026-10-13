@@ -71,7 +71,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	var subShowConfigs, statusEn, maintenanceMode, probeDetect, watchdogEnabled int
 	var probeBlock int
 	var routingCfg, subRulesJSON, subDPIJSON string
-	var masterHideFull, masterHideOver, awgEn, naiveEn, hideOffline, subHappCrypt, subTGBind, subTGRebind, subShowClash, tgMailingSwitch int
+	var masterHideFull, masterHideOver, awgEn, naiveEn, mieruEn, hideOffline, subHappCrypt, subTGBind, subTGRebind, subShowClash, tgMailingSwitch int
 	var awgParamsJSON, connPolicyJSON string
 	var walletEn, refFirstOnly, winbackEn, autoUpdateNodes, blacklistEn, planChange int
 	var trafficPacksJSON string
@@ -129,7 +129,8 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       blacklist_enabled, blacklist_url, blacklist_synced_at, blacklist_error,
 		       traffic_packs, plan_change, miniapp_path, tg_menu_url, sub_tg_bind, sub_tg_rebind,
 		       sub_page_url, sub_show_clash, legal_path, tg_mailing_switch,
-		       naive_enabled, naive_name
+		       naive_enabled, naive_name,
+		       mieru_enabled, mieru_port, mieru_transport, mieru_name
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -188,6 +189,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&trafficPacksJSON, &planChange, &st.MiniAppPath, &st.TGMenuURL, &subTGBind, &subTGRebind,
 		&st.SubPageURL, &subShowClash, &st.LegalPath, &tgMailingSwitch,
 		&naiveEn, &st.NaiveName,
+		&mieruEn, &st.MieruPort, &st.MieruTransport, &st.MieruName,
 	)
 	if err != nil {
 		return nil, err
@@ -214,6 +216,8 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	}
 	st.AWGEnabled = awgEn != 0
 	st.NaiveEnabled = naiveEn != 0
+	st.MieruEnabled = mieruEn != 0
+	st.MieruTransport = model.MieruTransportOr(st.MieruTransport)
 	st.WalletEnabled = walletEn != 0
 	if billingPeriodsJSON != "" {
 		_ = json.Unmarshal([]byte(billingPeriodsJSON), &st.BillingPeriods)
@@ -649,6 +653,7 @@ var protocolColumn = map[string]string{
 	"reality":   "reality_enabled",
 	"awg":       "awg_enabled",
 	"naive":     "naive_enabled",
+	"mieru":     "mieru_enabled",
 }
 
 // SetProtocolEnabled flips a single protocol's on/off toggle.
@@ -809,6 +814,26 @@ func (s *Store) SetAWGConfig(port int, dns, name string) error {
 	_, err := s.db.Exec(`UPDATE settings SET awg_port = ?, awg_dns = ?, awg_name = ?,
 		updated_at = unixepoch() WHERE id = 1`, port, dns, name)
 	return err
+}
+
+// SetMieruConfig persists the master's mieru port, transport and display name (the
+// toggle goes through SetProtocolEnabled("mieru")).
+func (s *Store) SetMieruConfig(port int, transport, name string) error {
+	_, err := s.db.Exec(`UPDATE settings SET mieru_port = ?, mieru_transport = ?, mieru_name = ?,
+		updated_at = unixepoch() WHERE id = 1`, port, model.MieruTransportOr(transport), name)
+	return err
+}
+
+// ClaimMieruPort gives the master's mieru lane port unless it already has one (an
+// operator's save may have landed first), and returns the port the lane has.
+func (s *Store) ClaimMieruPort(port int) (int, error) {
+	if _, err := s.db.Exec(`UPDATE settings SET mieru_port = ?, updated_at = unixepoch()
+		WHERE id = 1 AND mieru_port = 0`, port); err != nil {
+		return 0, err
+	}
+	var kept int
+	err := s.db.QueryRow(`SELECT mieru_port FROM settings WHERE id = 1`).Scan(&kept)
+	return kept, err
 }
 
 // SaveAWGKeys stores the master's AmneziaWG keypair and obfuscation parameters

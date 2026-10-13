@@ -13,6 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/AppsGanin/rospanel/internal/vlessin"
 )
 
 // UDP over TCP, as sing-box's naive outbound speaks it (github.com/sagernet/sing,
@@ -140,7 +142,7 @@ func (s *Server) serveUDP(r *http.Request, st *stream, body io.Reader, cw *clien
 // udpConnected pipes a connected stream through one VLESS UDP connection: the framing
 // is the same on both sides.
 func (s *Server) udpConnected(r *http.Request, st *stream, br *bufio.Reader, cw *clientWriter, u cred, host string, port uint16) {
-	conn, err := s.dialXray(r, st, u, vlessUDP, host, port)
+	conn, err := s.dialXray(r, st, u, vlessin.CmdUDP, host, port)
 	if err != nil {
 		return
 	}
@@ -206,7 +208,7 @@ func (s *Server) udpPackets(r *http.Request, st *stream, br *bufio.Reader, cw *c
 			if len(dests) >= maxUDPDests {
 				evictIdlest(st, dests)
 			}
-			conn, err := s.dialXray(r, st, u, vlessUDP, host, port)
+			conn, err := s.dialXray(r, st, u, vlessin.CmdUDP, host, port)
 			if errors.Is(err, net.ErrClosed) {
 				return // the stream has ended
 			}
@@ -251,7 +253,7 @@ func evictIdlest(st *stream, dests map[string]*udpDest) {
 // the destination's own address.
 func udpReplies(d *udpDest, cw *clientWriter) {
 	defer d.dead.Store(true)
-	if !readVLESSResponse(d.conn) {
+	if !vlessin.ReadResponse(d.conn) {
 		return
 	}
 	out := make([]byte, 0, len(d.addr)+2+1500) // grows to the largest packet seen

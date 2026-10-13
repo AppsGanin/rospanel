@@ -29,6 +29,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/AppsGanin/rospanel/internal/vlessin"
 )
 
 // User is one credential the lane accepts: the login (the Xray email, u<id>) and the
@@ -78,7 +80,7 @@ func (s *Server) SetUsers(addr string, users []User) {
 	}
 	m := make(map[string]cred, len(users))
 	for _, u := range users {
-		id, ok := parseUUID(u.UUID)
+		id, ok := vlessin.ParseUUID(u.UUID)
 		if ok && u.Email != "" {
 			m[u.UUID] = cred{User: u, id: id}
 		}
@@ -169,14 +171,6 @@ func (s *Server) Open() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.streams)
-}
-
-// innerNetwork is the network naive-in's address is dialed on.
-func innerNetwork(addr string) string {
-	if strings.HasPrefix(addr, "@") {
-		return "unix"
-	}
-	return "tcp"
 }
 
 // HTTP2Config is what the HTTP/2 server in front of the lane should run with. Go hands a

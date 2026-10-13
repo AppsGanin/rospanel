@@ -135,7 +135,9 @@ func TestSingBoxNaiveClients(t *testing.T) {
 		"SFA (sing-box 1.12.9; language en_US)":                     false,
 		"sing-box 1.14.3":                                           false, // the CLI: cronet is not in every build
 		"HiddifyNext/2.5.7 (android) like ClashMeta v2ray sing-box": false,
-		"": false,
+		"husi/0.15.5 (sing-box 1.13.4)":                             true,
+		"husi/0.15.2 (sing-box 1.13.0)":                             false, // naive, but no udp_over_tcp yet
+		"":                                                          false,
 	} {
 		if got := SingBoxNaive(ua); got != want {
 			t.Errorf("%q: %v, want %v", ua, got, want)
