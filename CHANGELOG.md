@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.1](https://github.com/AppsGanin/rospanel/compare/v5.2.0...v5.2.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **awg:** open iptables FORWARD for the tunnel on Docker/ufw hosts ([0ce5b19](https://github.com/AppsGanin/rospanel/commit/0ce5b19acd43f5b96d2213919c971edf13ce66a2))
+
 ## [5.2.0](https://github.com/AppsGanin/rospanel/compare/v5.1.0...v5.2.0) (2026-10-13)
 
 
