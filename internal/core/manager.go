@@ -15,6 +15,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/anytls"
 	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/connguard"
+	"github.com/AppsGanin/rospanel/internal/decoy"
 	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/ipblock"
 	"github.com/AppsGanin/rospanel/internal/logbuf"
@@ -1157,6 +1158,12 @@ func (m *Manager) reconcileLocked() error {
 	m.syncMieru(set, cfg)
 	m.syncAnyTLS(cfg)
 	m.syncHostFW(set, cfg)
+	// HTTP/3 advertised where Hysteria2 shares the front's port, as Caddy would.
+	if set.HysteriaEnabled && set.HysteriaPort == set.VLESSPort {
+		decoy.SetAltSvc(set.HysteriaPort)
+	} else {
+		decoy.SetAltSvc(0)
+	}
 	return m.store.MarkConfigApplied()
 }
 

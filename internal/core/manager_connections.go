@@ -366,6 +366,10 @@ var realityHostRe = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0
 func validateRealityDestLive(host string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
 	defer cancel()
+	return validateRealityDest(ctx, host)
+}
+
+func validateRealityDest(ctx context.Context, host string) error {
 	d := tls.Dialer{Config: &tls.Config{
 		ServerName: host,
 		MinVersion: tls.VersionTLS13, // handshake fails if the donor lacks TLS 1.3

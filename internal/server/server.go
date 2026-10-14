@@ -273,6 +273,21 @@ func (rt *Router) index(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write(idx)
 }
 
+// PublicDecoy is what a stranger gets for a path that is not ours — the decoy, or the
+// maintenance page — and nothing else: the HTTP/3 masquerade target (decoy/h3.go),
+// whose every request arrives from loopback and so must never reach the panel.
+func (rt *Router) PublicDecoy() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rt.mu.RLock()
+		d := rt.decoy
+		if rt.maintenance && rt.maintDecoy != nil {
+			d = rt.maintDecoy
+		}
+		rt.mu.RUnlock()
+		d.ServeHTTP(w, r)
+	})
+}
+
 // currentDecoy returns the live decoy handler under the read lock. The handler is
 // swapped at runtime (the operator can change the masquerade template), and an interface
 // value is two words — reading it unlocked while SetDecoy writes it is a real data race

@@ -45,8 +45,12 @@ func TestResetNodeConnectionsRestoresTheFactoryState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	if st.HysteriaPort != 443 || st.HopStart != 443 || st.RealityPort != 8443 || !st.TLSMin13 {
+	if st.HysteriaPort != 443 || st.HopStart != 443 || !st.TLSMin13 {
 		t.Fatalf("transport not reset: %+v", st)
+	}
+	// The REALITY port is kept, as the keys are: every REALITY link carries it.
+	if st.RealityPort != 9443 {
+		t.Fatalf("REALITY port = %d, want the node's own 9443 kept", st.RealityPort)
 	}
 	for _, p := range st.Protocols {
 		want := p.Key != "awg"

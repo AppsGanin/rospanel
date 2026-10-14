@@ -17,14 +17,17 @@ import (
 // master takes an automatic config snapshot first, so a reset pressed in the wrong
 // dialog is one rollback away.
 
-// DefaultConnections is the factory state, as an update.
+// DefaultConnections is the factory state, as an update. A reset keeps the server's
+// REALITY donor and port, as it keeps its keys: they are what every REALITY link
+// carries, and a fresh install draws its own (PickRealityDonor) — putting back the
+// schema's pair would break every link to land on the one value all installs share.
 func DefaultConnections() ConnectionsUpdate {
 	return ConnectionsUpdate{
 		Protocols:    map[string]bool{"vless": true, "reality": true, "hysteria2": true, "awg": false, "naive": true, "mieru": true, "anytls": true},
 		Fingerprints: map[string]string{"vless": "firefox", "reality": "firefox"},
 		Names:        map[string]string{},
 		HysteriaPort: 443, HopStart: 443, HopEnd: 443, HopInterval: "5-10",
-		RealityPort: 8443, RealityDest: model.DefaultRealityDest,
+		RealityPort: model.DefaultRealityPort, RealityDest: model.DefaultRealityDest,
 		TLSFragment: true, TLSMin13: true, BlockQUIC: true,
 	}
 }
@@ -37,7 +40,11 @@ func (m *Manager) ResetConnections(ctx context.Context) (*ConnectionsStatus, err
 	if err := m.dropServerInbounds(model.LocalNodeID); err != nil {
 		return nil, err
 	}
-	if err := m.ApplyConnections(DefaultConnections()); err != nil {
+	u := DefaultConnections()
+	if cur, err := m.ConnectionsInfo(); err == nil {
+		u.RealityPort, u.RealityDest = cur.RealityPort, cur.RealityDest
+	}
+	if err := m.ApplyConnections(u); err != nil {
 		return nil, err
 	}
 	logInfo("connections: master reset to defaults")
@@ -49,7 +56,14 @@ func (m *Manager) ResetNodeConnections(ctx context.Context, id int64) (*Connecti
 	if err := m.dropServerInbounds(id); err != nil {
 		return nil, err
 	}
-	if err := m.ApplyNodeConnections(id, DefaultConnections()); err != nil {
+	u := DefaultConnections()
+	if cur, err := m.NodeConnectionsInfo(id); err == nil {
+		u.RealityPort = cur.RealityPort
+	}
+	if n, err := m.store.GetNode(id); err == nil && n != nil {
+		u.RealityDest = n.RealityDest // its own donor, or "" to go on following the panel's
+	}
+	if err := m.ApplyNodeConnections(id, u); err != nil {
 		return nil, err
 	}
 	logInfo("connections: node reset to defaults", "node", id)

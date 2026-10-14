@@ -340,6 +340,8 @@ func runServer(dataDir string) {
 		log.Fatalf("build router: %v", err)
 	}
 	startPlugins(runBG, handler.(*server.Router), mgr, st, dataDir)
+	// The decoy again, for the HTTP/3 requests Hysteria2 masquerades (decoy/h3.go).
+	decoy.ServeLoopback(xray.DecoyH3Addr, handler.(*server.Router).PublicDecoy())
 	// Serve HTTP/2 cleartext too: Xray's VLESS inbound offers ALPN h2, so non-VPN
 	// traffic arrives as HTTP/2 (prior-knowledge) over the plaintext fallback.
 	// UnencryptedHTTP2 lets the loopback panel speak both HTTP/1.1 and HTTP/2 —
@@ -739,6 +741,11 @@ func bootstrapPanel(st *store.Store) (string, error) {
 		// placeholder — a page that plausibly serves a few kilobytes a day, sitting
 		// on a box that moves gigabytes. The operator can still change it.
 		if err := st.SetDecoyTemplate(decoy.RandomTemplate()); err != nil {
+			return "", err
+		}
+		// The REALITY donor and port likewise: max.ru on 8443 on every install is the
+		// same one-query signature.
+		if err := st.SetRealityPorts(core.PickRealityPort(), core.PickRealityDonor()); err != nil {
 			return "", err
 		}
 	}

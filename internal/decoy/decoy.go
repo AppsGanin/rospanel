@@ -176,6 +176,9 @@ func stampHTML(body []byte, mark string) []byte {
 // file server doesn't implement get a 405.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", ServerName)
+	if v := altSvc.Load(); v != nil {
+		w.Header().Set("Alt-Svc", *v)
+	}
 
 	// A maintenance decoy is down for everything, method included. The config it
 	// imitates (nginx `return 503` for the whole server) answers every request the

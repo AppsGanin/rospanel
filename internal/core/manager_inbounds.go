@@ -143,6 +143,7 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 	r.HoldTCP(set.RealityPort, "VLESS-XHTTP-REALITY")
 	r.HoldUDP(set.HysteriaPort, "HYSTERIA-UDP")
 	r.Hold(xray.APIPort, "Xray internal API")
+	r.HoldTCP(xray.DecoyH3Port, "decoy for HTTP/3")
 	// Loopback ports only off Linux; abstract sockets there hold none (xray/inner.go).
 	if p := xray.InnerPort(xray.VLESSInnerAddr); p != 0 {
 		r.HoldTCP(p, "VLESS-Vision behind the front")

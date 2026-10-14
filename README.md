@@ -220,8 +220,9 @@ WebSocket, XHTTP, gRPC, HTTPUpgrade) with their own port, REALITY keys, hop rang
 fields) — as individual fields or raw JSON; the config is validated on the target machine
 itself (`xray -test` + port bind) before saving, and combinations a client can't handle are
 silently kept out of Clash/sing-box subscriptions. A **"Reset to factory defaults"** button in
-the connections editor puts protocols, ports, donor, fingerprints and anti-DPI back to what a
-fresh install has and removes the server's custom inbounds (REALITY/AmneziaWG keys stay; the
+the connections editor puts protocols, ports, fingerprints and anti-DPI back to what a
+fresh install has and removes the server's custom inbounds (REALITY/AmneziaWG keys and the
+REALITY donor and port stay; the
 master snapshots its config first). The panel hides behind a **secret path**;
 any other path serves a decoy site (11 templates). **Probe detection** notices an IP that
 scans for the hidden panel — one that requests many distinct paths the decoy doesn't have —
@@ -231,6 +232,12 @@ only the decoy and the masquerade holds. Optionally it also **drops the IP at th
 is the safe baseline. TLS out of the box — **ACME** (Let's
 Encrypt / ZeroSSL) with auto-renewal; the certificate can also be issued **for a bare IP, with
 no domain and no DNS**.
+
+**What a scanner sees.** The decoy answers over HTTP/3 too: Hysteria2 serves the same site on UDP
+as on TCP, and the site advertises HTTP/3 the way Caddy does. A fresh install draws its own
+REALITY donor and port. Diagnostics warn about what gives a server away: a self-signed
+certificate and a domain with words like `vpn` or `proxy` in it — the name lands in the public
+certificate transparency logs.
 
 **Hysteria2 obfuscation (Salamander).** Hysteria2 is QUIC, and the QUIC handshake is
 the one thing a DPI box can recognise about the lane before any traffic flows. Turn it

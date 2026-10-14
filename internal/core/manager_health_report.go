@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -67,6 +68,11 @@ func (m *Manager) Health() *HealthReport {
 		checks = append(checks, m.awgHealth())
 	}
 	checks = append(checks, m.tlsHealth())
+	if set != nil {
+		if hc := hostNameHealth(set.Host); hc != nil {
+			checks = append(checks, *hc)
+		}
+	}
 
 	if m.sys != nil {
 		s := m.sys.Read()
@@ -218,6 +224,28 @@ func (m *Manager) tlsHealth() HealthCheck {
 	}
 	return HealthCheck{Key: "tls", LabelKey: label, Status: healthOK,
 		DetailKey: "health.tlsOK", Args: args}
+}
+
+// telltaleWords give a server away by its name alone: a certificate for it lands in
+// the public Certificate Transparency logs, which scanners search by word.
+var telltaleWords = []string{"vpn", "proxy", "panel", "xray", "v2ray", "vless", "trojan",
+	"hysteria", "reality", "tunnel", "socks", "shadowsocks", "wireguard", "amnezia"}
+
+// hostNameHealth flags a domain whose name says what the server is. None for an IP
+// or an innocent name: a green row for it would be noise.
+func hostNameHealth(host string) *HealthCheck {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" || net.ParseIP(host) != nil {
+		return nil
+	}
+	for _, w := range telltaleWords {
+		if strings.Contains(host, w) {
+			return &HealthCheck{Key: "hostname", LabelKey: "health.hostName", Status: healthWarn,
+				DetailKey: "health.hostNameWord", HintKey: "health.hostNameHint",
+				Args: map[string]any{"host": host, "word": w}}
+		}
+	}
+	return nil
 }
 
 // certWarnThreshold is the "days left" floor below which a certificate is flagged

@@ -432,7 +432,15 @@ func salamanderUDP(password string) *FinalMask {
 // streamSettings transport (network "hysteria"); per-user auth lives in the
 // inbound's settings.clients[].auth.
 type HysteriaSettings struct {
-	Version int `json:"version"` // must be 2
+	Version    int                 `json:"version"` // must be 2
+	Masquerade *HysteriaMasquerade `json:"masquerade,omitempty"`
+}
+
+// HysteriaMasquerade is what a Hysteria2 inbound answers an HTTP/3 request that is not
+// a Hysteria2 client with: here the decoy, proxied (see decoy/h3.go).
+type HysteriaMasquerade struct {
+	Type string `json:"type"`
+	URL  string `json:"url,omitempty"`
 }
 
 // TrojanInboundSettings is the "settings" object for a Trojan inbound.
