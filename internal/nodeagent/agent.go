@@ -345,6 +345,7 @@ func Run(ctx context.Context, dataDir string) error {
 	go a.banLoop(ctx)   // re-apply the banned addresses, which never expire on their own
 	go a.shapeLoop(ctx) // per-user speed caps, from this node's own address view
 	go a.quotaLoop(ctx) // quotas between the minute-long traffic samples
+	go keepHostFW(ctx)  // a firewall reload drops the ports we opened
 	a.syncLoop(ctx)
 	a.shutdown()
 	return nil
@@ -1368,6 +1369,8 @@ func (a *Agent) applyUsers(st *nodeapi.NodeState) error {
 		a.frontPort.Store(int64(public))
 		a.syncFront()
 	}
+	// Before the error return: the tunnel and the relays are up whatever Xray did.
+	a.syncHostFW(data, m, public)
 	if err != nil {
 		return fmt.Errorf("apply xray config: %w", err)
 	}

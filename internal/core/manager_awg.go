@@ -2,7 +2,7 @@ package core
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -318,8 +318,14 @@ func validateAWGUpdate(port int, dns string) (int, string, error) {
 	dns = strings.TrimSpace(dns)
 	if dns != "" {
 		for _, d := range strings.Split(dns, ",") {
-			if net.ParseIP(strings.TrimSpace(d)) == nil {
+			d = strings.TrimSpace(d)
+			ip, err := netip.ParseAddr(d)
+			if err != nil {
 				return 0, "", invalidCode("err.awgDNS", "DNS для AmneziaWG: IP-адреса через запятую")
+			}
+			if !awg.TunnelReaches(ip) {
+				return 0, "", invalidCode("err.awgDNSPrivate", "DNS для AmneziaWG: {{value}} — частный адрес, из туннеля он недоступен",
+					map[string]any{"value": d})
 			}
 		}
 	}

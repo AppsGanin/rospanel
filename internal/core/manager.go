@@ -1075,6 +1075,7 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 	m.syncNaive(cfg)
 	m.syncMieru(set, cfg)
 	m.syncAnyTLS(cfg)
+	m.syncHostFW(set, cfg) // a tunnel that failed to start may have come up here
 	return true, m.store.MarkConfigApplied()
 }
 
@@ -1150,6 +1151,7 @@ func (m *Manager) reconcileLocked() error {
 	m.syncNaive(cfg)
 	m.syncMieru(set, cfg)
 	m.syncAnyTLS(cfg)
+	m.syncHostFW(set, cfg)
 	return m.store.MarkConfigApplied()
 }
 

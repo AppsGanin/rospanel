@@ -409,6 +409,7 @@ const en: Dict = {
     mieruPortRange: "the mieru port is outside 1–65535",
     mieruTransport: "mieru runs on TCP only",
     awgDNS: "AmneziaWG DNS: IP addresses separated by commas",
+    awgDNSPrivate: "AmneziaWG DNS: {{value}} is a private address, the tunnel does not reach it",
     blockNotFound: "that address is not blocked",
     policyCountry: "country \"{{value}}\": two Latin letters (RU, KZ)",
     policyAllowEmpty: "an \"only these countries\" rule with no country would cut everyone off",

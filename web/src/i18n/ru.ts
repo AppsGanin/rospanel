@@ -407,6 +407,7 @@ const ru = {
     mieruPortRange: "порт mieru вне диапазона 1–65535",
     mieruTransport: "mieru работает только по TCP",
     awgDNS: "DNS для AmneziaWG: IP-адреса через запятую",
+    awgDNSPrivate: "DNS для AmneziaWG: {{value}} — частный адрес, из туннеля он недоступен",
     blockNotFound: "этот адрес не заблокирован",
     policyCountry: "страна «{{value}}»: две латинские буквы (RU, KZ)",
     policyAllowEmpty: "режим «только эти страны» без единой страны отрезал бы всех",

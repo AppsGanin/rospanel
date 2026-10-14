@@ -1300,34 +1300,9 @@ func healthBalancer(tag, selector string, strict bool) Balancer {
 // own members so the lane can never silently leave the tunnel (see warpBalancer). A
 // WARP lane with no account provisioned routes to direct, same as any other inactive
 // lane — or is dropped under StrictEgress, as any switched-on lane that cannot run is.
-// privateEgressCIDRs are destination ranges a tunnelled client is never allowed to
-// reach: loopback, RFC1918 private space, link-local (covers the 169.254.169.254
-// cloud-metadata endpoint), CGNAT, and their IPv6 equivalents. Explicit CIDRs (not
-// geoip:private) so the rule needs no geo database to be present and can never
-// silently no-op if geoip.dat is missing at boot.
-var privateEgressCIDRs = []string{
-	"0.0.0.0/8",
-	"10.0.0.0/8",
-	"100.64.0.0/10",
-	"127.0.0.0/8",
-	"169.254.0.0/16",
-	"172.16.0.0/12",
-	"192.0.0.0/24", // IETF protocol assignments
-	"192.168.0.0/16",
-	"198.18.0.0/15", // benchmarking range — routers on it answer as themselves
-	"224.0.0.0/4",   // multicast: not a destination a tunnelled client has business with
-	"240.0.0.0/4",   // reserved
-	"::/128",
-	"::1/128",
-	"fc00::/7",
-	"fe80::/10",
-	// NB: do NOT add "::ffff:0:0/96" here. Xray parses an IPv4-mapped literal back to
-	// a 4-byte address and then rejects any prefix over 32, so the whole routing config
-	// fails to build — and since a panel restart stops Xray BEFORE the new config is
-	// validated, that is a full outage, not a no-op. Xray already normalises v4-in-v6
-	// to IPv4, so the IPv4 rows above cover the mapped form. TestPrivateEgressCIDRsAreValid
-	// pins this.
-}
+// privateEgressCIDRs is model.PrivateEgressCIDRs: the AmneziaWG tunnel, which bypasses
+// Xray, drops the same ranges in nftables.
+var privateEgressCIDRs = model.PrivateEgressCIDRs
 
 // privateEgressDomains closes the NAME half of the same floor. The CIDR list above only
 // matches once a destination is an IP, and the "direct" outbound is a bare freedom that
