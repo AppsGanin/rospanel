@@ -1302,7 +1302,9 @@ func (a *Agent) applyState(st *nodeapi.NodeState) error {
 	}
 	// Per-IP connection guard on the public TCP ports.
 	if len(m.ConnGuardPorts) > 0 {
-		if err := connguard.Ensure(m.ConnGuardPorts, connguard.DefaultLimits()); err != nil {
+		lim := connguard.DefaultLimits()
+		lim.Exempt = m.ConnGuardExempt
+		if err := connguard.Ensure(m.ConnGuardPorts, lim); err != nil {
 			slog.Warn("node: connection guard setup failed", "err", err)
 		}
 	}

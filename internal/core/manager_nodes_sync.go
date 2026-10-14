@@ -131,6 +131,14 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 	// The node's own TLS state, for the fleet-wide "TLS certificate" alert. Recorded
 	// here, raised by the node sweep — see manager_nodes_notify.go.
 	m.NoteNodeCertError(n.ID, req.CertError)
+	// A self-signed node is reached by its pin: a new certificate moves the links its
+	// cascade entries hold.
+	certMoved := req.CertSHA256 != "" && req.CertSHA256 != n.CertSHA256
+	defer func() {
+		if certMoved {
+			m.cascadeChanged()
+		}
+	}()
 	_ = m.store.UpdateNodeStatus(n.ID, model.NodeStatusUpdate{
 		LastSeen:       now.Unix(),
 		NodeVersion:    req.NodeVersion,

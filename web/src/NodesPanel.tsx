@@ -131,6 +131,14 @@ export function NodesPanel() {
           decoys={decoys}
           geo={geo}
           panelVersion={panelVersion}
+          servers={nodes.map((s) => ({
+            id: s.id,
+            name: s.name,
+            bridges: s.bridges ?? [],
+            // What can be an exit: in service, connected, with a connection to reach it by.
+            available:
+              s.enabled && (s.is_local || s.joined) && (s.bridges ?? []).some((b) => b.enabled),
+          }))}
           onChanged={load}
           onRegen={setInstallCmd}
         />

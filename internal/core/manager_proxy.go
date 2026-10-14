@@ -44,7 +44,9 @@ func (m *Manager) currentProxyRefresh() time.Duration {
 func (m *Manager) buildProxies(rc model.RoutingConfig) map[string][]model.ProxyEndpoint {
 	out := make(map[string][]model.ProxyEndpoint, len(rc.Lanes))
 	for _, lane := range rc.Lanes {
-		if !lane.Enabled {
+		// A cascade's upstreams are our servers alone (cascadeFor); a list or proxy left
+		// on it would carry its traffic somewhere else when the exits are gone.
+		if !lane.Enabled || lane.IsCascade() {
 			continue
 		}
 		lines := append([]string{}, lane.Manual...)
@@ -110,7 +112,7 @@ func (m *Manager) lastProxyList(url string) ([]string, bool) {
 func seedProxiesFromManual(rc model.RoutingConfig) map[string][]model.ProxyEndpoint {
 	out := make(map[string][]model.ProxyEndpoint, len(rc.Lanes))
 	for _, lane := range rc.Lanes {
-		if !lane.Enabled {
+		if !lane.Enabled || lane.IsCascade() {
 			continue
 		}
 		if eps := proxypool.Parse(lane.Manual); len(eps) > 0 {

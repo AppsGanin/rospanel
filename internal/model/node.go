@@ -94,6 +94,8 @@ type Node struct {
 	AnyTLSEnabled *bool `json:"anytls_enabled"`
 	// ServesAnyTLS is ServesNaive for AnyTLS (nodeapi.SyncRequest.AnyTLS).
 	ServesAnyTLS bool `json:"-"`
+	// SeenIP is the address the node last reached the panel from (see SetNodeSeenIP).
+	SeenIP string `json:"-"`
 
 	DecoyTemplate string `json:"decoy_template"`
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -63,6 +64,18 @@ func SplitUsers(cfg *Config, custom []model.Inbound, users []model.User) (*Split
 			}
 		}
 		for _, e := range entries {
+			if strings.HasPrefix(emailOf(e), "bridge-") {
+				// A cascade bridge's service entry: kept as written, after the users.
+				b, err := json.Marshal(e)
+				if err != nil {
+					return nil, false
+				}
+				slot.Fixed = append(slot.Fixed, b)
+				continue
+			}
+			if len(slot.Fixed) > 0 {
+				return nil, false // a user after a bridge: not the order RenderUsers writes
+			}
 			id, ok := model.UserIDOfEmail(emailOf(e))
 			if !ok {
 				return nil, false
@@ -292,6 +305,9 @@ func RenderUsers(skeleton []byte, slots []nodeapi.UserSlot, rows []nodeapi.UserR
 				return nil, fmt.Errorf("slot %d: a shadowsocks list with nobody in it has no locked entry", si)
 			}
 			list = []any{s.Locked}
+		}
+		for _, f := range s.Fixed {
+			list = append(list, f)
 		}
 		settings[liveUserKey[s.Kind]] = list
 	}

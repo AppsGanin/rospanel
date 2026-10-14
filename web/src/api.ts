@@ -1164,6 +1164,9 @@ export interface EgressLane {
   manual: string[]
   domains: string[]
   ips: string[]
+  // A cascade: our own servers as the upstreams (0 = the master), each reached over
+  // one of its built-in lanes (reality / vision / hysteria2).
+  via?: { server: number; bridge?: string }[]
 }
 
 export interface RoutingConfig {
@@ -2672,6 +2675,9 @@ export interface NodeView {
   reality_short_id: string
   reality_path: string
   master_label?: string // config-label name of the master (local node only)
+  // The connections a cascade can reach this server over, its names for them, and
+  // whether each is on there.
+  bridges?: { bridge: string; name: string; enabled: boolean }[]
   proxy: SystemProxy // this server's system proxy (SOCKS/HTTP forward listeners)
 }
 

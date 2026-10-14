@@ -278,6 +278,7 @@ func (m *Manager) generateNodeState(n *model.Node, x *nodeStateInputs, users []m
 		HopEnd:            ns.HopEnd,
 		HopRanges:         nodeHopMeta(ns, opts.Custom),
 		ConnGuardPorts:    connGuardPorts,
+		ConnGuardExempt:   bridgeSources(x.opts.Bridges),
 		TurnRelays:        nodeTurnRelays(opts.Custom),
 		LoopbackDest:      m.opts.PanelDest,
 		DecoyTemplate:     n.DecoyTemplate,

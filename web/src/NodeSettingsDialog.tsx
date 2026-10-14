@@ -21,7 +21,7 @@ import { canonicalDns, DnsEditor } from "./DnsEditor";
 import { decoyLabel } from "./GeneralSettings";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { TLSPanel } from "./TLSPanel";
-import { hydrateRouting, RoutingEditor, type StatusBadge } from "./RoutingEditor";
+import { type CascadeServer, hydrateRouting, RoutingEditor, type StatusBadge } from "./RoutingEditor";
 import {
   ReadOnly, Drawer, Section, Select, SettingRow, TextInput } from "./ui";
 import { PlacementFields, placementOf } from "./PlacementFields";
@@ -46,12 +46,14 @@ export function NodeSettingsDialog({
   node,
   decoys,
   geo,
+  servers,
   onClose,
   onRefresh,
 }: {
   node: NodeView;
   decoys: string[];
   geo: GeoCategories;
+  servers?: CascadeServer[];
   onClose: () => void;
   onRefresh: () => void;
 }) {
@@ -319,6 +321,7 @@ export function NodeSettingsDialog({
             geoip={geo.geoip}
             iplist={geo.iplist}
             applying={saving}
+            cascadeServers={servers?.filter((x) => x.id !== node.id)}
             liveStatus={false}
           />
           <TabSaveBar onSave={saveRouting} onReset={r.revert} dirty={r.dirty} busy={saving} />

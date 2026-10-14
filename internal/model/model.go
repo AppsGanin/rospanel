@@ -2031,7 +2031,43 @@ type EgressLane struct {
 	Manual  []string `json:"manual"`  // "scheme://[user:pass@]host:port" entries
 	Domains []string `json:"domains"` // destinations routed through this lane
 	IPs     []string `json:"ips"`     // CIDRs or "geoip:xx"
+
+	// Via makes the lane a cascade: its upstreams are our own servers, each reached over
+	// one of its built-in lanes with a service credential the panel derives, instead of
+	// URLs/Manual. The lane's traffic never leaves from here: with no exit judged alive
+	// it still goes to one, and with no exit at all it is dropped.
+	Via []CascadeExit `json:"via,omitempty"`
 }
+
+// CascadeExit is one server a cascade lane leaves through, and the lane of that server
+// it is reached over.
+type CascadeExit struct {
+	Server int64  `json:"server"`           // LocalNodeID for the master
+	Bridge string `json:"bridge,omitempty"` // BridgeReality (default), BridgeVision, BridgeHysteria
+}
+
+// BridgeOr is the exit's bridge lane, REALITY when unset.
+func (e CascadeExit) BridgeOr() string {
+	if e.Bridge == "" {
+		return BridgeReality
+	}
+	return e.Bridge
+}
+
+// Bridge protocols a cascade lane reaches its exits over: the exit's built-in lanes.
+const (
+	BridgeReality  = "reality"   // VLESS-XHTTP-REALITY
+	BridgeVision   = "vision"    // VLESS-Vision on the TLS front
+	BridgeHysteria = "hysteria2" // Hysteria2 over UDP
+)
+
+// IsCascade reports whether the lane leaves through our own servers.
+func (l EgressLane) IsCascade() bool { return len(l.Via) > 0 }
+
+// BridgeEmail is the email the service credential of entry server id goes by on its
+// exits — not "u<n>", so nothing that counts users (stats, quotas, devices, online)
+// mistakes it for one.
+func BridgeEmail(entry int64) string { return "bridge-" + strconv.FormatInt(entry, 10) }
 
 // MaxEgressLanes caps how many lanes one config may define. Every active lane
 // costs an Xray balancer plus an Observatory probe subject, so the ceiling keeps
@@ -2121,6 +2157,13 @@ func (rc *RoutingConfig) ValidateLanes() error {
 		seen[l.ID] = struct{}{}
 		if strings.TrimSpace(l.Name) == "" {
 			return fieldErr("err.laneNoName", "у полосы «{{id}}» не задано название", map[string]any{"id": l.ID})
+		}
+		for _, e := range l.Via {
+			switch e.BridgeOr() {
+			case BridgeReality, BridgeVision, BridgeHysteria:
+			default:
+				return fieldErr("err.laneBadBridge", "неизвестное подключение моста «{{value}}»", map[string]any{"value": e.Bridge})
+			}
 		}
 	}
 	return nil

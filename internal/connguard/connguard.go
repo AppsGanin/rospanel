@@ -15,6 +15,7 @@ package connguard
 import (
 	"fmt"
 	"log"
+	"net/netip"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -45,6 +46,9 @@ type Limits struct {
 	MaxConnPerIP int
 	NewConnRate  int
 	NewConnBurst int
+	// Exempt are addresses never limited: the cascade entries this server is the exit
+	// of, each carrying every one of its users from a single address.
+	Exempt []string
 }
 
 // DefaultLimits returns the baked-in defaults.
@@ -77,6 +81,22 @@ func Ruleset(tcpPorts []int, lim Limits) string {
 	// must not be throttled, and a single 127.0.0.1 source could otherwise exhaust
 	// the per-IP budget for everyone behind it.
 	b.WriteString("\t\tiif \"lo\" accept\n")
+	var v4, v6 []string
+	for _, a := range lim.Exempt {
+		if ip, err := netip.ParseAddr(a); err == nil {
+			if ip.Unmap().Is4() {
+				v4 = append(v4, ip.Unmap().String())
+			} else {
+				v6 = append(v6, ip.String())
+			}
+		}
+	}
+	if len(v4) > 0 {
+		fmt.Fprintf(&b, "\t\tip saddr { %s } accept\n", strings.Join(v4, ", "))
+	}
+	if len(v6) > 0 {
+		fmt.Fprintf(&b, "\t\tip6 saddr { %s } accept\n", strings.Join(v6, ", "))
+	}
 	// New-connection rate cap per source IP.
 	fmt.Fprintf(&b, "\t\ttcp dport { %s } ct state new add @rate4 { ip saddr limit rate over %d/second burst %d packets } drop\n",
 		portList, lim.NewConnRate, lim.NewConnBurst)

@@ -32,6 +32,7 @@ import { decoyLabel } from "./GeneralSettings";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { TLSPanel } from "./TLSPanel";
 import {
+  type CascadeServer,
   EMPTY,
   GeoSection,
   hydrateRouting,
@@ -55,12 +56,14 @@ export function MasterSettingsDialog({
   node,
   decoys,
   geo,
+  servers,
   onClose,
   onRefresh,
 }: {
   node: NodeView;
   decoys: string[];
   geo: GeoCategories;
+  servers?: CascadeServer[];
   onClose: () => void;
   onRefresh: () => void;
 }) {
@@ -394,6 +397,7 @@ export function MasterSettingsDialog({
                 geoip={geo.geoip}
                 iplist={geo.iplist}
                 applying={applying}
+                cascadeServers={servers?.filter((x) => x.id !== node.id)}
               />
               <TabSaveBar
                 onSave={saveRoutingTab}

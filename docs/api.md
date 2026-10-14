@@ -848,6 +848,44 @@ egress backend off because a body did not mention it is how tunnelled traffic st
 leaving from the server's own IP. So send `routing` to change rules, and name only the
 backends you actually mean to move.
 
+A **cascade** is a lane whose upstreams are our own servers instead of proxies: users
+connect to this server and leave through the servers in `via`, each over one of its
+built-in connections.
+
+```json
+{ "id": "nl", "name": "Through NL", "enabled": true,
+  "urls": [], "manual": [], "domains": [], "ips": [],
+  "via": [ { "server": 0, "bridge": "reality" }, { "server": 3, "bridge": "hysteria2" } ] }
+```
+
+`server` is a server id (`0` is the panel's own machine), never this server. `bridge` is the
+exit's connection the cascade reaches it over: `reality` (default), `vision` or
+`hysteria2`, and it has to be on there. Each server in `/v1/nodes` (and `/v1/nodes/{id}`)
+lists them:
+
+```json
+"bridges": [
+  { "bridge": "reality",   "name": "VLESS-XHTTP-REALITY", "enabled": true },
+  { "bridge": "vision",    "name": "VLESS-TCP-TLS",       "enabled": true },
+  { "bridge": "hysteria2", "name": "HYSTERIA-UDP",        "enabled": false }
+]
+```
+
+`name` is what that server calls the connection (the operator may have renamed it);
+only an `enabled` one can be used. Put the lane last in `routing_order` to send
+everything else through it.
+
+The panel derives the bridge's credential itself and lets it into the exits from this
+server's addresses only; a user's traffic is counted once, here. The lane's traffic never
+leaves from this server: with no exit judged alive it still goes to one, with no exit at all
+it is dropped. A cascade lane takes no `urls` or `manual`: its upstreams are the exits alone.
+Refusals: `err.cascadeSelf`, `err.cascadeNoServer`, `err.cascadeLaneOff` (the connection is off
+on that exit), `err.cascadeLoop` (an exit's own cascades lead back here), `err.laneBadBridge`.
+Only lanes new or changed by the save are checked, so an exit that went away later does not
+block other edits. On an exit, switching off a connection a cascade uses is refused with
+`err.cascadeExitLaneOff`, and switching the server off or deleting it with
+`err.cascadeExitInUse`.
+
 **Snapshots** capture the whole server config — protocols, ports, REALITY, routing,
 egress, DNS, decoy and the custom inbounds — as one save-point. A rollback restores all
 of it *except* the certificate and domain, so an undo can never break the live cert, and
