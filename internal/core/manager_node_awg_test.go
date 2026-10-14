@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/xray"
@@ -47,11 +48,13 @@ func awgNodeFixture(t *testing.T) (*Manager, *store.Store, *model.Node, *[]strin
 // which is the fastest way to teach an operator to ignore the alert.
 func TestNodeAWGSilenceIsNotAFailure(t *testing.T) {
 	t.Parallel()
-	m, _, n, msgs := awgNodeFixture(t)
+	m, st, n, msgs := awgNodeFixture(t)
 	if _, ok := m.NodeAWG(n.ID); ok {
 		t.Fatal("a node that reported nothing has a state")
 	}
-	m.sweepAlerts([]model.Node{*n}, nil, time.Now())
+	t0 := time.Now()
+	lookAt(t, m, st, n, t0)
+	lookAt(t, m, st, n, t0.Add(laneHideAfter))
 	if len(*msgs) != 0 {
 		t.Errorf("an agent that reports nothing raised %d alarms: %v", len(*msgs), *msgs)
 	}
@@ -68,34 +71,42 @@ func TestNodeAWGSilenceIsNotAFailure(t *testing.T) {
 
 // The gap this closes: the agent applies the tunnel, a failure goes into the node's
 // own log, and the panel keeps the server green while issuing keys for a lane nobody
-// can connect through.
+// can connect through. Said once when it has been down long enough to leave the
+// subscriptions, and once when it is back.
 func TestNodeAWGDownIsReportedOnceAndClears(t *testing.T) {
 	t.Parallel()
-	m, _, n, msgs := awgNodeFixture(t)
+	m, st, n, msgs := awgNodeFixture(t)
 
 	report := func(running bool, errMsg string) {
 		m.nodeGeoMu.Lock()
 		m.nodeAWG[n.ID] = nodeAWGState{Running: running, Err: errMsg, Reported: true}
 		m.nodeGeoMu.Unlock()
 	}
-
-	// Baseline: the first sweep only records state.
+	t0 := time.Now()
 	report(true, "")
-	m.sweepAlerts([]model.Node{*n}, nil, time.Now())
+	lookAt(t, m, st, n, t0)
 	if len(*msgs) != 0 {
 		t.Fatalf("a healthy tunnel alerted: %v", *msgs)
 	}
 
-	// It goes down, and stays down for several sweeps: one message, not one per tick.
+	// It goes down: nothing until it has been down for laneHideAfter, then one
+	// message, not one per tick.
 	report(false, "listen udp :51820: address already in use")
+	lookAt(t, m, st, n, t0.Add(time.Second))
+	if len(*msgs) != 0 {
+		t.Fatalf("alerted before laneHideAfter: %v", *msgs)
+	}
 	for i := 0; i < 3; i++ {
-		m.sweepAlerts([]model.Node{*n}, nil, time.Now())
+		lookAt(t, m, st, n, t0.Add(laneHideAfter+time.Duration(i)*20*time.Second+time.Second))
 	}
 	if len(*msgs) != 1 {
 		t.Fatalf("the outage was announced %d times, want once:\n%s", len(*msgs), strings.Join(*msgs, "\n---\n"))
 	}
-	if !strings.Contains((*msgs)[0], "address already in use") {
-		t.Errorf("the message does not carry the reason:\n%s", (*msgs)[0])
+	if !strings.Contains((*msgs)[0], "address already in use") || !strings.Contains((*msgs)[0], "AmneziaWG") {
+		t.Errorf("the message does not say what and why:\n%s", (*msgs)[0])
+	}
+	if lanes, _ := m.DownLanes(n.ID); !lanes[model.LaneAWG] {
+		t.Error("the tunnel is down and still in the subscriptions")
 	}
 	// Health agrees.
 	rep, _ := m.NodeHealth(n.ID)
@@ -106,7 +117,7 @@ func TestNodeAWGDownIsReportedOnceAndClears(t *testing.T) {
 	// And back up: one all-clear, then quiet.
 	report(true, "")
 	for i := 0; i < 3; i++ {
-		m.sweepAlerts([]model.Node{*n}, nil, time.Now())
+		lookAt(t, m, st, n, t0.Add(5*time.Minute+time.Duration(i)*20*time.Second))
 	}
 	if len(*msgs) != 2 {
 		t.Fatalf("after recovery there were %d messages, want 2", len(*msgs))
@@ -117,16 +128,13 @@ func TestNodeAWGDownIsReportedOnceAndClears(t *testing.T) {
 // message. An unescaped angle bracket makes Telegram reject the whole alert.
 func TestNodeAWGErrorIsEscaped(t *testing.T) {
 	t.Parallel()
-	m, _, n, msgs := awgNodeFixture(t)
-	m.nodeGeoMu.Lock()
-	m.nodeAWG[n.ID] = nodeAWGState{Running: true, Reported: true}
-	m.nodeGeoMu.Unlock()
-	m.sweepAlerts([]model.Node{*n}, nil, time.Now()) // baseline
-
+	m, st, n, msgs := awgNodeFixture(t)
 	m.nodeGeoMu.Lock()
 	m.nodeAWG[n.ID] = nodeAWGState{Reported: true, Err: `bad <config> & worse`}
 	m.nodeGeoMu.Unlock()
-	m.sweepAlerts([]model.Node{*n}, nil, time.Now())
+	t0 := time.Now()
+	lookAt(t, m, st, n, t0)
+	lookAt(t, m, st, n, t0.Add(laneHideAfter))
 
 	if len(*msgs) != 1 {
 		t.Fatalf("got %d messages, want 1", len(*msgs))
@@ -134,6 +142,16 @@ func TestNodeAWGErrorIsEscaped(t *testing.T) {
 	if strings.Contains((*msgs)[0], "<config>") {
 		t.Errorf("the node's error went out unescaped:\n%s", (*msgs)[0])
 	}
+}
+
+// lookAt runs the health loop's look at simulated time with the node reporting then,
+// as a live node does every 20 seconds.
+func lookAt(t *testing.T, m *Manager, st *store.Store, n *model.Node, at time.Time) {
+	t.Helper()
+	if err := st.UpdateNodeStatus(n.ID, model.NodeStatusUpdate{LastSeen: at.Unix(), NodeVersion: "test", XrayRunning: true}); err != nil {
+		t.Fatal(err)
+	}
+	m.observeLanesAt(at)
 }
 
 // findCheck pulls one check out of a health report.
@@ -265,33 +283,52 @@ func assertAfterConfig(t *testing.T, view string, keys []string) {
 	}
 }
 
-// A panel restart is not an outage. The alert sweep runs the moment the process
-// starts, while the master's own tunnel is still coming up, so the first pass has to
-// record a baseline and say nothing — otherwise every restart sent "the tunnel is
-// down" and then "the tunnel is back", which is what admins actually saw.
-func TestLocalAWGFirstSweepIsSilent(t *testing.T) {
+// A panel restart is not an outage: the master's own tunnel is still coming up when
+// the health loop first looks, so a tunnel not running yet says nothing until it has
+// been down for laneHideAfter — otherwise every restart sent "the tunnel is down" and
+// then "the tunnel is back", which is what admins actually saw.
+func TestLocalAWGRestartIsSilent(t *testing.T) {
 	t.Parallel()
 	m, st, _, msgs := awgNodeFixture(t)
 	if err := st.SetProtocolEnabled("awg", true); err != nil {
 		t.Fatalf("enable the master's AWG lane: %v", err)
 	}
+	if err := st.SetAWGConfig(51820, "", ""); err != nil {
+		t.Fatalf("port: %v", err)
+	}
+	dev := &fakeAWG{}
+	m.awg = dev
 
-	// m.awg is nil here, so the tunnel reads as not running — the state a restart
-	// catches it in.
-	m.sweepAlerts(nil, nil, time.Now())
+	t0 := time.Now()
+	m.observeLanesAt(t0) // the moment the process starts
+	dev.running = true   // up a few seconds later
+	m.observeLanesAt(t0.Add(20 * time.Second))
+	m.observeLanesAt(t0.Add(laneHideAfter + time.Minute))
 	if len(*msgs) != 0 {
-		t.Fatalf("the first sweep sent %d messages, want none:\n%v", len(*msgs), *msgs)
+		t.Fatalf("a restart sent %d messages, want none:\n%v", len(*msgs), *msgs)
 	}
 
-	// Still down a minute later is a real outage, and that one is worth saying.
-	m.sweepAlerts(nil, nil, time.Now())
-	if len(*msgs) != 1 {
-		t.Fatalf("the second sweep sent %d messages, want 1:\n%v", len(*msgs), *msgs)
+	// Down for real: said once, not on every look after.
+	dev.running, dev.err = false, "create tun awg0: operation not permitted"
+	t1 := t0.Add(10 * time.Minute)
+	m.observeLanesAt(t1)
+	for i := 0; i < 4; i++ {
+		m.observeLanesAt(t1.Add(laneHideAfter + time.Duration(i)*20*time.Second))
 	}
-
-	// And it is said once, not on every sweep after.
-	m.sweepAlerts(nil, nil, time.Now())
-	if len(*msgs) != 1 {
-		t.Fatalf("the outage was repeated: %d messages, want 1", len(*msgs))
+	if len(*msgs) != 1 || !strings.Contains((*msgs)[0], "operation not permitted") {
+		t.Fatalf("messages = %v, want one carrying the reason", *msgs)
 	}
 }
+
+// fakeAWG is a tunnel whose state the test sets.
+type fakeAWG struct {
+	running bool
+	err     string
+}
+
+func (f *fakeAWG) Apply(awg.Config) error                  { return nil }
+func (f *fakeAWG) Stats() (map[string]awg.PeerStat, error) { return nil, nil }
+func (f *fakeAWG) Running() bool                           { return f.running }
+func (f *fakeAWG) LastError() string                       { return f.err }
+func (f *fakeAWG) Close()                                  {}
+func (f *fakeAWG) Retry() error                            { return nil }
