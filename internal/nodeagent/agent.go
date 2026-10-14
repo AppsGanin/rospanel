@@ -1375,6 +1375,12 @@ func (a *Agent) applyUsers(st *nodeapi.NodeState) error {
 	}
 	// Before the error return: the tunnel and the relays are up whatever Xray did.
 	a.syncHostFW(data, m, public)
+	// HTTP/3 advertised where Hysteria2 shares the front's port, as Caddy would.
+	if m.HysteriaEnabled && public > 0 && m.HysteriaPort == public {
+		decoy.SetAltSvc(public)
+	} else {
+		decoy.SetAltSvc(0)
+	}
 	if err != nil {
 		return fmt.Errorf("apply xray config: %w", err)
 	}
@@ -1562,6 +1568,8 @@ func (a *Agent) ensureDecoy(dest, template string) error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	a.decoySrv = srv
+	// The same decoy for HTTP/3 requests to Hysteria2 (see decoy/h3.go).
+	decoy.ServeLoopback(xray.DecoyH3Addr, decoyHandler)
 	go func() {
 		// h2fix: ReadHeaderTimeout is a raw read deadline net/http never disarms on an
 		// unencrypted HTTP/2 connection, so without it every h2 request to the decoy is

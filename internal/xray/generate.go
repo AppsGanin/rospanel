@@ -34,6 +34,18 @@ const VisionFlow = "xtls-rprx-vision"
 // APIPort is the loopback port for the Xray gRPC StatsService.
 const APIPort = 10085
 
+// DecoyH3Port is the loopback port the decoy also listens on for Hysteria2's
+// masquerade (decoy.ServeLoopback), and DecoyH3Addr the address.
+const (
+	DecoyH3Port = 18447
+	DecoyH3Addr = "127.0.0.1:18447"
+)
+
+// h3Masquerade sends a Hysteria2 inbound's non-client HTTP/3 requests to the decoy.
+func h3Masquerade() *HysteriaMasquerade {
+	return &HysteriaMasquerade{Type: "proxy", URL: "http://" + DecoyH3Addr}
+}
+
 // Options carries non-DB generation parameters.
 type Options struct {
 	// PanelDest is where the VLESS default fallback forwards non-proxy traffic
@@ -181,7 +193,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 			// Hysteria2 runs over QUIC/HTTP3 — the TLS layer MUST offer ALPN "h3"
 			// or the handshake fails with "no application protocol".
 			TLSSettings:      &TLSSettings{ServerName: set.SNI, ALPN: []string{"h3"}, Certificates: sharedCert},
-			HysteriaSettings: &HysteriaSettings{Version: 2},
+			HysteriaSettings: &HysteriaSettings{Version: 2, Masquerade: h3Masquerade()},
 			// Salamander, when the operator set a key. Nil otherwise, so an install
 			// that never turned it on generates exactly the config it did before.
 			FinalMask: salamanderUDP(set.HysteriaObfs),
@@ -790,7 +802,7 @@ func customStream(in model.Inbound, set *model.Settings, cert []Certificate, min
 			ServiceName: o.ServiceName, Authority: o.Authority, MultiMode: o.MultiMode,
 		}
 	case model.TrHysteria:
-		st.HysteriaSettings = &HysteriaSettings{Version: 2}
+		st.HysteriaSettings = &HysteriaSettings{Version: 2, Masquerade: h3Masquerade()}
 		st.FinalMask = salamanderUDP(o.Obfs)
 	}
 	st.Sockopt = o.Sockopt

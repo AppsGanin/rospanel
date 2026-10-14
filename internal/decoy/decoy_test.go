@@ -374,3 +374,22 @@ func TestDecoysLoadNothingExternal(t *testing.T) {
 		t.Fatalf("walk templates: %v", err)
 	}
 }
+
+func TestAltSvcAdvertisedOnlyWhenSet(t *testing.T) {
+	h := newTestHandler(t, "coming-soon")
+	t.Cleanup(func() { SetAltSvc(0) })
+	if v := get(h, "/").Header().Get("Alt-Svc"); v != "" {
+		t.Fatalf("Alt-Svc without HTTP/3: %q", v)
+	}
+	SetAltSvc(443)
+	if v := get(h, "/").Header().Get("Alt-Svc"); v != `h3=":443"; ma=2592000` {
+		t.Fatalf("Alt-Svc = %q", v)
+	}
+	if v := get(h, "/no-such-file.css").Header().Get("Alt-Svc"); v == "" {
+		t.Fatal("a 404 does not carry Alt-Svc; Caddy's does")
+	}
+	SetAltSvc(0)
+	if v := get(h, "/").Header().Get("Alt-Svc"); v != "" {
+		t.Fatalf("Alt-Svc after turning it off: %q", v)
+	}
+}

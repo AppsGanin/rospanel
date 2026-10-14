@@ -2158,9 +2158,20 @@ func (s *Settings) BotLang() string {
 	return "ru"
 }
 
-// DefaultRealityDest is the donor a fresh install masquerades as: the value the
-// schema gives reality_dest, and what a factory reset puts back.
-const DefaultRealityDest = "max.ru"
+// DefaultRealityDest and DefaultRealityPort are the schema's REALITY donor and port.
+// A fresh install draws its own instead (RealityDonors, core.PickRealityPort): one
+// pair on every install is a signature.
+const (
+	DefaultRealityDest = "max.ru"
+	DefaultRealityPort = 8443
+)
+
+// RealityDonors are the donors a fresh install draws from. Checked from a Dutch VPS
+// on 2026-10-14 with the panel's own donor check — TLS 1.3, h2, a certificate small
+// enough for REALITY — and reachable from abroad, which many Russian sites are not.
+var RealityDonors = []string{
+	"max.ru", "hh.ru", "ria.ru", "avito.ru", "ozon.ru", "wildberries.ru", "rbc.ru", "mts.ru",
+}
 
 // validateDirectStrategy is folded into ValidateLanes so both the master and a node
 // reject an unknown value on the same path.

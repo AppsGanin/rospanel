@@ -1976,11 +1976,14 @@ const en: Dict = {
     tls: "TLS certificate",
     tlsMissing: "the certificate is missing or unreadable",
     tlsMissingHint: "Issue a certificate under Settings → TLS.",
+    hostName: "Server name",
+    hostNameWord: "“{{host}}” contains “{{word}}”",
+    hostNameHint: "The name is public in the certificate transparency logs, and scanners search them for such words. Pick a neutral name.",
     tlsExpired: "expired on {{date}}",
     tlsExpiredHint: "Reissue the certificate.",
     tlsSelfSigned: "self-signed — some clients will refuse to connect",
     tlsSelfSignedHint:
-      "Set a domain and issue a certificate via ACME (Let's Encrypt / ZeroSSL).",
+      "Set a domain and issue a certificate via ACME (Let's Encrypt / ZeroSSL). A self-signed certificate on an IP is a marker scanners look for.",
     tlsExpiring: "expires in {{days}} days · issued by {{issuer}}",
     tlsExpiringHint:
       "Renewal is automatic; if it isn't firing, check that ACME is reachable and read the logs.",
