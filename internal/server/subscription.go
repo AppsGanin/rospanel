@@ -780,7 +780,7 @@ func isBrowser(r *http.Request) bool {
 func hasTurnInbound(servers []sub.Server) bool {
 	for _, s := range servers {
 		for _, in := range s.Custom {
-			if in.Protocol == model.InbTurnVK && s.Access.AllowsInbound(in.ID) {
+			if in.Protocol == model.InbTurnVK && !s.Hidden[model.SubProtoCustom] && s.Access.AllowsInbound(in.ID) {
 				return true
 			}
 		}

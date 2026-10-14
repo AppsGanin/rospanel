@@ -50,3 +50,21 @@ func TestOverridesApply(t *testing.T) {
 		t.Error("hiding Hysteria2 hid the wrong lanes")
 	}
 }
+
+func TestHideDownAndRuleOverridesAddUp(t *testing.T) {
+	s := Server{
+		Set:    &model.Settings{ServerID: 3},
+		Custom: []model.Inbound{{ID: 1}, {ID: 2}},
+	}
+	HideDown(&s, map[string]bool{model.LaneAWG: true}, map[int64]bool{2: true})
+	if !s.Hidden[model.LaneAWG] || len(s.Custom) != 1 || s.Custom[0].ID != 1 {
+		t.Fatalf("HideDown: hidden %v, custom %v", s.Hidden, s.Custom)
+	}
+	out := Overrides{model.LaneHysteria: model.SubProtoOff}.Apply([]Server{s})
+	if !out[0].Hidden[model.LaneAWG] || !out[0].Hidden[model.LaneHysteria] {
+		t.Fatalf("a response rule replaced what was down: %v", out[0].Hidden)
+	}
+	if s.Hidden[model.LaneHysteria] {
+		t.Fatal("Apply wrote into the input's map")
+	}
+}

@@ -140,9 +140,9 @@ func (m *Manager) syncAWGLocked(set *model.Settings, users []model.User) {
 		return
 	}
 	if !set.AWGEnabled || set.AWGPrivateKey == "" || set.AWGPort == 0 {
-		if m.awg.Running() {
-			m.awg.Close()
-		}
+		// Even when it is not running: a tunnel that failed to start would otherwise
+		// be started by RetryAWG for a lane switched off.
+		m.awg.Close()
 		return
 	}
 	access, err := m.store.AccessMap()

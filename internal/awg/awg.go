@@ -682,6 +682,9 @@ type Device interface {
 	Running() bool
 	// LastError is what the last Apply failed with, "" when it succeeded.
 	LastError() string
+	// Retry applies again the config the last Apply failed on — a port that was
+	// taken may be free now. A no-op when nothing failed or after Close.
+	Retry() error
 	// Close tears the tunnel down.
 	Close()
 }

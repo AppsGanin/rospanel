@@ -267,6 +267,7 @@ type Agent struct {
 	// awgErr is the last tunnel-apply failure, reported to the panel so it can raise
 	// the AmneziaWG health alert — the node has no bot to tell anyone itself.
 	awgErr    string
+	awgRetry  time.Time // when retryAWG last tried, under awgMu
 	awgMu     sync.Mutex
 	awgEmails map[string]string
 	awgLast   map[string]awg.PeerStat
@@ -1152,8 +1153,10 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		})
 	}
 
+	a.retryAWG()
 	awgUp, awgErr := a.awgState()
 	a.retryMieru()
+	_ = a.turn.Retry() // still failing is reported below, as TurnDown
 	conns, connsMore := a.takeConns(connsChunkMax)
 	req := nodeapi.SyncRequest{
 		ConfigHash:  hash,
@@ -1162,6 +1165,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		Mieru:       true,
 		AnyTLS:      a.anytls != nil,
 		MieruError:  a.mieruError(),
+		TurnDown:    a.turn.Failed(),
 		StateTag:    a.splitTag(),
 		NodeVersion: version.Version,
 		XrayVersion: a.sup.Version(),

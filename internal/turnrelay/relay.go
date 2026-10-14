@@ -69,6 +69,8 @@ type Relay struct {
 	mu      sync.Mutex
 	running map[Spec]*listener
 	listen  func(spec Spec) (net.Listener, error)
+	want    []Spec // what the last Sync asked for
+	failed  []int  // the ports of want that could not listen
 }
 
 // New returns a relay running nothing.
@@ -85,6 +87,25 @@ func (r *Relay) Sync(want []Spec) error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.syncLocked(want)
+}
+
+// Retry starts again the relays the last Sync could not, now that their port may be
+// free. A no-op while nothing has failed.
+func (r *Relay) Retry() error {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.failed) == 0 {
+		return nil
+	}
+	return r.syncLocked(r.want)
+}
+
+func (r *Relay) syncLocked(want []Spec) error {
+	r.want = slices.Clone(want)
 	for spec, l := range r.running {
 		if !slices.Contains(want, spec) {
 			l.close()
@@ -92,6 +113,7 @@ func (r *Relay) Sync(want []Spec) error {
 		}
 	}
 	var errs []error
+	r.failed = nil
 	for _, spec := range want {
 		if _, ok := r.running[spec]; ok {
 			continue
@@ -99,6 +121,7 @@ func (r *Relay) Sync(want []Spec) error {
 		ln, err := r.listen(spec)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("turn relay on udp/%d: %w", spec.Port, err))
+			r.failed = append(r.failed, spec.Port)
 			continue
 		}
 		l := &listener{ln: ln, target: spec.Target, done: make(chan struct{})}
@@ -121,6 +144,18 @@ func (r *Relay) Close() {
 		l.close()
 		delete(r.running, spec)
 	}
+	r.want, r.failed = nil, nil // stopped: nothing for Retry to bring back
+}
+
+// Failed lists the ports the last Sync wanted and could not listen on — a relay that
+// is down until the next Sync retries it.
+func (r *Relay) Failed() []int {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.failed)
 }
 
 // Ports lists the UDP ports relays are running on, in no particular order.

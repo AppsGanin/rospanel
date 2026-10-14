@@ -457,11 +457,14 @@ side of a threshold — tells you once when the allowance runs out and once when
 period starts, and can drop the server out of subscriptions in between. Never all of
 them: if every server is over, they all keep serving.
 
-**A server that stops reporting** stays in the subscription by default — a node bounces on every
-update and certificate renewal, and a client whose refresh lands in that window would lose an
-entry for a server that is already back, while one that keeps the entry fails over on its own.
-*Settings → Subscriptions → hide a server while it is offline* switches that round for operators
-who would rather hide a dead server.
+**A server that stops answering** stays in the subscription by default: a node drops out briefly
+on every update, and a client that refreshed in that minute would lose the server until its next
+refresh. To hide such servers, and servers whose Xray is stopped, turn on *Settings →
+Subscriptions → hide a server while it is offline*.
+
+**A failed lane** — AmneziaWG or a TURN relay that could not take its port — leaves the
+subscription after two minutes and comes back as soon as it is up. The server retries it every
+minute.
 
 **Server order** (*Settings → Subscriptions*) decides which server a client sees first — and
 whether a full one is shown at all. Every server carries a manual **weight** and a **capacity**

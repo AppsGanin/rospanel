@@ -95,6 +95,9 @@ type SyncRequest struct {
 	AnyTLS      bool   `json:"anytls,omitempty"`
 	MieruError  string `json:"mieru_error,omitempty"`
 	XrayRunning bool   `json:"xray_running"`
+	// TurnDown is the TURN relay ports this node was told to run and could not listen
+	// on; the panel leaves their inbounds out of its subscriptions while they stay down.
+	TurnDown []int `json:"turn_down,omitempty"`
 	// Revoked ⇒ this node already knows the panel switched it off and has stopped
 	// serving. It changes how the panel answers: a node that has yet to hear the bad
 	// news is told at once, but one that already knows has its request HELD like any

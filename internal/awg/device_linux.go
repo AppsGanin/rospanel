@@ -31,6 +31,7 @@ type linuxDevice struct {
 	port    int
 	privKey string
 	lastErr string
+	last    *Config // what the last Apply asked for; nil after Close
 }
 
 // New returns the tunnel driver for this platform.
@@ -39,7 +40,21 @@ func New() Device { return &linuxDevice{} }
 func (d *linuxDevice) Apply(cfg Config) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	err := d.apply(cfg)
+	d.last = &cfg
+	return d.applyLast()
+}
+
+func (d *linuxDevice) Retry() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.lastErr == "" || d.last == nil {
+		return nil
+	}
+	return d.applyLast()
+}
+
+func (d *linuxDevice) applyLast() error {
+	err := d.apply(*d.last)
 	if err != nil {
 		d.lastErr = err.Error()
 	} else {
@@ -178,6 +193,7 @@ func (d *linuxDevice) Close() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.closeLocked()
+	d.last, d.lastErr = nil, "" // switched off: nothing to retry
 }
 
 func (d *linuxDevice) closeLocked() {
