@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.4.0](https://github.com/AppsGanin/rospanel/compare/v5.3.0...v5.4.0) (2026-10-14)
+
+
+### Features
+
+* **i18n:** Simplified Chinese and Arabic, with a right-to-left layout ([060c82f](https://github.com/AppsGanin/rospanel/commit/060c82f5d24ea7f641db42dc4523ce4314ffbf1f))
+
 ## [5.3.0](https://github.com/AppsGanin/rospanel/compare/v5.2.1...v5.3.0) (2026-10-14)
 
 
