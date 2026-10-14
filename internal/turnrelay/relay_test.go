@@ -156,6 +156,36 @@ func TestSyncReportsATakenPortAndStartsTheRest(t *testing.T) {
 		t.Fatalf("err = %v, want one naming udp/%d", err, taken)
 	}
 	roundTrip(t, dial(t, free), []byte("still serving"))
+	if f := r.Failed(); len(f) != 1 || f[0] != taken {
+		t.Fatalf("Failed = %v, want [%d]", f, taken)
+	}
+	// Retry while the port is still taken fails again; once it is freed, the relay
+	// comes up without a new Sync.
+	if err := r.Retry(); err == nil {
+		t.Fatal("Retry on a taken port succeeded")
+	}
+	busy.Close()
+	if err := r.Retry(); err != nil {
+		t.Fatal(err)
+	}
+	roundTrip(t, dial(t, taken), []byte("came up"))
+
+	// Closed, the relay stays closed: Retry has nothing to bring back.
+	busy2, err := net.ListenPacket("udp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy2.Close()
+	taken2 := busy2.LocalAddr().(*net.UDPAddr).Port
+	_ = r.Sync([]Spec{{Port: taken2, Target: target}})
+	r.Close()
+	busy2.Close()
+	if err := r.Retry(); err != nil || len(r.Failed()) != 0 || len(r.Ports()) != 0 {
+		t.Fatalf("after Close: retry err %v, failed %v, running %v", err, r.Failed(), r.Ports())
+	}
+	if f := r.Failed(); len(f) != 0 {
+		t.Fatalf("Failed after recovery = %v", f)
+	}
 }
 
 func TestNilRelayIsANoOp(t *testing.T) {

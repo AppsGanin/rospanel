@@ -26,6 +26,7 @@ func (m *Manager) healthLoop() {
 	defer t.Stop()
 	for {
 		m.probeLanes()
+		m.observeLanes()
 		select {
 		case <-t.C:
 		case <-m.done:

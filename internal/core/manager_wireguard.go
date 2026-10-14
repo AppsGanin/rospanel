@@ -154,6 +154,28 @@ func (m *Manager) syncTurnLocked(custom []model.Inbound) {
 	}
 }
 
+// RetryTurn starts again the relays that could not listen at the last reconcile, so
+// one whose port was taken comes up once the port is free. Called a minute apart.
+func (m *Manager) RetryTurn() {
+	if len(m.turn.Failed()) == 0 {
+		return
+	}
+	m.applyMu.Lock()
+	defer m.applyMu.Unlock()
+	_ = m.turn.Retry() // still failing stays in Failed, which the subscriptions read
+}
+
+// RetryAWG starts the master's AmneziaWG tunnel again after it failed to, without
+// waiting for the next reconcile or user change. Called a minute apart.
+func (m *Manager) RetryAWG() {
+	if m.awg == nil || m.awg.LastError() == "" {
+		return
+	}
+	m.applyMu.Lock()
+	defer m.applyMu.Unlock()
+	_ = m.awg.Retry() // still failing stays in LastError
+}
+
 // ClaimTunnelIdentity gives one user their tunnel key and address if they have none,
 // recording them on u.
 func (m *Manager) ClaimTunnelIdentity(u *model.User) error { return m.claimAWG([]*model.User{u}) }

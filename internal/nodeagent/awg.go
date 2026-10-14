@@ -18,17 +18,21 @@ import (
 // the peer is connected now.
 const awgOnlineWindow = 180
 
+// awgRetryEvery spaces the retries of a tunnel that failed to start: each one that
+// fails logs, and a sync comes every 20 seconds.
+const awgRetryEvery = time.Minute
+
 // syncAWG applies (or tears down) the tunnel for the state the panel sent.
 func (a *Agent) syncAWG(st *nodeapi.AWGState) {
 	if a.awg == nil {
 		return
 	}
 	if st == nil {
-		if a.awg.Running() {
-			a.awg.Close()
-		}
+		// Even when it is not running: a tunnel that failed to start would otherwise
+		// be started by retryAWG for a lane switched off.
+		a.awg.Close()
 		a.awgMu.Lock()
-		a.awgEmails = nil
+		a.awgEmails, a.awgErr = nil, ""
 		a.awgMu.Unlock()
 		return
 	}
@@ -57,6 +61,28 @@ func (a *Agent) syncAWG(st *nodeapi.AWGState) {
 	default:
 		slog.Warn("node: amneziawg apply failed", "err", err)
 		a.setAWGError(err.Error())
+	}
+}
+
+// retryAWG starts the tunnel again after it failed to, before the next sync reports
+// it — without waiting for the panel to send a new state.
+func (a *Agent) retryAWG() {
+	if a.awg == nil {
+		return
+	}
+	a.awgMu.Lock()
+	due := a.awgErr != "" && time.Since(a.awgRetry) >= awgRetryEvery
+	if due {
+		a.awgRetry = time.Now()
+	}
+	a.awgMu.Unlock()
+	if !due {
+		return
+	}
+	if err := a.awg.Retry(); err != nil {
+		a.setAWGError(err.Error())
+	} else if a.awg.Running() {
+		a.setAWGError("")
 	}
 }
 

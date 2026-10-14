@@ -116,6 +116,10 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		m.nodeMieruErr = map[int64]string{}
 	}
 	m.nodeMieruErr[n.ID] = req.MieruError
+	if m.nodeTurnDown == nil {
+		m.nodeTurnDown = map[int64][]int{}
+	}
+	m.nodeTurnDown[n.ID] = req.TurnDown
 	// Always refreshed (a healthy node reports 0), so the "limping" badge clears the
 	// moment the transport recovers rather than sticking on a stale count.
 	m.nodeSyncFails[n.ID] = req.SyncFails

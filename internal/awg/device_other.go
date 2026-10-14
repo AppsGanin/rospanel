@@ -19,3 +19,4 @@ func (stubDevice) Stats() (map[string]PeerStat, error) { return nil, nil }
 func (stubDevice) Running() bool                       { return false }
 func (stubDevice) LastError() string                   { return ErrUnsupported.Error() }
 func (stubDevice) Close()                              {}
+func (stubDevice) Retry() error                        { return nil }

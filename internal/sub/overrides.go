@@ -34,7 +34,7 @@ func (o Overrides) Apply(servers []Server) []Server {
 	}
 	out := make([]Server, len(servers))
 	for i, s := range servers {
-		s.Hidden = hidden
+		s.Hidden = mergeHidden(s.Hidden, hidden)
 		if noEnc {
 			s.Custom = slices.DeleteFunc(slices.Clone(s.Custom), func(in model.Inbound) bool { return in.Opts.EncMode != "" })
 		}
@@ -122,4 +122,33 @@ func Protocols(format, userAgent string, o Overrides) map[string]bool {
 		out[k] = p[k]
 	}
 	return out
+}
+
+// mergeHidden is a and b together, as a new map when both have something.
+func mergeHidden(a, b map[string]bool) map[string]bool {
+	if len(a) == 0 {
+		return b
+	}
+	if len(b) == 0 {
+		return a
+	}
+	out := make(map[string]bool, len(a)+len(b))
+	for k := range a {
+		out[k] = true
+	}
+	for k := range b {
+		out[k] = true
+	}
+	return out
+}
+
+// HideDown leaves out of a server what is down on it (core.Manager.DownLanes): lanes
+// by key through Hidden, single custom inbounds by dropping them.
+func HideDown(s *Server, lanes map[string]bool, inbounds map[int64]bool) {
+	if len(lanes) > 0 {
+		s.Hidden = mergeHidden(s.Hidden, lanes)
+	}
+	if len(inbounds) > 0 {
+		s.Custom = slices.DeleteFunc(slices.Clone(s.Custom), func(in model.Inbound) bool { return inbounds[in.ID] })
+	}
 }

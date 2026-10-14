@@ -205,6 +205,11 @@ func (rt *Router) subServers(local *model.Settings, userID int64, clientIP strin
 	// operator's weights decide who comes first, and a full server can drop out.
 	// Under the manual mode with no weights this is the old order, unchanged.
 	servers := sub.Servers(sets, custom, access)
+	// What is down on a server stays out until it is back (core/manager_lanes_down.go).
+	for i := range servers {
+		lanes, inbounds := rt.mgr.DownLanes(servers[i].Set.ServerID)
+		sub.HideDown(&servers[i], lanes, inbounds)
+	}
 	ordered := sub.Order(servers, local.SubOrderMode, rt.mgr.CountryOfIP(clientIP),
 		rt.mgr.OnlineByServer(), rt.mgr.ServersOverTrafficLimit())
 	// External servers are the panel's, not any one server's, so they ride along on
