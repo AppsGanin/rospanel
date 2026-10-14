@@ -425,7 +425,7 @@ var en = map[string]string{
 	"notify.xrayCrashed":         "⚠️ <b>Xray crashed</b>\nServer: %s\nThe process is being restarted automatically.",
 	"notify.xrayWedged":          "⚠️ <b>Xray was not responding</b>\nServer: %s\nThe watchdog restarted the process automatically.",
 	"notify.xrayWedgedNoRestart": "⚠️ <b>Xray was not responding</b>\nServer: %s\nAuto-recovery is off — restart it manually.",
-	"notify.probeDigest":         "🔍 <b>Panel scanners today</b>\n%d new IP(s) probed for the hidden path:",
+	"notify.probeDigest":         "🔍 <b>Panel scanners today</b>\nNew IPs looking for the hidden path: %d",
 	"notify.probeDigestMore":     "…and %d more.",
 	"notify.xrayBack":            "✅ <b>Xray is running again</b>\nServer: %s",
 	"notify.reason":              "Reason: %s",
