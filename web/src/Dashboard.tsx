@@ -10,6 +10,7 @@ import { BrandLogo } from "./Logo";
 import { OverviewPanel } from "./OverviewPanel";
 import { useIsOwner, usePerms } from "./role";
 import { NodesPanel } from "./NodesPanel";
+import { locale } from "./i18n";
 import { navigate, useRoute } from "./router";
 import { SettingsPanel } from "./SettingsPanel";
 import { panelTimezone, setPanelTimezone, subscribePanelTimezone } from "./tz";
@@ -246,11 +247,11 @@ export function Dashboard({
     // scrolls. body carries the safe-area insets (index.css), so they come off
     // the available height here rather than being padded a second time.
     <div className="flex h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom))] overflow-hidden">
-      <aside className="hidden w-56 shrink-0 flex-col border-r border-brand-600/6 bg-gray-50 sm:flex">
+      <aside className="hidden w-56 shrink-0 flex-col border-e border-brand-600/6 bg-gray-50 sm:flex">
         <div className="flex h-13 shrink-0 items-center gap-2.5 border-b border-brand-600/6 px-4">
           <BrandLogo size={22} />
           {version && (
-            <Mono className="ml-auto shrink-0 text-[11px] text-ink-muted">
+            <Mono className="ms-auto shrink-0 text-[11px] text-ink-muted">
               {version}
             </Mono>
           )}
@@ -286,7 +287,7 @@ export function Dashboard({
                 <span className="min-w-0 truncate text-xs text-gray-800">
                   {username}
                 </span>
-                <IconChevron className="ml-auto shrink-0 text-gray-400" />
+                <IconChevron className="ms-auto shrink-0 text-gray-400" />
               </span>
             }
           >
@@ -339,7 +340,7 @@ export function Dashboard({
                       type="button"
                       key={n.value}
                       onClick={() => go(n.value)}
-                      className="flex w-full items-center gap-2.5 border-t border-gray-100 px-3.5 py-2.5 text-left text-[13px] font-medium text-ink first:border-t-0"
+                      className="flex w-full items-center gap-2.5 border-t border-gray-100 px-3.5 py-2.5 text-start text-[13px] font-medium text-ink first:border-t-0"
                     >
                       <span
                         className={cn(
@@ -450,7 +451,7 @@ function NavItem({
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium transition",
+        "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-sm font-medium transition",
         active ? "accent-tint text-ink" : "text-ink-muted hover:bg-gray-100",
       )}
     >
@@ -482,7 +483,7 @@ function MoreRow({
         item.onClick();
       }}
       className={cn(
-        "flex w-full items-center border-t border-gray-100 px-3.5 py-2.5 text-left text-[13px] font-medium first:border-t-0",
+        "flex w-full items-center border-t border-gray-100 px-3.5 py-2.5 text-start text-[13px] font-medium first:border-t-0",
         item.danger ? "text-danger" : "text-accent",
       )}
     >
@@ -496,7 +497,7 @@ function MoreRow({
 // and every stamp in the panel are read in that zone, so the panel says out loud which
 // one it is showing them in.
 function Clock() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const tz = useSyncExternalStore(subscribePanelTimezone, panelTimezone);
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -513,7 +514,7 @@ function Clock() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  const text = new Intl.DateTimeFormat(i18n.language, {
+  const text = new Intl.DateTimeFormat(locale(), {
     hour: "2-digit",
     minute: "2-digit",
     timeZoneName: "short",
@@ -523,7 +524,7 @@ function Clock() {
   return (
     <Mono
       title={t("common.panelTime", { tz })}
-      className="ml-auto shrink-0 text-xs text-ink-muted"
+      className="ms-auto shrink-0 text-xs text-ink-muted"
     >
       {text}
     </Mono>

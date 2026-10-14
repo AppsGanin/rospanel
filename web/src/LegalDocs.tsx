@@ -118,7 +118,7 @@ function LegalDocEditor({
             </a>
           )}
           {meta.length > 0 && <span className="text-[11px] text-ink-muted">{meta.join(" · ")}</span>}
-          <span className="ml-auto">
+          <span className="ms-auto">
             <SegmentedControl
               size="xs"
               nav
@@ -139,6 +139,7 @@ function LegalDocEditor({
           <p className="text-xs text-ink-muted">{t("legal.empty")}</p>
         ) : (
           <div
+            dir="auto"
             className="legal-preview max-h-[50vh] overflow-y-auto rounded-lg border border-gray-200 px-4 py-3 text-sm text-ink"
             // Safe to inject: the server renders the Markdown and drops raw HTML from it.
             dangerouslySetInnerHTML={{ __html: html }}

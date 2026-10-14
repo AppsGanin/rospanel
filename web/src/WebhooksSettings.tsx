@@ -315,7 +315,7 @@ export function WebhooksSettings() {
         footer={
           <div className="flex flex-wrap items-center justify-end gap-2">
             {testResult && (
-              <span className="mr-auto text-[11px] text-ink-muted">{testResult}</span>
+              <span className="me-auto text-[11px] text-ink-muted">{testResult}</span>
             )}
             <Button
               size="sm"

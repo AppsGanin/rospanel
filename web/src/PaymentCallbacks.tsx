@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { currentLang, td } from "./i18n";
+import { locale, td } from "./i18n";
 import { listPaymentCallbacks, type PaymentCallback } from "./api";
 import { errMessage, notifyError } from "./notify";
 import { inPanelTz } from "./tz";
@@ -22,7 +22,7 @@ const OUTCOME_COLOR: Record<string, "green" | "gray" | "orange" | "red"> = {
 
 function fmtWhen(unix: number): string {
   return new Date(unix * 1000).toLocaleString(
-    currentLang(),
+    locale(),
     inPanelTz({ day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }),
   );
 }
@@ -88,7 +88,7 @@ export function PaymentCallbacks({ providerLabel }: { providerLabel: (p: string)
               type="button"
               key={c.id}
               onClick={() => setOpen(c)}
-              className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-gray-100 px-3.5 py-[7px] text-left hover:bg-gray-50"
+              className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-gray-100 px-3.5 py-[7px] text-start hover:bg-gray-50"
             >
               <Mono className="shrink-0 text-[11px] text-ink-muted">{fmtWhen(c.at)}</Mono>
               <span className="shrink-0 text-xs text-ink">{providerLabel(c.provider)}</span>
@@ -98,7 +98,7 @@ export function PaymentCallbacks({ providerLabel }: { providerLabel: (p: string)
               {c.order_id > 0 && (
                 <span className="shrink-0 text-xs text-ink-muted">{t("callbacks.order", { id: c.order_id })}</span>
               )}
-              <Mono className="min-w-0 flex-1 truncate text-right text-[11px] text-ink-muted">
+              <Mono className="min-w-0 flex-1 truncate text-end text-[11px] text-ink-muted">
                 {c.error || c.provider_id}
               </Mono>
             </button>

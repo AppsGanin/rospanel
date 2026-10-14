@@ -163,7 +163,7 @@ export function ShareBar({
           style={{ width: `${p}%`, minWidth: p > 0 ? 2 : 0 }}
         />
       </span>
-      <Mono className="w-20 shrink-0 text-right text-[11px] text-ink-muted">
+      <Mono className="w-20 shrink-0 text-end text-[11px] text-ink-muted">
         {value}
       </Mono>
     </div>

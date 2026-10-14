@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{.Lang}}">
+<html lang="{{.Lang}}" dir="{{.Dir}}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -149,7 +149,7 @@
          A gap works at every width; the ring is desktop-only, because around a
          2px-wide bar on a phone it would be a blob covering its neighbour. */
       .bar:last-child {
-        margin-left: 5px;
+        margin-inline-start: 5px;
       }
       @media (min-width: 641px) {
         .bar:last-child {

@@ -257,7 +257,7 @@ export function NodeCard({
         {/* Six actions, as icons. Spelled out they crowded the row and pushed the
             server's own name off a narrow screen; the words live on as the
             accessible name and the hover title. */}
-        <span className="ml-auto flex shrink-0 items-center gap-0.5">
+        <span className="ms-auto flex shrink-0 items-center gap-0.5">
           <IconButton title={t("nav.settings")} onClick={() => setEditingRouting(true)}>
             <IconGear size={16} />
           </IconButton>
@@ -369,7 +369,7 @@ export function NodeCard({
             </span>
           </span>
 
-          <span className="flex shrink-0 flex-col items-end lg:order-3 lg:ml-auto">
+          <span className="flex shrink-0 flex-col items-end lg:order-3 lg:ms-auto">
             <Mono className="text-sm text-ink">{fmtBytes(traffic)}</Mono>
             <span className="text-[11px] text-ink-muted">{t("nodes.trafficToday")}</span>
           </span>

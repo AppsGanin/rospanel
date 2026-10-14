@@ -34,13 +34,18 @@ func langTestServers() []Server {
 func TestPageEnglishHasNoRussian(t *testing.T) {
 	u := model.User{Name: "Alice", SubToken: "tok", DataLimit: 5 << 30, UsedUp: 1 << 30}
 	servers := langTestServers()
-	html, err := Page(u, servers[0].Set, servers, Billing{}, Devices{}, Access{}, true, i18n.EN)
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	for _, line := range strings.Split(string(html), "\n") {
-		if cyrillic.MatchString(line) {
-			t.Errorf("Russian leaked into the English page:\n  %s", strings.TrimSpace(line))
+	for _, lang := range []i18n.Lang{i18n.EN, i18n.ZH, i18n.AR} {
+		html, err := Page(u, servers[0].Set, servers, Billing{}, Devices{}, Access{}, true, lang)
+		if err != nil {
+			t.Fatalf("render %s: %v", lang, err)
+		}
+		for _, line := range strings.Split(string(html), "\n") {
+			if cyrillic.MatchString(line) {
+				t.Errorf("Russian leaked into the %s page:\n  %s", lang, strings.TrimSpace(line))
+			}
+		}
+		if tag := `<html lang="` + string(lang) + `" dir="` + lang.Dir() + `">`; !strings.Contains(string(html), tag) {
+			t.Errorf("%s page lacks %s", lang, tag)
 		}
 	}
 }

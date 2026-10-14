@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import i18n, { currentLang } from "./i18n";
+import i18n, { locale } from "./i18n";
 import {
   type Broadcast,
   type BroadcastAudience,
@@ -96,7 +96,7 @@ const isLive = (b: Broadcast) => b.status === "running";
 function fmtTime(unix: number): string {
   if (!unix) return "—";
   return new Date(unix * 1000).toLocaleString(
-    currentLang(),
+    locale(),
     inPanelTz({
       day: "2-digit",
       month: "2-digit",

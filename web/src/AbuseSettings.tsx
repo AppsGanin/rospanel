@@ -10,7 +10,7 @@ import {
   type AbuseMeasures,
 } from "./api";
 import { useAction } from "./hooks";
-import i18n, { currentLang } from "./i18n";
+import i18n, { locale } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { inPanelTz } from "./tz";
 import {
@@ -40,7 +40,7 @@ const CATEGORIES: { key: string; desc: string }[] = [
 function fmtEntries(n: number) {
   return i18n.t("abuse.ranges", {
     count: n,
-    formatted: n.toLocaleString(currentLang()),
+    formatted: n.toLocaleString(locale()),
   });
 }
 
@@ -53,7 +53,7 @@ function fmtBytes(n?: number) {
 
 function fmtWhen(ts?: number) {
   if (!ts) return i18n.t("abuse.notLoaded");
-  return new Date(ts * 1000).toLocaleString(currentLang(), inPanelTz());
+  return new Date(ts * 1000).toLocaleString(locale(), inPanelTz());
 }
 
 export function AbuseSettings() {

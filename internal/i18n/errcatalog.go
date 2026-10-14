@@ -22,9 +22,21 @@ import (
 // the caller can keep whatever fallback it already has rather than print an empty
 // message.
 func ErrorEN(code string, args map[string]any) (string, bool) {
-	msg, ok := errEN[code]
+	return ErrorText(EN, code, args)
+}
+
+// errCatalogs are the generated error catalogs by language. Russian has none: the
+// error itself carries the Russian text.
+var errCatalogs = map[Lang]map[string]string{EN: errEN, ZH: errZH, AR: errAR}
+
+// ErrorText is ErrorEN in lang, falling back to English for a code (or a language)
+// the catalog lacks.
+func ErrorText(lang Lang, code string, args map[string]any) (string, bool) {
+	msg, ok := errCatalogs[lang][code]
 	if !ok {
-		return "", false
+		if msg, ok = errEN[code]; !ok {
+			return "", false
+		}
 	}
 	return interpolate(msg, args), true
 }

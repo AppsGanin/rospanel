@@ -242,5 +242,5 @@ export default function CodeEditor({
     });
   }, [readOnly]);
 
-  return <div ref={host} className="h-full min-h-0 overflow-hidden" />;
+  return <div ref={host} dir="ltr" className="h-full min-h-0 overflow-hidden" />;
 }

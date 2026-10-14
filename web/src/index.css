@@ -146,6 +146,23 @@ body {
   padding-right: env(safe-area-inset-right);
 }
 
+/* IBM Plex Mono has no Arabic: without a proportional face next in line, a word
+   like «بايت» inside a figure falls to a system monospace and comes out stretched
+   letter by letter. Digits and Latin stay in Plex Mono. */
+/* Code, configs and logs read left to right in every language; so do charts, whose
+   axes Recharts lays out assuming it. */
+pre,
+code,
+.recharts-wrapper {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+html[lang="ar"] {
+  --font-mono:
+    "IBM Plex Mono", "Noto Sans Arabic", "Geeza Pro", Tahoma, monospace;
+}
+
 body {
   margin: 0;
   color: var(--color-ink);
@@ -313,9 +330,9 @@ body {
 .legal-preview h2 { font-size: 1.1rem; font-weight: 700; margin: 0.9em 0 0.4em; }
 .legal-preview h3 { font-size: 1rem; font-weight: 700; margin: 0.8em 0 0.3em; }
 .legal-preview p, .legal-preview ul, .legal-preview ol, .legal-preview table { margin: 0 0 0.75em; }
-.legal-preview ul { list-style: disc; padding-left: 1.4em; }
-.legal-preview ol { list-style: decimal; padding-left: 1.4em; }
+.legal-preview ul { list-style: disc; padding-inline-start: 1.4em; }
+.legal-preview ol { list-style: decimal; padding-inline-start: 1.4em; }
 .legal-preview a { color: var(--color-accent, #0d4cd3); text-decoration: underline; }
-.legal-preview blockquote { border-left: 3px solid currentColor; opacity: 0.8; padding-left: 0.8em; margin: 0 0 0.75em; }
+.legal-preview blockquote { border-inline-start: 3px solid currentColor; opacity: 0.8; padding-inline-start: 0.8em; margin: 0 0 0.75em; }
 .legal-preview th, .legal-preview td { border: 1px solid rgba(127, 127, 127, 0.3); padding: 4px 8px; }
 .legal-preview > :first-child { margin-top: 0; }

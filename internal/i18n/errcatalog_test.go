@@ -12,26 +12,28 @@ import (
 // the generator exists to prevent, and one nobody would notice until an integrator
 // reported it.
 func TestErrorCatalogIsCurrent(t *testing.T) {
-	want, err := dictcheck.ErrorsEN(".")
-	if err != nil {
-		t.Skipf("frontend dictionary not available (%v)", err)
-	}
-	if len(want) == 0 {
-		t.Fatal("no err.* entries parsed — did the dictionary shape change?")
-	}
-	for code, text := range want {
-		got, ok := errEN[code]
-		if !ok {
-			t.Errorf("%s is in en.ts but not in the catalog — run `go generate ./internal/i18n/...`", code)
-			continue
+	for file, catalog := range map[string]map[string]string{"en.ts": errEN, "zh.ts": errZH, "ar.ts": errAR} {
+		want, err := dictcheck.Errors(".", file)
+		if err != nil {
+			t.Skipf("frontend dictionary not available (%v)", err)
 		}
-		if got != text {
-			t.Errorf("%s drifted:\n catalog: %q\n en.ts:   %q\nrun `go generate ./internal/i18n/...`", code, got, text)
+		if len(want) == 0 {
+			t.Fatalf("no err.* entries parsed from %s — did the dictionary shape change?", file)
 		}
-	}
-	for _, code := range ErrorCodes() {
-		if _, ok := want[code]; !ok {
-			t.Errorf("%s is in the catalog but no longer in en.ts — run `go generate ./internal/i18n/...`", code)
+		for code, text := range want {
+			got, ok := catalog[code]
+			if !ok {
+				t.Errorf("%s is in %s but not in the catalog — run `go generate ./internal/i18n/...`", code, file)
+				continue
+			}
+			if got != text {
+				t.Errorf("%s drifted:\n catalog: %q\n %s:   %q\nrun `go generate ./internal/i18n/...`", code, got, file, text)
+			}
+		}
+		for code := range catalog {
+			if _, ok := want[code]; !ok {
+				t.Errorf("%s is in the catalog but no longer in %s — run `go generate ./internal/i18n/...`", code, file)
+			}
 		}
 	}
 }

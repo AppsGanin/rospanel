@@ -36,7 +36,7 @@ func TestProviderLabelKeysHaveDictionaryEntries(t *testing.T) {
 	if len(keys) == 0 {
 		t.Fatal("no payField/payNote/payHelp keys found — did the registry stop using them?")
 	}
-	for _, dict := range []string{"ru.ts", "en.ts"} {
+	for _, dict := range []string{"ru.ts", "en.ts", "zh.ts", "ar.ts"} {
 		d, err := dictcheck.Load(".", dict)
 		if err != nil {
 			t.Skipf("frontend dictionary not available (%v)", err)

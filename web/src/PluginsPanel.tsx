@@ -477,7 +477,7 @@ function PluginRow({
         <p className="text-[11px] text-ink-muted">{t("plugins.paymentHint")}</p>
       )}
 
-      <div className="-ml-1.5 flex items-center gap-0.5 sm:hidden">{tools}</div>
+      <div className="-ms-1.5 flex items-center gap-0.5 sm:hidden">{tools}</div>
       {(startAgain || p.status === "active") && (
         <div className="flex flex-wrap items-center gap-1.5 empty:hidden">
           {startAgain && (
@@ -649,14 +649,14 @@ function SettingsDialog({
                   onChange={(v) => set(f.key, v)}
                   placeholder={goes ? t("plugins.secretGoes") : secretSet ? t("plugins.secretKeep") : (f.placeholder ?? "")}
                   disabled={!canManage || goes}
-                  className="pr-16"
+                  className="pe-16"
                 />
                 {(canClear || goes) && (
                   <button
                     type="button"
                     title={goes ? t("plugins.secretUndo") : t("plugins.clearValue")}
                     aria-label={goes ? t("plugins.secretUndo") : t("plugins.clearValue")}
-                    className="absolute top-1/2 right-9 -translate-y-1/2 p-1 text-gray-400 transition hover:text-gray-600"
+                    className="absolute top-1/2 end-9 -translate-y-1/2 p-1 text-gray-400 transition hover:text-gray-600"
                     onClick={() => {
                       if (goes) setCleared((c) => c.filter((k) => k !== f.key));
                       else if (values[f.key] !== "") set(f.key, "");
@@ -678,14 +678,14 @@ function SettingsDialog({
                   placeholder={f.placeholder ?? ""}
                   type={f.kind === "number" ? "number" : undefined}
                   disabled={!canManage}
-                  className="pr-9"
+                  className="pe-9"
                 />
                 {canManage && values[f.key] !== "" && (
                   <button
                     type="button"
                     title={t("plugins.clearValue")}
                     aria-label={t("plugins.clearValue")}
-                    className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-gray-400 transition hover:text-gray-600"
+                    className="absolute top-1/2 end-2 -translate-y-1/2 p-1 text-gray-400 transition hover:text-gray-600"
                     onClick={() => set(f.key, "")}
                   >
                     <IconClose size={14} />
@@ -1046,7 +1046,7 @@ function ConsentList({ title, empty, children }: { title: string; empty: string;
       {children.length === 0 ? (
         <p className="text-xs text-ink-muted">{empty}</p>
       ) : (
-        <ul className="flex list-disc flex-col gap-1 pl-5 text-xs text-ink">{children}</ul>
+        <ul className="flex list-disc flex-col gap-1 ps-5 text-xs text-ink">{children}</ul>
       )}
     </div>
   );

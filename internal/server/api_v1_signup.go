@@ -25,7 +25,7 @@ type (
 		Ref        string `json:"ref,omitempty"`    // the invite code of the user who referred them
 		Invite     string `json:"invite,omitempty"` // the registration code, when sign-up is by invitation
 		IP         string `json:"ip,omitempty"`     // the client's address, for the per-address rate limit
-		Lang       string `json:"lang,omitempty"`   // ru | en: the language a new account (or one approved later) is written to in
+		Lang       string `json:"lang,omitempty"`   // ru | en | zh | ar: the language a new account (or one approved later) is written to in
 	}
 	// apiSignupResp is the account (created or existing) or the pending request.
 	apiSignupResp struct {

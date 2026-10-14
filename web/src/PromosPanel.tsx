@@ -12,7 +12,7 @@ import {
 } from "./api";
 import { dateToUnixEndOfDay, unixToLocalDate } from "./format";
 import { useAction } from "./hooks";
-import i18n, { currentLang } from "./i18n";
+import i18n, { locale } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { useCan } from "./role";
 import { useStepUpDialog } from "./stepup";
@@ -78,9 +78,9 @@ function promoEffect(p: PromoCode, plans: TariffPlan[]): string {
     case "percent":
       return `−${p.value}%`;
     case "amount":
-      return `−${p.value.toLocaleString(currentLang())} ₽`;
+      return `−${p.value.toLocaleString(locale())} ₽`;
     case "balance":
-      return i18n.t("promo.onBalance", { sum: p.value.toLocaleString(currentLang()) });
+      return i18n.t("promo.onBalance", { sum: p.value.toLocaleString(locale()) });
     case "days": {
       const days = i18n.t("bill.nDays", { count: p.value });
       const plan = plans.find((x) => x.id === p.plan_id);
@@ -217,7 +217,7 @@ export function PromosPanel({ plans }: { plans: TariffPlan[] }) {
                 const uses = p.max_uses > 0 ? `${p.uses} / ${p.max_uses}` : String(p.uses);
                 const expires = p.expires_at
                   ? new Date(p.expires_at * 1000).toLocaleDateString(
-                      currentLang(),
+                      locale(),
                       inPanelTz({ day: "2-digit", month: "2-digit", year: "numeric" }),
                     )
                   : "—";
@@ -403,7 +403,7 @@ function PromoUsesBlock({ id }: { id: number }) {
       <span className="text-sm font-medium text-ink">
         {t("promo.usedN", { count: usage.uses.length })}
         {usage.orders > 0 &&
-          ` · ${t("promo.revenue", { count: usage.orders, sum: usage.revenue_rub.toLocaleString(currentLang()) })}`}
+          ` · ${t("promo.revenue", { count: usage.orders, sum: usage.revenue_rub.toLocaleString(locale()) })}`}
       </span>
       {usage.uses.length > 0 && (
         <div className="flex max-h-56 flex-col overflow-y-auto rounded-lg border border-gray-200/80">
@@ -416,7 +416,7 @@ function PromoUsesBlock({ id }: { id: number }) {
               <span className="shrink-0 text-ink-muted">
                 {u.order_id ? `#${u.order_id} · ${u.amount_rub} ₽ · −${u.discount_rub} ₽ · ` : ""}
                 {new Date(u.used_at * 1000).toLocaleDateString(
-                  currentLang(),
+                  locale(),
                   inPanelTz({ day: "2-digit", month: "2-digit", year: "numeric" }),
                 )}
               </span>

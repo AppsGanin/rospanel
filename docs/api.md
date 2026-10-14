@@ -185,7 +185,7 @@ monitor pointed here keeps working.
 | `POST` | `/v1/signup` | Sign up a client from an external system or your own bot under the self-registration rules (see below). |
 | `POST` | `/v1/users/bulk` | Apply one action to many users at once. |
 | `GET` | `/v1/users/{id}` | Get one user. |
-| `PATCH` | `/v1/users/{id}` | Update name / limits / expiry or a term from the first connection / device limit / speed limit / enabled / the external system's `external_id` / `mailing` (broadcasts and automatic messages on or off — the bot's switch shows the same) / `lang` (`ru`, `en`, or `""` for what the Telegram reports). |
+| `PATCH` | `/v1/users/{id}` | Update name / limits / expiry or a term from the first connection / device limit / speed limit / enabled / the external system's `external_id` / `mailing` (broadcasts and automatic messages on or off — the bot's switch shows the same) / `lang` (`ru`, `en`, `zh`, `ar`, or `""` for what the Telegram reports). |
 | `DELETE` | `/v1/users/{id}` | Delete a user. |
 | `POST` | `/v1/users/{id}/reset` | Reset the user's traffic counters. |
 | `POST` | `/v1/users/{id}/reset-period` | Set auto-reset period. |
@@ -446,7 +446,7 @@ code, `balance_kop` the balance covers and `money_rub` left to pay. Then `POST /
 with `from_balance` when `money_rub` is 0 (add `expect_expire_at` — the `expire_at` you showed
 — so a retried request does not buy a second period), or with a `provider` for the rest. A
 top-up is `{"user_id": 5, "kind": "topup", "amount_rub": 300}` (plus `provider`, or none for a
-manual one). Both take `lang` (`ru`/`en`, for the manual-payment instructions) and
+manual one). Both take `lang` (`ru`/`en`/`zh`/`ar`, for the manual-payment instructions) and
 `return_url` (where a hosted payment sends the payer back; the user's subscription link when left out — your own page, when one is set).
 
 **Your own bot or user cabinet** — the key stays on your server, never in a browser. Tick the
@@ -490,8 +490,8 @@ account in full only to a key with `users.view`) instead of a second trial. The 
 must pass only an id it has verified (a confirmed e-mail): whoever passes it gets that account.
 A new account answers `201 "created"` with the account, a request `202 "pending"` with `request_id`
 (asking again while it waits files nothing). Optional: `name` (the external id when left out),
-`source` (the funnel's tag), `ref` (an invite code; an unknown one is ignored), `lang` (`ru` or
-`en`, given to the account — at once, or when the operator approves it), and `ip` — the
+`source` (the funnel's tag), `ref` (an invite code; an unknown one is ignored), `lang` (`ru`, `en`,
+`zh` or `ar`, given to the account — at once, or when the operator approves it), and `ip` — the
 client's address, for a limit of one sign-up a minute per address (per /64 for IPv6) and per id,
 20 a minute in all; over it the answer is `429` with `Retry-After`. Tick the external system's key for
 `POST /v1/signup` (plus what it shows and sells) and not `POST /v1/users`: it then cannot make a

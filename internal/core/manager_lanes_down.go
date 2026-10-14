@@ -211,6 +211,7 @@ func (m *Manager) observeLanesAt(now time.Time) {
 		mieruErr[id] = e
 	}
 	m.nodeGeoMu.Unlock()
+	lang := m.botLang()
 	keep := map[int64]bool{}
 	mieruOn := map[int64]bool{model.LocalNodeID: set.MieruEnabled}
 	awgOn := map[int64]bool{model.LocalNodeID: set.AWGEnabled}
@@ -225,7 +226,7 @@ func (m *Manager) observeLanesAt(now time.Time) {
 			keep[n.ID] = true // judged again when it reports
 			continue
 		}
-		label := nodeLabel(n)
+		label := nodeLabel(n, lang)
 		var keys []string
 		if set.SubHideOffline && !n.XrayRunning {
 			keys = append(keys, xrayLanes...)
@@ -260,7 +261,7 @@ func (m *Manager) observeLanesAt(now time.Time) {
 		return true
 	}
 	round := laneRound{down: down, notes: notes, keep: keep, wanted: wanted}
-	for _, msg := range laneAlerts(m.lanesDown.observe(now, round), m.botLang(), now) {
+	for _, msg := range laneAlerts(m.lanesDown.observe(now, round), lang, now) {
 		m.notifyAdminEvent(model.AdminEventXrayDown, msg)
 	}
 }

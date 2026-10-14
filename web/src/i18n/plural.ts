@@ -10,10 +10,11 @@
 // keys, which is exactly what the Dict type checks.
 //
 // So the invariant is raised to the type level: a key ending in _one obliges the
-// same object to carry _few, _many and _other. Russian selects one/few/many for
-// integers and other for fractions; English selects one/other. Requiring the union
-// makes any supported language complete by construction, and a missing form is a
-// compile error rather than a language switch away from being noticed.
+// same object to carry _zero, _two, _few, _many and _other — every CLDR category.
+// Russian selects one/few/many for integers and other for fractions; English
+// one/other; Chinese only other; Arabic all six. Requiring the union makes any
+// supported language complete by construction, and a missing form is a compile
+// error rather than a language switch away from being noticed.
 //
 // A missing form resolves the offending property to `never`, so its string literal
 // fails to assign and tsc points straight at the key.
@@ -23,7 +24,11 @@ export type PluralComplete<T> = {
       ? `${Base}_few` extends keyof T
         ? `${Base}_many` extends keyof T
           ? `${Base}_other` extends keyof T
-            ? T[K]
+            ? `${Base}_zero` extends keyof T
+              ? `${Base}_two` extends keyof T
+                ? T[K]
+                : never
+              : never
             : never
           : never
         : never

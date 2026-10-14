@@ -6,7 +6,7 @@ import { type FocusEvent, type PointerEvent, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { EventCatalog, EventField, EventInfo } from "./api";
 import { fmtBytes, fmtStamp } from "./format";
-import { td } from "./i18n";
+import { locale, td } from "./i18n";
 import { notifySuccess } from "./notify";
 import { Code, cn, IconChevron } from "./ui";
 
@@ -100,7 +100,7 @@ function example(f: EventField): string {
     case "bytes":
       return `${raw} · ${fmtBytes(v)}`;
     case "kop":
-      return `${raw} · ${(v / 100).toLocaleString()} ₽`;
+      return `${raw} · ${(v / 100).toLocaleString(locale())} ₽`;
   }
   return raw;
 }
@@ -133,11 +133,11 @@ export function EventDataPanel({
     <div data-fields className="rounded-xl border border-gray-200">
       <button
         type="button"
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-ink"
+        className="flex w-full items-center gap-2 px-3 py-2 text-start text-xs font-semibold text-ink"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <IconChevron size={12} className={cn("text-ink-muted transition", open ? "" : "-rotate-90")} />
+        <IconChevron size={12} className={cn("text-ink-muted transition", open ? "" : "-rotate-90 rtl:rotate-90")} />
         {t("studio.dataTitle")}
         <span className="font-normal text-ink-muted">· {all.length}</span>
       </button>
@@ -163,7 +163,7 @@ export function EventDataPanel({
                     type="button"
                     onMouseDown={(e) => e.preventDefault() /* keep the cursor where it was */}
                     onClick={() => onPick(f.path)}
-                    className="grid w-full grid-cols-1 gap-x-3 text-left sm:grid-cols-[11rem_1fr]"
+                    className="grid w-full grid-cols-1 gap-x-3 text-start sm:grid-cols-[11rem_1fr]"
                   >
                     <code className="truncate font-mono text-[12px] text-accent">
                       {f.path}
@@ -177,12 +177,12 @@ export function EventDataPanel({
                     <span className="min-w-0 text-[12px] text-ink">
                       {td(`evField.${f.hint}`)}
                       {example(f) && (
-                        <span className="ml-1.5 font-mono text-[11px] break-words text-ink-muted">{example(f)}</span>
+                        <span className="ms-1.5 font-mono text-[11px] break-words text-ink-muted">{example(f)}</span>
                       )}
                     </span>
                   </button>
                   {FORMATS[f.type] && (
-                    <div className="mt-0.5 flex flex-wrap gap-1 sm:pl-[11.75rem]">
+                    <div className="mt-0.5 flex flex-wrap gap-1 sm:ps-[11.75rem]">
                       {FORMATS[f.type]?.map((fm) => (
                         <button
                           key={fm}
@@ -209,7 +209,7 @@ export function EventDataPanel({
                 aria-expanded={json}
                 onClick={() => setJson(!json)}
               >
-                <IconChevron size={10} className={cn("transition", json ? "" : "-rotate-90")} />
+                <IconChevron size={10} className={cn("transition", json ? "" : "-rotate-90 rtl:rotate-90")} />
                 {t("studio.sampleJSON")}
               </button>
               {json && (

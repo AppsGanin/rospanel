@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { currentLang } from "./i18n";
+import { locale } from "./i18n";
 import { getBlacklist, refreshBlacklist, saveBlacklist, type BlacklistInfo } from "./api";
 import { errMessage, notifyError } from "./notify";
 import { inPanelTz } from "./tz";
@@ -38,7 +38,7 @@ export function BlacklistPanel() {
   };
   const synced = info.synced_at
     ? new Date(info.synced_at * 1000).toLocaleString(
-        currentLang(),
+        locale(),
         inPanelTz({ day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
       )
     : "";

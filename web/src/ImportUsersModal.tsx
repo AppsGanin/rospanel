@@ -112,7 +112,7 @@ export function ImportUsersModal({
     >
       <div className="flex flex-col gap-3">
         <p className="text-sm text-ink-muted">{t('importUsers.intro')}</p>
-        <ul className="list-disc pl-5 text-xs text-ink-muted">
+        <ul className="list-disc ps-5 text-xs text-ink-muted">
           <li>{t('importUsers.srcRosPanel')}</li>
           <li>{t('importUsers.srcMarzban')}</li>
           <li>{t('importUsers.srcXui')}</li>
@@ -125,7 +125,7 @@ export function ImportUsersModal({
               type="file"
               accept=".db,.sqlite,.sqlite3,.json,application/json,application/x-sqlite3,application/octet-stream"
               onChange={(e) => setFile(e.currentTarget.files?.[0] ?? null)}
-              className="block w-full text-sm text-ink file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-ink hover:file:bg-gray-200"
+              className="block w-full text-sm text-ink file:me-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-ink hover:file:bg-gray-200"
             />
             <Button loading={busy} disabled={!file} onClick={inspect} className="sm:shrink-0">
               {t('importUsers.inspect')}
@@ -139,7 +139,7 @@ export function ImportUsersModal({
               <Badge color="brand">{preview.source}</Badge>
               <button
                 type="button"
-                className="ml-auto text-xs text-accent hover:underline"
+                className="ms-auto text-xs text-accent hover:underline"
                 onClick={() => {
                   setPreview(null)
                   setFile(null)
@@ -226,7 +226,7 @@ export function ImportUsersModal({
             {failed.length > 0 && (
               <div className="warning-tint rounded-lg px-3 py-2 text-xs text-warning">
                 <p className="font-medium">{t('importUsers.failedTitle', { count: failed.length })}</p>
-                <ul className="mt-1 list-disc pl-4">
+                <ul className="mt-1 list-disc ps-4">
                   {failed.map((f, i) => (
                     // biome-ignore lint/suspicious/noArrayIndexKey: the report of a finished import; it is rendered once and never reordered
                     <li key={i}>

@@ -15,6 +15,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sub"
@@ -77,7 +78,7 @@ type usersPage struct {
 //	?filter= all | active | online | expiring | limited | disabled | expired
 //	?tag=    only users carrying this tag
 //	?sort=   new | name | traffic | expiry | online
-//	?lang=   ru | en, the alphabet a name sort follows
+//	?lang=   ru | en | zh | ar, the alphabet a name sort follows
 //	?offset= ?limit=   the window (limit 0 returns counts only)
 //	?ids=1   also every matching id
 func (rt *Router) listUsersPage(w http.ResponseWriter, r *http.Request) {
@@ -349,8 +350,8 @@ func (idx *usersIndex) order(users []store.UserSummary, by, lang string) []int32
 
 // collationLang is the alphabet a name sort follows for lang.
 func collationLang(lang string) string {
-	if lang == "en" {
-		return "en"
+	if i18n.IsLang(lang) {
+		return lang
 	}
 	return "ru"
 }
@@ -636,9 +637,16 @@ func (a nameKey) less(b nameKey) bool {
 func collationKeys(users []store.UserSummary, lang string) []nameKey {
 	c := collate.New(language.Russian)
 	own := unicode.Cyrillic
-	if lang == "en" {
+	switch lang {
+	case "en":
 		c = collate.New(language.English)
 		own = unicode.Latin
+	case "zh":
+		c = collate.New(language.SimplifiedChinese)
+		own = unicode.Han
+	case "ar":
+		c = collate.New(language.Arabic)
+		own = unicode.Arabic
 	}
 	class := func(s string) int {
 		r, _ := utf8.DecodeRuneInString(s)

@@ -225,7 +225,7 @@ function WidgetBody({ data }: { data: NonNullable<PluginWidget["data"]> }) {
       );
     case "list":
       return (
-        <ul className="flex list-disc flex-col gap-0.5 pl-4 text-xs text-ink">
+        <ul className="flex list-disc flex-col gap-0.5 ps-4 text-xs text-ink">
           {(data.items ?? []).slice(0, 50).map((it, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: a plugin's list has no ids
             <li key={i}>{String(it)}</li>
@@ -240,7 +240,7 @@ function WidgetBody({ data }: { data: NonNullable<PluginWidget["data"]> }) {
               <tr>
                 {(data.columns ?? []).map((c, i) => (
                   // biome-ignore lint/suspicious/noArrayIndexKey: columns have no ids
-                  <th key={i} className="pb-1 text-left font-semibold text-ink-muted">
+                  <th key={i} className="pb-1 text-start font-semibold text-ink-muted">
                     {String(c)}
                   </th>
                 ))}
@@ -252,7 +252,7 @@ function WidgetBody({ data }: { data: NonNullable<PluginWidget["data"]> }) {
                 <tr key={i} className="border-t border-gray-100">
                   {(Array.isArray(r) ? r : []).map((c, j) => (
                     // biome-ignore lint/suspicious/noArrayIndexKey: cells have no ids
-                    <td key={j} className="py-1 pr-2 text-ink">
+                    <td key={j} className="py-1 pe-2 text-ink">
                       {String(c)}
                     </td>
                   ))}

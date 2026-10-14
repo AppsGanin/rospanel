@@ -116,7 +116,7 @@ export function RouteGrid({
                 />
                 <button
                   type="button"
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-2 text-start"
                   onClick={() =>
                     setOpen((cur) => {
                       const next = new Set(cur);
@@ -135,8 +135,8 @@ export function RouteGrid({
                   </span>
                   <span
                     className={cn(
-                      "ml-auto shrink-0 text-ink-muted transition",
-                      expanded && "rotate-90",
+                      "ms-auto shrink-0 text-ink-muted transition",
+                      expanded && "rotate-90 rtl:-rotate-90",
                     )}
                     aria-hidden
                   >
@@ -149,7 +149,7 @@ export function RouteGrid({
                   <div
                     key={r.route}
                     className={cn(
-                      "flex items-center gap-2.5 border-t border-gray-100 py-[6px] pr-3.5 pl-7",
+                      "flex items-center gap-2.5 border-t border-gray-100 py-[6px] pe-3.5 ps-7",
                       !r.grantable && "opacity-50",
                     )}
                   >

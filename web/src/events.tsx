@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { EventPage, UserEvent } from "./api";
 import { fmtBytes, fmtSpeed } from "./format";
-import i18n, { currentLang, slugKey, td } from "./i18n";
+import i18n, { change, locale, slugKey, td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
 import { inPanelTz } from "./tz";
 import {
@@ -108,7 +108,7 @@ function actorLabel(e: UserEvent): string {
 function fmtDateTime(unix: number): string {
   if (!unix) return "—";
   return new Date(unix * 1000).toLocaleString(
-    currentLang(),
+    locale(),
     inPanelTz({
       day: "2-digit",
       month: "2-digit",
@@ -121,7 +121,7 @@ function fmtDateTime(unix: number): string {
 
 function fmtDate(unix: number): string {
   if (!unix) return i18n.t("common.never");
-  return new Date(unix * 1000).toLocaleDateString(currentLang(), inPanelTz());
+  return new Date(unix * 1000).toLocaleDateString(locale(), inPanelTz());
 }
 
 // num/str read one typed field out of the free-form details object. A missing key
@@ -155,7 +155,7 @@ function providerLabel(p: string): string {
 
 // fmtKop renders kopecks as roubles: "199", or "19,90" when there are kopecks.
 export function fmtKop(kop: number): string {
-  return (kop / 100).toLocaleString(currentLang(), {
+  return (kop / 100).toLocaleString(locale(), {
     minimumFractionDigits: kop % 100 === 0 ? 0 : 2,
     maximumFractionDigits: 2,
   });
@@ -220,14 +220,14 @@ export function eventDetails(e: UserEvent): string {
     case "user.mailing":
       return i18n.t(d.mailing ? "events.det.mailingOn" : "events.det.mailingOff");
     case "user.renamed":
-      return `${str(d, "from") || "—"} → ${str(d, "to")}`;
+      return change(str(d, "from") || "—", str(d, "to"));
     case "user.tags_changed": {
       // Both sides are lists; an empty one reads as "—" so a clear is visible.
       const list = (k: string) => {
         const v = d[k];
         return Array.isArray(v) && v.length ? v.join(", ") : "—";
       };
-      return `${list("from")} → ${list("to")}`;
+      return change(list("from"), list("to"));
     }
     case "user.traffic_reset":
     case "user.quota_reset": {
@@ -296,7 +296,7 @@ export function eventDetails(e: UserEvent): string {
       const noPlan = i18n.t("events.det.noPlan");
       const prev = str(d, "prev_plan") || noPlan;
       const next = str(d, "plan") || noPlan;
-      parts.push(`${prev} → ${next}`);
+      parts.push(change(prev, next));
       const expire = num(d, "expire_at");
       if (expire) parts.push(i18n.t("events.det.until", { date: fmtDate(expire) }));
       break;
@@ -325,7 +325,7 @@ export function eventDetails(e: UserEvent): string {
       if (plan) parts.push(plan);
       if (d.source === "provider") {
         // The payment system returned the money: what came off, and what went back.
-        parts.push(`${num(d, "amount_rub").toLocaleString(currentLang())} ₽`, i18n.t("events.det.byProvider"));
+        parts.push(`${num(d, "amount_rub").toLocaleString(locale())} ₽`, i18n.t("events.det.byProvider"));
         if (d.plan_cut) parts.push(i18n.t("events.det.planCut"));
         const taken = num(d, "taken_kop");
         if (taken) parts.push(`−${fmtKop(taken)} ₽`);
@@ -371,7 +371,7 @@ export function eventDetails(e: UserEvent): string {
       if (plan) parts.push(plan);
       else if (str(d, "kind") === "topup") parts.push(i18n.t("events.det.topup"));
       const amount = num(d, "amount_rub");
-      if (amount) parts.push(`${amount.toLocaleString(currentLang())} ₽`);
+      if (amount) parts.push(`${amount.toLocaleString(locale())} ₽`);
       const fromBalance = num(d, "balance_kop");
       if (fromBalance) parts.push(i18n.t("events.det.fromBalance", { sum: fmtKop(fromBalance) }));
       const promo = str(d, "promo");
@@ -556,7 +556,7 @@ function EventGrid({
           {showUser && <span className="truncate">{t("events.colUser")}</span>}
           <span className="truncate">{t("events.colDetails")}</span>
           <span className="truncate">{t("events.colActor")}</span>
-          <span className="truncate text-right">{t("events.colWhen")}</span>
+          <span className="truncate text-end">{t("events.colWhen")}</span>
         </div>
       )}
       {events.map((e) => {
@@ -576,7 +576,7 @@ function EventGrid({
                 {meta.label}
                 {bulk ? ` · ${t("events.bulk")}` : ""}
               </span>
-              <Mono className="text-right text-[11px] text-ink-muted">{when}</Mono>
+              <Mono className="text-end text-[11px] text-ink-muted">{when}</Mono>
               <span className="col-span-2 truncate text-xs text-ink-muted">
                 {showUser ? `${e.user_name || `#${e.user_id}`} · ` : ""}
                 <span className={actorClass(e.actor_kind)}>{who}</span>
@@ -593,7 +593,7 @@ function EventGrid({
             <span className="truncate text-xs text-ink" title={meta.label}>
               {meta.label}
               {bulk && (
-                <span className="ml-1.5 text-[11px] text-ink-muted">
+                <span className="ms-1.5 text-[11px] text-ink-muted">
                   {t("events.bulk")}
                 </span>
               )}
@@ -615,7 +615,7 @@ function EventGrid({
             >
               {who}
             </span>
-            <Mono className="text-right text-[11px] text-ink-muted">{when}</Mono>
+            <Mono className="text-end text-[11px] text-ink-muted">{when}</Mono>
           </div>
         );
       })}

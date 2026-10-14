@@ -26,7 +26,7 @@ type (
 	}
 	apiRedeemReq struct {
 		Code string `json:"code"`
-		Lang string `json:"lang,omitempty"` // ru | en: the language of message (default en)
+		Lang string `json:"lang,omitempty"` // ru | en | zh | ar: the language of message (default en)
 	}
 	apiRedeemResp struct {
 		Result  *core.PromoResult `json:"result"`

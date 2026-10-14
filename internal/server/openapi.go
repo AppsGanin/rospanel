@@ -181,7 +181,7 @@ func apiSpecRoutes() []oaRoute {
 			destructive: true},
 		{method: "GET", path: "/v1/users/{id}/subscription", tag: "Users",
 			summary: "The user's subscription page as data, to draw it yourself: status, traffic, term, app imports, configs, devices, payment block — under the subscription settings the panel's page keeps",
-			query:   []oaParam{{name: "lang", typ: "string", desc: "ru | en — the language of the texts (default en)"}},
+			query:   []oaParam{{name: "lang", typ: "string", desc: "ru | en | zh | ar — the language of the texts (default en)"}},
 			resp:    t(sub.View{})},
 		{method: "POST", path: "/v1/users/{id}/telegram", tag: "Users",
 			summary: "Link the user's Telegram ID (0 unlinks); a Telegram already linked to another user is refused",

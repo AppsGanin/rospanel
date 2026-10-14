@@ -157,7 +157,7 @@ export function UsersPage({
             for actions whose shapes are unambiguous. The words live on as the
             accessible name and the hover title. */}
         {tab === "list" && (
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ms-auto flex items-center gap-1">
             {canManage && (
               <IconButton
                 title={t("importUsers.buttonHint")}

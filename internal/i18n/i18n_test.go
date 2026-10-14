@@ -74,10 +74,15 @@ func TestFormatVerbsMatch(t *testing.T) {
 		if lang == RU {
 			continue
 		}
-		for k, want := range ru {
-			got, ok := cat[k]
+		for k, got := range cat {
+			want, ok := ru[k]
 			if !ok {
-				continue // a plural form this language does not use, or already reported
+				// A plural form Russian does not have (Arabic _zero/_two): it takes the
+				// same arguments as the base's other forms.
+				base, plural := pluralBase(k)
+				if want, ok = ru[base+"_"+catMany]; !plural || !ok {
+					continue // already reported by TestCatalogsMatch
+				}
 			}
 			wv, gv := formatVerbs(want), formatVerbs(got)
 			if len(wv) != len(gv) {
@@ -104,7 +109,10 @@ func TestNormalize(t *testing.T) {
 		"en":    EN,
 		"en-GB": EN,
 		"de":    EN,
-		"zh-CN": EN,
+		"zh-CN": ZH,
+		"zh_TW": ZH,
+		"ar-SA": AR,
+		"ARA":   EN, // a three-letter tag is not ar
 	}
 	for in, want := range cases {
 		if got := Normalize(in); got != want {
@@ -125,7 +133,9 @@ func TestFromAcceptLanguage(t *testing.T) {
 		"en-US,en;q=0.9":             EN,
 		"de-DE,de;q=0.9,en;q=0.8":    EN,
 		"fr;q=0.9, ru;q=0.8":         RU, // first *supported* entry wins
-		"zh-CN,zh;q=0.9":             EN, // named a language, just not one we ship
+		"zh-CN,zh;q=0.9":             ZH,
+		"ar-EG,ar;q=0.9,en;q=0.8":    AR,
+		"tr-TR,tr;q=0.9":             EN, // named a language, just not one we ship
 		"de-DE,de;q=0.9":             EN, // ditto — must agree with the bots, which say EN
 		"be-BY,be":                   RU, // Normalize's special cases still hold
 		"uk":                         RU,
@@ -196,6 +206,22 @@ func TestPluralCategories(t *testing.T) {
 			t.Errorf("plural(en, %d) = %q, want %q", n, got, want)
 		}
 	}
+	for _, n := range []int{0, 1, 2, 5, 11, 101} {
+		if got := plural(ZH, n); got != "other" {
+			t.Errorf("plural(zh, %d) = %q, want other", n, got)
+		}
+	}
+	arCases := map[int]string{
+		0: "zero", 1: "one", 2: "two",
+		3: "few", 10: "few", 103: "few",
+		11: "many", 99: "many", 111: "many",
+		100: "other", 101: "other", 102: "other",
+	}
+	for n, want := range arCases {
+		if got := plural(AR, n); got != want {
+			t.Errorf("plural(ar, %d) = %q, want %q", n, got, want)
+		}
+	}
 }
 
 func TestTNRendersCount(t *testing.T) {
@@ -209,6 +235,8 @@ func TestTNRendersCount(t *testing.T) {
 		{RU, 11, "11 дней"},
 		{EN, 1, "1 day"},
 		{EN, 3, "3 days"},
+		{ZH, 1, "1 天"},
+		{ZH, 3, "3 天"},
 	} {
 		if got := TN(tc.lang, "notify.days", tc.n); got != tc.want {
 			t.Errorf("TN(%s, notify.days, %d) = %q, want %q", tc.lang, tc.n, got, tc.want)
@@ -225,7 +253,8 @@ func TestAcceptLanguageAgreesWithNormalize(t *testing.T) {
 	for _, tag := range []string{
 		"ru", "ru-RU", "be", "be-BY", "uk", "uk-UA", // Russian, and the two Normalize folds in
 		"en", "en-US", "en-GB",
-		"de", "de-DE", "fr", "zh-CN", "tr", "es-MX", "ar", // ship nothing for these
+		"zh", "zh-CN", "zh-Hant-TW", "ar", "ar-EG",
+		"de", "de-DE", "fr", "tr", "es-MX", // ship nothing for these
 	} {
 		if got, want := FromAcceptLanguage(tag), Normalize(tag); got != want {
 			t.Errorf("FromAcceptLanguage(%q) = %q but Normalize(%q) = %q — the page and the bots disagree",

@@ -497,7 +497,7 @@ function GrantsTable({
         />
         <span className="truncate">{t("groups.colConn")}</span>
         <span className="truncate">{t("groups.colServer")}</span>
-        <span className="truncate text-right">{t("groups.colState")}</span>
+        <span className="truncate text-end">{t("groups.colState")}</span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {rows.length === 0 ? (
@@ -530,7 +530,7 @@ function GrantsTable({
                 </span>
                 <span
                   className={cn(
-                    "truncate text-right text-xs",
+                    "truncate text-end text-xs",
                     r.off ? "text-warning" : "text-ink-muted",
                   )}
                 >
@@ -620,7 +620,7 @@ function MembersTable({
           />
           <span className="truncate">{t("groups.colUser")}</span>
           <span className="truncate">{t("groups.colId")}</span>
-          <span className="truncate text-right">{t("groups.colStatus")}</span>
+          <span className="truncate text-end">{t("groups.colStatus")}</span>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {users.length === 0 ? (
@@ -650,7 +650,7 @@ function MembersTable({
                     </Mono>
                     <span
                       className={cn(
-                        "truncate text-right text-xs",
+                        "truncate text-end text-xs",
                         u.status === "active" ? "text-success" : "text-ink-muted",
                       )}
                     >

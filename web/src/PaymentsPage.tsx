@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { currentLang, td } from "./i18n";
+import { locale, td } from "./i18n";
 import {
   cancelPaymentOrder,
   confirmPaymentOrder,
@@ -73,13 +73,13 @@ const STATUS_META: Record<
 };
 
 function fmtRub(n: number): string {
-  return `${n.toLocaleString(currentLang())} ₽`;
+  return `${n.toLocaleString(locale())} ₽`;
 }
 
 function fmtDateTime(unix: number): string {
   if (!unix) return "—";
   return new Date(unix * 1000).toLocaleString(
-    currentLang(),
+    locale(),
     inPanelTz({
       day: "2-digit",
       month: "2-digit",
@@ -414,7 +414,7 @@ export function PaymentsPage({
                       {label !== "funnel.joined" && (
                         <span className="text-[11px] text-ink-muted">{of > 0 ? `${Math.round((n / of) * 100)}%` : "—"}</span>
                       )}
-                      <Mono className="text-xs text-ink">{n.toLocaleString(currentLang())}</Mono>
+                      <Mono className="text-xs text-ink">{n.toLocaleString(locale())}</Mono>
                     </span>
                   </div>
                   <div className="mt-1 h-1 overflow-hidden rounded-full bg-gray-100">
@@ -430,12 +430,12 @@ export function PaymentsPage({
                 <div className="overflow-x-auto border-t border-gray-100">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className={cn(MICRO, "text-left")}>
-                        <th className="px-3.5 py-2 font-medium">{t("funnel.source")}</th>
-                        <th className="px-2 py-2 text-right font-medium">{t("funnel.joined")}</th>
-                        <th className="px-2 py-2 text-right font-medium">{t("funnel.paid")}</th>
-                        <th className="px-2 py-2 text-right font-medium">{t("funnel.renewed")}</th>
-                        <th className="px-3.5 py-2 text-right font-medium">{t("funnel.revenue")}</th>
+                      <tr className={MICRO}>
+                        <th className="px-3.5 py-2 text-start font-medium">{t("funnel.source")}</th>
+                        <th className="px-2 py-2 text-end font-medium">{t("funnel.joined")}</th>
+                        <th className="px-2 py-2 text-end font-medium">{t("funnel.paid")}</th>
+                        <th className="px-2 py-2 text-end font-medium">{t("funnel.renewed")}</th>
+                        <th className="px-3.5 py-2 text-end font-medium">{t("funnel.revenue")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -444,15 +444,15 @@ export function PaymentsPage({
                           <td className="max-w-[10rem] truncate px-3.5 py-[6px] text-ink">
                             {s.source === "" ? t("funnel.noSource") : s.source === "~ref" ? t("funnel.byInvite") : <Mono>{s.source}</Mono>}
                           </td>
-                          <td className="px-2 py-[6px] text-right"><Mono>{s.joined}</Mono></td>
-                          <td className="px-2 py-[6px] text-right">
+                          <td className="px-2 py-[6px] text-end"><Mono>{s.joined}</Mono></td>
+                          <td className="px-2 py-[6px] text-end">
                             <Mono>{s.paid}</Mono>
-                            <span className="ml-1 text-[11px] text-ink-muted">
+                            <span className="ms-1 text-[11px] text-ink-muted">
                               {s.joined > 0 ? `${Math.round((s.paid / s.joined) * 100)}%` : ""}
                             </span>
                           </td>
-                          <td className="px-2 py-[6px] text-right"><Mono>{s.renewed}</Mono></td>
-                          <td className="px-3.5 py-[6px] text-right"><Mono>{fmtRub(s.revenue_rub)}</Mono></td>
+                          <td className="px-2 py-[6px] text-end"><Mono>{s.renewed}</Mono></td>
+                          <td className="px-3.5 py-[6px] text-end"><Mono>{fmtRub(s.revenue_rub)}</Mono></td>
                         </tr>
                       ))}
                     </tbody>
@@ -465,7 +465,7 @@ export function PaymentsPage({
                   {t("funnel.winback", {
                     sent: funnel.winback.sent,
                     used: funnel.winback.used,
-                    revenue: funnel.winback.revenue_rub.toLocaleString(currentLang()),
+                    revenue: funnel.winback.revenue_rub.toLocaleString(locale()),
                   })}
                 </p>
               )}
@@ -480,7 +480,7 @@ export function PaymentsPage({
               {t(refStats.paid_out_kop > 0 ? "ref.statsLine" : "ref.statsLineNoBonus", {
                 invited: refStats.invited,
                 paying: refStats.paying,
-                revenue: refStats.revenue_rub.toLocaleString(currentLang()),
+                revenue: refStats.revenue_rub.toLocaleString(locale()),
                 paid: fmtKop(refStats.paid_out_kop),
               })}
             </p>
@@ -495,7 +495,7 @@ export function PaymentsPage({
                     {canUsers ? (
                       <button
                         type="button"
-                        className="truncate text-left text-xs font-medium text-brand-600 hover:underline"
+                        className="truncate text-start text-xs font-medium text-brand-600 hover:underline"
                         onClick={() => openUser(r.user_id)}
                       >
                         {r.name}
@@ -530,7 +530,7 @@ export function PaymentsPage({
                 <span className="truncate">{t("pay.colAmount")}</span>
                 <span className="truncate">{t("pay.colMethod")}</span>
                 <span className="truncate">{t("pay.colStatus")}</span>
-                <span className="truncate text-right">{t("pay.colWhen")}</span>
+                <span className="truncate text-end">{t("pay.colWhen")}</span>
               </div>
             )}
             {historyPage.shown.map((o) => {
@@ -569,7 +569,7 @@ export function PaymentsPage({
                         )}
                       </span>
                       <Mono
-                        className="truncate text-right text-[11px] text-ink-muted"
+                        className="truncate text-end text-[11px] text-ink-muted"
                         title={t(paid ? "pay.paidWord" : "pay.createdWord")}
                       >
                         {when}
@@ -577,7 +577,7 @@ export function PaymentsPage({
                     </>
                   ) : (
                     <>
-                      <Mono className="text-right text-[11px] text-ink-muted">{when}</Mono>
+                      <Mono className="text-end text-[11px] text-ink-muted">{when}</Mono>
                       <span className="col-span-2 flex min-w-0 items-center gap-2">
                         <span className="min-w-0 flex-1 truncate text-[11px] text-ink-muted">
                           {orderWho(o)} · {orderWhat(o)} · {providerMeta(o.provider).label}

@@ -2,8 +2,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import i18n from "./i18n";
-import { currentLang } from "./i18n";
+import i18n, { locale } from "./i18n";
 import { todayYmd } from "./tz";
 
 export function cn(...parts: Array<string | false | null | undefined>): string {
@@ -192,10 +191,12 @@ export const IconEyeOff = ({ size = 18, className }: IconProps) =>
 // Borrowed from Lucide (users, server), for the phone's tab bar: a dot per tab is
 // not enough to tell four destinations apart at a glance.
 // Borrowed from Lucide (log-out): ending sessions somewhere other than here.
+// Arrows that point along the line of text mirror in a right-to-left layout.
+const mirrored = (className?: string) => `rtl:-scale-x-100 ${className ?? ""}`;
 export const IconLogout = ({ size = 16, className }: IconProps) =>
   svg(
     size,
-    className,
+    mirrored(className),
     <>
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
       <path d="m16 17 5-5-5-5" />
@@ -274,7 +275,7 @@ export const IconSend = ({ size = 16, className }: IconProps) => (
     strokeWidth={2}
     strokeLinecap="round"
     strokeLinejoin="round"
-    className={className}
+    className={mirrored(className)}
     aria-hidden
   >
     <path d="M22 2 11 13" />
@@ -618,13 +619,14 @@ export type TableCol = { label?: ReactNode; className?: string; srOnly?: string 
 
 export function THead({ cols }: { cols: TableCol[] }) {
   return (
-    <thead className="border-b border-gray-100 bg-gray-50/70 text-left text-ink-muted">
+    <thead className="border-b border-gray-100 bg-gray-50/70 text-ink-muted">
       <tr>
         {/* A column list is positional by definition: a fixed prop array whose
             order IS the table. */}
         {cols.map((c, i) => (
+          // text-start on the cell itself: a th whose parent says "start" is centred.
           // biome-ignore lint/suspicious/noArrayIndexKey: positional column list
-          <th key={i} className={cn("py-2 pr-3 font-medium first:pl-3", c.className)}>
+          <th key={i} className={cn("py-2 pe-3 text-start font-medium first:ps-3", c.className)}>
             {c.srOnly ? <span className="sr-only">{c.srOnly}</span> : c.label}
           </th>
         ))}
@@ -666,7 +668,7 @@ export function TD({
   className?: string;
 }) {
   return (
-    <td className={cn("py-2 pr-3 align-middle first:pl-3", className)}>{children}</td>
+    <td className={cn("py-2 pe-3 align-middle first:ps-3", className)}>{children}</td>
   );
 }
 
@@ -908,7 +910,7 @@ export function PasswordInput(
     <Field label={props.label}>
       <div className="relative">
         <input
-          className={cn(inputCls, "pr-10", ro && "bg-gray-50 text-ink-muted", props.className)}
+          className={cn(inputCls, "pe-10", ro && "bg-gray-50 text-ink-muted", props.className)}
           value={props.value}
           readOnly={ro}
           type={show ? "text" : "password"}
@@ -923,7 +925,7 @@ export function PasswordInput(
           onClick={() => setShow((s) => !s)}
           aria-label={i18n.t(show ? "common.hidePassword" : "common.showPassword")}
           title={i18n.t(show ? "common.hidePassword" : "common.showPassword")}
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 transition hover:text-gray-700"
+          className="absolute end-2 top-1/2 -translate-y-1/2 text-gray-500 transition hover:text-gray-700"
         >
           {show ? <IconEyeOff /> : <IconEye />}
         </button>
@@ -999,7 +1001,7 @@ function popoverDrop(rect: DOMRect, want: number, gutter = 8, gap = 4) {
 }
 
 const triggerBase =
-  'flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white text-left text-ink ' +
+  'flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white text-start text-ink ' +
   'outline-none transition hover:border-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25'
 const triggerCls = triggerBase + ' px-3 py-1.5 text-[13px]'
 // The compact trigger is as tall as an IconButton, for a select that sits in a row of them.
@@ -1098,7 +1100,7 @@ export function Select({
                       type="button"
                       onClick={() => pick(o.value)}
                       className={cn(
-                        'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-gray-50',
+                        'flex w-full items-center justify-between px-3 py-2 text-start text-sm transition hover:bg-gray-50',
                         o.value === value ? 'font-semibold text-accent' : 'text-ink',
                       )}
                     >
@@ -1183,7 +1185,7 @@ export function TagsInput({
         {value.map((v) => (
           <span
             key={v}
-            className="inline-flex max-w-full items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-xs font-medium text-ink"
+            className="inline-flex max-w-full items-center gap-1 rounded-md bg-gray-100 py-0.5 ps-2 pe-1 text-xs font-medium text-ink"
           >
             <span className="min-w-0 truncate">{labelFor(v)}</span>
             <button
@@ -1270,10 +1272,10 @@ export function TagsInput({
                       key={o.value}
                       type="button"
                       onClick={() => add(o.value)}
-                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-ink transition hover:bg-gray-50"
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-sm text-ink transition hover:bg-gray-50"
                     >
                       <span className="truncate">{o.label}</span>
-                      <span className="ml-2 shrink-0 font-mono text-xs text-gray-400">{o.value}</span>
+                      <span className="ms-2 shrink-0 font-mono text-xs text-gray-400">{o.value}</span>
                     </button>
                   ))}
                   {matched.length > SHOWN && (
@@ -1296,7 +1298,7 @@ export function TagsInput({
 // needs no calendar strings at all. Both lists start on Monday, matching the grid
 // the picker draws below.
 function monthNames(): string[] {
-  const f = new Intl.DateTimeFormat(currentLang(), { month: 'long' })
+  const f = new Intl.DateTimeFormat(locale(), { month: 'long' })
   return Array.from({ length: 12 }, (_, m) => {
     const s = f.format(new Date(2021, m, 1))
     return s.charAt(0).toUpperCase() + s.slice(1)
@@ -1304,7 +1306,7 @@ function monthNames(): string[] {
 }
 
 function weekdayNames(): string[] {
-  const f = new Intl.DateTimeFormat(currentLang(), { weekday: 'short' })
+  const f = new Intl.DateTimeFormat(locale(), { weekday: 'short' })
   // 2021-03-01 was a Monday.
   return Array.from({ length: 7 }, (_, i) => {
     const s = f.format(new Date(2021, 2, 1 + i))
@@ -1380,7 +1382,7 @@ export function DatePicker({
   const minDate = min ? parseYmd(min) : null
 
   const display = selected
-    ? selected.toLocaleDateString(currentLang(), { day: '2-digit', month: '2-digit', year: 'numeric' })
+    ? selected.toLocaleDateString(locale(), { day: '2-digit', month: '2-digit', year: 'numeric' })
     : ''
 
   // Build the 6-week grid for the viewed month (Monday-first).
@@ -1454,7 +1456,7 @@ export function DatePicker({
                   onClick={() => setView(new Date(view.getFullYear(), view.getMonth() - 1, 1))}
                   className="rounded-md p-1 text-gray-500 hover:bg-gray-100"
                 >
-                  <IconChevron className="rotate-90" />
+                  <IconChevron className="rotate-90 rtl:-rotate-90" />
                 </button>
                 <span className="text-sm font-semibold text-ink">
                   {months[view.getMonth()]} {view.getFullYear()}
@@ -1464,7 +1466,7 @@ export function DatePicker({
                   onClick={() => setView(new Date(view.getFullYear(), view.getMonth() + 1, 1))}
                   className="rounded-md p-1 text-gray-500 hover:bg-gray-100"
                 >
-                  <IconChevron className="-rotate-90" />
+                  <IconChevron className="-rotate-90 rtl:rotate-90" />
                 </button>
               </div>
               <div className="mb-1 grid grid-cols-7 text-center text-[11px] font-medium text-gray-400">
@@ -1656,7 +1658,7 @@ export function Switch({
       <span
         className={cn(
           "inline-block h-4 w-4 transform rounded-full shadow transition",
-          checked ? "translate-x-[18px] bg-onbrand" : "translate-x-0.5 bg-onaccent",
+          checked ? "translate-x-[18px] rtl:-translate-x-[18px] bg-onbrand" : "translate-x-0.5 rtl:-translate-x-0.5 bg-onaccent",
         )}
       />
     </button>
@@ -1752,7 +1754,7 @@ export function SettingRow({
             // leading-4: the same line box the label has. Without it the wrapper keeps
             // the row's own 24px leading, and a value set in it sits 2px lower than the
             // label it is supposed to sit beside.
-            <div className="ml-auto shrink-0 text-xs leading-4">{control}</div>
+            <div className="ms-auto shrink-0 text-xs leading-4">{control}</div>
           )}
           {field && (
             <div className={cn("w-full sm:shrink-0", wideField ? "sm:w-72" : "sm:w-56")}>
@@ -2180,7 +2182,7 @@ export function MiniBar({
       {label && <span className={cn(MICRO, "w-9 shrink-0 truncate")}>{label}</span>}
       {/* The figure leads: it is what gets read, and the bar behind it is the shape of
           that figure rather than a thing to be measured on its own. */}
-      <span className="w-[30px] shrink-0 text-right font-mono text-[11px] text-ink-muted">
+      <span className="w-[30px] shrink-0 text-end font-mono text-[11px] text-ink-muted">
         {Math.round(p)}%
       </span>
       <span className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-200">
@@ -2210,8 +2212,10 @@ export function Mono({
   title?: string;
 }) {
   return (
+    // bdi isolates the value (an IP stays left to right, "0 بايت" right to left)
+    // while the classes — ms-auto, text-end — keep following the page's direction.
     <span title={title} className={cn("font-mono", className)}>
-      {children}
+      <bdi>{children}</bdi>
     </span>
   );
 }
@@ -2234,20 +2238,22 @@ export function Code({
     (block ? "block whitespace-pre-wrap break-all p-2.5" : "px-1.5 py-0.5");
   if (copy && block) {
     return (
-      <div className="relative">
-        <code className={cn(base, "pr-10", className)}>{children}</code>
+      <div dir="ltr" className="relative">
+        <code className={cn(base, "pe-10", className)}>{children}</code>
         <button
           type="button"
           onClick={() => doCopy(String(children))}
           title={i18n.t(copied ? "common.copied" : "common.copy")}
-          className="absolute right-1.5 top-1.5 rounded-md p-1.5 text-ink-muted transition hover:bg-gray-200 hover:text-accent"
+          className="absolute end-1.5 top-1.5 rounded-md p-1.5 text-ink-muted transition hover:bg-gray-200 hover:text-accent"
         >
           {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
         </button>
       </div>
     );
   }
-  return <code className={cn(base, className)}>{children}</code>;
+  // Code reads left to right in every language: dir keeps an IP or a JSON line in
+  // an Arabic sentence from being reordered.
+  return <code dir="ltr" className={cn(base, className)}>{children}</code>;
 }
 
 /* --------------------------------------------------------- segmented control */
@@ -2551,11 +2557,11 @@ export function Drawer({
         className={cn(
           "absolute top-0 flex h-full flex-col overflow-clip bg-white shadow-xl",
           side === "right"
-            ? "right-0 animate-slide-in-right"
-            : "left-0 animate-slide-in-left",
+            ? "end-0 animate-slide-in-right rtl:animate-slide-in-left"
+            : "start-0 animate-slide-in-left rtl:animate-slide-in-right",
           full ? "w-full" : wide ? "w-full max-w-[760px]" : "w-full max-w-[520px]",
           // Rounded inner edge on desktop only (on mobile the drawer is full-width).
-          !full && (side === "right" ? "sm:rounded-l-2xl" : "sm:rounded-r-2xl"),
+          !full && (side === "right" ? "sm:rounded-s-2xl" : "sm:rounded-e-2xl"),
         )}
       >
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-brand-600/10 px-3.5 py-[11px]">
@@ -2640,14 +2646,14 @@ export function Dropdown({
             // panel even when it overlays a same-coloured card surface on a dark theme.
             "absolute z-50 animate-scale-in overflow-hidden rounded-xl border border-gray-300 bg-white py-1 shadow-xl",
             up ? "bottom-full mb-2" : "mt-2",
-            align === "end" ? "right-0" : "left-0",
+            align === "end" ? "end-0" : "start-0",
             up
               ? align === "end"
-                ? "origin-bottom-right"
-                : "origin-bottom-left"
+                ? "origin-bottom-right rtl:origin-bottom-left"
+                : "origin-bottom-left rtl:origin-bottom-right"
               : align === "end"
-                ? "origin-top-right"
-                : "origin-top-left",
+                ? "origin-top-right rtl:origin-top-left"
+                : "origin-top-left rtl:origin-top-right",
           )}
         >
           <DropCtx.Provider value={{ close: () => setOpen(false) }}>
@@ -2674,7 +2680,7 @@ export function DropdownItem({
 }) {
   const { close } = useContext(DropCtx);
   const cls = cn(
-    "block w-full px-4 py-2 text-left text-sm transition hover:bg-gray-50",
+    "block w-full px-4 py-2 text-start text-sm transition hover:bg-gray-50",
     color === "red" ? "text-danger" : "text-ink",
   );
   const handle = () => {
@@ -2797,7 +2803,7 @@ export function InfoSection({
         {title}
       </h3>
       {bordered ? (
-        <p className="border-l-2 border-brand-100 pl-3 text-sm leading-relaxed text-ink-muted">
+        <p className="border-s-2 border-brand-100 ps-3 text-sm leading-relaxed text-ink-muted">
           {children}
         </p>
       ) : (

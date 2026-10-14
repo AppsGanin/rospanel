@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { arrow } from "./i18n";
 import {
   previewSubRules,
   SUB_PROTOS,
@@ -201,7 +202,7 @@ function RuleCard({
           <div className="text-[13px] font-semibold text-ink">{t("subs.ruleN", { n })}</div>
           {/* The rule as a sentence, so a folded-up list still reads. */}
           <div className="truncate text-xs text-ink-muted">
-            {fieldLabel} {opLabel} «{r.value || "…"}» → {actionLabel}
+            {fieldLabel} {opLabel} <bdi>«{r.value || "…"}»</bdi> {arrow()} <bdi>{actionLabel}</bdi>
           </div>
         </div>
         <div className="flex shrink-0 items-center">
@@ -447,7 +448,7 @@ function RulePreview({ rules }: { rules: SubRule[] }) {
               </Badge>
             ) : (
               <Badge color="brand" size="xs">
-                {t("subs.ruleFormat")}: {fmtLabel}
+                {t("subs.ruleFormatIs", { fmt: fmtLabel })}
               </Badge>
             )}
           </div>

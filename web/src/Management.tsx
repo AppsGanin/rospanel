@@ -83,7 +83,7 @@ function ManageBtn({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-2.5 border-b border-gray-100 px-3.5 py-2.5 text-left text-[13px] font-medium transition last:border-0 hover:bg-gray-50",
+        "flex w-full items-center gap-2.5 border-b border-gray-100 px-3.5 py-2.5 text-start text-[13px] font-medium transition last:border-0 hover:bg-gray-50",
         danger ? "text-danger" : "text-ink-muted hover:text-ink",
       )}
     >

@@ -324,7 +324,7 @@ export function ConnectionsEditor({
               <button
                 type="button"
                 onClick={() => setOpen((o) => ({ ...o, [p.key]: !o[p.key] }))}
-                className="flex min-w-0 items-center gap-2 text-left"
+                className="flex min-w-0 items-center gap-2 text-start"
               >
                 <IconChevron
                   className={cn(

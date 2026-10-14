@@ -181,7 +181,7 @@ function FilterChip({
     >
       {label}
       {count !== undefined && (
-        <span className="ml-1 font-mono opacity-70">· {count}</span>
+        <span className="ms-1 font-mono opacity-70">· {count}</span>
       )}
     </button>
   );
@@ -581,7 +581,7 @@ export function UsersPanel({
           </Dropdown>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ms-auto flex items-center gap-2">
           <Dropdown
             width={200}
             trigger={
@@ -704,7 +704,7 @@ export function UsersPanel({
               >
                 {t("usersPanel.clearSelection")}
               </button>
-              <span className="ml-auto text-xs text-ink-muted">
+              <span className="ms-auto text-xs text-ink-muted">
                 {t("usersPanel.shownOf", { shown: rows.length, total: all })}
               </span>
             </div>
@@ -718,7 +718,7 @@ export function UsersPanel({
                   size="xs"
                   variant="outline"
                   color="gray"
-                  className="ml-auto"
+                  className="ms-auto"
                   loading={loadingMore}
                   onClick={showMore}
                 >

@@ -150,7 +150,7 @@ function ServerRow({ node }: { node: NodeView }) {
           {t("overview.noStats")}
         </span>
       )}
-      <Mono className="text-right text-xs text-gray-800 max-sm:col-start-2 max-sm:row-start-1">
+      <Mono className="text-end text-xs text-gray-800 max-sm:col-start-2 max-sm:row-start-1">
         {fmtBytes(traffic)}
       </Mono>
     </div>
@@ -543,7 +543,7 @@ export function OverviewPanel() {
                 <span>CPU</span>
                 <span>RAM</span>
                 <span>{t("overview.disk")}</span>
-                <span className="text-right">{t("usersPanel.colTraffic")}</span>
+                <span className="text-end">{t("usersPanel.colTraffic")}</span>
               </div>
               {nodes.length === 0
                 ? <Skeletons n={2} row="border-b border-gray-100 px-3.5 py-3 last:border-0" className="h-3.5 w-full" />

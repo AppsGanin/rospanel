@@ -17,7 +17,7 @@ export function AuthShell({
     <div className="flex min-h-dvh items-center justify-center bg-gray-50 p-4">
       {/* The picker sits outside the card: an admin who can't read the form has
           nowhere else to reach it from — there is no account menu yet. */}
-      <LangPills className="fixed right-3 top-3" />
+      <LangPills className="fixed end-3 top-3" />
       <div
         className={
           wide
