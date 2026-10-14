@@ -441,7 +441,7 @@ var ru = map[string]string{
 	"notify.xrayCrashed":         "⚠️ <b>Xray аварийно завершился</b>\nСервер: %s\nПроцесс перезапускается автоматически.",
 	"notify.xrayWedged":          "⚠️ <b>Xray перестал отвечать</b>\nСервер: %s\nСторож перезапустил процесс автоматически.",
 	"notify.xrayWedgedNoRestart": "⚠️ <b>Xray перестал отвечать</b>\nСервер: %s\nАвто-восстановление выключено — перезапустите вручную.",
-	"notify.probeDigest":         "🔍 <b>Сканеры панели за сутки</b>\n%d новых IP щупали скрытый путь:",
+	"notify.probeDigest":         "🔍 <b>Сканеры панели за сутки</b>\nНовых IP, искавших скрытый путь: %d",
 	"notify.probeDigestMore":     "…и ещё %d.",
 	"notify.xrayBack":            "✅ <b>Xray снова работает</b>\nСервер: %s",
 	"notify.reason":              "Причина: %s",
