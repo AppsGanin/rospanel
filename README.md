@@ -906,6 +906,11 @@ Useful environment variables (all optional): `ROSPANEL_DATA` (data directory),
 heap under a soft limit of half the machine's memory (a quarter on a node), or of the cgroup limit
 when that is lower; the boot log shows the figure.
 
+**Host firewall.** With ufw, firewalld or a dropping iptables INPUT/FORWARD on the server, the
+panel (and each node) opens the ports of its running lanes there and lets the AmneziaWG tunnel
+through FORWARD — in its own `ROSPANEL-IN`/`ROSPANEL-FWD` chains, or as runtime firewalld rules —
+and takes them back when a lane is switched off. `ROSPANEL_HOSTFW=off` turns this off.
+
 Flood protection (nftables limits on public TCP ports, see "Operations") is configured through
 the environment too — handy when a whole office or a CGNAT carrier sits behind one IP and
 clients hit the defaults:

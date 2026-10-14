@@ -27,6 +27,7 @@ var errEN = map[string]string{
 	"err.autoUpdateTooOften":       "auto-update at most once an hour",
 	"err.autodeleteRange":          "retention for expired users: from 0 (never delete) to {{max}} days",
 	"err.awgDNS":                   "AmneziaWG DNS: IP addresses separated by commas",
+	"err.awgDNSPrivate":            "AmneziaWG DNS: {{value}} is a private address, the tunnel does not reach it",
 	"err.awgPortRange":             "the AmneziaWG port is outside 1–65535",
 	"err.backupCorrupt":            "the backup archive is corrupt",
 	"err.backupDbUnreadable":       "the database in the backup is empty or corrupt",

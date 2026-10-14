@@ -107,3 +107,20 @@ func TestAnUnreadableRangeIsAnError(t *testing.T) {
 		t.Error("a backwards range was accepted")
 	}
 }
+
+// The tunnel does not let a client into private space (Ruleset), so a private
+// resolver from the Xray settings would answer nobody: it is skipped, unless it is
+// this server's own tunnel address.
+func TestTunnelDNSSkipsWhatTheTunnelCannotReach(t *testing.T) {
+	cases := []struct{ xray, want string }{
+		{"10.0.0.2\n1.1.1.1", "1.1.1.1"},
+		{"169.254.169.253", DefaultDNS},
+		{"10.66.0.1, 8.8.8.8", "10.66.0.1, 8.8.8.8"},
+		{"https://dns.example/dns-query\n9.9.9.9\n::ffff:192.168.1.1", "9.9.9.9"},
+	}
+	for _, c := range cases {
+		if got := TunnelDNS(&model.Settings{XrayDNS: c.xray}); got != c.want {
+			t.Errorf("TunnelDNS(%q) = %q, want %q", c.xray, got, c.want)
+		}
+	}
+}

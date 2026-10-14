@@ -2,7 +2,7 @@ package awg
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -84,6 +84,12 @@ func ToModel(p Params) model.AWGParams {
 	}
 }
 
+// TunnelReaches reports whether a client inside the tunnel can reach addr: anything
+// public, and this server's own tunnel address.
+func TunnelReaches(addr netip.Addr) bool {
+	return !model.IsPrivateEgress(addr) || Subnet.Contains(addr.Unmap())
+}
+
 // TunnelDNS is what the client resolves through inside the tunnel: the operator's
 // own AmneziaWG DNS when they set one, otherwise the plain resolvers from this
 // server's DNS settings — the same ones Xray uses, so both lanes answer alike.
@@ -99,8 +105,10 @@ func TunnelDNS(s *model.Settings) string {
 	for _, f := range strings.FieldsFunc(s.XrayDNS, func(r rune) bool {
 		return r == '\n' || r == '\r' || r == ',' || r == ' '
 	}) {
-		if ip := net.ParseIP(strings.TrimSpace(f)); ip != nil {
-			plain = append(plain, ip.String())
+		// A private resolver works for Xray, which dials it itself, but a client is
+		// not let through to private space (Ruleset) — unless it is this server.
+		if ip, err := netip.ParseAddr(strings.TrimSpace(f)); err == nil && TunnelReaches(ip) {
+			plain = append(plain, ip.Unmap().String())
 		}
 	}
 	if len(plain) == 0 {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/amnezia-vpn/amneziawg-go/v3/conn"
 	"github.com/amnezia-vpn/amneziawg-go/v3/device"
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
@@ -114,55 +115,24 @@ func configureInterface() error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("awg: nft load: %w: %s", err, bytes.TrimSpace(out))
 	}
-	allowIptablesForward()
 	return nil
 }
 
-// iptablesForward lets tunnel traffic through iptables' FORWARD chain. Our table's
-// accept does not outvote another table's drop on the same hook — a packet must pass
-// every base chain — and Docker and ufw both set FORWARD to DROP, so on such a host
-// clients handshake but reach nothing.
-var iptablesForward = [][]string{
-	{"-i", Iface, "-j", "ACCEPT"},
-	{"-o", Iface, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"},
-}
-
-// allowIptablesForward puts iptablesForward at the head of FORWARD when that chain
-// is managed — a DROP policy or any rule in it; a bare ACCEPT chain needs nothing.
-func allowIptablesForward() {
-	if _, err := exec.LookPath("iptables"); err != nil {
-		return
-	}
-	out, err := exec.Command("iptables", "-S", "FORWARD").Output()
-	if err != nil || strings.TrimSpace(string(out)) == "-P FORWARD ACCEPT" {
-		return
-	}
-	for _, r := range iptablesForward {
-		if exec.Command("iptables", append([]string{"-C", "FORWARD"}, r...)...).Run() == nil {
-			continue
-		}
-		if out, err := exec.Command("iptables", append([]string{"-I", "FORWARD", "1"}, r...)...).CombinedOutput(); err != nil {
-			slog.Warn("awg: could not open iptables FORWARD for the tunnel", "err", err, "out", string(bytes.TrimSpace(out)))
-		}
-	}
-}
-
-// dropIptablesForward removes what allowIptablesForward added.
-func dropIptablesForward() {
-	if _, err := exec.LookPath("iptables"); err != nil {
-		return
-	}
-	for _, r := range iptablesForward {
-		del := append([]string{"-D", "FORWARD"}, r...)
-		for i := 0; i < 8 && exec.Command("iptables", del...).Run() == nil; i++ {
-			// A duplicate can be left by an earlier run that died mid-way.
-		}
-	}
-}
-
 // Ruleset is the NAT/forward table: masquerade the tunnel subnet on its way out
-// of any other interface, let tunnel traffic through the forward chain both ways.
+// of any other interface, let tunnel traffic through the forward chain both ways —
+// except to the private ranges the Xray lanes may not reach either
+// (model.PrivateEgressCIDRs: cloud metadata, the provider's LAN, Docker's networks,
+// the other peers). A drop here is final whatever another table accepts; an accept
+// is not, and internal/hostfw opens the drops of Docker, ufw and firewalld.
 func Ruleset() string {
+	var v4, v6 []string
+	for _, c := range model.PrivateEgressCIDRs {
+		if strings.Contains(c, ":") {
+			v6 = append(v6, c)
+		} else {
+			v4 = append(v4, c)
+		}
+	}
 	return fmt.Sprintf(`table inet %[1]s {
 	chain postrouting {
 		type nat hook postrouting priority srcnat; policy accept;
@@ -170,11 +140,13 @@ func Ruleset() string {
 	}
 	chain forward {
 		type filter hook forward priority filter; policy accept;
+		iifname "%[3]s" ip daddr { %[4]s } drop
+		iifname "%[3]s" ip6 daddr { %[5]s } drop
 		iifname "%[3]s" accept
 		oifname "%[3]s" ct state established,related accept
 	}
 }
-`, nftTable, Subnet, Iface)
+`, nftTable, Subnet, Iface, strings.Join(v4, ", "), strings.Join(v6, ", "))
 }
 
 func (d *linuxDevice) Stats() (map[string]PeerStat, error) {
@@ -215,6 +187,5 @@ func (d *linuxDevice) closeLocked() {
 	d.dev.Close() // closes the TUN too
 	d.dev, d.tun = nil, nil
 	_ = exec.Command("nft", "delete", "table", "inet", nftTable).Run()
-	dropIptablesForward()
 	slog.Info("awg: tunnel down", "iface", Iface)
 }

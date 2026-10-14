@@ -27,6 +27,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/decoy"
 	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/h2fix"
+	"github.com/AppsGanin/rospanel/internal/hostfw"
 	"github.com/AppsGanin/rospanel/internal/http80"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/naive"
@@ -280,6 +281,8 @@ func runServer(dataDir string) {
 	// Writes the buffered access-log sightings. RecordAccess only buffers, so this
 	// is what actually persists who connected from where.
 	runBG("access flush", accessFlushLoop(mgr))
+	// Puts back the ports a firewall reload took out of the host firewall (hostfw).
+	runBG("hostfw", func(ctx context.Context) { hostfw.Keep(ctx, time.Minute) })
 	// The Mini App's random address segment, made once per install.
 	if err := mgr.EnsureMiniAppPath(); err != nil {
 		log.Printf("mini app: %v", err)
