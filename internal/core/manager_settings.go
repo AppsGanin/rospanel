@@ -245,6 +245,9 @@ func (m *Manager) genOptsFor(serverID int64) (xray.Options, error) {
 		return opts, nil
 	}
 	opts.Custom = list
+	if set, err := m.store.GetSettings(); err == nil {
+		m.cascadeOpts(&opts, serverID, set)
+	}
 	return opts, nil
 }
 
@@ -557,6 +560,11 @@ func (m *Manager) ApplyRouting(cfg model.RoutingConfig, warpEnabled, operaEnable
 	if err := cfg.ValidateLanes(); err != nil {
 		return fromFieldErr(err)
 	}
+	if cur, err := m.store.GetSettings(); err != nil {
+		return err
+	} else if err := m.validateCascade(model.LocalNodeID, &cfg, &cur.Routing); err != nil {
+		return err
+	}
 	set, err := m.store.GetSettings()
 	if err != nil {
 		return err
@@ -600,7 +608,7 @@ func (m *Manager) ApplyRouting(cfg model.RoutingConfig, warpEnabled, operaEnable
 	// Refresh the proxy pool from the saved sources so the reconcile picks up a
 	// changed URL / manual list.
 	m.setProxies(m.buildProxies(cfg))
-	m.TriggerReconcile()
+	m.cascadeMoved() // the master's own exits, and the entries it is the exit of
 	// Probe the helper lanes now (off the request path) so their alive/fallback
 	// status is fresh when the UI re-fetches after the Xray restart.
 	m.runAsync(m.probeLanes)

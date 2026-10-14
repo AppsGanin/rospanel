@@ -517,6 +517,15 @@ order) drops it instead, for clients routed through a lane precisely so their tr
 leave from that address. Lanes switched off are not affected. A proxy list whose host fails a
 refresh keeps the proxies it returned last time rather than emptying the lane — whether those still
 work is the health probe's call, made against the proxies themselves.
+
+**Cascades.** A lane's upstreams can be **our own servers** (the "Servers" source): users connect
+to this server and reach the internet through the chosen ones. That is the entry for a country under
+allow-lists, where a local server is reachable and one abroad is not. Each exit is reached over a
+connection of your choice: VLESS-XHTTP-REALITY, VLESS-TCP-TLS or Hysteria2. The panel makes the
+bridge's key itself, and the exit takes it from the entry's addresses only. Traffic is counted on
+the entry and never leaves for the internet from its address. An exit cannot be switched off or
+deleted while a cascade goes through it. Who gets the entry is up to the access groups.
+
 **Config snapshots** (a *Snapshots* tab in the server settings) give an undo history for the
 **whole server config** — protocols, ports, REALITY, routing, egress, DNS, decoy and inbounds:
 save a restore point by hand, and roll back to it if an edit breaks something. A rollback

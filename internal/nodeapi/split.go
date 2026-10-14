@@ -31,7 +31,8 @@ import (
 //
 // 2: WireGuard inbounds (a "wireguard" slot, and WGKey/WGAddr on the row), and the
 // addresses banned by hand in Blocked.Banned.
-const DeltaRev = 2
+// 3: UserSlot.Fixed, the cascade bridges' service entries on an exit's lanes.
+const DeltaRev = 3
 
 // SplitState is a node's whole desired state in parts. Skeleton, every row and Blocked
 // are sent as the panel encoded them, and the agent keeps them as received: they are
@@ -83,6 +84,9 @@ type UserSlot struct {
 	// never an empty list, which Xray would read as a single-user server open to its
 	// shared key (see xray.customShadowsocksClients).
 	Locked json.RawMessage `json:"locked,omitempty"`
+	// Fixed are entries in the list that are no user: the cascade bridges this server
+	// is the exit of (xray.Bridge), written after the users as Generate writes them.
+	Fixed []json.RawMessage `json:"fixed,omitempty"`
 }
 
 // UserRow is one user a node lets in.

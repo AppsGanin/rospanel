@@ -6,6 +6,7 @@ import { fmtBytes } from "./format";
 import { inPanelTz } from "./tz";
 import {
   Button,
+  Checkbox,
   cn,
   Code,
   IconButton,
@@ -153,14 +154,24 @@ function newLaneID(lanes: EgressLane[]): string {
 
 // LaneSource is which proxy source a lane is edited with. Only the selected one
 // is persisted (see effectiveCfg), so a lane never silently mixes both.
-export type LaneSource = "urls" | "manual";
+export type LaneSource = "urls" | "manual" | "servers";
+
+// CascadeServer is one of our servers a cascade lane can leave through, with the
+// connections switched on there that a cascade can reach it over, under its names.
+export type CascadeServer = {
+  id: number;
+  name: string;
+  bridges: { bridge: string; name: string; enabled: boolean }[];
+  available: boolean;
+};
 
 // laneSources derives each lane's source mode from what it actually carries. A
 // lane with URLs is URL-sourced; anything else (incl. a brand-new empty lane) is
 // edited as a manual list — the common case for one's own socks5 servers.
 export function laneSources(lanes: EgressLane[]): Record<string, LaneSource> {
   const out: Record<string, LaneSource> = {};
-  for (const l of lanes) out[l.id] = l.urls.length > 0 ? "urls" : "manual";
+  for (const l of lanes)
+    out[l.id] = (l.via?.length ?? 0) > 0 ? "servers" : l.urls.length > 0 ? "urls" : "manual";
   return out;
 }
 
@@ -453,11 +464,16 @@ export function effectiveCfg(
 ): RoutingConfig {
   return {
     ...cfg,
-    lanes: cfg.lanes.map((l) => ({
-      ...l,
-      urls: laneSrc[l.id] === "urls" ? l.urls : [],
-      manual: laneSrc[l.id] === "urls" ? [] : l.manual,
-    })),
+    lanes: cfg.lanes.map((l) => {
+      const src = laneSrc[l.id] ?? "manual";
+      if (src === "servers") return { ...l, urls: [], manual: [] };
+      return {
+        ...l,
+        urls: src === "urls" ? l.urls : [],
+        manual: src === "urls" ? [] : l.manual,
+        via: undefined,
+      };
+    }),
   };
 }
 
@@ -503,6 +519,7 @@ export function RoutingEditor({
   geoip,
   iplist,
   applying,
+  cascadeServers,
   liveStatus = true,
 }: {
   cfg: RoutingConfig;
@@ -526,6 +543,8 @@ export function RoutingEditor({
   geoip: string[];
   iplist: string[];
   applying: boolean;
+  // Our other servers, for a cascade lane's exits; absent hides the option.
+  cascadeServers?: CascadeServer[];
   liveStatus?: boolean;
 }) {
   const { t } = useTranslation();
@@ -929,10 +948,19 @@ export function RoutingEditor({
                     data={[
                       { value: "manual", label: t("userDetail.manual") },
                       { value: "urls", label: t("route.filesUrls") },
+                      ...(cascadeServers && cascadeServers.length > 0
+                        ? [{ value: "servers", label: t("route.ourServers") }]
+                        : []),
                     ]}
                   />
                 </div>
-                {(laneSrc[lane.id] ?? "manual") === "manual" ? (
+                {laneSrc[lane.id] === "servers" ? (
+                  <CascadeFields
+                    lane={lane}
+                    servers={cascadeServers ?? []}
+                    onPatch={(p) => patchLane(lane.id, p)}
+                  />
+                ) : (laneSrc[lane.id] ?? "manual") === "manual" ? (
                   <TagsInput
                     label={t("route.proxiesManual")}
                     value={lane.manual}
@@ -985,6 +1013,69 @@ export function RoutingEditor({
           />
         )}
       </Section>
+    </div>
+  );
+}
+
+// CascadeFields edits a lane that leaves through our own servers: which ones, and over
+// which of each one's connections, under the names that server gives them.
+function CascadeFields({
+  lane,
+  servers,
+  onPatch,
+}: {
+  lane: EgressLane;
+  servers: CascadeServer[];
+  onPatch: (p: Partial<EgressLane>) => void;
+}) {
+  const { t } = useTranslation();
+  const via = lane.via ?? [];
+  const exitOf = (id: number) => via.find((e) => e.server === id);
+  const setBridge = (id: number, bridge: string) =>
+    onPatch({ via: via.map((e) => (e.server === id ? { ...e, bridge } : e)) });
+  return (
+    <div className="flex flex-col gap-2.5">
+      <span className="block text-xs text-ink-muted">{t("route.cascadeExits")}</span>
+      {servers.length > 0 && !servers.some((s) => s.available || exitOf(s.id)) && (
+        <p className="text-[11px] text-ink-muted">{t("route.cascadeNoServers")}</p>
+      )}
+      {servers.map((s) => {
+        const exit = exitOf(s.id);
+        // One that cannot be an exit now is shown only to be taken off.
+        if (!s.available && !exit) return null;
+        return (
+          <div key={s.id} className="flex flex-col gap-1.5">
+            <Checkbox
+              label={s.available ? s.name : t("route.cascadeServerOff", { name: s.name })}
+              checked={!!exit}
+              onChange={(on) =>
+                onPatch({
+                  via: on
+                    ? [...via, { server: s.id, bridge: s.bridges.find((b) => b.enabled)?.bridge ?? "reality" }]
+                    : via.filter((e) => e.server !== s.id),
+                })
+              }
+            />
+            {exit && (
+              // The server's own connections, under the names it gives them.
+              <Select
+                label={t("route.cascadeBridge")}
+                value={exit.bridge || "reality"}
+                onChange={(v) => setBridge(s.id, v)}
+                // The connections on there; the one chosen stays listed if it was
+                // switched off since, so the field says what is saved, not a blank.
+                data={s.bridges
+                  .filter((b) => b.enabled || b.bridge === (exit.bridge || "reality"))
+                  .map((b) => ({
+                    value: b.bridge,
+                    label: b.enabled ? b.name : t("route.cascadeBridgeOff", { name: b.name }),
+                  }))}
+              />
+            )}
+          </div>
+        );
+      })}
+      <p className="text-[11px] text-ink-muted">{t("route.cascadeHint")}</p>
     </div>
   );
 }

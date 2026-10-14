@@ -48,6 +48,7 @@ func (rc RoutingConfig) clone() RoutingConfig {
 			l.Manual = slices.Clone(l.Manual)
 			l.Domains = slices.Clone(l.Domains)
 			l.IPs = slices.Clone(l.IPs)
+			l.Via = slices.Clone(l.Via) // CascadeExit holds no references
 			lanes[i] = l
 		}
 		rc.Lanes = lanes

@@ -397,6 +397,9 @@ type Manager struct {
 	// lanesDown tracks which lanes of which server are down and since when, to leave
 	// them out of subscriptions (manager_lanes_down.go).
 	lanesDown lanesDown
+	// appliedBridges is bridgesKey of the cascade bridges the running config was fully
+	// applied with (see syncUsers).
+	appliedBridges atomic.Value
 	// online is who is connected to which server right now (see manager_online.go).
 	online onlineGauge
 
@@ -1031,6 +1034,12 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 	if err != nil {
 		return true, err
 	}
+	// A cascade entry's bridge is added with its source rule, which only a full apply
+	// writes: added here it would reach the running Hysteria inbound with no rule, and
+	// be let in from anywhere.
+	if bridgesKey(opts.Bridges) != m.appliedBridges.Load() {
+		return true, m.reconcileLocked()
+	}
 	custom := opts.Custom
 	// A user added here may have no tunnel identity yet, and a WireGuard inbound they are
 	// allowed on needs one to hold them.
@@ -1150,6 +1159,7 @@ func (m *Manager) reconcileLocked() error {
 		_ = m.store.SetConfigError(err.Error())
 		return err
 	}
+	m.appliedBridges.Store(bridgesKey(opts.Bridges))
 	m.setApplied(users, seq)
 	logInfo("reconcile: config applied", "users", len(users))
 	m.syncTurnLocked(opts.Custom)

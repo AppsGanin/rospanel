@@ -80,6 +80,12 @@ type Options struct {
 
 	// Relays are the external servers this server carries traffic on to (relay.go).
 	Relays []Relay
+	// Cascade are the upstreams of this server's cascade lanes by lane ID — our own
+	// servers, as links the panel built — joined to the lanes' pools (cascade.go).
+	Cascade map[string][]model.ProxyEndpoint
+	// Bridges are the cascade entries that leave through this server: each one's
+	// service credential on its bridge lane, let in from its own addresses only.
+	Bridges []Bridge
 }
 
 // acceptProxy is the socket option that has Xray read the front's PROXY header.
@@ -121,6 +127,8 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	// filter drops a user's credential from a lane they aren't allowed — so a hidden
 	// lane can't be reached with a hand-made link, not just hidden in the UI.
 	vlessClients, hy2Clients, realityClients := protocolClients(set, users, opts.allowsBuiltin)
+	vlessClients, hy2Clients, realityClients = addBridgeClients(set, opts.Bridges, vlessClients, hy2Clients, realityClients)
+	proxies = withCascade(proxies, opts.Cascade, set.Routing.Lanes)
 
 	sharedCert := []Certificate{{CertificateFile: set.CertPath, KeyFile: set.KeyPath}}
 
@@ -390,7 +398,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		DNS:         dns,
 		Inbounds:    inbounds,
 		Outbounds:   outbounds,
-		Routing:     compileRouting(expandGroups(rc, opts.Groups), order, warpActive, operaActive, active, unusable, relayRules),
+		Routing:     compileRouting(expandGroups(rc, opts.Groups), order, warpActive, operaActive, active, unusable, relayRules, opts.Bridges),
 		Observatory: observatory,
 	}, nil
 }
@@ -1337,15 +1345,30 @@ var privateEgressDomains = []string{
 	"full:instance-data.ec2.internal",
 }
 
-func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaActive bool, active, unusable map[string]bool, relay []RouteRule) *Routing {
+func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaActive bool, active, unusable map[string]bool, relay []RouteRule, bridges []Bridge) *Routing {
 	out := &Routing{DomainStrategy: "IPIfNonMatch"}
 	strict := rc.StrictEgress
+	byID := make(map[string]model.EgressLane, len(rc.Lanes))
+	for _, l := range rc.Lanes {
+		byID[l.ID] = l
+	}
+	// A cascade lane is strict whatever the setting: its traffic was sent abroad to be
+	// out of reach here, and leaving from here is the one thing it must not do.
+	strictLane := func(id string) bool { return strict || byID[id].IsCascade() }
 	// Each lane's proxies / Opera sit behind health-probed balancers; leastPing (via
 	// the Observatory) routes to a live member, else to the fallback.
 	for _, lane := range rc.Lanes {
-		if active[lane.ID] {
-			out.Balancers = append(out.Balancers, healthBalancer(laneBalancerTag(lane.ID), laneTagPrefix(lane.ID), strict))
+		if !active[lane.ID] {
+			continue
 		}
+		b := healthBalancer(laneBalancerTag(lane.ID), laneTagPrefix(lane.ID), strictLane(lane.ID))
+		if lane.IsCascade() {
+			// Like WARP's: with no exit judged alive the traffic still goes to one, never
+			// out from here. A slow exit fails the Observatory's 5-second probe and is
+			// still a working exit; a dead one fails the connection itself.
+			b.FallbackTag = laneTagPrefix(lane.ID) + "0"
+		}
+		out.Balancers = append(out.Balancers, b)
 	}
 	if operaActive {
 		out.Balancers = append(out.Balancers, healthBalancer(operaBalancerTag, "opera", strict))
@@ -1359,6 +1382,8 @@ func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaAct
 		InboundTag:  []string{"api"},
 		OutboundTag: "api",
 	})
+	// A cascade entry's credential from anywhere but the entry is dropped first.
+	out.Rules = append(out.Rules, bridgeSourceRules(bridges)...)
 
 	// Security floor: a VPN client must not be able to address the server's own
 	// loopback (the Xray gRPC control API on 127.0.0.1:10085, the loopback panel),
@@ -1407,10 +1432,6 @@ func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaAct
 	out.Rules = append(out.Rules, relay...)
 
 	// Egress lanes in the configured precedence (first-match-wins).
-	byID := make(map[string]model.EgressLane, len(rc.Lanes))
-	for _, l := range rc.Lanes {
-		byID[l.ID] = l
-	}
 	emitLane := func(lane string) {
 		switch lane {
 		case "direct":
@@ -1441,7 +1462,7 @@ func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaAct
 			case !ok:
 			case active[lane]:
 				addBalancerRule(out, laneBalancerTag(lane), l.Domains, l.IPs)
-			case strict && unusable[lane]:
+			case strictLane(lane) && unusable[lane]:
 				// On, routed to, and no upstream to carry it: drop rather than let
 				// these destinations fall through to a later lane and out directly.
 				addDomainRule(out, "block", l.Domains)
@@ -1476,7 +1497,7 @@ func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaAct
 		switch {
 		case active[last]:
 			out.Rules = append(out.Rules, RouteRule{Type: "field", Network: "tcp,udp", BalancerTag: laneBalancerTag(last)})
-		case strict && unusable[last]:
+		case strictLane(last) && unusable[last]:
 			out.Rules = append(out.Rules, blockAll)
 		}
 		// Otherwise an inactive catch-all lane (disabled / no live proxies) falls

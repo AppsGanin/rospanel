@@ -515,6 +515,9 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	if err != nil {
 		return err
 	}
+	if err := m.exitKeepsBridges(model.LocalNodeID, set, withConnPorts(*set, u, awgPort)); err != nil {
+		return err
+	}
 	mieruPort, mieruTransport, err := resolveMieruPort(u.MieruPort, u.MieruTransport,
 		u.Protocols["mieru"], set.MieruEnabled, set.MieruPort, model.MieruTransportOr(set.MieruTransport),
 		mieruHeldOn(withConnPorts(*set, u, awgPort), localCustom), true)
@@ -578,6 +581,7 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	// The built-in lanes' ports may have moved, so the per-IP guard is recomputed too.
 	m.ensureLocalConnGuard()
 	m.TriggerReconcile()
+	m.cascadeChanged() // the master's entries reach it on its ports
 	return nil
 }
 

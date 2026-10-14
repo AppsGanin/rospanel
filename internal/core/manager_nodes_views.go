@@ -102,6 +102,8 @@ type NodeView struct {
 	// MasterLabel is the master server's config-label name (local node only), so the
 	// UI can edit it. Empty for remote nodes (they use their own Name).
 	MasterLabel string `json:"master_label,omitempty"`
+	// Bridges are the connections a cascade can reach this server over (EgressLane.Via).
+	Bridges []BridgeOption `json:"bridges"`
 	// Placement (country, weight, capacity) and the live online-user count the
 	// subscription orders servers by; see model.Placement and sub.Order.
 	model.Placement
@@ -143,6 +145,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		RealityEnabled:  set.RealityEnabled,
 		DecoyTemplate:   set.DecoyTemplate,
 		MasterLabel:     set.MasterLabel,
+		Bridges:         bridgeOptions(set),
 		Placement:       set.MasterPlacement,
 		OnlineUsers:     online[model.LocalNodeID],
 		// The master's own routing/DNS/egress, so the relocated per-server editor edits
@@ -213,6 +216,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			WarpRegistered:     n.WarpRegistered(),
 			OperaEnabled:       n.OperaEnabled,
 			OperaCountry:       n.OperaCountry,
+			Bridges:            bridgeOptions(nodeSettings(set, n)),
 			TrafficCoefficient: model.NodeCoefficientOr(n.TrafficCoefficient),
 			Placement:          n.Placement,
 			OnlineUsers:        online[n.ID],

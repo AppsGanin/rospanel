@@ -115,6 +115,7 @@ type RouteRule struct {
 	// UUID they sent (see relay.go).
 	User        []string `json:"user,omitempty"`
 	VlessRoute  string   `json:"vlessRoute,omitempty"`
+	Source      []string `json:"source,omitempty"` // the client's address, CIDRs
 	OutboundTag string   `json:"outboundTag,omitempty"`
 	BalancerTag string   `json:"balancerTag,omitempty"`
 	// RuleTag names the rule to Xray's routing API, so the running rules can be

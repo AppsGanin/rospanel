@@ -78,6 +78,9 @@ func (m *Manager) readNodeStateInputs(n *model.Node) (*nodeStateInputs, error) {
 	x.inbounds, x.inbErr = m.store.EnabledInbounds(n.ID)
 	x.relays, x.relErr = m.relaysFor(n.ID)
 	x.proxies = m.getNodeProxies(n.ID)
+	// Cascade ends move with other servers' settings; in the options, they are in the
+	// fingerprint (nodeStructureKey).
+	m.cascadeOpts(&x.opts, n.ID, set)
 	return x, nil
 }
 
@@ -198,6 +201,9 @@ func nodeStructureKey(n *model.Node, x *nodeStateInputs, managerOpts xray.Option
 	// costs rebuilds, never a stale config.
 	node.LastSeen, node.XrayVersion, node.XrayRunning, node.ConfigHash, node.LastReportID = 0, "", false, "", 0
 	node.CertIssuer, node.CertExpiresAt = "", 0
+	// Where it reached the panel from shapes its exits' configs (Bridges, there), not
+	// its own.
+	node.SeenIP = ""
 	// And the master's own bookkeeping: every full reconcile of the master bumps the
 	// revision and the timestamp, and only the health report reads the three.
 	set := *x.set
@@ -216,7 +222,10 @@ func nodeStructureKey(n *model.Node, x *nodeStateInputs, managerOpts xray.Option
 		Proxies  map[string][]model.ProxyEndpoint
 		Opts     xray.Options
 		Pinned   string
-	}{x.geoGen, set, node, x.inbounds, x.relays, x.proxies, opts, xray.PinnedVersion}))
+		// Built per node from other servers' settings (cascadeOpts), so not in opts.
+		Cascade map[string][]model.ProxyEndpoint
+		Bridges []xray.Bridge
+	}{x.geoGen, set, node, x.inbounds, x.relays, x.proxies, opts, xray.PinnedVersion, x.opts.Cascade, x.opts.Bridges}))
 	if !d.ok {
 		return key, false
 	}

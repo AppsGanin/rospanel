@@ -121,6 +121,7 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 	// that lands between the hash check and the park below still fires the select
 	// (the change closes this exact channel) — no lost wakeup.
 	wake := rt.mgr.NodeWakeChan(node.ID)
+	rt.mgr.NoteNodeSeenIP(node, clientIP(r))
 
 	resp, err := rt.mgr.IngestNodeSync(node, req)
 	if err != nil {

@@ -438,6 +438,9 @@ type NodeMeta struct {
 	// ConnGuardPorts are the public TCP ports the per-IP connection guard should
 	// protect (VLESS, and REALITY when enabled).
 	ConnGuardPorts []int `json:"connguard_ports,omitempty"`
+	// ConnGuardExempt are addresses the guard leaves alone: the cascade entries this
+	// node is the exit of (connguard.Limits.Exempt).
+	ConnGuardExempt []string `json:"connguard_exempt,omitempty"`
 
 	// TurnRelays are the relays the node's WireGuard inbounds need, the complete set:
 	// the agent stops any it runs that is not listed. An older agent ignores it, and

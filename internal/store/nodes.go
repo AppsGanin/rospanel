@@ -51,7 +51,7 @@ const nodeColumns = `id, name, host, enabled,
 	country, sort_weight, capacity, hide_when_full,
 	traffic_limit, traffic_period, hide_when_over, traffic_reset_day,
 	awg_enabled, awg_private_key, awg_public_key, awg_params, naive_enabled, serves_naive,
-	mieru_enabled, serves_mieru, anytls_enabled, serves_anytls`
+	mieru_enabled, serves_mieru, anytls_enabled, serves_anytls, seen_ip`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
 func generateNodeToken() (string, error) {
@@ -91,7 +91,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&n.Country, &n.Weight, &n.Capacity, &hideFull,
 		&n.TrafficLimit, &n.TrafficPeriod, &hideOver, &n.TrafficResetDay,
 		&awgEn, &n.AWGPrivateKey, &n.AWGPublicKey, &awgParamsJSON, &naiveEn, &servesNaive,
-		&mieruEn, &servesMieru, &anytlsEn, &servesAnyTLS,
+		&mieruEn, &servesMieru, &anytlsEn, &servesAnyTLS, &n.SeenIP,
 	); err != nil {
 		return nil, err
 	}
@@ -707,5 +707,11 @@ func (s *Store) SetNodeMieruEnabled(id int64, enabled bool) error {
 // SetNodeAnyTLSEnabled flips a node's AnyTLS lane.
 func (s *Store) SetNodeAnyTLSEnabled(id int64, enabled bool) error {
 	_, err := s.db.Exec(`UPDATE nodes SET anytls_enabled = ? WHERE id = ?`, boolToInt(enabled), id)
+	return err
+}
+
+// SetNodeSeenIP records the address a node reached the panel from, when it changed.
+func (s *Store) SetNodeSeenIP(id int64, ip string) error {
+	_, err := s.db.Exec(`UPDATE nodes SET seen_ip = ? WHERE id = ? AND seen_ip != ?`, ip, id, ip)
 	return err
 }

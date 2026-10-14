@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { CascadeServer } from "./RoutingEditor";
 import i18n from "./i18n";
 import {
   deleteNode,
@@ -78,6 +79,7 @@ export function NodeCard({
   decoys,
   geo,
   panelVersion,
+  servers,
   onChanged,
   onRegen,
 }: {
@@ -85,6 +87,8 @@ export function NodeCard({
   decoys: string[];
   geo: GeoCategories;
   panelVersion: string;
+  // Every server, for a cascade lane's exits (CascadeServer).
+  servers?: CascadeServer[];
   onChanged: () => void;
   onRegen: (command: string) => void;
 }) {
@@ -411,6 +415,7 @@ export function NodeCard({
             node={node}
             decoys={decoys}
             geo={geo}
+            servers={servers}
             onClose={() => setEditingRouting(false)}
             onRefresh={onChanged}
           />
@@ -419,6 +424,7 @@ export function NodeCard({
             node={node}
             decoys={decoys}
             geo={geo}
+            servers={servers}
             onClose={() => setEditingRouting(false)}
             onRefresh={onChanged}
           />

@@ -73,6 +73,13 @@ func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
 		if err := e.Routing.ValidateLanes(); err != nil {
 			return fromFieldErr(err)
 		}
+		var prev *model.RoutingConfig
+		if cur, err := m.store.GetNode(id); err == nil && cur != nil {
+			prev = cur.Routing
+		}
+		if err := m.validateCascade(id, e.Routing, prev); err != nil {
+			return err
+		}
 	}
 	// WARP is a per-node Cloudflare registration: provision one BEFORE persisting the
 	// edit the first time WARP is enabled on this node, so a failed registration
@@ -81,6 +88,9 @@ func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
 		if err := m.ensureNodeWarp(id); err != nil {
 			return err
 		}
+	}
+	if err := m.nodeEditKeepsBridges(id, e); err != nil {
+		return err
 	}
 	if err := m.store.UpdateNode(id, e); err != nil {
 		if errors.Is(err, store.ErrNodeNameTaken) {
@@ -94,6 +104,8 @@ func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
 		m.resolveNodeProxies(n)
 	}
 	m.nodes.wakeOne(id)
+	// Its exits take its bridge in or let it go; its entries follow its host and lanes.
+	m.cascadeChanged()
 	return nil
 }
 
@@ -175,6 +187,7 @@ func (m *Manager) SetNodeReality(id int64, dest string, regen bool) error {
 		}
 	}
 	m.nodes.wakeOne(id)
+	m.cascadeChanged() // its entries reach it with its REALITY key
 	return nil
 }
 
@@ -321,6 +334,9 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 	if curMieruPort == 0 {
 		curMieruPort = nodeSettings(masterSet, n).MieruPort // the default the node has been told so far
 	}
+	if err := m.exitKeepsBridges(id, masterSet, withConnPorts(*nodeSettings(masterSet, n), u, awgPort)); err != nil {
+		return err
+	}
 	mieruOn, mieruAsked := u.Protocols["mieru"]
 	if !mieruAsked {
 		mieruOn = derefBool(n.MieruEnabled)
@@ -410,11 +426,17 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		return err
 	}
 	m.nodes.wakeOne(id)
+	m.cascadeChanged() // its entries reach it on its ports
 	return nil
 }
 
 // SetNodeEnabled toggles a node and wakes it (a disabled node is told to stop).
 func (m *Manager) SetNodeEnabled(id int64, enabled bool) error {
+	if !enabled {
+		if err := m.exitInUse(id); err != nil {
+			return err
+		}
+	}
 	if err := m.store.SetNodeEnabled(id, enabled); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return invalidCode("err.nodeNotFound", "нода не найдена")
@@ -427,6 +449,7 @@ func (m *Manager) SetNodeEnabled(id int64, enabled bool) error {
 	// auto-refresh is "never"). RefreshNodeProxies also wakes the node on any change.
 	m.runAsync(m.RefreshNodeProxies)
 	m.nodes.wakeOne(id)
+	m.cascadeChanged()
 	return nil
 }
 
@@ -441,6 +464,9 @@ func (m *Manager) SetNodeEnabled(id int64, enabled bool) error {
 // node-agent PR, where it first becomes reachable. Until then, disabling a node
 // (which keeps the token and answers revoked) is the reliable "stop now" control.
 func (m *Manager) DeleteNode(id int64) error {
+	if err := m.exitInUse(id); err != nil {
+		return err
+	}
 	if err := m.store.DeleteNode(id); err != nil {
 		return err
 	}
@@ -464,6 +490,7 @@ func (m *Manager) DeleteNode(id int64) error {
 	}
 	m.nodes.dropWaiter(id)
 	m.served.forget(id)
+	m.cascadeChanged() // its cascade lanes leave the exits
 	return nil
 }
 

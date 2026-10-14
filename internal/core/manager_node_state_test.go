@@ -236,7 +236,9 @@ func TestNodeStateKeyCoversEveryField(t *testing.T) {
 		t.Fatal("a plain node's inputs could not be fingerprinted")
 	}
 	volatile := map[string]bool{"LastSeen": true, "XrayVersion": true, "XrayRunning": true, "ConfigHash": true, "LastReportID": true,
-		"CertIssuer": true, "CertExpiresAt": true}
+		"CertIssuer": true, "CertExpiresAt": true,
+		// Shapes the exits' configs (their Bridges), not this node's own.
+		"SeenIP": true}
 
 	nodeType := reflect.TypeOf(model.Node{})
 	for i := range nodeType.NumField() {

@@ -548,6 +548,9 @@ func (m *Manager) candidateConfig(serverID int64, custom []model.Inbound) (*xray
 	}
 	opts := m.genOpts()
 	opts.Custom = custom
+	if master, err := m.store.GetSettings(); err == nil {
+		m.cascadeOpts(&opts, serverID, master)
+	}
 
 	if serverID == model.LocalNodeID {
 		set, err := m.store.GetSettings()
@@ -697,6 +700,9 @@ func (m *Manager) SetConnGuard(wanted bool, lim connguard.Limits) {
 	m.connGuardMu.Lock()
 	m.connGuardLimits = lim
 	m.connGuardMu.Unlock()
+	// Boot installed the guard before the manager existed, so without the cascade
+	// entries this server is the exit of: put them in now.
+	m.ensureLocalConnGuard()
 }
 
 // ensureLocalConnGuard re-applies the per-IP guard for the current port set.
@@ -713,6 +719,9 @@ func (m *Manager) ensureLocalConnGuard() {
 	m.connGuardMu.Lock()
 	lim := m.connGuardLimits
 	m.connGuardMu.Unlock()
+	if set, err := m.store.GetSettings(); err == nil {
+		lim.Exempt = m.localBridgeSources(set)
+	}
 	if err := connguard.Ensure(ports, lim); err != nil {
 		logErr("connguard: re-apply failed", "err", err)
 	}
