@@ -38,9 +38,9 @@ type AdminRole struct {
 // renamed, in every language it speaks (web/src/i18n, "roles.*"). A custom role may not
 // take one: the roster's picker would show two roles by the same name.
 var PresetRoleNames = map[string][]string{
-	RoleOwner:    {"Владелец", "Owner"},
-	RoleAdmin:    {"Администратор", "Administrator"},
-	RoleOperator: {"Оператор", "Operator"},
+	RoleOwner:    {"Владелец", "Owner", "所有者", "المالك"},
+	RoleAdmin:    {"Администратор", "Administrator", "管理员", "المسؤول"},
+	RoleOperator: {"Оператор", "Operator", "操作员", "المشغّل"},
 }
 
 // MaxRoleName bounds a role's display name.

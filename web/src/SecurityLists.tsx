@@ -4,7 +4,7 @@ import { getBans, getProbes, getSettings, unbanIP, type Ban, type ProbeHit } fro
 import { useCan } from './role'
 import { countryFlag, countryName } from './format'
 import { useAction, useShowMore } from './hooks'
-import i18n from './i18n'
+import i18n, { locale } from './i18n'
 import { inPanelTz } from './tz'
 import { cn, IconButton, IconUnlock, MICRO, Mono, Panel, ShowMore, useWideBox } from './ui'
 
@@ -30,7 +30,7 @@ const rowCls = 'grid items-center gap-3 border-t border-gray-100 px-3.5 py-[7px]
 
 function fmtWhen(unix: number): string {
   return new Date(unix * 1000).toLocaleString(
-    i18n.language,
+    locale(),
     inPanelTz({
       day: '2-digit',
       month: '2-digit',
@@ -45,7 +45,7 @@ function fmtWhen(unix: number): string {
 function where(country?: string, asn?: number, org?: string): string {
   const parts = []
   if (country)
-    parts.push(`${countryFlag(country)} ${countryName(country, i18n.language, country)}`)
+    parts.push(`${countryFlag(country)} ${countryName(country, locale(), country)}`)
   if (org) parts.push(org)
   else if (asn) parts.push(`AS${asn}`)
   return parts.join(' · ')
@@ -94,7 +94,7 @@ export function ProbeList() {
             <span className="truncate">{t('security.colIp')}</span>
             <span className="truncate">{t('security.colPaths')}</span>
             <span className="truncate">{t('security.colWhere')}</span>
-            <span className="truncate text-right">{t('security.colWhen')}</span>
+            <span className="truncate text-end">{t('security.colWhen')}</span>
           </div>
         )}
         {rows.shown.map((p) => {
@@ -116,7 +116,7 @@ export function ProbeList() {
                   </span>
                 </>
               ) : null}
-              <Mono className="text-right text-[11px] text-ink-muted">
+              <Mono className="text-end text-[11px] text-ink-muted">
                 {fmtWhen(p.last_seen)}
               </Mono>
               {!wide && (
@@ -203,7 +203,7 @@ export function BlockedList() {
             <span className="truncate">{t('security.colIp')}</span>
             <span className="truncate">{t('security.colWhere')}</span>
             <span className="truncate">{t('security.colReason')}</span>
-            <span className="truncate text-right">{t('security.colUntil')}</span>
+            <span className="truncate text-end">{t('security.colUntil')}</span>
             <span />
           </div>
         )}
@@ -228,7 +228,7 @@ export function BlockedList() {
                   <span className="truncate text-xs text-warning">{reason}</span>
                 </>
               ) : null}
-              <Mono className="text-right text-[11px] text-ink-muted">{until}</Mono>
+              <Mono className="text-end text-[11px] text-ink-muted">{until}</Mono>
               {wide ? (
                 unban(b.ip)
               ) : (

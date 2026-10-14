@@ -42,7 +42,7 @@ export function ChangelogModal({ onClose }: { onClose: () => void }) {
       ) : releases.length === 0 ? (
         <p className="text-sm text-ink-muted">{t("changelog.empty")}</p>
       ) : (
-        <div className="flex max-h-[70vh] flex-col gap-5 overflow-y-auto pr-1">
+        <div className="flex max-h-[70vh] flex-col gap-5 overflow-y-auto pe-1">
           {rows.shown.map((r) => {
             const current = r.version === version;
             return (
@@ -61,7 +61,7 @@ export function ChangelogModal({ onClose }: { onClose: () => void }) {
                     <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
                       {SECTION_KEYS[s.title] ? t(SECTION_KEYS[s.title]) : s.title}
                     </p>
-                    <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-ink">
+                    <ul className="mt-1 list-disc space-y-0.5 ps-5 text-sm text-ink">
                       {s.items.map((item, i) => (
                         // biome-ignore lint/suspicious/noArrayIndexKey: a released changelog is a fixed list that never reorders
                         <li key={i}>{item}</li>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { abuseCategoryLabel, getRecentAbuse, getUserAbuse, type AbuseMatch } from './api'
 import { useShowMore } from './hooks'
-import { currentLang } from './i18n'
+import { locale } from './i18n'
 import { cn, EmptyState, Mono, ShowMore } from './ui'
 
 // Mirrors model.AbuseRetentionDays. Stated on the panel because it is not the period
@@ -81,7 +81,7 @@ export function AbuseList({
               {/* Only on the fleet-wide view: inside a user's card the name is the page.
                   The id rides along because names are not unique. */}
               {userId === undefined ? `${r.user_name ? `${r.user_name} ` : ''}#${r.user_id} · ` : ''}
-              {r.day} · {r.count.toLocaleString(currentLang())}×
+              {r.day} · {r.count.toLocaleString(locale())}×
             </Mono>
           </div>
         )

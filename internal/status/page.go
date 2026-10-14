@@ -41,6 +41,7 @@ type Day struct {
 // Data is everything the template renders.
 type Data struct {
 	Lang      string
+	Dir       string
 	Title     string
 	LogoURL   string
 	Brand     string
@@ -139,6 +140,7 @@ func (d *Data) Theme(panelName, panelTheme string, lang i18n.Lang, days int) {
 	d.DangerFg = branding.Fg("#dc2626", th.Surface)
 	d.WarningFg = branding.Fg("#ea580c", th.Surface)
 	d.Lang = string(lang)
+	d.Dir = lang.Dir()
 	d.L = texts(lang, days)
 	d.Title = strings.TrimSpace(name + " · " + d.L.Title)
 }

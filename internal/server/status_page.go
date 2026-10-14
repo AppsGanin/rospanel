@@ -51,6 +51,7 @@ func handleStatus(rt *Router, w http.ResponseWriter, r *http.Request, rest strin
 	// Short and shared: an outage banner that lags a minute is fine, and a page
 	// linked in a support message can be opened by a crowd at once.
 	w.Header().Set("Cache-Control", "public, max-age=30")
+	w.Header().Set("Vary", "Accept-Language") // the page is in the reader's language
 	w.Header().Set("X-Robots-Tag", "noindex")
 	_, _ = w.Write(body)
 }

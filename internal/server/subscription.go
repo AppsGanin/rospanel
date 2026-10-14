@@ -207,6 +207,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		}
 		w.Header().Set("Content-Type", "application/manifest+json")
 		w.Header().Set("Cache-Control", "private, max-age=3600")
+		w.Header().Set("Vary", "Accept-Language")
 		_, _ = w.Write(sub.Manifest(set, u.SubToken, i18n.FromAcceptLanguage(r.Header.Get("Accept-Language")), branding.LogoContentType(logo)))
 
 	case "tg.js":

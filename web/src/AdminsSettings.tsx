@@ -164,7 +164,7 @@ function AdminRow({
         </>
       ) : (
         <>
-          <Mono className="text-right text-[11px] text-ink-muted">{lastLogin}</Mono>
+          <Mono className="text-end text-[11px] text-ink-muted">{lastLogin}</Mono>
           {/* The state on the left, what you can do about it on the right — the same
               reading order the wide row has, folded onto one line. */}
           <span className="col-span-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">

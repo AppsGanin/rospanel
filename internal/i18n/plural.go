@@ -3,7 +3,9 @@ package i18n
 // Plural categories, named after CLDR so the suffixes match the frontend's
 // dictionaries (which get theirs from Intl.PluralRules).
 const (
+	catZero  = "zero"
 	catOne   = "one"
+	catTwo   = "two"
 	catFew   = "few"
 	catMany  = "many"
 	catOther = "other"
@@ -12,19 +14,38 @@ const (
 // plural returns the CLDR plural category for n in lang.
 //
 // Only integer counts are covered, which is all this codebase has: days left,
-// devices, orders. English distinguishes one from everything else; Russian needs
-// three forms, and getting the 11–14 exception wrong is the classic bug ("11 дня").
+// devices, orders. English distinguishes one from everything else; Chinese has no
+// plural at all; Russian needs three forms, and getting the 11–14 exception wrong is
+// the classic bug ("11 дня"); Arabic needs all six.
 func plural(lang Lang, n int) string {
-	if lang == EN {
+	if n < 0 {
+		n = -n
+	}
+	switch lang {
+	case EN:
 		if n == 1 {
 			return catOne
 		}
 		return catOther
+	case ZH:
+		return catOther
+	case AR:
+		switch mod100 := n % 100; {
+		case n == 0:
+			return catZero
+		case n == 1:
+			return catOne
+		case n == 2:
+			return catTwo
+		case mod100 >= 3 && mod100 <= 10:
+			return catFew
+		case mod100 >= 11:
+			return catMany
+		default:
+			return catOther
+		}
 	}
-	// Russian (and the languages Normalize folds into it).
-	if n < 0 {
-		n = -n
-	}
+	// Russian.
 	mod10, mod100 := n%10, n%100
 	switch {
 	case mod10 == 1 && mod100 != 11:
@@ -37,8 +58,8 @@ func plural(lang Lang, n int) string {
 }
 
 // TN renders a count-dependent key. The catalog holds one entry per plural form,
-// suffixed "<key>_one" / "_few" / "_many" / "_other", and n is passed to Sprintf as
-// the first argument, ahead of args.
+// suffixed "<key>_zero" / "_one" / "_two" / "_few" / "_many" / "_other" (those the
+// language selects), and n is passed to Sprintf as the first argument, ahead of args.
 //
 // A language whose selected form is missing falls back to the reference catalog,
 // exactly like T — and TestPluralFormsComplete makes that impossible to ship.
@@ -57,7 +78,7 @@ func TN(lang Lang, key string, n int, args ...any) string {
 
 // pluralBase strips a known plural suffix, or reports false. Used by the tests.
 func pluralBase(key string) (string, bool) {
-	for _, suf := range []string{"_" + catOne, "_" + catFew, "_" + catMany, "_" + catOther} {
+	for _, suf := range []string{"_" + catZero, "_" + catOne, "_" + catTwo, "_" + catFew, "_" + catMany, "_" + catOther} {
 		if len(key) > len(suf) && key[len(key)-len(suf):] == suf {
 			return key[:len(key)-len(suf)], true
 		}

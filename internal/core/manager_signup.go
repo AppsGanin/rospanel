@@ -35,7 +35,7 @@ type SignupRequest struct {
 	Ref        string // an invite code ("r_<code>" or bare); an unknown one is ignored
 	Invite     string // the registration code, when sign-up is by invitation
 	IP         string // the client's address, for the rate limit; optional
-	Lang       string // ru | en: the language the account is written to in; optional
+	Lang       string // ru | en | zh | ar: the language the account is written to in; optional
 }
 
 // Signup outcomes.
@@ -126,8 +126,8 @@ func (m *Manager) Signup(ctx context.Context, req SignupRequest) (SignupResult, 
 		return SignupResult{}, err
 	}
 	req.Lang = strings.ToLower(strings.TrimSpace(req.Lang))
-	if req.Lang != "" && req.Lang != string(i18n.RU) && req.Lang != string(i18n.EN) {
-		return SignupResult{}, invalidCode("err.userLang", "язык — ru или en")
+	if req.Lang != "" && !i18n.IsLang(req.Lang) {
+		return SignupResult{}, invalidCode("err.userLang", "язык — ru, en, zh или ar")
 	}
 	if req.TelegramID != 0 {
 		if strings.TrimSpace(req.ExternalID) != "" {

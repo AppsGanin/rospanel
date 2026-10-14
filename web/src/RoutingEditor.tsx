@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import i18n, { currentLang } from "./i18n";
+import i18n, { locale } from "./i18n";
 import { type EgressLane, type GeoFile, type RoutingConfig } from "./api";
 import { fmtBytes } from "./format";
 import { inPanelTz } from "./tz";
@@ -111,7 +111,7 @@ const MAX_LANES = 16;
 const fmtWhen = (unix: number) =>
   unix
     ? new Date(unix * 1000).toLocaleString(
-        currentLang(),
+        locale(),
         inPanelTz({ dateStyle: "short", timeStyle: "short" }),
       )
     : "—";

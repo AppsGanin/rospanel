@@ -84,7 +84,7 @@ func TestRenderShowsStateUptimeAndHeadline(t *testing.T) {
 	if !strings.Contains(html, d.L.Updated+" 12:00") {
 		t.Error("the footer timestamp is missing")
 	}
-	if !strings.Contains(html, `<html lang="en">`) {
+	if !strings.Contains(html, `<html lang="en" dir="ltr">`) {
 		t.Error("the page language is not set")
 	}
 

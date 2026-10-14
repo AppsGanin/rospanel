@@ -1,5 +1,5 @@
 // Package i18n localises the text Go renders itself: the Telegram bots and the
-// subscription page.
+// subscription page — in Russian, English, Simplified Chinese and Arabic.
 //
 // It deliberately does NOT cover the admin panel. Those strings travel to the SPA
 // as a key plus arguments and are rendered there, against the same dictionaries
@@ -14,35 +14,77 @@ import (
 	"strings"
 )
 
-// Lang is a supported language tag. Adding a third means adding a catalog file
-// next to ru.go/en.go and one case in Normalize.
+// Lang is a supported language tag. Adding one means a catalog file next to
+// ru.go, its plural rule, a case in match and a dictionary on the web side.
 type Lang string
 
 const (
 	RU Lang = "ru"
 	EN Lang = "en"
+	ZH Lang = "zh"
+	AR Lang = "ar"
 )
+
+// Langs lists every supported language, Default first.
+var Langs = []Lang{RU, EN, ZH, AR}
+
+// IsLang reports whether s is exactly a supported tag — for input that must name
+// one rather than be guessed from.
+func IsLang(s string) bool {
+	_, ok := catalogs[Lang(s)]
+	return ok
+}
+
+// RTL reports whether lang is written right to left.
+func (l Lang) RTL() bool { return l == AR }
+
+// Dir is the HTML dir attribute for lang.
+func (l Lang) Dir() string {
+	if l.RTL() {
+		return "rtl"
+	}
+	return "ltr"
+}
 
 // Default is what an unknown or absent preference resolves to. Russian, because
 // that is the language the catalogs are written against and the one that is never
 // missing a key.
 const Default = RU
 
-// Normalize maps an arbitrary tag ("ru-RU", "RU", "en_GB") to a supported Lang.
-// Anything that is not recognisably Russian becomes English — a Turkish speaker is
+// Normalize maps an arbitrary tag ("ru-RU", "RU", "en_GB", "zh-Hans") to a
+// supported Lang. Anything we do not ship becomes English — a Turkish speaker is
 // better served by English than by Russian.
 func Normalize(tag string) Lang {
-	t := strings.ToLower(strings.TrimSpace(tag))
-	switch {
-	case t == "":
+	t := strings.TrimSpace(tag)
+	if t == "" {
 		return Default
-	case strings.HasPrefix(t, "ru"), strings.HasPrefix(t, "be"), strings.HasPrefix(t, "uk"):
+	}
+	if l, ok := match(t); ok {
+		return l
+	}
+	return EN
+}
+
+// match resolves a tag by its primary subtag.
+func match(tag string) (Lang, bool) {
+	t := strings.ToLower(tag)
+	if i := strings.IndexAny(t, "-_"); i >= 0 {
+		t = t[:i]
+	}
+	switch t {
+	case "ru", "be", "uk":
 		// Belarusian and Ukrainian speakers overwhelmingly read Russian here, and
 		// the alternative on offer is English, not their own language.
-		return RU
-	default:
-		return EN
+		return RU, true
+	case "en":
+		return EN, true
+	case "zh":
+		// Traditional script readers too: Simplified is closer than English.
+		return ZH, true
+	case "ar":
+		return AR, true
 	}
+	return "", false
 }
 
 // FromAcceptLanguage picks a language from an Accept-Language header. It walks the
@@ -70,12 +112,8 @@ func FromAcceptLanguage(header string) Lang {
 		if first == "" {
 			first = tag
 		}
-		t := strings.ToLower(tag)
-		if strings.HasPrefix(t, "ru") || strings.HasPrefix(t, "be") || strings.HasPrefix(t, "uk") {
-			return RU
-		}
-		if strings.HasPrefix(t, "en") {
-			return EN
+		if l, ok := match(tag); ok {
+			return l
 		}
 	}
 	if first == "" {
@@ -90,6 +128,8 @@ func FromAcceptLanguage(header string) Lang {
 var catalogs = map[Lang]map[string]string{
 	RU: ru,
 	EN: en,
+	ZH: zh,
+	AR: ar,
 }
 
 // T renders key in lang, substituting args with fmt.Sprintf. A key missing in the

@@ -101,13 +101,12 @@ func (m *Manager) mailingChanged(ctx context.Context, id int64, on bool) {
 	m.emitUserWebhook(model.WebhookUserMailing, id, nil)
 }
 
-// SetUserLang sets an account's language: ru, en, or "" for what Telegram reports.
+// SetUserLang sets an account's language: one of i18n.Langs, or "" for what
+// Telegram reports.
 func (m *Manager) SetUserLang(ctx context.Context, id int64, lang string) error {
 	lang = strings.ToLower(strings.TrimSpace(lang))
-	switch lang {
-	case "", string(i18n.RU), string(i18n.EN):
-	default:
-		return invalidCode("err.userLang", "язык — ru или en")
+	if lang != "" && !i18n.IsLang(lang) {
+		return invalidCode("err.userLang", "язык — ru, en, zh или ar")
 	}
 	err := m.store.SetUserLang(id, lang)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -29,7 +29,7 @@ function MethodRow({ label, value }: { label: string; value: string }) {
     <button
       type="button"
       onClick={() => copy(value)}
-      className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-left transition hover:border-brand-300 accent-tint-hover"
+      className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-start transition hover:border-brand-300 accent-tint-hover"
     >
       <span className="min-w-0">
         <span className="block text-xs font-bold uppercase tracking-wider text-accent">

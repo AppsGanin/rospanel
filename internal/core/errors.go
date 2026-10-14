@@ -31,11 +31,11 @@ func (e *ValidationError) Error() string { return e.Msg }
 
 // UserError is err as a person reading in lang should see it. A validation error
 // carries Russian text; for anyone else it is rendered from its code through the
-// English catalog the external API uses. Anything else is shown as it is.
+// error catalog of their language. Anything else is shown as it is.
 func UserError(err error, lang i18n.Lang) string {
 	var ve *ValidationError
 	if lang != i18n.RU && errors.As(err, &ve) {
-		if msg, ok := i18n.ErrorEN(ve.Code, ve.Args); ok {
+		if msg, ok := i18n.ErrorText(lang, ve.Code, ve.Args); ok {
 			return msg
 		}
 	}

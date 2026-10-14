@@ -7,7 +7,7 @@ import {
   type CountryStat,
 } from './api'
 import { ShareBar } from './charts'
-import { currentLang } from './i18n'
+import { locale } from './i18n'
 import { EmptyState, Panel, SegmentedControl, Skeletons } from './ui'
 import { countryFlag, countryName } from './format'
 
@@ -33,7 +33,7 @@ interface Row {
 // ASN (from the iptoasn table) — as a ranked list with a share bar.
 export function ConnectionCountries() {
   const { t } = useTranslation()
-  const lang = currentLang()
+  const lang = locale()
   const [mode, setMode] = useState<'country' | 'asn'>('country')
   const [countries, setCountries] = useState<CountryStat[] | null>(null)
   const [asns, setAsns] = useState<ASNStat[] | null>(null)

@@ -4,14 +4,14 @@
 // so the two can't drift apart in what they accept or how they render it.
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import i18n, { currentLang } from "./i18n";
+import i18n, { locale } from "./i18n";
 import { Select, TextInput } from "./ui";
 
 // weekdayName renders a cron weekday number (0 = Sunday) via Intl, so a new
 // language needs no calendar strings of its own.
 function weekdayName(d: number): string {
   // 2021-08-01 was a Sunday, so +d lands on the wanted weekday.
-  const s = new Intl.DateTimeFormat(currentLang(), { weekday: "long" }).format(
+  const s = new Intl.DateTimeFormat(locale(), { weekday: "long" }).format(
     new Date(2021, 7, 1 + d),
   );
   return s.charAt(0).toUpperCase() + s.slice(1);

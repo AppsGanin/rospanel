@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/plugin"
 	"github.com/AppsGanin/rospanel/internal/plugin/manifest"
@@ -486,7 +487,7 @@ func (rt *Router) ensurePluginCallbacks(info *plugin.Info) {
 
 // panelLang is the admin's language for what plugins label themselves with.
 func panelLang(r *http.Request) string {
-	if l := r.URL.Query().Get("lang"); l == "en" || l == "ru" {
+	if l := r.URL.Query().Get("lang"); i18n.IsLang(l) {
 		return l
 	}
 	return "ru"

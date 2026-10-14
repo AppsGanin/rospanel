@@ -14,7 +14,7 @@
 ![Platform](https://img.shields.io/badge/platform-Linux-555?logo=linux&logoColor=white)
 ![Deploy](https://img.shields.io/badge/deploy-single%20binary%20%7C%20Docker-2496ED?logo=docker&logoColor=white)
 
-**English** · [Русский](README-RU.md)
+**English** · [Русский](README-RU.md) · [简体中文](README-ZH.md) · [العربية](README-AR.md)
 
 [What it is](#what-it-is) · [Where to get a server](#️-where-to-get-a-server) · [Quick start](#-quick-start) · [Features](#-features) · [CLI](#️-cli) · [Architecture](#-architecture) · [Disclaimer](#️-disclaimer) · [Development](#-development) · [Support](#-support-the-project)
 
@@ -728,7 +728,7 @@ permissions and the internet hosts — and can read its code; nothing beyond tha
 code editor, with tests and a trial run in a sandbox. Authors get `rospanel plugin new | test | dev | pack` with no Node
 needed; see [docs/plugins](docs/plugins/README.md) and [examples/plugins](examples/plugins).
 
-#### 🌍 Language (RU / EN)
+#### 🌍 Language (RU / EN / 中文 / العربية)
 
 | Surface                   | Language comes from                                            |
 | ------------------------- | -------------------------------------------------------------- |
@@ -913,11 +913,10 @@ go build -o rospanel ./cmd/rospanel
 ./rospanel
 ```
 
-**Localisation.** The panel's dictionaries are `web/src/i18n/ru.ts` and `en.ts`, typed against
-each other: a key present in one and missing in the other is a build error, not a silent fallback.
-What Go renders itself — the bots and the subscription page — lives in `internal/i18n/`; the
-backend hands the panel a key plus arguments and never rendered prose. Adding a third language
-means one more dictionary on each side.
+**Localisation.** The panel's dictionaries are `web/src/i18n/{ru,en,zh,ar}.ts`, typed against
+`ru.ts`: a key missing from one is a build error, not a silent fallback. What Go renders itself —
+the bots and the subscription page — lives in `internal/i18n/`; the backend hands the panel a key
+plus arguments and never rendered prose. Another language is one more dictionary on each side.
 
 Useful environment variables (all optional): `ROSPANEL_DATA` (data directory),
 `ROSPANEL_ADMIN_ADDR` (the panel's loopback address, `127.0.0.1:8080` by default), `XRAY_BIN`,

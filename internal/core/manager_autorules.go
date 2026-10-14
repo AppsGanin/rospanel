@@ -183,7 +183,7 @@ func (m *Manager) sendAutoRule(set *model.Settings, send func(int64, string, []m
 	if !t.Web {
 		lang = m.userLang(t.ChatID)
 	} else if _, own, _ := m.UserContact(t.UserID); own != "" {
-		lang = i18n.Lang(own)
+		lang = i18n.Normalize(own)
 	}
 	vars := map[string]string{"{name}": escHTML(t.Name), "{code}": "", "{percent}": "", "{until}": ""}
 	var code *model.PromoCode

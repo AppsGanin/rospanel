@@ -1,6 +1,6 @@
 // API client. All paths are RELATIVE so they resolve against <base href="/<secret>/">
 // injected by the Go server — the SPA never needs to know its own secret path.
-import i18n from './i18n'
+import i18n, { currentLang } from './i18n'
 
 export interface User {
   id: number
@@ -3733,7 +3733,7 @@ export interface PluginAction {
 }
 
 export const listPluginActions = () =>
-  api<{ actions: PluginAction[] }>(`api/plugin-actions?lang=${i18n.language === 'en' ? 'en' : 'ru'}`)
+  api<{ actions: PluginAction[] }>(`api/plugin-actions?lang=${currentLang()}`)
 
 export const runPluginAction = (plugin: string, key: string, userIds: number[]) =>
   api<{ ok: boolean; message: string }>(
@@ -3755,7 +3755,7 @@ export interface PluginWidget {
 }
 
 export const getPluginWidgets = () =>
-  api<{ widgets: PluginWidget[] }>(`api/plugin-widgets?lang=${i18n.language === 'en' ? 'en' : 'ru'}`)
+  api<{ widgets: PluginWidget[] }>(`api/plugin-widgets?lang=${currentLang()}`)
 
 export interface PluginFieldsBlock {
   plugin: string
@@ -3765,5 +3765,5 @@ export interface PluginFieldsBlock {
 
 export const getUserPluginFields = (userId: number) =>
   api<{ plugins: PluginFieldsBlock[] }>(
-    `api/users/${userId}/plugin-fields?lang=${i18n.language === 'en' ? 'en' : 'ru'}`,
+    `api/users/${userId}/plugin-fields?lang=${currentLang()}`,
   )

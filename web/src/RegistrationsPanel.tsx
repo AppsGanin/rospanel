@@ -6,7 +6,7 @@ import {
 } from "./api";
 import { useAction, useShowMore } from "./hooks";
 import { useCan } from "./role";
-import { currentLang } from "./i18n";
+import { locale } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { inPanelTz } from "./tz";
 import { Button, EmptyState, Mono, Panel, ShowMore } from "./ui";
@@ -14,7 +14,7 @@ import { Button, EmptyState, Mono, Panel, ShowMore } from "./ui";
 function fmtDateTime(unix: number): string {
   if (!unix) return "—";
   return new Date(unix * 1000).toLocaleString(
-    currentLang(),
+    locale(),
     inPanelTz({
       day: "2-digit",
       month: "2-digit",

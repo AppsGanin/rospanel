@@ -11,7 +11,7 @@ import {
 } from "./api";
 import { fmtKop } from "./events";
 import { useAction, useShowMore } from "./hooks";
-import { currentLang, td } from "./i18n";
+import { locale, td } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { useCan } from "./role";
 import { EMPTY_STEP_UP, StepUpFields, stepUpReady, type StepUp } from "./stepup";
@@ -32,7 +32,7 @@ import {
 
 function fmtWhen(unix: number): string {
   return new Date(unix * 1000).toLocaleString(
-    currentLang(),
+    locale(),
     inPanelTz({ day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
   );
 }
@@ -158,7 +158,7 @@ export function UserWallet({ userId, onOpenUser }: { userId: number; onOpenUser?
                 <div key={r.user_id} className="flex items-center justify-between gap-3 text-xs">
                   <UserLink id={r.user_id} name={r.name} onOpen={onOpenUser} />
                   <span className="shrink-0 text-ink-muted">
-                    {t("wallet.invitedLine", { paid: r.paid_rub.toLocaleString(currentLang()), earned: fmtKop(r.earned_kop) })}
+                    {t("wallet.invitedLine", { paid: r.paid_rub.toLocaleString(locale()), earned: fmtKop(r.earned_kop) })}
                   </span>
                 </div>
               ))}
@@ -186,7 +186,7 @@ export function UserWallet({ userId, onOpenUser }: { userId: number; onOpenUser?
               {tx.amount_kop > 0 ? "+" : ""}
               {fmtKop(tx.amount_kop)} ₽
             </Mono>
-            <Mono className="w-16 text-right text-[11px] text-ink-muted">
+            <Mono className="w-16 text-end text-[11px] text-ink-muted">
               {fmtKop(tx.balance_kop)} ₽
             </Mono>
           </div>
@@ -236,7 +236,7 @@ function UserLink({ id, name, onOpen }: { id: number; name?: string; onOpen?: (i
   return (
     <button
       type="button"
-      className="truncate text-left font-medium text-accent hover:underline"
+      className="truncate text-start font-medium text-accent hover:underline"
       onClick={() => onOpen(id)}
     >
       {label}

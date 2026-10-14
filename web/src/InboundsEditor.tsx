@@ -355,7 +355,7 @@ function InboundRow({
         <button
           type="button"
           onClick={() => setOpen((x) => !x)}
-          className="flex min-w-0 flex-wrap items-center gap-2 text-left"
+          className="flex min-w-0 flex-wrap items-center gap-2 text-start"
         >
           <IconChevron
             className={cn(
@@ -672,7 +672,7 @@ function AdvancedSection({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 text-left text-sm font-medium text-ink"
+        className="flex w-full items-center gap-2 text-start text-sm font-medium text-ink"
       >
         <IconChevron className={`shrink-0 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
         {t("inb.extraParams")}

@@ -60,13 +60,18 @@ func repoRoot(dir string) (string, error) {
 // running server can answer the external API in English) and by the test that keeps
 // the two in step.
 func ErrorsEN(dir string) (map[string]string, error) {
-	d, err := Load(dir, "en.ts")
+	return Errors(dir, "en.ts")
+}
+
+// Errors is ErrorsEN for any dictionary file.
+func Errors(dir, name string) (map[string]string, error) {
+	d, err := Load(dir, name)
 	if err != nil {
 		return nil, err
 	}
 	sub, ok := d["err"].(Dict)
 	if !ok {
-		return nil, fmt.Errorf("en.ts has no `err` section")
+		return nil, fmt.Errorf("%s has no `err` section", name)
 	}
 	out := map[string]string{}
 	flatten("err", sub, out)

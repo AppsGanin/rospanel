@@ -76,7 +76,7 @@ export function CreatePlugin({ onCreated }: { onCreated: (draftId: number) => vo
             aria-checked={start === c.value}
             onClick={() => setStart(c.value)}
             className={cn(
-              "flex flex-col justify-start rounded-xl border px-4 py-3 text-left transition",
+              "flex flex-col justify-start rounded-xl border px-4 py-3 text-start transition",
               start === c.value ? "accent-tint border-brand-500" : "accent-tint-hover border-gray-200",
             )}
           >
@@ -91,7 +91,7 @@ export function CreatePlugin({ onCreated }: { onCreated: (draftId: number) => vo
             setStart(null);
             fileRef.current?.click();
           }}
-          className="accent-tint-hover flex flex-col justify-start rounded-xl border border-gray-200 px-4 py-3 text-left transition disabled:opacity-60"
+          className="accent-tint-hover flex flex-col justify-start rounded-xl border border-gray-200 px-4 py-3 text-start transition disabled:opacity-60"
         >
           <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
             {t("studio.fromSources")}
@@ -149,7 +149,7 @@ export function DraftRow({
     <div className="px-3.5 py-2.5">
       <div className="flex items-center gap-3">
         <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-1">
-          <button type="button" className="break-words text-left text-sm font-semibold text-ink" onClick={onOpen}>
+          <button type="button" className="break-words text-start text-sm font-semibold text-ink" onClick={onOpen}>
             {d.name || d.plugin_id || t("studio.untitled")}
           </button>
           {d.version && <span className="text-xs text-ink-muted">{t("plugins.version", { v: d.version })}</span>}
@@ -164,7 +164,7 @@ export function DraftRow({
           <IconButton title={t("studio.deleteDraftShort")} variant="subtle" color="red" onClick={onRemove}>
             <IconTrash size={16} />
           </IconButton>
-          <span className="ml-2">
+          <span className="ms-2">
             <Button
               size="xs"
               variant="light"

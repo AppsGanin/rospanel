@@ -1,5 +1,4 @@
-// Panel localisation. Two languages ship today; adding a third means adding a
-// dictionary next to ru.ts/en.ts and one LANGS entry — nothing else.
+// Panel localisation: Russian, English, Simplified Chinese and Arabic (right to left).
 //
 // The dictionaries are typed against each other (see en.ts): a key present in ru
 // and missing in en is a tsc error, not a string that silently renders in the
@@ -7,11 +6,13 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import en from "./en";
-import ru from "./ru";
+import ru, { type Dict } from "./ru";
 
 export const LANGS = [
   { code: "ru", label: "Русский" },
   { code: "en", label: "English" },
+  { code: "zh", label: "简体中文" },
+  { code: "ar", label: "العربية" },
 ] as const;
 
 export type Lang = (typeof LANGS)[number]["code"];
@@ -19,7 +20,7 @@ export type Lang = (typeof LANGS)[number]["code"];
 const STORAGE_KEY = "rospanel.lang";
 
 function isLang(v: string | null): v is Lang {
-  return v === "ru" || v === "en";
+  return LANGS.some((l) => l.code === v);
 }
 
 // storedLang is the admin's explicit pick, which always beats detection — someone
@@ -33,8 +34,9 @@ function storedLang(): Lang | null {
   }
 }
 
-// detectLang reads the browser's preference list: Russian speakers get Russian,
-// everyone else gets English. Note this is not i18next's fallbackLng, which is a
+// detectLang reads the browser's preference list: Russian (and Belarusian,
+// Ukrainian) speakers get Russian, Chinese and Arabic speakers their language,
+// everyone else English. Note this is not i18next's fallbackLng, which is a
 // different question (what to render when a KEY is missing) and stays "ru" — ru is
 // the dictionary the code is written against, so it is the one that is never behind.
 export function detectLang(): Lang {
@@ -46,24 +48,85 @@ export function detectLang(): Lang {
       : [];
   for (const raw of list) {
     const tag = (raw || "").toLowerCase();
-    if (tag.startsWith("ru")) return "ru";
-    if (tag.startsWith("en")) return "en";
+    if (/^(ru|be|uk)\b/.test(tag)) return "ru";
+    if (/^(en|zh|ar)\b/.test(tag)) return tag.slice(0, 2) as Lang;
   }
   return "en";
 }
 
-export function setLang(lang: Lang) {
+// Chinese and Arabic are fetched when picked rather than shipped in the main bundle
+// to everyone; Russian (the fallback) and English always are.
+const lazy: Partial<Record<Lang, () => Promise<{ default: Dict }>>> = {
+  zh: () => import("./zh"),
+  ar: () => import("./ar"),
+};
+
+async function load(lang: Lang) {
+  const get = lazy[lang];
+  if (get && !i18n.hasResourceBundle(lang, "translation")) {
+    i18n.addResourceBundle(lang, "translation", (await get()).default);
+  }
+}
+
+// switching counts setLang calls: a pick whose dictionary arrives after a later
+// pick was made is dropped, so the last click wins.
+let switching = 0;
+
+// setLang switches the panel's language. A dictionary that fails to load (an old tab
+// whose chunk an upgrade replaced) leaves the language — and the stored pick — as
+// they were.
+export async function setLang(lang: Lang) {
+  const turn = ++switching;
+  try {
+    await load(lang);
+  } catch {
+    return;
+  }
+  if (turn !== switching) return;
   try {
     localStorage.setItem(STORAGE_KEY, lang);
   } catch {
     /* storage disabled — the change still applies for this session */
   }
-  i18n.changeLanguage(lang);
+  await i18n.changeLanguage(lang);
+  if (turn === switching) markDocument(lang);
+}
+
+// markDocument tags the page with its language and writing direction: Arabic lays
+// the whole panel out right to left.
+function markDocument(lang: Lang) {
   document.documentElement.lang = lang;
+  document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
 }
 
 export function currentLang(): Lang {
   return isLang(i18n.language) ? i18n.language : "ru";
+}
+
+// arrow is "→" read in the panel's direction: "old → new" in Arabic must point from
+// the right-hand value to the left-hand one. (U+2192 is not mirrored by bidi.)
+export function arrow(): string {
+  return currentLang() === "ar" ? "←" : "→";
+}
+
+// change writes "from → to". Each side is isolated: two Latin values would otherwise
+// merge into one left-to-right run in Arabic and turn the arrow round.
+export function change(from: string, to: string): string {
+  return `\u2068${from}\u2069 ${arrow()} \u2068${to}\u2069`;
+}
+
+// locale is the tag dates and numbers are formatted with. Arabic keeps Latin
+// digits: every number the panel prints (ports, IPs, sizes) is read alongside
+// Latin text, and the dictionaries spell their own numbers that way.
+export function locale(): string {
+  switch (currentLang()) {
+    case "ar":
+      return "ar-u-nu-latn";
+    case "zh":
+      return "zh-CN";
+    default:
+      return currentLang();
+  }
 }
 
 // td translates a key assembled at runtime — an event action, a provider id, a
@@ -96,6 +159,16 @@ i18n.use(initReactI18next).init({
   interpolation: { escapeValue: false },
 });
 
-document.documentElement.lang = initial;
+markDocument(initial);
+
+// ready settles once the initial language's dictionary is in: the first paint waits
+// for it rather than flashing Russian at a Chinese or Arabic reader. A failed fetch
+// renders in English for this session, the stored pick left as it was.
+export const ready: Promise<unknown> = load(initial)
+  .then(() => i18n.changeLanguage(initial))
+  .catch(() => {
+    markDocument("en");
+    return i18n.changeLanguage("en");
+  });
 
 export default i18n;

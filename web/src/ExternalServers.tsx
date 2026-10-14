@@ -18,7 +18,7 @@ import {
   updateExternalSource,
 } from "./api";
 import { useAction, useShowMore } from "./hooks";
-import i18n from "./i18n";
+import i18n, { locale } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { serverName } from "./NodeStatus";
 import { inPanelTz } from "./tz";
@@ -51,7 +51,7 @@ import {
 // nothing on them and the same access groups decide who gets which.
 
 function fmtWhen(unix: number): string {
-  return unix ? new Date(unix * 1000).toLocaleString(i18n.language, inPanelTz()) : "—";
+  return unix ? new Date(unix * 1000).toLocaleString(locale(), inPanelTz()) : "—";
 }
 
 // sourceKind names what a source is, since the stored value can be a URL or a
@@ -290,7 +290,7 @@ function ExtSubCard({
             {t("conn.off")}
           </Badge>
         )}
-        <span className="ml-auto flex shrink-0 items-center gap-1">
+        <span className="ms-auto flex shrink-0 items-center gap-1">
           <div className="w-52" title={t("external.delivery")}>
             <Select size="sm" value={current} onChange={pick} data={options} disabled={busy} className="w-full" />
           </div>
@@ -333,9 +333,9 @@ function ExtSubCard({
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="-ml-1 flex items-center gap-1.5 rounded-md px-1 py-0.5 text-sm text-ink transition hover:bg-gray-50"
+          className="-ms-1 flex items-center gap-1.5 rounded-md px-1 py-0.5 text-sm text-ink transition hover:bg-gray-50"
         >
-          <IconChevron size={14} className={cn("shrink-0 text-ink-muted transition", !open && "-rotate-90")} />
+          <IconChevron size={14} className={cn("shrink-0 text-ink-muted transition", !open && "-rotate-90 rtl:rotate-90")} />
           <span className="font-medium">{t("external.servers")}</span>
           <span className="text-xs text-ink-muted">
             {sub.last_error && servers.length === 0 ? t("external.readFailed") : t("external.serversOf", { on, total: servers.length })}

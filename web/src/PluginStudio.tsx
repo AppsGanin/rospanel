@@ -425,7 +425,7 @@ function BuilderView({
         {problems && problems.length > 0 && (
           <div className="danger-tint rounded-xl px-4 py-3 text-xs">
             <p className="mb-1 font-semibold text-danger">{t("studio.problems")}</p>
-            <ul className="list-disc space-y-1 pl-4 text-xs leading-relaxed whitespace-pre-wrap break-words text-ink">
+            <ul className="list-disc space-y-1 ps-4 text-xs leading-relaxed whitespace-pre-wrap break-words text-ink">
               {problems.map((p) => (
                 <li key={p}>{explainProblem(p)}</li>
               ))}
@@ -856,7 +856,7 @@ function CodeView({
 
   return (
     <div className="flex h-full min-h-0 flex-col sm:flex-row">
-      <aside className="flex shrink-0 flex-col border-b border-gray-100 sm:w-56 sm:border-r sm:border-b-0">
+      <aside className="flex shrink-0 flex-col border-b border-gray-100 sm:w-56 sm:border-e sm:border-b-0">
         <div className="flex max-h-40 flex-col overflow-y-auto py-1 sm:max-h-none sm:flex-1">
           {files.map((f) => (
             <div
@@ -868,7 +868,7 @@ function CodeView({
             >
               <button
                 type="button"
-                className="min-w-0 flex-1 truncate py-1.5 text-left font-mono text-xs text-ink"
+                className="min-w-0 flex-1 truncate py-1.5 text-start font-mono text-xs text-ink"
                 onClick={() => setCurrent(f.path)}
               >
                 {f.path}
@@ -1079,7 +1079,7 @@ function TestsView({
                       disabled={!expandable}
                       onClick={() => setOpen(isOpen ? null : r.name)}
                       className={cn(
-                        "flex w-full items-center gap-3 px-4 py-2.5 text-left",
+                        "flex w-full items-center gap-3 px-4 py-2.5 text-start",
                         expandable && "accent-tint-hover cursor-pointer",
                       )}
                     >
@@ -1342,7 +1342,7 @@ function CheckDialog({ check, onClose }: { check: DraftCheck; onClose: () => voi
   return (
     <Modal open onClose={onClose} title={check.ok ? t("studio.checkOK") : t("studio.checkFailed")}>
       {!check.ok ? (
-        <ul className="list-disc space-y-1 pl-4 text-xs leading-relaxed whitespace-pre-wrap break-words text-ink">
+        <ul className="list-disc space-y-1 ps-4 text-xs leading-relaxed whitespace-pre-wrap break-words text-ink">
           {(check.problems ?? []).map((p) => (
             <li key={p}>{explainProblem(p)}</li>
           ))}

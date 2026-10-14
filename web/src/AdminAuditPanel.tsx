@@ -152,11 +152,11 @@ function AuditRow({
           </span>
           <span className="truncate text-xs text-accent">{ev.actor_name || "—"}</span>
           <Mono className="truncate text-[11px] text-ink-muted">{ev.ip || "—"}</Mono>
-          <Mono className="truncate text-right text-[11px] text-ink-muted">{when}</Mono>
+          <Mono className="truncate text-end text-[11px] text-ink-muted">{when}</Mono>
         </>
       ) : (
         <>
-          <Mono className="text-right text-[11px] text-ink-muted">{when}</Mono>
+          <Mono className="text-end text-[11px] text-ink-muted">{when}</Mono>
           <span className="col-span-2 truncate text-[11px] text-ink-muted">
             <span className="text-accent">{ev.actor_name || "—"}</span>
             {target && ` · ${target}`}
@@ -328,7 +328,7 @@ export function AdminAuditPanel() {
               <span className="truncate">{t("audit.colTarget")}</span>
               <span className="truncate">{t("audit.colAdmin")}</span>
               <span className="truncate">{t("audit.colIp")}</span>
-              <span className="truncate text-right">{t("audit.colWhen")}</span>
+              <span className="truncate text-end">{t("audit.colWhen")}</span>
             </div>
           )}
           {events.map((ev) => (

@@ -24,7 +24,7 @@ func TestRuntimeAssembledKeysResolve(t *testing.T) {
 	// The three outcomes notifyRegistrationDecision is called with.
 	keys = append(keys, "notify.regAlreadyLinked", "notify.regApproved", "notify.regRejected")
 
-	for _, lang := range []i18n.Lang{i18n.RU, i18n.EN} {
+	for _, lang := range i18n.Langs {
 		for _, k := range keys {
 			if got := i18n.T(lang, k); got == k {
 				t.Errorf("%s: %q has no catalog entry (rendered as itself)", lang, k)

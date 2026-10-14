@@ -1,4 +1,5 @@
-// The language picker. Two shapes of the same control: a row of pills for the
+// The language picker. Each name is in its own language (and tagged so), so a
+// reader finds theirs whatever the panel shows now. Two shapes of the same control: a row of pills for the
 // screens that have no account menu (login, the first-run wizard, the forced
 // password change) and a set of dropdown items for the dashboard's account menu.
 import { useTranslation } from "react-i18next";
@@ -22,6 +23,7 @@ export function LangPills({ className }: { className?: string }) {
         <button
           key={l.code}
           type="button"
+          lang={l.code}
           onClick={() => setLang(l.code as Lang)}
           aria-pressed={active === l.code}
           className={cn(
@@ -48,7 +50,7 @@ export function LangChoice() {
       {LANGS.map((l) => (
         <DropdownItem key={l.code} onClick={() => setLang(l.code as Lang)}>
           <span className="flex items-center justify-between gap-2">
-            <span className={active === l.code ? "font-medium text-accent" : ""}>
+            <span lang={l.code} className={active === l.code ? "font-medium text-accent" : ""}>
               {l.label}
             </span>
             {active === l.code && <IconCheck size={14} className="text-accent" />}

@@ -106,7 +106,7 @@ export function WebhookEventGrid({
                 <span className="truncate text-xs font-medium text-ink">
                   {td(`hooks.group.${s.key}`)}
                 </span>
-                <span className="ml-auto shrink-0 font-mono text-[11px] text-ink-muted">
+                <span className="ms-auto shrink-0 font-mono text-[11px] text-ink-muted">
                   {on}/{s.items.length}
                 </span>
               </div>
@@ -114,7 +114,7 @@ export function WebhookEventGrid({
                 {s.items.map((k) => (
                   <div
                     key={k}
-                    className="flex items-center gap-2.5 border-t border-gray-100 py-[6px] pr-3.5 pl-7"
+                    className="flex items-center gap-2.5 border-t border-gray-100 py-[6px] pe-3.5 ps-7"
                   >
                     <Box
                       checked={all || selected.has(k)}

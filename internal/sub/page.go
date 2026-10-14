@@ -56,14 +56,14 @@ var pageTmpl = template.Must(template.New("sub").Parse(pageHTML))
 // Telegram webview — but the browser it lands in resolves the scheme and opens
 // the app. Href is template.URL so the scheme survives html/template's URL filter.
 var appRedirectTmpl = template.Must(template.New("appredir").Parse(
-	`<!doctype html><html lang="{{.Lang}}"><head><meta charset="utf-8">` +
+	`<!doctype html><html lang="{{.Lang}}" dir="{{.Dir}}"><head><meta charset="utf-8">` +
 		`<meta name="viewport" content="width=device-width,initial-scale=1">` +
 		`<title>{{.Opening}}</title>` +
 		`<script>location.replace("{{.Href}}")</script>` +
 		`<meta http-equiv="refresh" content="0;url={{.Href}}"></head>` +
 		`<body style="font-family:sans-serif;padding:24px;color:#333">` +
 		`<p>{{.Opening}}<br>{{.IfNotOpened}} ` +
-		`<a href="{{.Href}}">{{.ClickHere}}</a>.</p></body></html>`))
+		`<a href="{{.Href}}">{{.ClickHere}}</a>{{.Stop}}</p></body></html>`))
 
 // AppRedirect renders the deep-link hand-off page for one client's share link.
 func AppRedirect(href template.URL, lang i18n.Lang) ([]byte, error) {
@@ -71,15 +71,19 @@ func AppRedirect(href template.URL, lang i18n.Lang) ([]byte, error) {
 	data := struct {
 		Href        template.URL
 		Lang        string
+		Dir         string
 		Opening     string
 		IfNotOpened string
 		ClickHere   string
+		Stop        string
 	}{
 		Href:        href,
 		Lang:        string(lang),
+		Dir:         lang.Dir(),
 		Opening:     i18n.T(lang, "sub.openingApp"),
 		IfNotOpened: i18n.T(lang, "sub.ifNotOpened"),
 		ClickHere:   i18n.T(lang, "sub.clickHere"),
+		Stop:        i18n.T(lang, "sub.fullStop"),
 	}
 	if err := appRedirectTmpl.Execute(&buf, data); err != nil {
 		return nil, err
@@ -94,9 +98,11 @@ type pageText struct {
 	Title          string
 	DefaultBrand   string
 	Greeting       string
+	GreetingName   string // Greeting with the user's name, a %s
 	Online         string
 	Offline        string
 	Traffic        string
+	Colon          string // ": ", or the full-width "：" in Chinese
 	TrafficUntil   string
 	PayProcessing  string
 	CurrentPlan    string
@@ -197,9 +203,11 @@ func text(lang i18n.Lang) pageText {
 		Title:          t("sub.title"),
 		DefaultBrand:   t("sub.defaultBrand"),
 		Greeting:       t("sub.greeting"),
+		GreetingName:   t("sub.greetingName"),
 		Online:         t("sub.online"),
 		Offline:        t("sub.offline"),
 		Traffic:        t("sub.traffic"),
+		Colon:          t("sub.colon"),
 		TrafficUntil:   t("sub.trafficUntilPrefix"),
 		PayProcessing:  t("sub.payProcessing"),
 		CurrentPlan:    t("sub.currentPlan"),
@@ -334,6 +342,7 @@ type awgCard struct {
 }
 
 type pageData struct {
+	Lang      i18n.Lang
 	L         pageText
 	Name      string
 	BrandName string // panel display name (defaults to the stock RosPanel name)
@@ -709,6 +718,7 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 	}
 	theme := branding.ParseTheme(local.PanelTheme)
 	data := pageData{
+		Lang:        lang,
 		L:           text(lang),
 		Name:        u.Name,
 		BrandName:   brandName,

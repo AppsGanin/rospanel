@@ -1,4 +1,4 @@
-import i18n from './i18n'
+import i18n, { locale } from './i18n'
 import { dayEndMs, inPanelTz, todayYmd, ymdOf } from './tz'
 
 // The option tables below are functions, not constants: a constant would freeze
@@ -22,7 +22,7 @@ export const STAMP_OPTS: Intl.DateTimeFormatOptions = {
 // the panel's timezone, like every date the panel shows (see tz.ts).
 export function fmtStamp(unix: number): string {
   if (!unix) return '—'
-  return new Date(unix * 1000).toLocaleString(i18n.language, inPanelTz(STAMP_OPTS))
+  return new Date(unix * 1000).toLocaleString(locale(), inPanelTz(STAMP_OPTS))
 }
 
 const BYTE_UNITS = ['b', 'kb', 'mb', 'gb', 'tb'] as const
@@ -155,7 +155,7 @@ export function localDay(offset: number): string {
 export function fmtExpire(unix: number): string {
   if (!unix) return '∞'
   const d = new Date(unix * 1000)
-  return d.toLocaleDateString(undefined, inPanelTz())
+  return d.toLocaleDateString(locale(), inPanelTz())
 }
 
 // termModes are the two ways a manual term is given: an end date, or a length that
@@ -208,7 +208,7 @@ export function fmtLastSeen(unix: number): string {
   if (sec < 3600) return i18n.t('lastSeen.minutes', { n: Math.floor(sec / 60) })
   if (sec < 86400) return i18n.t('lastSeen.hours', { n: Math.floor(sec / 3600) })
   if (sec < 7 * 86400) return i18n.t('lastSeen.days', { n: Math.floor(sec / 86400) })
-  return new Date(unix * 1000).toLocaleString(undefined, inPanelTz())
+  return new Date(unix * 1000).toLocaleString(locale(), inPanelTz())
 }
 
 // countryFlag turns a 2-letter country code into its emoji flag via regional-indicator

@@ -98,7 +98,7 @@ import {
   useConfirm,
   useCopy,
 } from './ui'
-import i18n from './i18n'
+import i18n, { locale } from './i18n'
 import { useCan } from './role'
 import { ExtendUserModal, RenameModal } from './UserModals'
 import { GroupChip, NoteAndTags } from './UserNotes'
@@ -572,7 +572,7 @@ export function UserDetail({
                 user.abuse_action === 'disable'
                   ? 'userDetail.abuseDisabled'
                   : 'userDetail.abuseThrottled',
-                { when: new Date(user.abuse_until * 1000).toLocaleString(i18n.language, inPanelTz()) },
+                { when: new Date(user.abuse_until * 1000).toLocaleString(locale(), inPanelTz()) },
               )}
             </p>
           )}

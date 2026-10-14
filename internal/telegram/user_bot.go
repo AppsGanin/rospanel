@@ -1415,9 +1415,9 @@ func (s *UserService) publishCommands(ctx context.Context, client *Client, token
 	}
 	// Telegram picks a command menu by the client's interface language, and falls
 	// back to the unscoped one for a language nothing was published for. That has to
-	// agree with i18n.Normalize, which words every message the bot sends: anything
-	// not recognisably Russian is answered in English, so English is what the
-	// fallback scope holds. Russian is published under the tags Normalize treats as
+	// agree with i18n.Normalize, which words every message the bot sends: a language
+	// we do not ship is answered in English, so English is what the fallback scope
+	// holds. Russian is published under the tags Normalize treats as
 	// Russian, or a Belarusian user would read Russian messages under an English menu.
 	//
 	// The English set is published to its own scope as well as the fallback. Dropping
@@ -1433,6 +1433,8 @@ func (s *UserService) publishCommands(ctx context.Context, client *Client, token
 		{i18n.RU, "ru"},
 		{i18n.RU, "be"},
 		{i18n.RU, "uk"},
+		{i18n.ZH, "zh"},
+		{i18n.AR, "ar"},
 	} {
 		cmds := append(userBotCommands(pub.lang), s.pluginCommands(pub.lang)...)
 		if err := client.SetMyCommands(ctx, cmds, pub.scope); err != nil {

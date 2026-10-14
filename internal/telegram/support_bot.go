@@ -404,9 +404,9 @@ func (s *SupportService) handleAdminReply(ctx context.Context, client *Client, s
 	if err := client.CopyMessage(ctx, chatID, set.TGSupportGroupID, m.MessageID); err != nil {
 		// Report into the thread rather than the log: the admin is standing right
 		// there waiting, and silence reads as "delivered".
-		note := i18n.T(i18n.Default, "support.notDelivered", esc(err.Error()))
+		note := i18n.T(opLang(set), "support.notDelivered", esc(err.Error()))
 		if isBlockedByUser(err) {
-			note = i18n.T(i18n.Default, "support.userBlocked")
+			note = i18n.T(opLang(set), "support.userBlocked")
 		}
 		if _, err := client.SendTopic(ctx, set.TGSupportGroupID, m.MessageThreadID, note); err != nil {
 			log.Printf("telegram support: notice to topic %d: %v", m.MessageThreadID, err)
@@ -483,20 +483,20 @@ func topicTitle(u model.User, linked bool, m *Message) string {
 // topicCard is the pinned first post of a topic: who this is, and how the thread
 // behaves.
 // The card is posted into the operators' support group, so it is written in the
-// panel's own language — not the user's, whose language governs only what the bot
-// sends back to them.
+// operators' language (opLang) — not the user's, whose language governs only what
+// the bot sends back to them.
 func topicCard(u model.User, linked bool, m *Message, set *model.Settings, panel Panel) string {
 	var b strings.Builder
 	if linked {
-		b.WriteString(userSelfCard(u, set, panel, i18n.Default))
+		b.WriteString(userSelfCard(u, set, panel, opLang(set)))
 	} else {
-		b.WriteString(i18n.T(i18n.Default, "support.notRegistered") + "\n")
+		b.WriteString(i18n.T(opLang(set), "support.notRegistered") + "\n")
 		if m.From != nil && m.From.Username != "" {
 			fmt.Fprintf(&b, "Telegram: @%s\n", esc(m.From.Username))
 		}
 		fmt.Fprintf(&b, "Chat ID: <code>%d</code>", m.Chat.ID)
 	}
-	b.WriteString("\n\n" + i18n.T(i18n.Default, "support.topicHint", internalNotePrefix))
+	b.WriteString("\n\n" + i18n.T(opLang(set), "support.topicHint", internalNotePrefix))
 	return b.String()
 }
 
@@ -531,7 +531,7 @@ func hasInternalNote(body string) bool {
 // reason to believe it was delivered.
 func (s *SupportService) warnWithheld(ctx context.Context, client *Client, set *model.Settings, m *Message) {
 	if _, err := client.SendTopic(ctx, set.TGSupportGroupID, m.MessageThreadID,
-		i18n.T(i18n.Default, "support.internalWholeMessage", internalNotePrefix)); err != nil {
+		i18n.T(opLang(set), "support.internalWholeMessage", internalNotePrefix)); err != nil {
 		log.Printf("telegram support: withheld notice in %d: %v", m.MessageThreadID, err)
 	}
 }
@@ -550,7 +550,7 @@ func (s *SupportService) noteOrphanTopic(ctx context.Context, client *Client, se
 		return
 	}
 	if _, err := client.SendTopic(ctx, set.TGSupportGroupID, threadID,
-		i18n.T(i18n.Default, "support.orphanTopic")); err != nil {
+		i18n.T(opLang(set), "support.orphanTopic")); err != nil {
 		log.Printf("telegram support: orphan notice in %d: %v", threadID, err)
 	}
 }
@@ -639,4 +639,10 @@ type replyRightKey struct{ group, user int64 }
 type replyRight struct {
 	allowed bool
 	at      time.Time
+}
+
+// opLang is the language of what the support bot writes for the operators: the one
+// the admin bot speaks (Settings → Telegram).
+func opLang(set *model.Settings) i18n.Lang {
+	return i18n.Normalize(set.BotLang())
 }

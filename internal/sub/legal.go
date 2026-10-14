@@ -60,7 +60,7 @@ func LegalTitle(kind string, lang i18n.Lang) string {
 }
 
 var legalTpl = template.Must(template.New("legal").Parse(`<!doctype html>
-<html lang="{{.Lang}}">
+<html lang="{{.Lang}}" dir="{{.Dir}}">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -81,8 +81,8 @@ var legalTpl = template.Must(template.New("legal").Parse(`<!doctype html>
   .doc p, .doc ul, .doc ol { margin: 0 0 .9em; }
   .doc a { color: {{.Accent}}; }
   .doc table { border-collapse: collapse; width: 100%; margin: 0 0 1em; display: block; overflow-x: auto; }
-  .doc th, .doc td { border: 1px solid rgba(127,127,127,.3); padding: 6px 10px; text-align: left; }
-  .doc blockquote { margin: 0 0 1em; padding: 2px 14px; border-left: 3px solid {{.Accent}}; color: {{.Muted}}; }
+  .doc th, .doc td { border: 1px solid rgba(127,127,127,.3); padding: 6px 10px; text-align: start; }
+  .doc blockquote { margin: 0 0 1em; padding: 2px 14px; border-inline-start: 3px solid {{.Accent}}; color: {{.Muted}}; }
   .doc code { font-family: ui-monospace, Menlo, monospace; font-size: .92em; }
   .doc hr { border: 0; border-top: 1px solid rgba(127,127,127,.3); margin: 1.5em 0; }
 </style>
@@ -93,7 +93,7 @@ var legalTpl = template.Must(template.New("legal").Parse(`<!doctype html>
     {{if .Brand}}<p class="brand">{{.Brand}}</p>{{end}}
     <h1 class="title">{{.Title}}</h1>
     {{if .Updated}}<p class="date">{{.Updated}}</p>{{end}}
-    <div class="doc">{{.Body}}</div>
+    <div class="doc" dir="auto">{{.Body}}</div>
   </div>
 </main>
 </body>
@@ -122,7 +122,7 @@ func LegalPage(set *model.Settings, doc model.LegalDoc, lang i18n.Lang, loc *tim
 	theme := branding.ParseTheme(set.PanelTheme)
 	var b bytes.Buffer
 	err = legalTpl.Execute(&b, map[string]any{
-		"Lang": string(lang), "Brand": name, "Title": LegalTitle(doc.Kind, lang), "Updated": updated,
+		"Lang": string(lang), "Dir": lang.Dir(), "Brand": name, "Title": LegalTitle(doc.Kind, lang), "Updated": updated,
 		"Body": body, "Bg": theme.Bg, "Surface": theme.Surface, "Ink": theme.Text,
 		"Muted": theme.Muted, "Accent": theme.Accent,
 	})

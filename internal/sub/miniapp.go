@@ -28,7 +28,7 @@ func MiniAppURL(set *model.Settings) string {
 }
 
 var miniAppTpl = template.Must(template.New("miniapp").Parse(`<!doctype html>
-<html lang="{{.Lang}}">
+<html lang="{{.Lang}}" dir="{{.Dir}}">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -100,7 +100,7 @@ func MiniAppPage(set *model.Settings, lang i18n.Lang) ([]byte, error) {
 	theme := branding.ParseTheme(set.PanelTheme)
 	var b strings.Builder
 	err := miniAppTpl.Execute(&b, map[string]string{
-		"Lang": string(lang), "Brand": name, "Base": "/" + set.SubPathOr() + "/" + set.MiniAppPath,
+		"Lang": string(lang), "Dir": lang.Dir(), "Brand": name, "Base": "/" + set.SubPathOr() + "/" + set.MiniAppPath,
 		"Bg": theme.Bg, "Ink": theme.Text, "Accent": theme.Accent, "OnAccent": branding.OnFill(theme.Accent),
 		"Opening": i18n.T(lang, "sub.miniOpening"), "OpenBot": i18n.T(lang, "sub.miniOpenBot"),
 		"NoTelegram": i18n.T(lang, "sub.miniNoTelegram"), "Failed": i18n.T(lang, "sub.miniFailed"),

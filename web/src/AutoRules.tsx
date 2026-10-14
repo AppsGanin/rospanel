@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import i18n, { currentLang, td } from "./i18n";
+import i18n, { locale, td } from "./i18n";
 import { useMessageHooks } from "./messageHooks";
 import { type AutoRule, deleteAutoRule, listAutoRules, saveAutoRule, testBroadcast } from "./api";
 import { HtmlEditor } from "./HtmlEditor";
@@ -142,7 +142,7 @@ export function AutoRules() {
               disabled={busy}
               onChange={(v) => save({ ...r, enabled: v })}
             />
-            <button type="button" className="min-w-0 flex-1 text-left" onClick={() => open(r)}>
+            <button type="button" className="min-w-0 flex-1 text-start" onClick={() => open(r)}>
               <span className="block truncate text-[13px] font-medium text-ink">{r.name}</span>
               <span className="block truncate text-[11px] text-ink-muted">
                 {td(`rules.trigger.${r.trigger}`)} · {delayLabel(r.delay_hours)}
@@ -158,7 +158,7 @@ export function AutoRules() {
                 {t(r.trigger === "no_signup" ? "rules.statsSignup" : "rules.stats", {
                   sent: r.stats.sent,
                   converted: r.stats.converted,
-                  revenue: r.stats.revenue_rub.toLocaleString(currentLang()),
+                  revenue: r.stats.revenue_rub.toLocaleString(locale()),
                 })}
               </Mono>
             )}

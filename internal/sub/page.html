@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="{{.Lang}}" dir="{{.Lang.Dir}}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -225,7 +225,7 @@
       }
       .plugin-block p { margin: 0 0 0.5em; }
       .plugin-block p:last-child { margin: 0; }
-      .plugin-block.notice { border-left: 3px solid var(--brand); }
+      .plugin-block.notice { border-inline-start: 3px solid var(--brand); }
       .card {
         background: var(--surface);
         border: 1px solid var(--line);
@@ -455,7 +455,7 @@
         background: none;
         color: var(--ink);
         font: inherit;
-        text-align: left;
+        text-align: start;
         cursor: pointer;
       }
       .pick-head .plan-info {
@@ -747,11 +747,15 @@
       select.periods {
         -webkit-appearance: none;
         appearance: none;
-        padding-right: 36px;
+        padding-inline-end: 36px;
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%238a94a6' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
         background-repeat: no-repeat;
         background-position: right 14px center;
         background-size: 12px 8px;
+      }
+      [dir="rtl"] .inline-form select,
+      [dir="rtl"] select.periods {
+        background-position: left 14px center;
       }
       .inline-form select:focus,
       select.periods:focus,
@@ -822,7 +826,7 @@
         content: "";
         position: absolute;
         top: 3px;
-        left: 3px;
+        inset-inline-start: 3px;
         width: 18px;
         height: 18px;
         border-radius: 50%;
@@ -832,6 +836,9 @@
       }
       .check input:checked {
         background: var(--brand);
+      }
+      [dir="rtl"] .check input:checked::after {
+        transform: translateX(-18px);
       }
       .check input:checked::after {
         transform: translateX(18px);
@@ -957,6 +964,9 @@
         font-size: 0.85rem;
       }
       code {
+        /* Links and keys read left to right on an Arabic page too. */
+        direction: ltr;
+        unicode-bidi: isolate;
         word-break: break-all;
         font-size: 0.78rem;
         color: var(--muted);
@@ -1072,7 +1082,7 @@
         font-size: 0.72rem;
         font-weight: 600;
         opacity: 0.7;
-        text-align: right;
+        text-align: end;
       }
     </style>
     {{if .Access.ThemeCSS}}<link rel="stylesheet" href="{{.Access.ThemeCSS}}" />{{end}}
@@ -1083,7 +1093,7 @@
         <img class="logomark" src="{{.SubURL}}/logo.svg" alt="" />
         {{if .IsDefault}}<span class="b">{{.L.DefaultBrand}}</span>{{else}}<span class="b">{{.BrandName}}</span>{{end}}
       </div>
-      <h1>{{.L.Greeting}}{{if .Name}}, {{.Name}}{{end}} 👋</h1>
+      <h1>{{if .Name}}{{printf .L.GreetingName .Name}}{{else}}{{.L.Greeting}}{{end}} 👋</h1>
 
       <div class="badges">
         <span class="badge {{.StatusClass}}">{{.StatusLabel}}</span>
@@ -1092,7 +1102,7 @@
           >{{.L.Offline}}{{if .LastSeen}} · {{.LastSeen}}{{end}}</span
         >{{end}}
         <span class="badge brand"
-          >{{.L.Traffic}}: {{.Used}}{{if .HasLimit}} / {{.Limit}}{{end}}</span
+          >{{.L.Traffic}}{{.L.Colon}}<bdi>{{.Used}}{{if .HasLimit}} / {{.Limit}}{{end}}</bdi></span
         >
         {{if .HasReset}}<span class="badge gray">{{.L.TrafficUntil}} {{.ResetText}}</span>{{end}}
         {{if .HasExpire}}<span class="badge gray">{{.Expire}}</span>{{end}}
@@ -1116,7 +1126,7 @@
       <section class="pane" data-pane="sub">
         {{range .Access.Blocks}}
         {{if eq .Type "button"}}<a class="btn alt" style="margin: 0 0 12px" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Label}}</a>
-        {{else}}<div class="card plugin-block{{if eq .Type "notice"}} notice{{end}}" style="margin-bottom: 12px">{{.HTML}}</div>{{end}}
+        {{else}}<div class="card plugin-block{{if eq .Type "notice"}} notice{{end}}" dir="auto" style="margin-bottom: 12px">{{.HTML}}</div>{{end}}
         {{end}}
         {{if .DeepLinks}}
         <button class="btn" style="margin: 0 0 12px" onclick="openWizard()">{{.L.WzOpen}}</button>
@@ -1636,7 +1646,7 @@
             ✕
           </button>
         </div>
-        <p id="msgmodal-body" class="msgbody"></p>
+        <p id="msgmodal-body" class="msgbody" dir="auto"></p>
       </div>
     </div>
     {{end}}

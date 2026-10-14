@@ -204,11 +204,11 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time, diskUsed, diskTota
 		st.offlineAlerted, st.offlineSince = true, n.LastSeen
 		out = append(out, nodeAlertMsg{bit: model.AdminEventXrayDown, html: fmt.Sprintf(
 			i18n.T(lang, "notify.nodeOffline"),
-			nodeLabel(n), fmtDowntime(now.Sub(time.Unix(n.LastSeen, 0)), lang)),
+			nodeLabel(n, lang), fmtDowntime(now.Sub(time.Unix(n.LastSeen, 0)), lang)),
 			event: model.WebhookNodeDown, data: nodeEventData(n, map[string]any{"last_seen": n.LastSeen})})
 	case !st.online && online && st.offlineAlerted:
 		st.offlineAlerted = false
-		msg := i18n.T(lang, "notify.nodeBack") + "\n" + nodeLabel(n)
+		msg := i18n.T(lang, "notify.nodeBack") + "\n" + nodeLabel(n, lang)
 		var downFor int64
 		if st.offlineSince > 0 {
 			downFor = int64(now.Sub(time.Unix(st.offlineSince, 0)).Seconds())
@@ -224,7 +224,7 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time, diskUsed, diskTota
 	// which shows up as traffic that is not recorded and users that do not sync —
 	// symptoms an operator has no reason to connect to a full disk, on a machine they
 	// have no reason to be logged into.
-	if next, msg := diskAlert(st.diskLowAlerted, diskUsed, diskTotal, nodeLabel(n), lang); msg != "" {
+	if next, msg := diskAlert(st.diskLowAlerted, diskUsed, diskTotal, nodeLabel(n, lang), lang); msg != "" {
 		st.diskLowAlerted = next
 		out = append(out, nodeAlertMsg{bit: model.AdminEventXrayDown, html: msg})
 	}
@@ -246,11 +246,11 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time, diskUsed, diskTota
 			st.lastXrayNotify, st.xrayAlerted, st.xrayDownAt = now, true, now
 			out = append(out, nodeAlertMsg{bit: model.AdminEventXrayDown, html: fmt.Sprintf(
 				i18n.T(lang, "notify.nodeXrayCrashed"),
-				nodeLabel(n)), event: model.WebhookXrayDown, data: nodeEventData(n, nil)})
+				nodeLabel(n, lang)), event: model.WebhookXrayDown, data: nodeEventData(n, nil)})
 		}
 	case !st.xrayUp && n.XrayRunning && st.xrayAlerted:
 		st.xrayAlerted = false
-		msg := i18n.T(lang, "notify.nodeXrayBack") + "\n" + nodeLabel(n)
+		msg := i18n.T(lang, "notify.nodeXrayBack") + "\n" + nodeLabel(n, lang)
 		down := now.Sub(st.xrayDownAt)
 		if down > time.Second {
 			msg += "\n" + i18n.T(lang, "notify.downtime", fmtDowntime(down, lang))
@@ -268,7 +268,7 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time, diskUsed, diskTota
 		if st.certSHA == "" || st.certSelf {
 			key = "notify.nodeCertIssued" // first real cert for this node, not a renewal
 		}
-		msg := i18n.T(lang, key, nodeLabel(n))
+		msg := i18n.T(lang, key, nodeLabel(n, lang))
 		if days := certDaysLeft(n.CertExpiresAt, now); days >= 0 {
 			msg += "\n" + i18n.TN(lang, "notify.validForDays", days)
 		}
@@ -280,7 +280,7 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time, diskUsed, diskTota
 		st.lastCertErrAt = now
 		out = append(out, nodeAlertMsg{bit: model.AdminEventCert, html: fmt.Sprintf(
 			i18n.T(lang, "notify.nodeCertFailed"),
-			nodeLabel(n), escHTML(st.certErr))})
+			nodeLabel(n, lang), escHTML(st.certErr))})
 	}
 	return out
 }
@@ -349,8 +349,8 @@ func (m *Manager) pruneNodeAlerts(live map[int64]struct{}) {
 // nodeLabel names a node in an alert. The host rides along with the name because an
 // abuse complaint, a hoster's mail and a traceroute all name the address, not the
 // label the operator picked in the panel.
-func nodeLabel(n *model.Node) string {
-	s := i18n.T(i18n.Default, "notify.serverIs", escHTML(n.Name))
+func nodeLabel(n *model.Node, lang i18n.Lang) string {
+	s := i18n.T(lang, "notify.serverIs", escHTML(n.Name))
 	if n.Host != "" {
 		s += " (" + escHTML(n.Host) + ")"
 	}

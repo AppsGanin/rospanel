@@ -17,7 +17,7 @@ import {
 } from "./api";
 import { PromosPanel } from "./PromosPanel";
 import { useAction } from "./hooks";
-import { currentLang } from "./i18n";
+import { locale } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Button,
@@ -466,7 +466,7 @@ export function BillingPanel() {
                       <>
                         <Mono className="truncate text-xs text-ink">
                           {p.price_rub > 0
-                            ? `${p.price_rub.toLocaleString(currentLang())} ₽`
+                            ? `${p.price_rub.toLocaleString(locale())} ₽`
                             : t("bill.free")}
                         </Mono>
                         <span className="truncate text-xs text-ink-muted" title={planSummary(p)}>
@@ -482,7 +482,7 @@ export function BillingPanel() {
                         {actions}
                         <span className="col-span-2 truncate text-[11px] text-ink-muted">
                           {p.price_rub > 0
-                            ? `${p.price_rub.toLocaleString(currentLang())} ₽`
+                            ? `${p.price_rub.toLocaleString(locale())} ₽`
                             : t("bill.free")}{" "}
                           · {planSummary(p)}
                           {users ? ` · ${t("bill.nUsers", { count: users })}` : ""}
