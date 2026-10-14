@@ -1,5 +1,21 @@
 # Changelog
 
+## [5.3.0](https://github.com/AppsGanin/rospanel/compare/v5.2.1...v5.3.0) (2026-10-14)
+
+
+### Features
+
+* **hostfw:** open the server's ports in ufw, iptables and firewalld ([4453d0f](https://github.com/AppsGanin/rospanel/commit/4453d0fd69787fdf8233be2abb06bd103d0edca8))
+* **masquerade:** serve the decoy over HTTP/3, draw REALITY's donor and port ([8ab3128](https://github.com/AppsGanin/rospanel/commit/8ab3128f168426fa3227f3620b7b769bc172d1ae))
+* **notify:** tell the admins when a lane leaves or rejoins subscriptions ([3b4918f](https://github.com/AppsGanin/rospanel/commit/3b4918fb75f7a0f3b40c77b2488e443ee70544ac))
+* **routing:** cascade — leave through our own servers ([9bf91cc](https://github.com/AppsGanin/rospanel/commit/9bf91ccf3e55d5627e6a1b67ca7523e407efcd41))
+* **sub:** leave a lane that is down out of subscriptions ([d1b41e7](https://github.com/AppsGanin/rospanel/commit/d1b41e7b7d3d068db53ee27b3bb5d0bb53c95a8d))
+
+
+### Bug Fixes
+
+* **i18n:** reword the daily scanner digest ([fc2860d](https://github.com/AppsGanin/rospanel/commit/fc2860d5866113d1654250ed824ac17756d70f28))
+
 ## [5.2.1](https://github.com/AppsGanin/rospanel/compare/v5.2.0...v5.2.1) (2026-10-13)
 
 
