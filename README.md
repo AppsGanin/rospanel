@@ -469,9 +469,9 @@ on every update, and a client that refreshed in that minute would lose the serve
 refresh. To hide such servers, and servers whose Xray is stopped, turn on *Settings →
 Subscriptions → hide a server while it is offline*.
 
-**A failed lane** — AmneziaWG or a TURN relay that could not take its port — leaves the
+**A failed lane** — AmneziaWG, mieru or a TURN relay that could not take its port — leaves the
 subscription after two minutes and comes back as soon as it is up. The server retries it every
-minute.
+minute, and the admins are told when it goes and when it is back.
 
 **Server order** (*Settings → Subscriptions*) decides which server a client sees first — and
 whether a full one is shown at all. Every server carries a manual **weight** and a **capacity**
