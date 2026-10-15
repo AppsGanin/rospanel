@@ -4,7 +4,7 @@ import { AdminsSettings } from "./AdminsSettings";
 import { getMe, logout, type Perm, type Role } from "./api";
 import { Credentials } from "./Credentials";
 import { ChangelogModal } from "./ChangelogModal";
-import { LangChoice, LangPills } from "./LangSwitch";
+import { LangMenu, LangRow } from "./LangSwitch";
 import { type MessageHooks, MessageHooksContext } from "./messageHooks";
 import { BrandLogo } from "./Logo";
 import { OverviewPanel } from "./OverviewPanel";
@@ -28,7 +28,6 @@ import {
   IconServer,
   IconShield,
   IconUsers,
-  MICRO,
   Mono,
   Panel,
 } from "./ui";
@@ -224,9 +223,6 @@ export function Dashboard({
         {t("nav.credentials")}
       </DropdownItem>
       <DropdownDivider />
-      <DropdownLabel>{t("common.language")}</DropdownLabel>
-      <LangChoice />
-      <DropdownDivider />
       <DropdownItem onClick={onShowAgreement}>{t("nav.agreement")}</DropdownItem>
       <DropdownItem onClick={onShowDonate}>{t("nav.donate")}</DropdownItem>
       <DropdownItem onClick={() => setChangelogOpen(true)}>
@@ -302,6 +298,10 @@ export function Dashboard({
             {moreOpen ? t("nav.more") : title}
           </h1>
           <Clock />
+          {/* The phone picks its language in the account sheet (LangRow). */}
+          <span className="max-sm:hidden">
+            <LangMenu />
+          </span>
         </header>
 
         {/* relative: the "More" sheet covers this area and nothing else — the header
@@ -367,10 +367,7 @@ export function Dashboard({
                 {accountItems.map((it) => (
                   <MoreRow key={it.label} item={it} onDone={() => setMoreOpen(false)} />
                 ))}
-                <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-3.5 py-2.5">
-                  <span className={MICRO}>{t("common.language")}</span>
-                  <LangPills />
-                </div>
+                <LangRow />
                 <MoreRow
                   item={{ label: t("nav.logout"), onClick: doLogout, danger: true }}
                   onDone={() => setMoreOpen(false)}
