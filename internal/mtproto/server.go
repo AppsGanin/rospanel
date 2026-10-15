@@ -547,7 +547,10 @@ func (s *Server) serve(c net.Conn, rc *recordConn, u *cred, dc int, recv, send c
 
 	addrs, dc := dcAddresses(dc)
 	host, port, _ := net.SplitHostPort(addrs[0])
-	p, _ := strconv.Atoi(port)
+	p, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
 	inner := *s.inner.Load()
 	x, err := (&net.Dialer{}).DialContext(ctx, vlessin.Network(inner), inner)
