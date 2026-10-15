@@ -14,7 +14,7 @@
 ![Platform](https://img.shields.io/badge/platform-Linux-555?logo=linux&logoColor=white)
 ![Deploy](https://img.shields.io/badge/deploy-single%20binary%20%7C%20Docker-2496ED?logo=docker&logoColor=white)
 
-[English](README.md) · [Русский](README-RU.md) · **简体中文** · [العربية](README-AR.md)
+[English](README.md) · [Русский](README-RU.md) · **简体中文** · [العربية](README-AR.md) · [فارسی](README-FA.md)
 
 [简介](#简介) · [获取服务器](#️-获取服务器) · [快速开始](#-快速开始) · [功能](#-功能) · [CLI](#️-cli) · [架构](#-架构) · [免责声明](#️-免责声明) · [开发](#-开发) · [支持项目](#-支持项目)
 
@@ -543,7 +543,7 @@ https://vpn.example.com/<api-path>/v1/mcp/<key>
 并可在沙箱中测试和试运行。插件作者可以使用 `rospanel plugin new | test | dev | pack`，无需 Node；
 参见 [docs/plugins](docs/plugins/README.md) 和 [examples/plugins](examples/plugins)。
 
-#### 🌍 语言（RU / EN / 中文 / العربية）
+#### 🌍 语言（RU / EN / 中文 / العربية / فارسی）
 
 | 界面                      | 语言来源                                                       |
 | ------------------------- | -------------------------------------------------------------- |
@@ -691,7 +691,7 @@ go build -o rospanel ./cmd/rospanel
 ./rospanel
 ```
 
-**本地化**。面板的词典是 `web/src/i18n/{ru,en,zh,ar}.ts`，均以 `ru.ts` 为类型基准：任何一个缺失的键都会导致构建错误，
+**本地化**。面板的词典是 `web/src/i18n/{ru,en,zh,ar,fa}.ts`，均以 `ru.ts` 为类型基准：任何一个缺失的键都会导致构建错误，
 而不是悄悄回退。由 Go 自行渲染的部分——机器人和订阅页面——位于 `internal/i18n/`；后端只向面板传递键和参数，
 从不传递渲染好的文本。再增加一种语言，只需在两侧各增加一个词典。
 

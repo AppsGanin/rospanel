@@ -14,7 +14,7 @@
 ![Platform](https://img.shields.io/badge/platform-Linux-555?logo=linux&logoColor=white)
 ![Deploy](https://img.shields.io/badge/deploy-single%20binary%20%7C%20Docker-2496ED?logo=docker&logoColor=white)
 
-[English](README.md) · [Русский](README-RU.md) · [简体中文](README-ZH.md) · **العربية**
+[English](README.md) · [Русский](README-RU.md) · [简体中文](README-ZH.md) · **العربية** · [فارسی](README-FA.md)
 
 [ما هو RosPanel](#ما-هو-rospanel) · [من أين تحصل على خادم](#️-من-أين-تحصل-على-خادم) · [البدء السريع](#-البدء-السريع) · [الميزات](#-الميزات) · [CLI](#️-cli) · [البنية](#-البنية) · [إخلاء المسؤولية](#️-إخلاء-المسؤولية) · [التطوير](#-التطوير) · [ادعم المشروع](#-ادعم-المشروع)
 
@@ -662,7 +662,7 @@ Discord، HTTP، تمديد، وسم) أو محرر شيفرة، مع اختبا
 `rospanel plugin new | test | dev | pack` دون الحاجة إلى Node؛ راجع [docs/plugins](docs/plugins/README.md)
 و[examples/plugins](examples/plugins).
 
-#### 🌍 اللغة (RU / EN / 中文 / العربية)
+#### 🌍 اللغة (RU / EN / 中文 / العربية / فارسی)
 
 | الواجهة                     | مصدر اللغة                                                       |
 | --------------------------- | ---------------------------------------------------------------- |
@@ -833,7 +833,7 @@ go build -o rospanel ./cmd/rospanel
 ./rospanel
 ```
 
-**الترجمة.** قواميس اللوحة هي `web/src/i18n/{ru,en,zh,ar}.ts`، وأنواعها مأخوذة من `ru.ts`:
+**الترجمة.** قواميس اللوحة هي `web/src/i18n/{ru,en,zh,ar,fa}.ts`، وأنواعها مأخوذة من `ru.ts`:
 المفتاح المفقود في أيّ منها خطأ في البناء، لا رجوع صامت. أما ما يعرضه Go بنفسه —
 البوتات وصفحة الاشتراك — فموجود في `internal/i18n/`؛ ويسلّم الخادم اللوحةَ مفتاحًا مع معاملات ولا يسلّمها
 نصًا معروضًا أبدًا. إضافة لغة أخرى تعني قاموسًا إضافيًا في كل جانب.
