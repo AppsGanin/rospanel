@@ -372,7 +372,10 @@ func seedRandomUsers(n int) func(*testing.T, *store.Store, int64) {
 // does reading everyone.
 func TestEnforcementCandidatesMissNobody(t *testing.T) {
 	t.Parallel()
-	const n = 400
+	n := 400
+	if raceEnabled {
+		n = 200 // every path below is still reached, at half the work
+	}
 	now := time.Now().Unix()
 	// The two passes share nothing but the seed, so they run side by side: this is the
 	// longest test in the package, and it was two of them back to back. The group's

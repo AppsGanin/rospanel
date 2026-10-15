@@ -72,7 +72,11 @@ func trafficSnapshot(t *testing.T, st *Store) (users []string, daily []string) {
 func TestBulkTrafficWriteMatchesOneByOne(t *testing.T) {
 	t.Parallel()
 	rng := rand.New(rand.NewSource(7))
-	for round := 0; round < 40; round++ {
+	rounds := 40
+	if raceEnabled {
+		rounds = 12
+	}
+	for round := 0; round < rounds; round++ {
 		var batch []TrafficDelta
 		for i := rng.Intn(60); i >= 0; i-- {
 			d := TrafficDelta{

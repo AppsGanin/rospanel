@@ -2,9 +2,12 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -14,38 +17,75 @@ import (
 // closes the handle and Opens the path to run the rest.
 func dbBeforeMigration(t *testing.T, path, before string) *sql.DB {
 	t.Helper()
+	src, err := migratedBefore(before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(ON)")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
-		version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL DEFAULT (unixepoch()))`); err != nil {
-		t.Fatal(err)
-	}
-	entries, err := migrationsFS.ReadDir("migrations")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var files []string
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") && e.Name() < before {
-			files = append(files, e.Name())
-		}
-	}
-	sort.Strings(files)
-	for _, name := range files {
-		body, err := migrationsFS.ReadFile("migrations/" + name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec(string(body)); err != nil {
-			t.Fatalf("apply %s: %v", name, err)
-		}
-		if _, err := db.Exec(`INSERT INTO schema_migrations (version) VALUES (?)`, name); err != nil {
-			t.Fatal(err)
-		}
-	}
 	return db
+}
+
+// beforeDBs are the databases migrated up to a version, built once per version for
+// the test process and copied per test: a replay of the migrations is seconds under
+// the race detector, and every subtest of a migration test needs one.
+var beforeDBs sync.Map // version → func() (string, error)
+
+func migratedBefore(before string) (string, error) {
+	build, _ := beforeDBs.LoadOrStore(before, sync.OnceValues(func() (string, error) {
+		dir, err := os.MkdirTemp(testRoot, "before-"+before+"-")
+		if err != nil {
+			return "", err
+		}
+		path := filepath.Join(dir, "before.db")
+		db, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(ON)")
+		if err != nil {
+			return "", err
+		}
+		defer db.Close()
+		if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+			version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL DEFAULT (unixepoch()))`); err != nil {
+			return "", err
+		}
+		entries, err := migrationsFS.ReadDir("migrations")
+		if err != nil {
+			return "", err
+		}
+		var files []string
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") && e.Name() < before {
+				files = append(files, e.Name())
+			}
+		}
+		sort.Strings(files)
+		for _, name := range files {
+			body, err := migrationsFS.ReadFile("migrations/" + name)
+			if err != nil {
+				return "", err
+			}
+			if _, err := db.Exec(string(body)); err != nil {
+				return "", fmt.Errorf("apply %s: %w", name, err)
+			}
+			if _, err := db.Exec(`INSERT INTO schema_migrations (version) VALUES (?)`, name); err != nil {
+				return "", err
+			}
+		}
+		// One file to copy: the write-ahead log folded in.
+		if _, err := db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+			return "", err
+		}
+		return path, nil
+	}))
+	return build.(func() (string, error))()
 }
 
 // {flag} and {country} left the name variables. Names that carried them lose them on

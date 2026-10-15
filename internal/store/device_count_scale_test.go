@@ -20,7 +20,10 @@ import (
 // order of magnitude more for the fewer-users half. A ratio, not a deadline, so the
 // assertion means the same thing on a slow CI box as on a laptop.
 func TestDeviceCountScalesWithRowsNotUsers(t *testing.T) {
-	const rows = 50_000
+	rows := 50_000
+	if raceEnabled {
+		rows = 10_000 // the same tenfold spread between the halves, at a fifth of the work
+	}
 	measure := func(users int) time.Duration {
 		st, err := Open(filepath.Join(t.TempDir(), "scale.db"))
 		if err != nil {
