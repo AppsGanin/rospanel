@@ -804,6 +804,11 @@ fresh code — and when the **backup's** owner or admins had 2FA, a code from th
 authenticator too, including in the first-run wizard, so a backup of a 2FA-protected panel cannot
 be restored by someone who has the file but not the authenticator.
 
+**Reachability from other countries**: a TCP ping to each server's main port from
+[Globalping](https://globalping.io) probes in the countries you pick (Russia, China, Iran, …) — from
+the server's card or on a schedule. A country that fails two rounds in a row sends the admins a
+Telegram notice, and so does its return.
+
 **Updates** in one command: the panel verifies SHA256, runs the binary dry, takes a backup and
 only then replaces itself, keeping the previous version next to it. **Auto-update** on a
 schedule (*Settings → General*): the panel installs a new release by itself and sends the

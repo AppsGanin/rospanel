@@ -160,6 +160,7 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 		"get_users_by_id_events":        user.ID,
 		"get_nodes_by_id":               node.ID,
 		"get_nodes_by_id_health":        node.ID,
+		"get_nodes_by_id_reach":         model.LocalNodeID,
 		"get_nodes_by_id_logs":          model.LocalNodeID,
 		"get_servers_by_id_inbounds":    model.LocalNodeID,
 		"get_servers_by_id_routing":     model.LocalNodeID,
@@ -258,6 +259,28 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 	call("post_users_by_id_balance", map[string]any{
 		"id": created, "body": map[string]any{"amount_kop": 5000, "note": "sweep"},
 	})
+	// The check from other countries runs against a stand-in Globalping on a master
+	// that has an address.
+	gp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"id":"m1","probesCount":0}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"status":"finished","results":[]}`))
+	}))
+	defer gp.Close()
+	mgr.SetReachEndpoint(gp.URL)
+	cur, err := st.GetSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTLSMode(cur.TLSMode, "vpn.example.com", "vpn.example.com", cur.ACMEEmail); err != nil {
+		t.Fatal(err)
+	}
+	call("post_reach", map[string]any{"body": map[string]any{
+		"countries": []string{"RU", "CN", "IR"}, "probes": 5, "every": 60, "threshold": 50}})
+	call("post_nodes_by_id_reach", map[string]any{"id": model.LocalNodeID})
 	call("post_system_auto_update", map[string]any{"body": map[string]any{"cron": "0 4 * * *", "nodes": true}})
 	call("post_users_by_id_autorenew", map[string]any{"id": created, "body": map[string]any{"on": false}})
 	call("post_users_by_id_promo", map[string]any{"id": created, "body": map[string]any{"code": "SWEEP10"}})

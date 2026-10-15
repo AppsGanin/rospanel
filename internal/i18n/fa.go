@@ -449,6 +449,8 @@ var fa = map[string]string{
 	"notify.pluginPaused":        "⏸ <b>افزونه‌ی %s به حالت تعلیق درآمد</b>\n%s\nپس از رفع علت، آن را در تنظیمات ← افزونه‌ها دوباره روشن کنید.",
 	"notify.pluginRetrying":      "⏸ <b>افزونه‌ی %s متوقف شد</b>\n%s\nپنل 5 دقیقه دیگر دوباره آن را امتحان می‌کند و سپس با فاصله‌ی بیشتر.",
 	"notify.nodeBack":            "✅ <b>ارتباط با سرور برقرار شد</b>",
+	"notify.reachLost":           "🚫 <b>سرور از %s در دسترس نیست</b>\n%s\n%d از %d کاوشگر Globalping به سرور رسیدند.",
+	"notify.reachBack":           "✅ <b>سرور دوباره از %s در دسترس است</b>\n%s\n%d از %d کاوشگر Globalping به سرور رسیدند.",
 	"notify.nodeXrayCrashed":     "⚠️ <b>Xray از کار افتاد</b>\n%s\nعامل نود فرایند را به‌طور خودکار دوباره راه‌اندازی می‌کند.",
 	"notify.nodeXrayBack":        "✅ <b>Xray دوباره کار می‌کند</b>",
 	"notify.nodeCertRenewed":     "🔒 <b>گواهی TLS تمدید شد</b>\n%s",

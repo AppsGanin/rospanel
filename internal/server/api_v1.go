@@ -326,6 +326,10 @@ func (rt *Router) apiMux() http.Handler {
 	nodeAudit("POST /v1/nodes/{id}/proxy", "apiSystemProxy", idFn(rt.apiSetServerProxy))
 	nodeAudit("POST /v1/nodes/{id}/placement", "apiPlacement", idFn(rt.apiSetServerPlacement))
 	id("GET /v1/nodes/{id}/health", rt.apiNodeHealth)
+	id("GET /v1/nodes/{id}/reach", rt.apiNodeReach)
+	id("POST /v1/nodes/{id}/reach", rt.apiCheckNodeReach)
+	hf("GET /v1/reach", rt.apiGetReach)
+	nodeAudit("POST /v1/reach", "apiReach", rt.apiSetReach)
 	id("GET /v1/nodes/{id}/logs", rt.apiNodeLogs)
 
 	// Custom inbounds. Every mutation opens, changes or closes a public listener on a

@@ -467,6 +467,8 @@ var ru = map[string]string{
 	"notify.pluginPaused":        "⏸ <b>Плагин %s остановлен</b>\n%s\nВключите его снова в Настройках → Плагины, когда причина устранена.",
 	"notify.pluginRetrying":      "⏸ <b>Плагин %s остановлен</b>\n%s\nПанель сама попробует запустить его снова через 5 минут, потом реже.",
 	"notify.nodeBack":            "✅ <b>Связь с сервером восстановлена</b>",
+	"notify.reachLost":           "🚫 <b>Сервер недоступен из %s</b>\n%s\nДостучались %d из %d зондов Globalping.",
+	"notify.reachBack":           "✅ <b>Сервер снова доступен из %s</b>\n%s\nДостучались %d из %d зондов Globalping.",
 	"notify.nodeXrayCrashed":     "⚠️ <b>Xray аварийно завершился</b>\n%s\nАгент перезапускает процесс автоматически.",
 	"notify.nodeXrayBack":        "✅ <b>Xray снова работает</b>",
 	"notify.nodeCertRenewed":     "🔒 <b>Сертификат TLS обновлён</b>\n%s",

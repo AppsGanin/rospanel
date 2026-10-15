@@ -449,6 +449,8 @@ var zh = map[string]string{
 	"notify.pluginPaused":        "⏸ <b>插件 %s 已暂停</b>\n%s\n排除原因后，请在 设置 → 插件 中重新启用。",
 	"notify.pluginRetrying":      "⏸ <b>插件 %s 已停止</b>\n%s\n面板将在 5 分钟后重试，之后重试间隔逐渐变长。",
 	"notify.nodeBack":            "✅ <b>与服务器的联系已恢复</b>",
+	"notify.reachLost":           "🚫 <b>从 %s 无法访问服务器</b>\n%s\nGlobalping 探针 %d / %d 连通。",
+	"notify.reachBack":           "✅ <b>从 %s 可以再次访问服务器</b>\n%s\nGlobalping 探针 %d / %d 连通。",
 	"notify.nodeXrayCrashed":     "⚠️ <b>Xray 已崩溃</b>\n%s\n代理程序正在自动重启进程。",
 	"notify.nodeXrayBack":        "✅ <b>Xray 已恢复运行</b>",
 	"notify.nodeCertRenewed":     "🔒 <b>TLS 证书已续期</b>\n%s",

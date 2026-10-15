@@ -1284,10 +1284,12 @@ type Settings struct {
 	// the panel's timezone; "" = never); AutoUpdateNodes has the servers follow.
 	// AutoUpdateLastAt / AutoUpdateLast are the last attempt and its outcome — see
 	// the autoupdate package for the outcome's form.
-	AutoUpdateCron   string `json:"-"`
-	AutoUpdateNodes  bool   `json:"-"`
-	AutoUpdateLastAt int64  `json:"-"`
-	AutoUpdateLast   string `json:"-"`
+	AutoUpdateCron string `json:"-"`
+	// Reach is how the panel checks its servers from other countries (Globalping).
+	Reach            ReachSettings `json:"-"`
+	AutoUpdateNodes  bool          `json:"-"`
+	AutoUpdateLastAt int64         `json:"-"`
+	AutoUpdateLast   string        `json:"-"`
 
 	// BlacklistEnabled refuses registration in the user bot to Telegram accounts on
 	// the shared blacklist fetched from BlacklistURL ("" = DefaultBlacklistURL).
@@ -1418,6 +1420,9 @@ const (
 	// AdminEventPlugins reports a plugin the panel had to pause (its breaker, its
 	// database quota, an event storm).
 	AdminEventPlugins int64 = 1 << 12
+	// AdminEventReach fires when a server stops answering from a country the operator
+	// watches (Globalping probes there), and again when it answers again.
+	AdminEventReach int64 = 1 << 13
 )
 
 // AdminEventCatalog is the stable key→flag mapping the settings API/UI iterate
@@ -1439,6 +1444,17 @@ var AdminEventCatalog = []struct {
 	{"node_traffic", AdminEventNodeTraffic},
 	{"update", AdminEventUpdate},
 	{"plugins", AdminEventPlugins},
+	{"reach", AdminEventReach},
+}
+
+// ReachSettings configure the check of every server from other countries through
+// Globalping (internal/reach).
+type ReachSettings struct {
+	Countries []string // ISO codes, e.g. RU, CN, IR
+	Probes    int      // probes per country
+	Every     int      // minutes between monitor rounds; 0 = only on demand
+	Threshold int      // a country below this percent of answering probes counts as blocked
+	Token     string   // Globalping token: optional, raises the hourly limit
 }
 
 // AdminEventEnabled reports whether the given AdminEvent* flag is enabled.

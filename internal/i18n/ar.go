@@ -465,6 +465,8 @@ var ar = map[string]string{
 	"notify.pluginPaused":        "⏸ <b>أُوقفت الإضافة %s مؤقتًا</b>\n%s\nأعد تفعيلها من الإعدادات ← الإضافات بعد إصلاح السبب.",
 	"notify.pluginRetrying":      "⏸ <b>توقفت الإضافة %s</b>\n%s\nستعيد لوحة التحكم المحاولة بعد 5 دقائق، ثم على فترات أطول.",
 	"notify.nodeBack":            "✅ <b>عاد الاتصال بالخادم</b>",
+	"notify.reachLost":           "🚫 <b>الخادم غير متاح من %s</b>\n%s\nوصل %d من أصل %d من مجسات Globalping.",
+	"notify.reachBack":           "✅ <b>الخادم متاح مجددًا من %s</b>\n%s\nوصل %d من أصل %d من مجسات Globalping.",
 	"notify.nodeXrayCrashed":     "⚠️ <b>تعطّل Xray</b>\n%s\nيعيد وكيل العقدة تشغيل العملية تلقائيًا.",
 	"notify.nodeXrayBack":        "✅ <b>عاد Xray إلى العمل</b>",
 	"notify.nodeCertRenewed":     "🔒 <b>تم تجديد شهادة TLS</b>\n%s",

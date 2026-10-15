@@ -234,15 +234,17 @@ var auditActions = map[string]auditRoute{
 
 	// The panel itself. The backup download is a GET, but it hands over a file
 	// containing every secret the panel holds — that is worth a row.
-	"GET /api/backup":          act(model.AuditBackupTaken),
-	"POST /api/backup/inspect": skip, // read-only: inspects an uploaded file, changes nothing
-	"POST /api/restore":        act(model.AuditRestored),
-	"POST /api/reset":          act(model.AuditFactoryReset),
-	"POST /api/update":         act(model.AuditUpdated),
-	"POST /api/update/auto":    set("autoUpdate"),
-	"POST /api/xray/restart":   act(model.AuditXrayRestarted),
-	"POST /api/panel/restart":  act(model.AuditPanelRestarted),
-	"POST /api/stats/reset":    act(model.AuditStatsReset),
+	"GET /api/backup":            act(model.AuditBackupTaken),
+	"POST /api/backup/inspect":   skip, // read-only: inspects an uploaded file, changes nothing
+	"POST /api/restore":          act(model.AuditRestored),
+	"POST /api/reset":            act(model.AuditFactoryReset),
+	"POST /api/update":           act(model.AuditUpdated),
+	"POST /api/update/auto":      set("autoUpdate"),
+	"POST /api/reach":            set("reach"),
+	"POST /api/nodes/{id}/reach": skip, // measures, changes nothing
+	"POST /api/xray/restart":     act(model.AuditXrayRestarted),
+	"POST /api/panel/restart":    act(model.AuditPanelRestarted),
+	"POST /api/stats/reset":      act(model.AuditStatsReset),
 
 	// The caller's own sessions. Ending one is a security action worth a row of its
 	// own; listing them is a read.
