@@ -60,7 +60,7 @@ export function serverName(node: NodeView): string {
 // cmpVersion orders two release strings the way semver does: the numbers first,
 // left to right, then the pre-release suffix — "2.14.0-rc1" comes before the
 // "2.14.0" it precedes, and a part that is missing counts as zero.
-function cmpVersion(a: string, b: string): number {
+export function cmpVersion(a: string, b: string): number {
   const parse = (v: string) => {
     const [core, ...pre] = v.replace(/^v/, "").split("-");
     return { nums: core.split(".").map((n) => parseInt(n, 10) || 0), pre: pre.join("-") };

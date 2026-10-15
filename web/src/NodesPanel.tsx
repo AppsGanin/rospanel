@@ -2,20 +2,25 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ExternalServers } from "./ExternalServers";
 import {
+  applyUpdate,
+  checkUpdate,
   getGeoCategories,
   getMe,
   getSettings,
   listNodes,
   updateAllNodes,
+  updateNodeVersion,
   type GeoCategories,
   type NodeView,
 } from "./api";
-import { errMessage, notifyError, notifySuccess } from "./notify";
-import { Button, CenterLoader, ReadOnly } from "./ui";
+import { errMessage, notifyError } from "./notify";
+import { Button, CenterLoader, Modal, ReadOnly, Spinner, useConfirm } from "./ui";
+import { type NodeUpdateRun, NodeUpdateProgress, runSettled } from "./NodeUpdateProgress";
+import { reloadOnVersion } from "./update";
 import { useCan } from "./role";
 import { AddNodeDialog, InstallCommandModal } from "./AddNodeDialog";
 import { NodeCard } from "./NodeCard";
-import { agentSkew } from "./NodeStatus";
+import { agentSkew, cmpVersion, serverName } from "./NodeStatus";
 
 export function NodesPanel() {
   const { t } = useTranslation();
@@ -31,6 +36,12 @@ export function NodesPanel() {
   const [adding, setAdding] = useState(false);
   const [installCmd, setInstallCmd] = useState<string | null>(null);
   const [panelVersion, setPanelVersion] = useState("");
+  // The newest release, and the one the master could update to when it is behind.
+  const [latest, setLatest] = useState("");
+  const [masterNext, setMasterNext] = useState("");
+  const [updRun, setUpdRun] = useState<NodeUpdateRun | null>(null);
+  const [updatingMaster, setUpdatingMaster] = useState(false);
+  const { confirm, confirmNode } = useConfirm();
 
   const load = () =>
     listNodes()
@@ -46,6 +57,13 @@ export function NodesPanel() {
     getMe()
       .then((m) => setPanelVersion(m.version || ""))
       .catch(() => {});
+    if (canUpdate)
+      checkUpdate()
+        .then((u) => {
+          setLatest(u.latest ?? "");
+          setMasterNext(u.available && u.latest ? u.latest : "");
+        })
+        .catch(() => {});
     // The routing editor's suggestions — routing's to read.
     if (canRouting) getGeoCategories()
       .then((g) =>
@@ -64,7 +82,8 @@ export function NodesPanel() {
   // restarted badge on screen until the next lazy tick, well past the few
   // seconds the server means it to be shown. Otherwise this is just the liveness
   // refresh keeping online/offline badges current, and it stays lazy.
-  const showingRestart = !!nodes?.some((n) => n.xray_restart);
+  const showingRestart =
+    !!nodes?.some((n) => n.xray_restart) || (!!updRun && !!nodes && !runSettled(updRun, nodes));
   // biome-ignore lint/correctness/useExhaustiveDependencies: the cadence is the only thing this re-reads; load is redefined every render and would restart the timer on each one
   useEffect(() => {
     // 8s while the page is open. A node's own report lands every 30–60s (the panel
@@ -85,26 +104,89 @@ export function NodesPanel() {
   const anyBehind = nodes.some((n) => n.online && agentSkew(n, panelVersion) === "older");
   const anyAhead = nodes.some((n) => n.online && agentSkew(n, panelVersion) === "newer");
 
-  const updateAll = async () => {
+  // The nodes an update reaches: enabled and connected at least once, as the server
+  // picks them (RequestAllNodesUpdate).
+  const updatable = nodes.filter((n) => !n.is_local && n.enabled && n.joined);
+  // Behind the newest release — or, when it could not be read, behind the panel.
+  const behind = updatable.filter((n) =>
+    latest ? !!n.node_version && cmpVersion(n.node_version, latest) < 0 : agentSkew(n, panelVersion) === "older",
+  );
+
+  // updateNodes asks one node or all of them to update, then follows them in a dialog.
+  const updateNodes = async (one?: NodeView) => {
+    const v = latest ? { version: latest } : {};
+    const ok = await confirm({
+      title: one
+        ? t(latest ? "nodes.upd.askOneTo" : "nodes.upd.askOne", { name: serverName(one), ...v })
+        : t(latest ? "nodes.upd.askAllTo" : "nodes.upd.askAll", v),
+      body: t("nodes.upd.body"),
+      confirmLabel: t("general.update"),
+    });
+    if (!ok) return;
+    // The dialog follows the nodes that have something to update; the rest are told
+    // too, and answer that they are already current.
+    const targets = one ? [one] : behind;
     try {
-      const r = await updateAllNodes();
-      notifySuccess(t("nodes.updateStarted", { count: r.nodes }));
+      if (one) await updateNodeVersion(one.id);
+      else await updateAllNodes();
     } catch (e) {
       notifyError(errMessage(e));
+      return;
     }
+    setUpdRun({
+      ids: targets.map((n) => n.id),
+      target: latest,
+      from: Object.fromEntries(targets.map((n) => [n.id, n.node_version])),
+      started: Date.now(),
+    });
+    load();
+  };
+
+  const updateMaster = async () => {
+    const ok = await confirm({
+      title: t("general.updateTitle", { version: masterNext }),
+      body: t("general.updateBody"),
+      confirmLabel: t("general.update"),
+    });
+    if (!ok) return;
+    setUpdatingMaster(true);
+    try {
+      await applyUpdate(false);
+    } catch (e) {
+      setUpdatingMaster(false);
+      notifyError(errMessage(e));
+      return;
+    }
+    reloadOnVersion(masterNext, (why) => {
+      setUpdatingMaster(false);
+      notifyError(t(why === "slow" ? "general.updateSlow" : "general.noAnswer"));
+    });
   };
 
   return (
     <div className="flex flex-col gap-3.5">
+      {confirmNode}
+      <NodeUpdateProgress run={updRun} nodes={nodes} onClose={() => setUpdRun(null)} />
+      <Modal open={updatingMaster} onClose={() => {}} dismissible={false} title={t("general.updateSection")}>
+        <div className="flex items-start gap-3">
+          <Spinner size={22} className="mt-0.5 shrink-0" />
+          <p className="text-sm text-ink">{t("general.updatingHint")}</p>
+        </div>
+      </Modal>
       <div className="flex flex-wrap items-center gap-2">
         {canManage && (
           <Button size="sm" onClick={() => setAdding(true)}>
             {t("nodes.addNode")}
           </Button>
         )}
-        {canUpdate && remoteCount > 0 && (
-          <Button size="sm" variant="outline" color="gray" onClick={updateAll}>
-            {t("nodes.updateAll")}{anyBehind ? " ⚠" : ""}
+        {canUpdate && remoteCount > 0 && behind.length > 0 && (
+          <Button size="sm" variant="outline" color="gray" onClick={() => updateNodes()}>
+            {t("nodes.updateAll")}
+          </Button>
+        )}
+        {canUpdate && masterNext && (
+          <Button size="sm" variant="outline" color="gray" onClick={updateMaster} loading={updatingMaster}>
+            {t("nodes.updateMaster", { version: masterNext })}{anyAhead ? " ⚠" : ""}
           </Button>
         )}
       </div>
@@ -140,6 +222,7 @@ export function NodesPanel() {
               s.enabled && (s.is_local || s.joined) && (s.bridges ?? []).some((b) => b.enabled),
           }))}
           onChanged={load}
+          onUpdate={behind.includes(n) ? () => updateNodes(n) : undefined}
           onRegen={setInstallCmd}
         />
       ))}

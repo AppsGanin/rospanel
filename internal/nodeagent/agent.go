@@ -110,9 +110,17 @@ func jitter(d time.Duration) time.Duration {
 // server, holds the long-poll to the panel, and reports traffic back.
 type Agent struct {
 	dataDir string
-	ident   *Identity
-	client  *http.Client
-	sup     *xray.Supervisor
+	// A self-update the operator asked for: tried again until updateUntil while the
+	// release is still without its binaries (they are uploaded a minute or two after it
+	// is published), at most once per updateRetry. updateErr is why the last attempt
+	// failed, reported to the panel. All three belong to the sync loop's goroutine;
+	// updateErr is read by syncOnce on that same goroutine.
+	updateUntil time.Time
+	updateNext  time.Time
+	updateErr   string
+	ident       *Identity
+	client      *http.Client
+	sup         *xray.Supervisor
 	// front holds the TCP-TLS lane's public port in front of Xray (see tlsfront); nil
 	// when switched off with ROSPANEL_TLS_FRONT=off. frontPort is the port the last
 	// applied config wants it on (0: none), kept for when a suspension lifts.
@@ -954,8 +962,18 @@ func (a *Agent) syncLoop(ctx context.Context) {
 			}
 		}
 		if resp.Update {
-			if a.selfUpdate(ctx) {
+			a.updateUntil, a.updateNext, a.updateErr = time.Now().Add(updateWindow), time.Time{}, ""
+		}
+		if !a.updateUntil.IsZero() && !time.Now().Before(a.updateNext) {
+			swapped, again, why := a.selfUpdate(ctx)
+			if swapped {
 				return // binary swapped; exit so systemd restarts the new one
+			}
+			if again && time.Now().Before(a.updateUntil) {
+				a.updateNext = time.Now().Add(updateRetry)
+			} else {
+				// Settled: reported only now, so a retry under way does not read as failed.
+				a.updateUntil, a.updateErr = time.Time{}, why
 			}
 		}
 		if resp.Changed && (resp.Split != nil || resp.Delta != nil) {
@@ -1165,6 +1183,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		Mieru:       true,
 		AnyTLS:      a.anytls != nil,
 		MieruError:  a.mieruError(),
+		UpdateError: a.updateErr,
 		TurnDown:    a.turn.Failed(),
 		StateTag:    a.splitTag(),
 		NodeVersion: version.Version,
@@ -1633,11 +1652,19 @@ func (a *Agent) syncOpera(enabled bool, country string, port int) {
 	slog.Info("node: Opera egress started", "country", country, "port", port)
 }
 
+// updateWindow is how long a requested self-update keeps being retried while it
+// cannot start yet; updateRetry is the pause between attempts.
+const (
+	updateWindow = 15 * time.Minute
+	updateRetry  = 30 * time.Second
+)
+
 // selfUpdate downloads + verifies the latest release and swaps the node binary,
-// then stops Xray and returns true so Run exits — systemd (Restart=always) starts
-// the new binary, which re-applies the saved config. Returns false (and keeps
-// running the current version) if there's nothing newer or the update fails.
-func (a *Agent) selfUpdate(parent context.Context) bool {
+// then stops Xray and reports swapped so Run exits — systemd (Restart=always) starts
+// the new binary, which re-applies the saved config. Otherwise the node keeps running
+// its version; again says the attempt is worth repeating (GitHub unreachable, or a
+// release published without its binaries yet) and why says why it did not happen.
+func (a *Agent) selfUpdate(parent context.Context) (swapped, again bool, why string) {
 	repo := updater.Repo
 	if r := strings.TrimSpace(os.Getenv("ROSPANEL_REPO")); r != "" {
 		repo = r
@@ -1649,16 +1676,20 @@ func (a *Agent) selfUpdate(parent context.Context) bool {
 	rel, err := updater.Latest(ctx, repo)
 	if err != nil {
 		slog.Warn("node self-update: check failed", "err", err)
-		return false
+		return false, true, err.Error()
 	}
 	if !updater.IsNewer(rel.Version, version.Version) {
 		slog.Info("node self-update: already on the latest version", "version", version.Version)
-		return false
+		return false, false, ""
+	}
+	if !rel.Complete() {
+		slog.Info("node self-update: the release has no binaries yet — retrying", "version", rel.Version)
+		return false, true, "release " + rel.Version + " has no binaries yet"
 	}
 	slog.Info("node self-update: installing", "from", version.Version, "to", rel.Version)
 	if err := updater.Apply(ctx, rel, nil); err != nil {
 		slog.Error("node self-update: failed", "err", err)
-		return false
+		return false, false, err.Error()
 	}
 	slog.Info("node self-update: binary updated — restarting", "version", rel.Version)
 	a.sup.Stop()
@@ -1669,7 +1700,7 @@ func (a *Agent) selfUpdate(parent context.Context) bool {
 		a.mieru.Close()
 	}
 	a.turn.Close()
-	return true
+	return true, false, ""
 }
 
 // resolveNodeXrayBin finds or downloads the Xray binary, like the panel's resolver

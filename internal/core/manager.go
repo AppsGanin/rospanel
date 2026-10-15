@@ -392,6 +392,9 @@ type Manager struct {
 	nodeAWG map[int64]nodeAWGState
 	// nodeMieruErr is each node's last-reported mieru listener error ("" ⇒ fine).
 	nodeMieruErr map[int64]string
+	// nodeUpdateErr is why each node's requested self-update did not happen, as it last
+	// reported ("" ⇒ nothing to report). Cleared when the operator asks again.
+	nodeUpdateErr map[int64]string
 	// nodeTurnDown is each node's last-reported TURN relay ports that failed to listen.
 	nodeTurnDown map[int64][]int
 	// lanesDown tracks which lanes of which server are down and since when, to leave

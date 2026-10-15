@@ -25,8 +25,27 @@ func (m *Manager) RequestNodeUpdate(id int64) error {
 		// operator is told whether it was actually recorded.
 		return err
 	}
+	m.clearNodeUpdateErr(id)
 	m.nodes.wakeOne(id)
 	return nil
+}
+
+// clearNodeUpdateErr forgets why the nodes' last self-update failed: a new request is
+// under way, and the node reports afresh how it went.
+func (m *Manager) clearNodeUpdateErr(ids ...int64) {
+	m.nodeGeoMu.Lock()
+	for _, id := range ids {
+		delete(m.nodeUpdateErr, id)
+	}
+	m.nodeGeoMu.Unlock()
+}
+
+// NodeUpdateError is why the node's requested self-update did not happen, as it last
+// reported; "" when there is nothing to report.
+func (m *Manager) NodeUpdateError(id int64) string {
+	m.nodeGeoMu.Lock()
+	defer m.nodeGeoMu.Unlock()
+	return m.nodeUpdateErr[id]
 }
 
 // takeCmd is the shared handover: deliver once, then keep the request until the node
@@ -206,6 +225,7 @@ func (m *Manager) RequestAllNodesUpdate() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	m.clearNodeUpdateErr(ids...)
 	m.notifyNodes()
 	return n, nil
 }

@@ -2624,6 +2624,8 @@ export interface NodeView {
   // happened, then 'done' (or 'timeout' if we gave up) for a few seconds, then gone.
   // Absent for the master, whose restart is synchronous.
   xray_restart?: 'pending' | 'done' | 'timeout'
+  // Why the self-update asked of this node did not happen, as it last said.
+  update_error?: string
   vless_enabled: boolean
   hysteria_enabled: boolean
   reality_enabled: boolean

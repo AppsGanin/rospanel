@@ -8,7 +8,6 @@ import {
   setNodeEnabled,
   restartNodeXray,
   restartXray,
-  updateNodeVersion,
   type GeoCategories,
   type NodeView,
 } from "./api";
@@ -82,6 +81,7 @@ export function NodeCard({
   servers,
   onChanged,
   onRegen,
+  onUpdate,
 }: {
   node: NodeView;
   decoys: string[];
@@ -91,6 +91,9 @@ export function NodeCard({
   servers?: CascadeServer[];
   onChanged: () => void;
   onRegen: (command: string) => void;
+  // Asks this node to update; the list confirms it and follows the progress. Absent
+  // while the node already runs the newest release.
+  onUpdate?: () => void;
 }) {
   const { t } = useTranslation();
   const canServers = useCan("servers.view");
@@ -165,15 +168,6 @@ export function NodeCard({
     </Modal>
   );
 
-  const doUpdate = async () => {
-    try {
-      await updateNodeVersion(node.id);
-      notifySuccess(t("nodes.updating"));
-    } catch (e) {
-      notifyError(errMessage(e));
-    }
-  };
-
   // Bouncing Xray drops every live connection on THAT server, so it is confirmed
   // first. On the master it happens right away; on a node the panel can only ask —
   // the node acts when its (immediately woken) poll returns, and the row then reads
@@ -244,6 +238,11 @@ export function NodeCard({
           </Badge>
         )}
         <RestartChip node={node} />
+        {node.update_error && (
+          <Badge size="xs" color="red" className="shrink-0" title={node.update_error}>
+            {t("nodes.updateFailed")}
+          </Badge>
+        )}
         {skew && (
           <Badge
             size="xs"
@@ -318,8 +317,8 @@ export function NodeCard({
                   {t(node.enabled ? "usersPanel.disable" : "usersPanel.enable")}
                 </DropdownItem>
               )}
-              {canUpdate && (
-                <DropdownItem onClick={doUpdate}>
+              {canUpdate && onUpdate && (
+                <DropdownItem onClick={onUpdate}>
                   {t("nodes.update")}{node.version_skew ? ` ${t("nodes.newVersionSuffix")}` : ""}
                 </DropdownItem>
               )}

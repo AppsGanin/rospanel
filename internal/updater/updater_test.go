@@ -52,3 +52,22 @@ func TestBinaryVersion(t *testing.T) {
 		t.Fatalf("a missing binary reported %q", v)
 	}
 }
+
+// A release is published before its binaries are uploaded to it; until both the
+// asset and the checksums are there it cannot be installed.
+func TestReleaseComplete(t *testing.T) {
+	for _, tc := range []struct {
+		asset, sums string
+		want        bool
+	}{
+		{"", "", false},
+		{"https://x/a", "", false},
+		{"", "https://x/s", false},
+		{"https://x/a", "https://x/s", true},
+	} {
+		r := &Release{AssetURL: tc.asset, ChecksumURL: tc.sums}
+		if got := r.Complete(); got != tc.want {
+			t.Errorf("Complete(%q, %q) = %v, want %v", tc.asset, tc.sums, got, tc.want)
+		}
+	}
+}

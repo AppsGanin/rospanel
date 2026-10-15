@@ -37,7 +37,10 @@ type NodeView struct {
 	// XrayRestart is the state of an operator-requested Xray bounce: "pending" while
 	// the node has yet to prove it happened, then "done" or "timeout" briefly, then
 	// "". Always "" for the master, whose restart is synchronous — nothing to wait for.
-	XrayRestart     string `json:"xray_restart,omitempty"`
+	XrayRestart string `json:"xray_restart,omitempty"`
+	// UpdateError is why the self-update the operator asked of this node did not
+	// happen, as the node last said. Always "" for the master.
+	UpdateError     string `json:"update_error,omitempty"`
 	VLESSEnabled    bool   `json:"vless_enabled"`
 	HysteriaEnabled bool   `json:"hysteria_enabled"`
 	RealityEnabled  bool   `json:"reality_enabled"`
@@ -202,6 +205,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			XrayRunning:        n.XrayRunning,
 			VersionSkew:        n.XrayVersion != "" && !xray.VersionMatchesPinned(n.XrayVersion),
 			XrayRestart:        m.NodeRestartState(n.ID),
+			UpdateError:        m.NodeUpdateError(n.ID),
 			VLESSEnabled:       derefBool(n.VLESSEnabled),
 			HysteriaEnabled:    derefBool(n.HysteriaEnabled),
 			RealityEnabled:     derefBool(n.RealityEnabled),

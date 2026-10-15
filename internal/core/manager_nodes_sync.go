@@ -116,6 +116,10 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		m.nodeMieruErr = map[int64]string{}
 	}
 	m.nodeMieruErr[n.ID] = req.MieruError
+	if m.nodeUpdateErr == nil {
+		m.nodeUpdateErr = map[int64]string{}
+	}
+	m.nodeUpdateErr[n.ID] = req.UpdateError
 	if m.nodeTurnDown == nil {
 		m.nodeTurnDown = map[int64][]int{}
 	}
