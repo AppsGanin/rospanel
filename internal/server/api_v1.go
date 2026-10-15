@@ -1052,7 +1052,7 @@ func (rt *Router) apiPatchUser(w http.ResponseWriter, r *http.Request, id int64)
 	}
 	if req.Lang != nil {
 		if l := strings.ToLower(strings.TrimSpace(*req.Lang)); l != "" && !i18n.IsLang(l) {
-			writeAPIErr(w, http.StatusBadRequest, "bad_request", "lang is ru, en, zh, ar or empty")
+			writeAPIErr(w, http.StatusBadRequest, "bad_request", "lang is ru, en, zh, ar, fa or empty")
 			return
 		}
 	}

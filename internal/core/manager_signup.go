@@ -127,7 +127,7 @@ func (m *Manager) Signup(ctx context.Context, req SignupRequest) (SignupResult, 
 	}
 	req.Lang = strings.ToLower(strings.TrimSpace(req.Lang))
 	if req.Lang != "" && !i18n.IsLang(req.Lang) {
-		return SignupResult{}, invalidCode("err.userLang", "язык — ru, en, zh или ar")
+		return SignupResult{}, invalidCode("err.userLang", "язык — ru, en, zh, ar или fa")
 	}
 	if req.TelegramID != 0 {
 		if strings.TrimSpace(req.ExternalID) != "" {

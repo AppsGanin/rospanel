@@ -54,7 +54,7 @@ const en: Dict = {
 
 // Load must find the real dictionaries from a package directory.
 func TestLoadFindsTheDictionaries(t *testing.T) {
-	for _, name := range []string{"ru.ts", "en.ts", "zh.ts", "ar.ts"} {
+	for _, name := range []string{"ru.ts", "en.ts", "zh.ts", "ar.ts", "fa.ts"} {
 		d, err := Load(".", name)
 		if err != nil {
 			t.Skipf("frontend dictionary not available (%v)", err)

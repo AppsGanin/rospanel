@@ -27,7 +27,7 @@ func ErrorEN(code string, args map[string]any) (string, bool) {
 
 // errCatalogs are the generated error catalogs by language. Russian has none: the
 // error itself carries the Russian text.
-var errCatalogs = map[Lang]map[string]string{EN: errEN, ZH: errZH, AR: errAR}
+var errCatalogs = map[Lang]map[string]string{EN: errEN, ZH: errZH, AR: errAR, FA: errFA}
 
 // ErrorText is ErrorEN in lang, falling back to English for a code (or a language)
 // the catalog lacks.

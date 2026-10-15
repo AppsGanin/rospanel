@@ -106,7 +106,7 @@ func (m *Manager) mailingChanged(ctx context.Context, id int64, on bool) {
 func (m *Manager) SetUserLang(ctx context.Context, id int64, lang string) error {
 	lang = strings.ToLower(strings.TrimSpace(lang))
 	if lang != "" && !i18n.IsLang(lang) {
-		return invalidCode("err.userLang", "язык — ru, en, zh или ar")
+		return invalidCode("err.userLang", "язык — ru, en, zh, ar или fa")
 	}
 	err := m.store.SetUserLang(id, lang)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -158,7 +158,8 @@ code,
   unicode-bidi: isolate;
 }
 
-html[lang="ar"] {
+html[lang="ar"],
+html[lang="fa"] {
   --font-mono:
     "IBM Plex Mono", "Noto Sans Arabic", "Geeza Pro", Tahoma, monospace;
 }

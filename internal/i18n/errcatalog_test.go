@@ -12,7 +12,7 @@ import (
 // the generator exists to prevent, and one nobody would notice until an integrator
 // reported it.
 func TestErrorCatalogIsCurrent(t *testing.T) {
-	for file, catalog := range map[string]map[string]string{"en.ts": errEN, "zh.ts": errZH, "ar.ts": errAR} {
+	for file, catalog := range map[string]map[string]string{"en.ts": errEN, "zh.ts": errZH, "ar.ts": errAR, "fa.ts": errFA} {
 		want, err := dictcheck.Errors(".", file)
 		if err != nil {
 			t.Skipf("frontend dictionary not available (%v)", err)

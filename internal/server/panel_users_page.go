@@ -647,6 +647,9 @@ func collationKeys(users []store.UserSummary, lang string) []nameKey {
 	case "ar":
 		c = collate.New(language.Arabic)
 		own = unicode.Arabic
+	case "fa":
+		c = collate.New(language.Persian)
+		own = unicode.Arabic
 	}
 	class := func(s string) int {
 		r, _ := utf8.DecodeRuneInString(s)

@@ -1,5 +1,5 @@
 // Package i18n localises the text Go renders itself: the Telegram bots and the
-// subscription page — in Russian, English, Simplified Chinese and Arabic.
+// subscription page — in Russian, English, Simplified Chinese, Arabic and Persian.
 //
 // It deliberately does NOT cover the admin panel. Those strings travel to the SPA
 // as a key plus arguments and are rendered there, against the same dictionaries
@@ -23,10 +23,11 @@ const (
 	EN Lang = "en"
 	ZH Lang = "zh"
 	AR Lang = "ar"
+	FA Lang = "fa"
 )
 
 // Langs lists every supported language, Default first.
-var Langs = []Lang{RU, EN, ZH, AR}
+var Langs = []Lang{RU, EN, ZH, AR, FA}
 
 // IsLang reports whether s is exactly a supported tag — for input that must name
 // one rather than be guessed from.
@@ -36,7 +37,7 @@ func IsLang(s string) bool {
 }
 
 // RTL reports whether lang is written right to left.
-func (l Lang) RTL() bool { return l == AR }
+func (l Lang) RTL() bool { return l == AR || l == FA }
 
 // Dir is the HTML dir attribute for lang.
 func (l Lang) Dir() string {
@@ -83,6 +84,8 @@ func match(tag string) (Lang, bool) {
 		return ZH, true
 	case "ar":
 		return AR, true
+	case "fa":
+		return FA, true
 	}
 	return "", false
 }
@@ -130,6 +133,7 @@ var catalogs = map[Lang]map[string]string{
 	EN: en,
 	ZH: zh,
 	AR: ar,
+	FA: fa,
 }
 
 // T renders key in lang, substituting args with fmt.Sprintf. A key missing in the

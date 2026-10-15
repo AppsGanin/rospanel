@@ -34,7 +34,7 @@ func TestEventCatalogComplete(t *testing.T) {
 	for _, fl := range append(c.Context, c.User...) {
 		hints[fl.Hint] = true
 	}
-	for _, dict := range []string{"ru.ts", "en.ts", "zh.ts", "ar.ts"} {
+	for _, dict := range []string{"ru.ts", "en.ts", "zh.ts", "ar.ts", "fa.ts"} {
 		d, err := dictcheck.Load(".", dict)
 		if err != nil {
 			t.Skipf("frontend dictionary not available (%v)", err)
