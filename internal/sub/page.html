@@ -1284,7 +1284,7 @@
             <summary>{{.Label}}</summary>
             <div class="qr"><img src="{{.QRURL}}" alt="QR" loading="lazy" /></div>
             <a class="btn" href="{{.Link}}" onclick="return tgProxy(event, '{{.WebLink}}')">{{$.L.TGProxyAdd}}</a>
-            <button class="btn alt" onclick="copy('{{.WebLink}}', this)">{{$.L.Copy}}</button>
+            <button class="btn alt" onclick="copy('{{.Link}}', this)">{{$.L.Copy}}</button>
           </details>
           {{end}}
           </details>
