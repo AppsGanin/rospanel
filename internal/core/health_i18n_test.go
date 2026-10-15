@@ -32,7 +32,7 @@ func TestHealthKeysHaveDictionaryEntries(t *testing.T) {
 		t.Fatal("no health.* keys found — did the checks stop using dictionary keys?")
 	}
 
-	for _, dict := range []string{"ru.ts", "en.ts", "zh.ts", "ar.ts"} {
+	for _, dict := range []string{"ru.ts", "en.ts", "zh.ts", "ar.ts", "fa.ts"} {
 		d, err := dictcheck.Load(".", dict)
 		if err != nil {
 			t.Skipf("frontend dictionary not available (%v)", err)

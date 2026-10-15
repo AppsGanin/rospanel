@@ -1435,6 +1435,7 @@ func (s *UserService) publishCommands(ctx context.Context, client *Client, token
 		{i18n.RU, "uk"},
 		{i18n.ZH, "zh"},
 		{i18n.AR, "ar"},
+		{i18n.FA, "fa"},
 	} {
 		cmds := append(userBotCommands(pub.lang), s.pluginCommands(pub.lang)...)
 		if err := client.SetMyCommands(ctx, cmds, pub.scope); err != nil {

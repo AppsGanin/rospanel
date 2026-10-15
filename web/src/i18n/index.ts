@@ -1,4 +1,5 @@
-// Panel localisation: Russian, English, Simplified Chinese and Arabic (right to left).
+// Panel localisation: Russian, English, Simplified Chinese, Arabic and Persian (the
+// last two right to left).
 //
 // The dictionaries are typed against each other (see en.ts): a key present in ru
 // and missing in en is a tsc error, not a string that silently renders in the
@@ -13,6 +14,7 @@ export const LANGS = [
   { code: "en", label: "English" },
   { code: "zh", label: "简体中文" },
   { code: "ar", label: "العربية" },
+  { code: "fa", label: "فارسی" },
 ] as const;
 
 export type Lang = (typeof LANGS)[number]["code"];
@@ -35,7 +37,7 @@ function storedLang(): Lang | null {
 }
 
 // detectLang reads the browser's preference list: Russian (and Belarusian,
-// Ukrainian) speakers get Russian, Chinese and Arabic speakers their language,
+// Ukrainian) speakers get Russian, Chinese, Arabic and Persian speakers their language,
 // everyone else English. Note this is not i18next's fallbackLng, which is a
 // different question (what to render when a KEY is missing) and stays "ru" — ru is
 // the dictionary the code is written against, so it is the one that is never behind.
@@ -49,16 +51,17 @@ export function detectLang(): Lang {
   for (const raw of list) {
     const tag = (raw || "").toLowerCase();
     if (/^(ru|be|uk)\b/.test(tag)) return "ru";
-    if (/^(en|zh|ar)\b/.test(tag)) return tag.slice(0, 2) as Lang;
+    if (/^(en|zh|ar|fa)\b/.test(tag)) return tag.slice(0, 2) as Lang;
   }
   return "en";
 }
 
-// Chinese and Arabic are fetched when picked rather than shipped in the main bundle
+// Chinese, Arabic and Persian are fetched when picked rather than shipped in the main bundle
 // to everyone; Russian (the fallback) and English always are.
 const lazy: Partial<Record<Lang, () => Promise<{ default: Dict }>>> = {
   zh: () => import("./zh"),
   ar: () => import("./ar"),
+  fa: () => import("./fa"),
 };
 
 async function load(lang: Lang) {
@@ -92,11 +95,15 @@ export async function setLang(lang: Lang) {
   if (turn === switching) markDocument(lang);
 }
 
-// markDocument tags the page with its language and writing direction: Arabic lays
-// the whole panel out right to left.
+// markDocument tags the page with its language and writing direction: Arabic and
+// Persian lay the whole panel out right to left.
 function markDocument(lang: Lang) {
   document.documentElement.lang = lang;
-  document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+  document.documentElement.dir = isRTL(lang) ? "rtl" : "ltr";
+}
+
+export function isRTL(lang: Lang = currentLang()): boolean {
+  return lang === "ar" || lang === "fa";
 }
 
 export function currentLang(): Lang {
@@ -106,7 +113,7 @@ export function currentLang(): Lang {
 // arrow is "→" read in the panel's direction: "old → new" in Arabic must point from
 // the right-hand value to the left-hand one. (U+2192 is not mirrored by bidi.)
 export function arrow(): string {
-  return currentLang() === "ar" ? "←" : "→";
+  return isRTL() ? "←" : "→";
 }
 
 // change writes "from → to". Each side is isolated: two Latin values would otherwise
@@ -117,11 +124,15 @@ export function change(from: string, to: string): string {
 
 // locale is the tag dates and numbers are formatted with. Arabic keeps Latin
 // digits: every number the panel prints (ports, IPs, sizes) is read alongside
-// Latin text, and the dictionaries spell their own numbers that way.
+// Latin text, and the dictionaries spell their own numbers that way. Persian also
+// keeps the Gregorian calendar its default would replace: dates are typed, sent
+// and compared in it everywhere else (date inputs, the bots, the API).
 export function locale(): string {
   switch (currentLang()) {
     case "ar":
       return "ar-u-nu-latn";
+    case "fa":
+      return "fa-u-nu-latn-ca-gregory";
     case "zh":
       return "zh-CN";
     default:
@@ -162,7 +173,7 @@ i18n.use(initReactI18next).init({
 markDocument(initial);
 
 // ready settles once the initial language's dictionary is in: the first paint waits
-// for it rather than flashing Russian at a Chinese or Arabic reader. A failed fetch
+// for it rather than flashing Russian at a Chinese, Arabic or Persian reader. A failed fetch
 // renders in English for this session, the stored pick left as it was.
 export const ready: Promise<unknown> = load(initial)
   .then(() => i18n.changeLanguage(initial))

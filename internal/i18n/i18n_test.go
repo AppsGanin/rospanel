@@ -253,7 +253,7 @@ func TestAcceptLanguageAgreesWithNormalize(t *testing.T) {
 	for _, tag := range []string{
 		"ru", "ru-RU", "be", "be-BY", "uk", "uk-UA", // Russian, and the two Normalize folds in
 		"en", "en-US", "en-GB",
-		"zh", "zh-CN", "zh-Hant-TW", "ar", "ar-EG",
+		"zh", "zh-CN", "zh-Hant-TW", "ar", "ar-EG", "fa", "fa-IR",
 		"de", "de-DE", "fr", "tr", "es-MX", // ship nothing for these
 	} {
 		if got, want := FromAcceptLanguage(tag), Normalize(tag); got != want {

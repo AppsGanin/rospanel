@@ -40,7 +40,7 @@ func TestErrorCodesHaveDictionaryEntries(t *testing.T) {
 	if len(codes) == 0 {
 		t.Fatal("no err.* codes found — did the error writers stop carrying codes?")
 	}
-	for _, dict := range []string{"ru.ts", "en.ts", "zh.ts", "ar.ts"} {
+	for _, dict := range []string{"ru.ts", "en.ts", "zh.ts", "ar.ts", "fa.ts"} {
 		d, err := dictcheck.Load(".", dict)
 		if err != nil {
 			t.Skipf("frontend dictionary not available (%v)", err)
@@ -74,7 +74,7 @@ func TestDetailErrorsInterpolateTheirDetail(t *testing.T) {
 		src.Write(b)
 	}
 	re := regexp.MustCompile(`writeErrDetail\([^,]+,[^,]+, "err\.([A-Za-z0-9_]+)"`)
-	for _, dict := range []string{"ru.ts", "en.ts", "zh.ts", "ar.ts"} {
+	for _, dict := range []string{"ru.ts", "en.ts", "zh.ts", "ar.ts", "fa.ts"} {
 		d, err := dictcheck.Load(".", dict)
 		if err != nil {
 			t.Skipf("frontend dictionary not available (%v)", err)

@@ -16,7 +16,7 @@ const (
 // Only integer counts are covered, which is all this codebase has: days left,
 // devices, orders. English distinguishes one from everything else; Chinese has no
 // plural at all; Russian needs three forms, and getting the 11–14 exception wrong is
-// the classic bug ("11 дня"); Arabic needs all six.
+// the classic bug ("11 дня"); Arabic needs all six; Persian counts 0 as one.
 func plural(lang Lang, n int) string {
 	if n < 0 {
 		n = -n
@@ -28,6 +28,12 @@ func plural(lang Lang, n int) string {
 		}
 		return catOther
 	case ZH:
+		return catOther
+	case FA:
+		// CLDR: "one" for 0 and 1, "other" for the rest.
+		if n <= 1 {
+			return catOne
+		}
 		return catOther
 	case AR:
 		switch mod100 := n % 100; {
