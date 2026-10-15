@@ -13,6 +13,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/AppsGanin/rospanel/internal/plugin/jsvm"
 	"io"
 	"log/slog"
 	"os"
@@ -116,11 +117,15 @@ func (f fakeFetcher) Fetch(_ context.Context, allow []string, req FetchRequest) 
 	return &FetchResponse{Status: 200, Body: body}, nil
 }
 
+// testEngine is one engine for the package's hosts: the guest compiled once, not once
+// per test (seconds each under the race detector).
+var testEngine = jsvm.NewEngine(jsvm.Options{})
+
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	h := &harness{t: t, store: &memStore{m: map[string]model.Plugin{}}, dir: t.TempDir(), notes: make(chan string, 10)}
 	h.host = New(Deps{
-		Store: h.store, DataDir: h.dir, PanelVersion: "4.4.0",
+		Store: h.store, DataDir: h.dir, PanelVersion: "4.4.0", Engine: testEngine,
 		API: func(_ context.Context, req APIRequest) (int, []byte, error) {
 			h.apiMu.Lock()
 			h.api = append(h.api, req)
@@ -569,7 +574,7 @@ func TestStartLoadsEnabled(t *testing.T) {
 	h.mustCall("conf", "db", nil)
 	_ = h.host.Close(context.Background())
 
-	h2 := New(Deps{Store: h.store, DataDir: h.dir, PanelVersion: "4.4.0", Logger: quiet})
+	h2 := New(Deps{Store: h.store, DataDir: h.dir, PanelVersion: "4.4.0", Logger: quiet, Engine: testEngine})
 	defer h2.Close(context.Background())
 	if err := h2.Start(context.Background()); err != nil {
 		t.Fatal(err)
@@ -746,7 +751,7 @@ func TestBreakerPauseSurvivesRestart(t *testing.T) {
 		_, _ = h.call("conf", "boom", nil)
 	}
 	_ = h.host.Close(context.Background())
-	h2 := New(Deps{Store: h.store, DataDir: h.dir, PanelVersion: "4.4.0", Logger: quiet})
+	h2 := New(Deps{Store: h.store, DataDir: h.dir, PanelVersion: "4.4.0", Logger: quiet, Engine: testEngine})
 	defer h2.Close(context.Background())
 	if err := h2.Start(context.Background()); err != nil {
 		t.Fatal(err)

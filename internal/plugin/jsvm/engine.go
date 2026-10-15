@@ -51,9 +51,20 @@ var guestSHA256 string
 type Options struct {
 	// CacheDir keeps the guest's compiled machine code across restarts, which is
 	// the difference between ~1.2 s and ~35 ms on a small box. Empty keeps it in
-	// memory only.
+	// memory, shared by every such engine of the process (memCache).
 	CacheDir string
 }
+
+// memCache is the compiled guest of the engines without a CacheDir — the plugin CLI,
+// test runs, the tests — kept once for the process rather than compiled per engine.
+// Under the race detector a compile costs seconds; per engine it was most of the
+// test suite's time.
+var memCache = sync.OnceValue(wazero.NewCompilationCache)
+
+// CacheDirOverride is, when set, the CacheDir of every engine that has one — for tests,
+// whose hosts each have a data directory of their own and would each compile the guest
+// into it. Set it before the first engine is made.
+var CacheDirOverride string
 
 // Engine compiles the guest once per memory cap and makes VMs from it. It is safe
 // for concurrent use.
@@ -90,10 +101,10 @@ func (e *Engine) Close(ctx context.Context) error {
 		errs = append(errs, r.rt.Close(ctx))
 		delete(e.runtimes, k)
 	}
-	if e.cache != nil {
-		errs = append(errs, e.cache.Close(ctx))
-		e.cache = nil
+	if e.cache != nil && e.opts.CacheDir != "" {
+		errs = append(errs, e.cache.Close(ctx)) // memCache outlives every engine
 	}
+	e.cache = nil
 	return errors.Join(errs...)
 }
 
@@ -115,14 +126,17 @@ func (e *Engine) runtime(ctx context.Context, pages uint32) (*capRuntime, error)
 		e.wasm = w
 	}
 	if e.cache == nil {
-		if e.opts.CacheDir != "" {
-			c, err := wazero.NewCompilationCacheWithDir(e.opts.CacheDir)
+		if dir := e.opts.CacheDir; dir != "" {
+			if CacheDirOverride != "" {
+				dir = CacheDirOverride
+			}
+			c, err := wazero.NewCompilationCacheWithDir(dir)
 			if err != nil {
 				return nil, fmt.Errorf("jsvm: compilation cache: %w", err)
 			}
 			e.cache = c
 		} else {
-			e.cache = wazero.NewCompilationCache()
+			e.cache = memCache()
 		}
 	}
 	rt := wazero.NewRuntimeWithConfig(ctx, wazero.NewRuntimeConfig().

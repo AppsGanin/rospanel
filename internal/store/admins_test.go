@@ -1,11 +1,8 @@
 package store
 
 import (
-	"database/sql"
 	"errors"
 	"path/filepath"
-	"sort"
-	"strings"
 	"testing"
 	"time"
 
@@ -20,42 +17,8 @@ import (
 func openLegacy(t *testing.T, mustChange bool) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "legacy.db")
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(ON)")
-	if err != nil {
-		t.Fatalf("open raw: %v", err)
-	}
+	db := dbBeforeMigration(t, path, "0023")
 	defer db.Close()
-
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
-		version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL DEFAULT (unixepoch()))`); err != nil {
-		t.Fatalf("schema_migrations: %v", err)
-	}
-	entries, err := migrationsFS.ReadDir("migrations")
-	if err != nil {
-		t.Fatalf("read migrations: %v", err)
-	}
-	var files []string
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") && e.Name() < "0023" {
-			files = append(files, e.Name())
-		}
-	}
-	sort.Strings(files)
-	if len(files) == 0 {
-		t.Fatal("no pre-0023 migrations found")
-	}
-	for _, name := range files {
-		body, err := migrationsFS.ReadFile("migrations/" + name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		if _, err := db.Exec(string(body)); err != nil {
-			t.Fatalf("apply %s: %v", name, err)
-		}
-		if _, err := db.Exec(`INSERT INTO schema_migrations (version) VALUES (?)`, name); err != nil {
-			t.Fatalf("record %s: %v", name, err)
-		}
-	}
 	// The single admin a legacy install had, plus the install-wide password gate the
 	// panel used to keep on the settings singleton.
 	if _, err := db.Exec(

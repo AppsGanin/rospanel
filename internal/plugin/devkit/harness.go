@@ -24,9 +24,10 @@ import (
 // Harness runs one plugin on the real host, against a temporary directory, with
 // panel.api and panel.http.fetch answered by mocks — or by a real panel, for dev.
 type Harness struct {
-	Host *plugin.Host
-	ID   string
-	dir  string
+	Host   *plugin.Host
+	ID     string
+	dir    string
+	engine *jsvm.Engine // the one Start made, closed with it; nil when the caller gave one
 
 	mu    sync.Mutex
 	http  []httpMock
@@ -86,13 +87,20 @@ func Start(ctx context.Context, raw []byte, o Options) (*Harness, error) {
 		return nil, err
 	}
 	h := &Harness{dir: dir, fetcher: plugin.NewFetcher(), api: o.API}
+	engine := o.Engine
+	if engine == nil {
+		// The process-wide compiled guest (jsvm.Options without a CacheDir), not a
+		// compile into this run's temporary directory.
+		engine = jsvm.NewEngine(jsvm.Options{})
+		h.engine = engine
+	}
 	lg := slog.New(slog.DiscardHandler)
 	if o.Log != nil {
 		lg = slog.New(slog.NewTextHandler(o.Log, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	}
 	h.Host = plugin.New(plugin.Deps{
 		Store: newMemStore(), DataDir: dir, PanelVersion: o.PanelVersion,
-		API: h.serveAPI, Fetch: h, Logger: lg, NoBreaker: true, Engine: o.Engine,
+		API: h.serveAPI, Fetch: h, Logger: lg, NoBreaker: true, Engine: engine,
 	})
 	if err := h.load(ctx, raw, o.Settings, false); err != nil {
 		h.Close()
@@ -144,6 +152,9 @@ func (h *Harness) Reload(ctx context.Context, raw []byte) error {
 // Close stops the host and removes the temporary directory.
 func (h *Harness) Close() {
 	_ = h.Host.Close(context.Background())
+	if h.engine != nil {
+		_ = h.engine.Close(context.Background())
+	}
 	_ = os.RemoveAll(h.dir)
 }
 

@@ -40,7 +40,7 @@ func TestPausedStaysPausedAcrossRestart(t *testing.T) {
 	if info, _ := h.host.Get("conf"); info.Status != model.PluginPaused {
 		t.Fatalf("not paused: %s", info.Status)
 	}
-	again := New(Deps{Store: h.store, DataDir: h.dir, PanelVersion: "4.4.0", Logger: slog.New(slog.DiscardHandler)})
+	again := New(Deps{Store: h.store, DataDir: h.dir, PanelVersion: "4.4.0", Logger: slog.New(slog.DiscardHandler), Engine: testEngine})
 	t.Cleanup(func() { _ = again.Close(context.Background()) })
 	if err := again.Start(context.Background()); err != nil {
 		t.Fatal(err)
