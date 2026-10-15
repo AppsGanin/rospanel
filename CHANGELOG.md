@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.6.0](https://github.com/AppsGanin/rospanel/compare/v5.5.0...v5.6.0) (2026-10-15)
+
+
+### Features
+
+* **update:** follow node updates, update the master from Servers, schedule only in settings ([3355f9c](https://github.com/AppsGanin/rospanel/commit/3355f9cce2c052de874700e0d3cad99e712cbbd4))
+
 ## [5.5.0](https://github.com/AppsGanin/rospanel/compare/v5.4.0...v5.5.0) (2026-10-15)
 
 
