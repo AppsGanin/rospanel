@@ -157,6 +157,9 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 	if p := xray.InnerPort(xray.AnyTLSInnerAddr); p != 0 {
 		r.HoldTCP(p, "AnyTLS (internal)")
 	}
+	if p := xray.InnerPort(xray.MTProtoInnerAddr); p != 0 {
+		r.HoldTCP(p, "MTProto (internal)")
+	}
 	if set.HopEnd > set.HysteriaPort {
 		// The built-in hop range is a UDP funnel onto the Hysteria port: anything
 		// inside it would have its traffic silently stolen by the nftables redirect.
@@ -187,6 +190,9 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 		} else {
 			r.HoldTCP(set.MieruPort, "mieru")
 		}
+	}
+	if set.MTProtoEnabled && set.MTProtoPort > 0 {
+		r.HoldTCP(set.MTProtoPort, "MTProto")
 	}
 	return r
 }
@@ -679,6 +685,9 @@ func HostConnGuardPorts(st *store.Store) ([]int, error) {
 	}
 	if set.MieruEnabled && set.MieruPort > 0 {
 		ports = append(ports, set.MieruPort) // TCP: see model.MieruTransportOr
+	}
+	if set.MTProtoEnabled && set.MTProtoPort > 0 {
+		ports = append(ports, set.MTProtoPort)
 	}
 	list, err := st.EnabledInbounds(model.LocalNodeID)
 	if err != nil {

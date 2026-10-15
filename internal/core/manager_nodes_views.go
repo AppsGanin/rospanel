@@ -321,8 +321,11 @@ func (m *Manager) NodeLinkSettings() ([]*model.Settings, error) {
 		// mieru needs the agent to answer it, a port, and its listener up (as last said).
 		m.nodeGeoMu.Lock()
 		mieruDown := m.nodeMieruErr[n.ID] != ""
+		mtprotoDown := m.nodeMTProtoErr[n.ID] != ""
 		m.nodeGeoMu.Unlock()
 		ns.MieruEnabled = ns.MieruEnabled && n.ServesMieru && ns.MieruPort > 0 && !mieruDown
+		// The Telegram proxy likewise.
+		ns.MTProtoEnabled = ns.MTProtoEnabled && n.ServesMTProto && ns.MTProtoPort > 0 && !mtprotoDown
 		// Uniqueness is enforced on create/edit, but defend the subscription anyway:
 		// a duplicate label would collide Clash proxy names / sing-box tags and make a
 		// client reject the whole config. Disambiguate any collision with the node id.

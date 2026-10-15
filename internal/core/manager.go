@@ -21,6 +21,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/mieru"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/mtproto"
 	"github.com/AppsGanin/rospanel/internal/naive"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/opera"
@@ -392,6 +393,8 @@ type Manager struct {
 	nodeAWG map[int64]nodeAWGState
 	// nodeMieruErr is each node's last-reported mieru listener error ("" ⇒ fine).
 	nodeMieruErr map[int64]string
+	// nodeMTProtoErr is nodeMieruErr for the MTProto lane.
+	nodeMTProtoErr map[int64]string
 	// nodeUpdateErr is why each node's requested self-update did not happen, as it last
 	// reported ("" ⇒ nothing to report). Cleared when the operator asks again.
 	nodeUpdateErr map[int64]string
@@ -439,6 +442,10 @@ type Manager struct {
 	// error ("" when it listens or is off).
 	mieru    *mieru.Server
 	mieruErr atomic.Pointer[string]
+	// mtproto is the master's Telegram proxy (internal/mtproto), mtprotoErr its
+	// listener's last error ("" ⇒ fine).
+	mtproto    *mtproto.Server
+	mtprotoErr atomic.Pointer[string]
 	// anytls is the master's AnyTLS lane (internal/anytls), behind the :443 fallback.
 	anytls *anytls.Server
 
@@ -524,6 +531,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		awg:            awg.New(),
 		naive:          naive.New(xray.NaiveInnerAddr),
 		mieru:          mieru.New(xray.MieruInnerAddr),
+		mtproto:        mtproto.New(xray.MTProtoInnerAddr),
 		turn:           turnrelay.New(),
 		probeBlock:     ipblock.New(ipblock.TableProbes),
 		policyBlock:    ipblock.New(ipblock.TablePolicy),
@@ -564,6 +572,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	// is started with a bare `go` is one Close cannot account for, and the failure is
 	// invisible until something it writes to has already been torn down.
 	m.runAsync(func() { m.guard.cleanupLoop(m.done) })
+	m.claimNodeMTProtoDomains() // before the first node state is built
 	m.runAsync(m.nodeWatchLoop)
 	m.runAsync(m.reachLoop)
 	m.runAsync(m.reconcileLoop)
@@ -1098,6 +1107,7 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 	m.syncAWGLocked(set, users)
 	m.syncNaive(cfg)
 	m.syncMieru(set, cfg)
+	m.syncMTProto(set, cfg)
 	m.syncAnyTLS(cfg)
 	m.syncHostFW(set, cfg) // a tunnel that failed to start may have come up here
 	return true, m.store.MarkConfigApplied()
@@ -1175,6 +1185,7 @@ func (m *Manager) reconcileLocked() error {
 	m.syncAWGLocked(set, users)
 	m.syncNaive(cfg)
 	m.syncMieru(set, cfg)
+	m.syncMTProto(set, cfg)
 	m.syncAnyTLS(cfg)
 	m.syncHostFW(set, cfg)
 	// HTTP/3 advertised where Hysteria2 shares the front's port, as Caddy would.

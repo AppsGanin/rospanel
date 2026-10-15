@@ -21,6 +21,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/branding"
 	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/i18n"
+	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/plugin"
 	"github.com/AppsGanin/rospanel/internal/sub"
@@ -281,6 +282,10 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		// Telegram Mini App so the client scheme actually launches).
 		if rest, ok := strings.CutPrefix(leaf, "awg/"); ok {
 			rt.serveAWG(w, r, u, set, rest)
+			return
+		}
+		if rest, ok := strings.CutPrefix(leaf, "tg/"); ok {
+			rt.serveTelegramQR(w, r, u, set, rest)
 			return
 		}
 		if rest, ok := strings.CutPrefix(leaf, "wg/"); ok {
@@ -1229,6 +1234,39 @@ func (rt *Router) serveAWG(w http.ResponseWriter, r *http.Request, u *model.User
 		return
 	}
 	rt.serveTunnelConf(w, r, conf, ext, sub.AWGFileName(srv.Set))
+}
+
+// serveTelegramQR draws one user's Telegram proxy link for one server as a QR code —
+// "<id>.png", id the server (0 = the master). As with AmneziaWG, a server without the
+// lane, or one the user may not use, is the decoy.
+func (rt *Router) serveTelegramQR(w http.ResponseWriter, r *http.Request, u *model.User, set *model.Settings, rest string) {
+	name, ok := strings.CutSuffix(rest, ".png")
+	serverID, err := strconv.ParseInt(name, 10, 64)
+	if !ok || err != nil || serverID < 0 {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	servers, err := rt.subServers(set, u.ID, clientIP(r))
+	if err != nil {
+		rt.subUnavailable(w, u.ID, err)
+		return
+	}
+	for i := range servers {
+		s := servers[i].Set
+		if s.ServerID != serverID || !link.MTProtoOn(s) || !servers[i].Access.AllowsBuiltin(serverID, model.LaneMTProto) {
+			continue
+		}
+		// The t.me form: any scanner opens it in Telegram, where tg:// is left alone.
+		png, err := qrcode.Encode(link.MTProtoWeb(*u, s), qrcode.Medium, 512)
+		if err != nil {
+			break
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(png)
+		return
+	}
+	rt.currentDecoy().ServeHTTP(w, r)
 }
 
 // buildWallet fills the page's wallet block: balance, top-up, renewal switch, the

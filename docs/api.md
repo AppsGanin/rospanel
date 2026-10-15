@@ -463,7 +463,8 @@ that signs people in by their subscription link finds them with `?sub_token=`.
 `GET /v1/users/{id}/subscription` has everything the subscription page shows — status,
 `blocks` (what plugins add to the page: `{type: text|markdown|notice|button, text, label, url}`),
 traffic, term, `sub_url`, one-tap imports per app (`apps`), every config (`links`), the Clash
-download (`clash_url`), devices, the payment block (`billing`), the operator's colours
+download (`clash_url`), the Telegram proxy per server (`telegram`: `{name, link, web_link, qr_url}` —
+`link` is the `tg://proxy` that adds it in one tap), devices, the payment block (`billing`), the operator's colours
 (`brand`), `terms_url` / `privacy_url` (the operator's documents, while they have text — `GET /v1/legal`
 has the text itself) and `tg_link` — the user bot's link that binds the account to the Telegram it is
 opened in (moves it there when `tg_linked`; absent while the switches in Settings → Telegram
@@ -698,7 +699,7 @@ by it — the stricter of the two applies. Omitted on an update, the cap is kept
 A **grant token** names one connection:
 
 - `builtin:<server_id>:<lane>` — a built-in lane, where `<lane>` is `vless`, `reality`,
-  `hysteria2`, `naive`, `anytls`, `mieru` or `awg` and `<server_id>` is `0` for the master or a node id
+  `hysteria2`, `naive`, `anytls`, `mieru`, `awg` or `mtproto` and `<server_id>` is `0` for the master or a node id
   from `GET /v1/nodes`.
 - `inbound:<id>` — a custom inbound, by the id from `GET /v1/servers/{id}/inbounds`.
 

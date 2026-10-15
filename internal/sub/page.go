@@ -156,6 +156,9 @@ type pageText struct {
 	TurnLink       string
 	TurnNoLink     string
 	TurnManual     string
+	TGProxyTitle   string
+	TGProxyHint    string
+	TGProxyAdd     string
 	AppLink        string
 	Copy           string
 	Copied         string
@@ -261,6 +264,9 @@ func text(lang i18n.Lang) pageText {
 		TurnLink:       t("sub.turnLink"),
 		TurnNoLink:     t("sub.turnNoLink"),
 		TurnManual:     t("sub.turnManual"),
+		TGProxyTitle:   t("sub.tgProxyTitle"),
+		TGProxyHint:    t("sub.tgProxyHint"),
+		TGProxyAdd:     t("sub.tgProxyAdd"),
 		AppLink:        t("sub.appLink"),
 		Copy:           t("sub.copy"),
 		Copied:         t("sub.copied"),
@@ -334,6 +340,25 @@ type turnApp struct {
 	AppLink string
 }
 
+// tgProxyLabel names a server's Telegram proxy on the page: the server's own name (its
+// flag and name), else its address — the card is titled already, so the protocol's
+// label would only repeat it.
+func tgProxyLabel(s *model.Settings) string {
+	if s.NodeLabel != "" {
+		return s.NodeLabel
+	}
+	return s.Host
+}
+
+// tgProxyCard is one server's Telegram proxy: the tg:// link that adds it in one tap,
+// and the https://t.me form of it to copy.
+type tgProxyCard struct {
+	Label   string
+	Link    template.URL
+	WebLink string
+	QRURL   string
+}
+
 // awgCard is one server's AmneziaWG config on the page.
 type awgCard struct {
 	Label   string
@@ -368,6 +393,8 @@ type pageData struct {
 	AWG []awgCard
 	// Turn lists one card per WireGuard inbound behind a TURN relay the user may use.
 	Turn []turnCard
+	// Telegram lists one card per server whose Telegram proxy the user may use.
+	Telegram []tgProxyCard
 
 	StatusLabel string
 	StatusClass string
@@ -628,8 +655,17 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 	var protoLinks, extLinks []protoLink
 	var awgCards []awgCard
 	var turnCards []turnCard
+	var tgCards []tgProxyCard
 	for _, srv := range servers {
 		s := srv.Set
+		if link.MTProtoOn(s) && srv.allowsBuiltin(model.LaneMTProto) {
+			tgCards = append(tgCards, tgProxyCard{
+				Label:   tgProxyLabel(s),
+				Link:    template.URL(link.MTProto(u, s)), // tg:// — html/template would refuse the scheme
+				WebLink: link.MTProtoWeb(u, s),
+				QRURL:   fmt.Sprintf("%s/tg/%d.png", subURL, s.ServerID),
+			})
+		}
 		if s.AWGEnabled && s.AWGPort != 0 && srv.allowsBuiltin(model.LaneAWG) {
 			awgCards = append(awgCards, awgCard{
 				Label: s.ProtoLabelFor(model.ProtoAWG, &u),
@@ -738,6 +774,7 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 		Links:       protoLinks,
 		AWG:         awgCards,
 		Turn:        turnCards,
+		Telegram:    tgCards,
 		DeepLinks:   DeepLinks(subURL, lang, local.SubHappCrypt),
 		Wizard:      Wizard(lang),
 		StatusLabel: statusLabel,

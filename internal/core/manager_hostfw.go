@@ -24,8 +24,13 @@ func (m *Manager) syncHostFW(set *model.Settings, cfg *xray.Config) {
 		s.Ports = append(s.Ports, hostfw.UDP(set.AWGPort))
 		s.Forward = append(s.Forward, awg.Iface)
 	}
-	if m.mieru != nil {
-		s.Ports = append(s.Ports, MieruHostPort(m.mieru.Listening().Port, m.mieru.Listening().Transport)...)
+	// mieru and MTProto from the settings, not from their listeners: one that comes up on
+	// a later retry must find its port open already.
+	if l := mieruListen(set); l.Port > 0 {
+		s.Ports = append(s.Ports, MieruHostPort(l.Port, l.Transport)...)
+	}
+	if l := MTProtoListen(set); l.Port > 0 {
+		s.Ports = append(s.Ports, hostfw.TCP(l.Port))
 	}
 	for _, p := range m.turn.Ports() {
 		s.Ports = append(s.Ports, hostfw.UDP(p))

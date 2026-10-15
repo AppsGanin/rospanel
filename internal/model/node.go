@@ -93,7 +93,13 @@ type Node struct {
 	ServesMieru   bool  `json:"-"`
 	AnyTLSEnabled *bool `json:"anytls_enabled"`
 	// ServesAnyTLS is ServesNaive for AnyTLS (nodeapi.SyncRequest.AnyTLS).
-	ServesAnyTLS bool `json:"-"`
+	ServesAnyTLS   bool  `json:"-"`
+	MTProtoEnabled *bool `json:"mtproto_enabled"`
+	// MTProtoDomain is the name in the node's MTProto secrets, kept from the first time
+	// the lane ran (see Settings.MTProtoDomain).
+	MTProtoDomain string `json:"-"`
+	// ServesMTProto is ServesNaive for MTProto (nodeapi.SyncRequest.MTProto).
+	ServesMTProto bool `json:"-"`
 	// SeenIP is the address the node last reached the panel from (see SetNodeSeenIP).
 	SeenIP string `json:"-"`
 
@@ -198,6 +204,8 @@ type NodeConnections struct {
 	MieruTransport     string `json:"mieru_transport"`
 	MieruName          string `json:"mieru_name"`
 	AnyTLSName         string `json:"anytls_name"`
+	MTProtoPort        int    `json:"mtproto_port"`
+	MTProtoName        string `json:"mtproto_name"`
 }
 
 // Joined reports whether the node has exchanged its join token for a permanent
@@ -227,6 +235,7 @@ type NodeStatusUpdate struct {
 	ServesNaive    bool
 	ServesMieru    bool
 	ServesAnyTLS   bool
+	ServesMTProto  bool
 }
 
 // ValidServerHost reports whether h can be a server's address: an IP literal, or a

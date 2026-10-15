@@ -278,16 +278,26 @@ and cut-off work as on the other lanes. The login is `u<id>`, the password the u
 subscription it goes to the clients that import it — Shadowrocket (as `http2://`), v2rayN, Karing,
 Throne, Exclave — when the certificate is trusted (a domain or a Let's Encrypt IP certificate).
 
-**mieru** is a built-in lane on a TCP port of its own, picked automatically (open it in the
-server's firewall). The login is `u<id>`, the password the user's UUID; routing, traffic
-accounting, limits and cut-off work as on the other lanes. In the subscription it goes to the
-clients that import it — the Clash profile for clients whose version proves their core has it
-(mihomo itself, FlClash, FlClashX, Koala Clash, Clash Verge Rev, Mihomo Party, Sparkle,
-ClashMetaForAndroid, ClashMi), a `mierus://` link for Shadowrocket, Throne, Exclave and Karing.
+**mieru** is a built-in lane on a TCP port of its own, picked automatically. The login is `u<id>`,
+the password the user's UUID; routing, traffic accounting, limits and cut-off work as on the other
+lanes. In the subscription it goes to the clients that import it — the Clash profile for clients
+whose version proves their core has it (mihomo itself, FlClash, FlClashX, Koala Clash, Clash Verge
+Rev, Mihomo Party, Sparkle, ClashMetaForAndroid, ClashMi), a `mierus://` link for Shadowrocket,
+Throne, Exclave and Karing.
 
 **AnyTLS** is a built-in lane on the VLESS-TCP-TLS port, behind the same certificate and decoy
 site; the password is the user's UUID. It goes to sing-box clients, the Clash profile (mihomo
 cores that have it), v2rayN, Shadowrocket, Throne, Exclave, Karing and NekoBox, when the certificate is trusted.
+
+**MTProto (Telegram proxy)** is a built-in lane on a TCP port of its own, picked automatically, on
+by default: Telegram itself connects through the server, no VPN app needed. Fake TLS with a secret
+per user, derived from their UUID — a disabled user loses it, a UUID reset changes it. The secret
+names the server's domain (its SNI or host), or, without one, a name that resolves to its address
+(`<ip>.sslip.io`) — never another site's, which DPI drops; the name is kept from the first start and
+changes only in *Connections*, since every proxy users added carries it. Anything that is not a
+client of the proxy is handed to that site. Traffic goes out through Xray, so routing, accounting,
+limits and cut-off work as on the other lanes. The subscription page has the proxy per server: a QR,
+*Add to Telegram* and the t.me link.
 
 
 **TURN-VK (WireGuard over calls)** *(experimental: it may change or be removed in a future
@@ -469,7 +479,7 @@ on every update, and a client that refreshed in that minute would lose the serve
 refresh. To hide such servers, and servers whose Xray is stopped, turn on *Settings →
 Subscriptions → hide a server while it is offline*.
 
-**A failed lane** — AmneziaWG, mieru or a TURN relay that could not take its port — leaves the
+**A failed lane** — AmneziaWG, mieru, MTProto or a TURN relay that could not take its port — leaves the
 subscription after two minutes and comes back as soon as it is up. The server retries it every
 minute, and the admins are told when it goes and when it is back.
 

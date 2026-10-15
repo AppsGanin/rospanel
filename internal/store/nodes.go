@@ -51,7 +51,8 @@ const nodeColumns = `id, name, host, enabled,
 	country, sort_weight, capacity, hide_when_full,
 	traffic_limit, traffic_period, hide_when_over, traffic_reset_day,
 	awg_enabled, awg_private_key, awg_public_key, awg_params, naive_enabled, serves_naive,
-	mieru_enabled, serves_mieru, anytls_enabled, serves_anytls, seen_ip`
+	mieru_enabled, serves_mieru, anytls_enabled, serves_anytls, seen_ip,
+	mtproto_enabled, serves_mtproto, mtproto_domain`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
 func generateNodeToken() (string, error) {
@@ -66,10 +67,10 @@ func generateNodeToken() (string, error) {
 // and mapping the nullable protocol overrides to *bool.
 func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	var n model.Node
-	var enabled, xrayRunning, certSelfSigned, warpEn, operaEn, servesNaive, servesMieru, servesAnyTLS int
+	var enabled, xrayRunning, certSelfSigned, warpEn, operaEn, servesNaive, servesMieru, servesAnyTLS, servesMTProto int
 	var proxySocksEn, proxyHTTPEn, hideFull, hideOver int
 	var proxyAccounts string
-	var vlessEn, hysteriaEn, realityEn, awgEn, naiveEn, mieruEn, anytlsEn sql.NullBool
+	var vlessEn, hysteriaEn, realityEn, awgEn, naiveEn, mieruEn, anytlsEn, mtprotoEn sql.NullBool
 	var awgParamsJSON string
 	var routingJSON, connectionsJSON string
 	var xrayDNS sql.NullString
@@ -92,6 +93,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&n.TrafficLimit, &n.TrafficPeriod, &hideOver, &n.TrafficResetDay,
 		&awgEn, &n.AWGPrivateKey, &n.AWGPublicKey, &awgParamsJSON, &naiveEn, &servesNaive,
 		&mieruEn, &servesMieru, &anytlsEn, &servesAnyTLS, &n.SeenIP,
+		&mtprotoEn, &servesMTProto, &n.MTProtoDomain,
 	); err != nil {
 		return nil, err
 	}
@@ -112,6 +114,8 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	n.ServesMieru = servesMieru != 0
 	n.AnyTLSEnabled = nullBoolPtr(anytlsEn)
 	n.ServesAnyTLS = servesAnyTLS != 0
+	n.MTProtoEnabled = nullBoolPtr(mtprotoEn)
+	n.ServesMTProto = servesMTProto != 0
 	if awgParamsJSON != "" {
 		_ = json.Unmarshal([]byte(awgParamsJSON), &n.AWGParams)
 	}
@@ -214,6 +218,7 @@ func (s *Store) CreateNode(name, host, decoyTemplate string) (*model.Node, error
 		NaiveEnabled:      &on, // the columns' defaults
 		MieruEnabled:      &on,
 		AnyTLSEnabled:     &on,
+		MTProtoEnabled:    &on,
 	}, nil
 }
 
@@ -572,13 +577,13 @@ func (s *Store) UpdateNodeStatus(id int64, st model.NodeStatusUpdate) error {
 			cert_self_signed = CASE WHEN ? <> '' THEN ? ELSE cert_self_signed END,
 			cert_issuer      = CASE WHEN ? <> '' THEN ? ELSE cert_issuer      END,
 			cert_expires_at  = CASE WHEN ? <> '' THEN ? ELSE cert_expires_at  END,
-			config_hash = ?, serves_naive = ?, serves_mieru = ?, serves_anytls = ? WHERE id = ?`,
+			config_hash = ?, serves_naive = ?, serves_mieru = ?, serves_anytls = ?, serves_mtproto = ? WHERE id = ?`,
 		st.LastSeen, st.NodeVersion, st.XrayVersion, boolToInt(st.XrayRunning),
 		st.CertSHA256, st.CertSHA256,
 		st.CertSHA256, boolToInt(st.CertSelfSigned),
 		st.CertSHA256, st.CertIssuer,
 		st.CertSHA256, st.CertExpiresAt,
-		st.ConfigHash, boolToInt(st.ServesNaive), boolToInt(st.ServesMieru), boolToInt(st.ServesAnyTLS), id,
+		st.ConfigHash, boolToInt(st.ServesNaive), boolToInt(st.ServesMieru), boolToInt(st.ServesAnyTLS), boolToInt(st.ServesMTProto), id,
 	)
 	return err
 }
@@ -701,6 +706,24 @@ func (s *Store) SaveNodeAWGKeys(id int64, priv, pub string, params model.AWGPara
 // SetNodeMieruEnabled flips a node's mieru lane.
 func (s *Store) SetNodeMieruEnabled(id int64, enabled bool) error {
 	_, err := s.db.Exec(`UPDATE nodes SET mieru_enabled = ? WHERE id = ?`, boolToInt(enabled), id)
+	return err
+}
+
+// SetNodeMTProtoEnabled flips a node's MTProto lane.
+func (s *Store) SetNodeMTProtoEnabled(id int64, enabled bool) error {
+	_, err := s.db.Exec(`UPDATE nodes SET mtproto_enabled = ? WHERE id = ?`, boolToInt(enabled), id)
+	return err
+}
+
+// SetNodeMTProtoDomain sets the name in a node's MTProto secrets.
+func (s *Store) SetNodeMTProtoDomain(id int64, domain string) error {
+	_, err := s.db.Exec(`UPDATE nodes SET mtproto_domain = ? WHERE id = ?`, domain, id)
+	return err
+}
+
+// ClaimNodeMTProtoDomain keeps domain as a node's MTProto domain unless one is kept.
+func (s *Store) ClaimNodeMTProtoDomain(id int64, domain string) error {
+	_, err := s.db.Exec(`UPDATE nodes SET mtproto_domain = ? WHERE id = ? AND mtproto_domain = ''`, domain, id)
 	return err
 }
 

@@ -352,6 +352,12 @@ export interface ConnectionsStatus {
   mieru_transport: string
   mieru_running: boolean
   mieru_error?: string
+  // MTProto (Telegram proxy): its port, the domain its secrets carry, and whether it
+  // listens (the master's own, or as the node last reported).
+  mtproto_port: number
+  mtproto_domain: string
+  mtproto_running: boolean
+  mtproto_error?: string
 }
 
 // ConnectionsUpdate is the whole connection surface, applied in one request.
@@ -378,6 +384,11 @@ export interface ConnectionsUpdate {
   regen_awg_keys: boolean
   mieru_port: number
   mieru_transport: string
+  mtproto_port: number
+  // "" keeps it; another domain gives every user a new link; reset goes back to the
+  // default one.
+  mtproto_domain: string
+  mtproto_domain_reset?: boolean
 }
 
 export const applyConnections = (u: ConnectionsUpdate) =>

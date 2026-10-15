@@ -73,6 +73,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	var probeBlock int
 	var routingCfg, subRulesJSON, subDPIJSON string
 	var reachCountries string
+	var mtprotoEn int
 	var masterHideFull, masterHideOver, awgEn, naiveEn, mieruEn, anytlsEn, hideOffline, subHappCrypt, subTGBind, subTGRebind, subShowClash, tgMailingSwitch int
 	var awgParamsJSON, connPolicyJSON string
 	var walletEn, refFirstOnly, winbackEn, autoUpdateNodes, blacklistEn, planChange int
@@ -134,7 +135,8 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       naive_enabled, naive_name,
 		       mieru_enabled, mieru_port, mieru_transport, mieru_name,
 		       anytls_enabled, anytls_name,
-		       reach_countries, reach_probes, reach_every, reach_threshold, reach_token
+		       reach_countries, reach_probes, reach_every, reach_threshold, reach_token,
+		       mtproto_enabled, mtproto_port, mtproto_name, mtproto_domain
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -196,6 +198,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&mieruEn, &st.MieruPort, &st.MieruTransport, &st.MieruName,
 		&anytlsEn, &st.AnyTLSName,
 		&reachCountries, &st.Reach.Probes, &st.Reach.Every, &st.Reach.Threshold, &st.Reach.Token,
+		&mtprotoEn, &st.MTProtoPort, &st.MTProtoName, &st.MTProtoDomain,
 	)
 	if err != nil {
 		return nil, err
@@ -224,6 +227,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	st.NaiveEnabled = naiveEn != 0
 	st.MieruEnabled = mieruEn != 0
 	st.AnyTLSEnabled = anytlsEn != 0
+	st.MTProtoEnabled = mtprotoEn != 0
 	st.MieruTransport = model.MieruTransportOr(st.MieruTransport)
 	st.WalletEnabled = walletEn != 0
 	if billingPeriodsJSON != "" {
@@ -667,6 +671,7 @@ var protocolColumn = map[string]string{
 	"naive":     "naive_enabled",
 	"mieru":     "mieru_enabled",
 	"anytls":    "anytls_enabled",
+	"mtproto":   "mtproto_enabled",
 }
 
 // SetProtocolEnabled flips a single protocol's on/off toggle.
@@ -835,6 +840,45 @@ func (s *Store) SetMieruConfig(port int, transport, name string) error {
 	_, err := s.db.Exec(`UPDATE settings SET mieru_port = ?, mieru_transport = ?, mieru_name = ?,
 		updated_at = unixepoch() WHERE id = 1`, port, model.MieruTransportOr(transport), name)
 	return err
+}
+
+// SetMTProtoConfig persists the master's MTProto port and display name (the toggle goes
+// through SetProtocolEnabled("mtproto")).
+func (s *Store) SetMTProtoConfig(port int, name string) error {
+	_, err := s.db.Exec(`UPDATE settings SET mtproto_port = ?, mtproto_name = ?,
+		updated_at = unixepoch() WHERE id = 1`, port, name)
+	return err
+}
+
+// SetMTProtoDomain sets the name in the master's MTProto secrets — every link users
+// added stops working with the old one.
+func (s *Store) SetMTProtoDomain(domain string) error {
+	_, err := s.db.Exec(`UPDATE settings SET mtproto_domain = ?, updated_at = unixepoch() WHERE id = 1`, domain)
+	return err
+}
+
+// ClaimMTProtoDomain keeps domain as the master's MTProto domain unless one is kept
+// already, and returns the one kept.
+func (s *Store) ClaimMTProtoDomain(domain string) (string, error) {
+	if _, err := s.db.Exec(`UPDATE settings SET mtproto_domain = ?, updated_at = unixepoch()
+		WHERE id = 1 AND mtproto_domain = ''`, domain); err != nil {
+		return "", err
+	}
+	var kept string
+	err := s.db.QueryRow(`SELECT mtproto_domain FROM settings WHERE id = 1`).Scan(&kept)
+	return kept, err
+}
+
+// ClaimMTProtoPort gives the master's MTProto lane port unless it already has one (an
+// operator's pick, or a claim that got there first), and returns the port it has.
+func (s *Store) ClaimMTProtoPort(port int) (int, error) {
+	if _, err := s.db.Exec(`UPDATE settings SET mtproto_port = ?, updated_at = unixepoch()
+		WHERE id = 1 AND mtproto_port = 0`, port); err != nil {
+		return 0, err
+	}
+	var kept int
+	err := s.db.QueryRow(`SELECT mtproto_port FROM settings WHERE id = 1`).Scan(&kept)
+	return kept, err
 }
 
 // ClaimMieruPort gives the master's mieru lane port unless it already has one (an

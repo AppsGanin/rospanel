@@ -116,6 +116,8 @@ func laneName(lane string, inbounds map[int64]string) string {
 		return model.ProtoMieru
 	case xray.TagAnyTLS:
 		return model.ProtoAnyTLS
+	case xray.TagMTProto:
+		return model.ProtoMTProto
 	case xray.LaneAWG:
 		return model.ProtoAWG
 	}

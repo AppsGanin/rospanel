@@ -29,10 +29,10 @@ import (
 // laneHideAfter is how long a lane has to stay down before subscriptions drop it.
 const laneHideAfter = 2 * time.Minute
 
-// xrayLanes are the built-in lanes that need Xray: Naive, AnyTLS and mieru end in an
-// Xray inbound too.
+// xrayLanes are the built-in lanes that need Xray: Naive, AnyTLS, mieru and MTProto
+// end in an Xray inbound too.
 var xrayLanes = []string{model.LaneVLESS, model.LaneReality, model.LaneHysteria,
-	model.LaneNaive, model.LaneAnyTLS, model.LaneMieru, model.SubProtoCustom}
+	model.LaneNaive, model.LaneAnyTLS, model.LaneMieru, model.LaneMTProto, model.SubProtoCustom}
 
 // inboundDownKey is the key of one custom inbound in lanesDown.
 func inboundDownKey(id int64) string { return "inbound:" + strconv.FormatInt(id, 10) }
@@ -190,6 +190,10 @@ func (m *Manager) observeLanesAt(now time.Time) {
 		local = append(local, model.LaneMieru)
 		notes[noteKey(model.LocalNodeID, model.LaneMieru)] = laneNote{model.LocalNodeName, "mieru", *p}
 	}
+	if p := m.mtprotoErr.Load(); set.MTProtoEnabled && p != nil && *p != "" {
+		local = append(local, model.LaneMTProto)
+		notes[noteKey(model.LocalNodeID, model.LaneMTProto)] = laneNote{model.LocalNodeName, "MTProto", *p}
+	}
 	local = append(local, m.turnDownKeys(model.LocalNodeID, model.LocalNodeName, m.turn.Failed(), notes)...)
 	down[model.LocalNodeID] = local
 
@@ -210,10 +214,15 @@ func (m *Manager) observeLanesAt(now time.Time) {
 	for id, e := range m.nodeMieruErr {
 		mieruErr[id] = e
 	}
+	mtprotoErr := make(map[int64]string, len(m.nodeMTProtoErr))
+	for id, e := range m.nodeMTProtoErr {
+		mtprotoErr[id] = e
+	}
 	m.nodeGeoMu.Unlock()
 	lang := m.botLang()
 	keep := map[int64]bool{}
 	mieruOn := map[int64]bool{model.LocalNodeID: set.MieruEnabled}
+	mtprotoOn := map[int64]bool{model.LocalNodeID: set.MTProtoEnabled}
 	awgOn := map[int64]bool{model.LocalNodeID: set.AWGEnabled}
 	for i := range nodes {
 		n := &nodes[i]
@@ -221,6 +230,7 @@ func (m *Manager) observeLanesAt(now time.Time) {
 			continue
 		}
 		mieruOn[n.ID] = n.MieruEnabled != nil && *n.MieruEnabled
+		mtprotoOn[n.ID] = n.MTProtoEnabled != nil && *n.MTProtoEnabled
 		awgOn[n.ID] = awgEnabledOn(n)
 		if !n.Online(now.Unix()) {
 			keep[n.ID] = true // judged again when it reports
@@ -241,6 +251,10 @@ func (m *Manager) observeLanesAt(now time.Time) {
 			keys = append(keys, model.LaneMieru)
 			notes[noteKey(n.ID, model.LaneMieru)] = laneNote{label, "mieru", e}
 		}
+		if e := mtprotoErr[n.ID]; e != "" && mtprotoOn[n.ID] {
+			keys = append(keys, model.LaneMTProto)
+			notes[noteKey(n.ID, model.LaneMTProto)] = laneNote{label, "MTProto", e}
+		}
 		keys = append(keys, m.turnDownKeys(n.ID, label, turnDown[n.ID], notes)...)
 		down[n.ID] = keys
 	}
@@ -248,6 +262,8 @@ func (m *Manager) observeLanesAt(now time.Time) {
 		switch {
 		case key == model.LaneMieru:
 			return mieruOn[server]
+		case key == model.LaneMTProto:
+			return mtprotoOn[server]
 		case key == model.LaneAWG:
 			return awgOn[server]
 		case strings.HasPrefix(key, "inbound:"):
@@ -275,7 +291,7 @@ func noteKey(server int64, key string) string { return strconv.FormatInt(server,
 func laneAlerts(changes []laneChange, lang i18n.Lang, now time.Time) []string {
 	var out []string
 	for _, c := range changes {
-		if c.key != model.LaneMieru && c.key != model.LaneAWG && !strings.HasPrefix(c.key, "inbound:") {
+		if c.key != model.LaneMieru && c.key != model.LaneMTProto && c.key != model.LaneAWG && !strings.HasPrefix(c.key, "inbound:") {
 			continue
 		}
 		n := c.note
