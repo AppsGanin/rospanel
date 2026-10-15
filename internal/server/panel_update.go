@@ -30,7 +30,10 @@ func (rt *Router) checkUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	resp["latest"] = rel.Version
 	resp["notes"] = rel.Notes
-	resp["available"] = rel.AssetURL != "" && updater.IsNewer(rel.Version, version.Version)
+	// ready: the release carries its binaries. It is published a minute or two before
+	// they are uploaded, and until then nothing — master or node — can install it.
+	resp["ready"] = rel.Complete()
+	resp["available"] = rel.Complete() && updater.IsNewer(rel.Version, version.Version)
 	writeJSON(w, http.StatusOK, resp)
 }
 

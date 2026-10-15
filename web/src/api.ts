@@ -993,6 +993,8 @@ export const getAdminAuditCatalog = () =>
 export interface UpdateInfo {
   current: string
   latest?: string
+  // The latest release carries its binaries (it is published before they are uploaded).
+  ready?: boolean
   available: boolean
   notes?: string
   error?: string

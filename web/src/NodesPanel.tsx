@@ -60,7 +60,8 @@ export function NodesPanel() {
     if (canUpdate)
       checkUpdate()
         .then((u) => {
-          setLatest(u.latest ?? "");
+          // A release still without its binaries is not offered to anyone yet.
+          setLatest(u.ready && u.latest ? u.latest : "");
           setMasterNext(u.available && u.latest ? u.latest : "");
         })
         .catch(() => {});
