@@ -32,3 +32,8 @@ linters:
       # Free Turn Proxy's own codecs, kept verbatim as the reference the relay's wire
       # is tested against; restyling them would defeat the point.
       - internal/turnrelay/freeturnref
+    rules:
+      # Persian spells words with the zero-width non-joiner (U+200C, می‌شود); written
+      # as ‌ escapes the catalog could no longer be read or proofread.
+      - path: internal/i18n/fa\.go
+        text: ST1018
