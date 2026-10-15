@@ -231,6 +231,7 @@ type recordConn struct {
 	r       *bufio.Reader
 	w       io.Writer
 	pending []byte
+	wbuf    []byte // one record's worth, reused by every Write
 }
 
 func newRecordConn(r *bufio.Reader, w io.Writer) *recordConn {
@@ -269,10 +270,12 @@ func (c *recordConn) Read(p []byte) (int, error) {
 
 func (c *recordConn) Write(p []byte) (int, error) {
 	written := 0
-	buf := make([]byte, 5+min(len(p), maxRecordPayload))
+	if c.wbuf == nil {
+		c.wbuf = make([]byte, 5+maxRecordPayload)
+	}
 	for len(p) > 0 {
 		n := min(len(p), maxRecordPayload)
-		buf = buf[:5+n]
+		buf := c.wbuf[:5+n]
 		buf[0] = recordAppData
 		buf[1], buf[2] = tlsVersion[0], tlsVersion[1]
 		binary.BigEndian.PutUint16(buf[3:], uint16(n))
