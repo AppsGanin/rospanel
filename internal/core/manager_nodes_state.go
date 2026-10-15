@@ -45,6 +45,8 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns.NaiveEnabled, ns.NaiveName = derefBool(n.NaiveEnabled), ""
 	ns.MieruEnabled, ns.MieruPort, ns.MieruTransport, ns.MieruName = derefBool(n.MieruEnabled), 0, model.MieruTCP, ""
 	ns.AnyTLSEnabled, ns.AnyTLSName = derefBool(n.AnyTLSEnabled), ""
+	ns.MTProtoEnabled, ns.MTProtoPort, ns.MTProtoName = derefBool(n.MTProtoEnabled), 0, ""
+	ns.MTProtoDomain = n.MTProtoDomain
 	// REALITY donor: the node's own if set, otherwise inherit the panel's (a node
 	// needs some donor for REALITY to work).
 	if n.RealityDest != "" {
@@ -126,10 +128,15 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 		ns.MieruTransport = model.MieruTransportOr(c.MieruTransport)
 		ns.MieruName = c.MieruName
 		ns.AnyTLSName = c.AnyTLSName
+		ns.MTProtoPort = c.MTProtoPort
+		ns.MTProtoName = c.MTProtoName
 	}
 	if ns.MieruPort == 0 {
 		// Nothing chosen: the node's own default, clear of its other listeners.
 		ns.MieruPort = clearOf(mieruHeldOn(&ns, nil), ns.MieruTransport, defaultMieruPort(nodeMieruSeed(n)))
+	}
+	if ns.MTProtoPort == 0 {
+		ns.MTProtoPort = clearOf(mtprotoHeldOn(&ns, nil), model.MieruTCP, defaultMTProtoPort(nodeMieruSeed(n)))
 	}
 	return &ns
 }
@@ -247,6 +254,9 @@ func (m *Manager) generateNodeState(n *model.Node, x *nodeStateInputs, users []m
 	if l := mieruListen(ns); l.Port > 0 {
 		connGuardPorts = append(connGuardPorts, l.Port)
 	}
+	if l := MTProtoListen(ns); l.Port > 0 {
+		connGuardPorts = append(connGuardPorts, l.Port)
+	}
 	// Custom inbounds get the same per-IP flood guard as the built-in lanes — they are
 	// public listeners on the same box, and leaving them out would make "add a custom
 	// inbound" quietly the way to bypass the guard. Only the TCP ones: the guard's
@@ -288,6 +298,9 @@ func (m *Manager) generateNodeState(n *model.Node, x *nodeStateInputs, users []m
 	}
 	if l := mieruListen(ns); l.Port > 0 {
 		meta.Mieru = &nodeapi.MieruState{Port: l.Port, Transport: l.Transport}
+	}
+	if l := MTProtoListen(ns); l.Port > 0 {
+		meta.MTProto = &nodeapi.MTProtoState{Port: l.Port, Domain: l.Domain, Front: l.Front}
 	}
 	var claimed bool
 	meta.AWG, claimed = m.nodeAWGStateClaimed(n, ns, users, in.access)

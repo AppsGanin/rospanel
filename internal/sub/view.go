@@ -42,9 +42,12 @@ type View struct {
 	RefCode string     `json:"ref_code,omitempty"`
 	AWG     []ViewAWG  `json:"awg"`
 	Turn    []ViewTurn `json:"turn"`
-	Brand   ViewBrand  `json:"brand"`
-	Devices Devices    `json:"devices"`
-	Billing *Billing   `json:"billing,omitempty"` // absent while billing shows nothing
+	// Telegram is one Telegram proxy per server the user may use: Link (tg://) adds it
+	// in one tap, WebLink is the same as an https://t.me address.
+	Telegram []ViewTelegram `json:"telegram"`
+	Brand    ViewBrand      `json:"brand"`
+	Devices  Devices        `json:"devices"`
+	Billing  *Billing       `json:"billing,omitempty"` // absent while billing shows nothing
 	// TGLink is the user bot's link that binds this account to the Telegram it is
 	// opened in — or, when TGLinked, moves it there. Absent while the bot or the
 	// switches in Settings → Telegram leave nothing to offer. Its code lasts 15
@@ -107,6 +110,14 @@ type ViewTurn struct {
 	Apps    []ViewApp `json:"apps"`
 }
 
+// ViewTelegram is one server's Telegram proxy.
+type ViewTelegram struct {
+	Name    string `json:"name"`
+	Link    string `json:"link"`
+	WebLink string `json:"web_link"`
+	QRURL   string `json:"qr_url"`
+}
+
 // ViewBrand is the operator's name and colours, for a page that should look like theirs.
 type ViewBrand struct {
 	Name    string `json:"name"`
@@ -131,7 +142,7 @@ func PageView(u model.User, local *model.Settings, servers []Server, billing Bil
 		ExpireAt: u.ExpireAt, HoldSeconds: u.HoldSeconds,
 		Texts:  ViewTexts{Used: d.Used, Limit: d.Limit, Expire: d.Expire, Reset: d.ResetText, LastSeen: d.LastSeen},
 		SubURL: d.SubURL, ShowConfigs: d.ShowConfigs, Maintenance: local.MaintenanceMode,
-		Apps: []ViewApp{}, Links: []ViewLink{}, AWG: []ViewAWG{}, Turn: []ViewTurn{}, Blocks: []ViewBlock{},
+		Apps: []ViewApp{}, Links: []ViewLink{}, AWG: []ViewAWG{}, Turn: []ViewTurn{}, Telegram: []ViewTelegram{}, Blocks: []ViewBlock{},
 		Brand:   ViewBrand{Name: d.BrandName, Accent: d.Brand, Text: d.Ink, Muted: d.Muted, Bg: d.Bg, Surface: d.Surface},
 		Devices: devices,
 	}
@@ -151,6 +162,9 @@ func PageView(u model.User, local *model.Settings, servers []Server, billing Bil
 	}
 	for _, a := range d.AWG {
 		v.AWG = append(v.AWG, ViewAWG{Name: a.Label, ConfURL: a.ConfURL, QRURL: a.QRURL})
+	}
+	for _, c := range d.Telegram {
+		v.Telegram = append(v.Telegram, ViewTelegram{Name: c.Label, Link: string(c.Link), WebLink: c.WebLink, QRURL: c.QRURL})
 	}
 	for _, t := range d.Turn {
 		vt := ViewTurn{Name: t.Label, Peer: t.Peer, Link: t.Link, ConfURL: t.ConfURL, Apps: []ViewApp{}}

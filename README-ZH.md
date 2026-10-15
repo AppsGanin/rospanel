@@ -235,7 +235,7 @@ DPI 设备无需看到握手即可匹配——同时为全部四种消息类型�
 当证书受信任时（域名或 Let's Encrypt IP 证书），订阅会将其下发给支持导入的客户端——Shadowrocket（作为 `http2://`）、
 v2rayN、Karing、Throne、Exclave。
 
-**mieru** 是一条使用独立 TCP 端口的内置通道，端口自动选择（请在服务器防火墙中放行）。登录名为 `u<id>`，
+**mieru** 是一条使用独立 TCP 端口的内置通道，端口自动选择。登录名为 `u<id>`，
 密码为用户的 UUID；路由、流量统计、限制和断开与其他通道一致。订阅会将其下发给支持导入的客户端——
 对于版本表明其内核已支持 mieru 的客户端，下发 Clash 配置（mihomo 本身、FlClash、FlClashX、Koala Clash、
 Clash Verge Rev、Mihomo Party、Sparkle、ClashMetaForAndroid、ClashMi）；对于 Shadowrocket、Throne、Exclave 和 Karing，
@@ -244,6 +244,15 @@ Clash Verge Rev、Mihomo Party、Sparkle、ClashMetaForAndroid、ClashMi）；�
 **AnyTLS** 是位于 VLESS-TCP-TLS 端口上的内置通道，与其共用证书和伪装站点；密码为用户的 UUID。
 当证书受信任时，它会下发给 sing-box 客户端、Clash 配置（已支持它的 mihomo 内核）、v2rayN、Shadowrocket、
 Throne、Exclave、Karing 和 NekoBox。
+
+**MTProto（Telegram 代理）** 是一条使用独立
+TCP端口的内置通道，端口自动选择，默认开启：Telegram 本身通过服务器连接，无需 VPN 应用。采用
+fakeTLS，每个用户的密钥由其 UUID 派生——被停用的用户随之失去，重置 UUID
+即更换。密钥中写的是服务器的域名（其SNI
+或主机名），没有域名时使用指向其地址的名称（`<ip>.sslip.io`）——不用其他网站的名称，DPI 会拦截那样的
+SNI；该名称在首次启动时保存，只能在“连接”中更改，因为用户添加的每个代理都带有它。不是代理客户端的连接会被转交给该网
+站。流量经由 Xray发出，路由、计量、限制和断开与其他通道相同。订阅页面为每台服务器提供代理：二维码、“添加到
+Telegram”和t.me 链接。
 
 
 **TURN-VK（通过通话传输的 WireGuard）** *（实验性功能：可能在未来版本中变更或移除）* 是一种自定义入站协议，
@@ -364,7 +373,7 @@ sing-box 模板在保存时会被拒绝；之前已保存的此类模板会被�
 **停止响应的服务器**默认仍保留在订阅中：节点每次更新都会短暂掉线，而恰好在那一分钟刷新的客户端会丢失该服务器，
 直到下一次刷新。要隐藏此类服务器以及 Xray 已停止的服务器，请开启*设置 → 订阅 → 离线时隐藏服务器*。
 
-**故障通道**——无法占用其端口的 AmneziaWG、mieru 或 TURN 中继——会在两分钟后从订阅中移除，恢复后立即重新加入。
+**故障通道**——无法占用其端口的 AmneziaWG、mieru、MTProto 或 TURN 中继——会在两分钟后从订阅中移除，恢复后立即重新加入。
 服务器每分钟重试一次，通道移除和恢复时都会通知管理员。
 
 **服务器顺序**（*设置 → 订阅*）决定客户端首先看到哪台服务器——以及满载的服务器是否显示。每台服务器都有手动设置的

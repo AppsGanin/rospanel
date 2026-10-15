@@ -8,8 +8,8 @@ import (
 
 // The lanes behind the panel's own listeners — the TCP-TLS lane behind the front,
 // naive-in behind the NaiveProxy handler, mieru-in behind the mieru server, anytls-in
-// behind the AnyTLS one — listen on VLESSInnerAddr, NaiveInnerAddr, MieruInnerAddr and
-// AnyTLSInnerAddr:
+// behind the AnyTLS one, mtproto-in behind the Telegram proxy — listen on VLESSInnerAddr,
+// NaiveInnerAddr, MieruInnerAddr, AnyTLSInnerAddr and MTProtoInnerAddr:
 // abstract unix sockets on Linux (inner_linux.go), with no port to reserve or collide
 // with, nothing reachable from the network, and no file a crash can leave behind;
 // loopback ports elsewhere (inner_other.go), on a development box.

@@ -373,6 +373,12 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		listen, port := innerLaneListen(AnyTLSInnerAddr, inbounds)
 		inbounds = append(inbounds, innerInbound(TagAnyTLS, listen, port, laneClients(set.AnyTLSEnabled, model.LaneAnyTLS, users, opts.allowsBuiltin), sniff))
 	}
+	// MTProto (its own port, see internal/mtproto): each Telegram connection enters
+	// here on its user's UUID, bound for a Telegram data centre.
+	if set.MTProtoEnabled {
+		listen, port := innerLaneListen(MTProtoInnerAddr, inbounds)
+		inbounds = append(inbounds, innerInbound(TagMTProto, listen, port, laneClients(set.MTProtoEnabled, model.LaneMTProto, users, opts.allowsBuiltin), sniff))
+	}
 
 	return &Config{
 		Log:   &Log{Loglevel: "warning"},
@@ -564,6 +570,7 @@ const (
 	TagNaive    = "naive-in"
 	TagMieru    = "mieru-in"
 	TagAnyTLS   = "anytls-in"
+	TagMTProto  = "mtproto-in"
 )
 
 // ProtoWireGuard is Xray's name for the protocol of a TURN-VK inbound.
@@ -645,6 +652,15 @@ func AnyTLSClients(cfg *Config) ([]VLESSClient, string) { return InnerClients(cf
 
 // AnyTLSClientsRaw is AnyTLSClients for a config as JSON.
 func AnyTLSClientsRaw(data []byte) ([]VLESSClient, string) { return InnerClientsRaw(data, TagAnyTLS) }
+
+// MTProtoClients are mtproto-in's clients in cfg — who internal/mtproto lets in — and
+// the address it listens on ("" when the lane is off).
+func MTProtoClients(cfg *Config) ([]VLESSClient, string) { return InnerClients(cfg, TagMTProto) }
+
+// MTProtoClientsRaw is MTProtoClients for a config as JSON.
+func MTProtoClientsRaw(data []byte) ([]VLESSClient, string) {
+	return InnerClientsRaw(data, TagMTProto)
+}
 
 // InnerClients are the clients of the inner lane inbound tagged tag in cfg, and the
 // address it listens on ("" when the lane is off).
@@ -1069,6 +1085,10 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 		listen, port := InnerListen(AnyTLSInnerAddr)
 		in = append(in, Inbound{Tag: TagAnyTLS, Listen: listen, Port: port, Protocol: "vless", Settings: VLESSInboundSettings{Clients: ac, Decryption: "none"}})
 	}
+	if tc := laneClients(set.MTProtoEnabled, model.LaneMTProto, users, allowBuiltin); len(tc) > 0 {
+		listen, port := InnerListen(MTProtoInnerAddr)
+		in = append(in, Inbound{Tag: TagMTProto, Listen: listen, Port: port, Protocol: "vless", Settings: VLESSInboundSettings{Clients: tc, Decryption: "none"}})
+	}
 	if len(users) == 0 {
 		return in
 	}
@@ -1163,6 +1183,9 @@ func EnabledInboundTags(set *model.Settings, custom []model.Inbound) []string {
 	}
 	if set.AnyTLSEnabled {
 		tags = append(tags, TagAnyTLS)
+	}
+	if set.MTProtoEnabled {
+		tags = append(tags, TagMTProto)
 	}
 	for _, c := range custom {
 		if c.Protocol == model.InbHysteria || c.Protocol == model.InbTurnVK {

@@ -35,6 +35,9 @@ func (a *Agent) syncHostFW(data []byte, m nodeapi.NodeMeta, front int) {
 		}
 		s.Ports = append(s.Ports, p)
 	}
+	if m.MTProto != nil && m.MTProto.Port > 0 {
+		s.Ports = append(s.Ports, hostfw.TCP(m.MTProto.Port))
+	}
 	for _, r := range m.TurnRelays {
 		s.Ports = append(s.Ports, hostfw.UDP(r.Port))
 	}

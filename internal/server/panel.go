@@ -108,6 +108,10 @@ func makeUserView(u model.User, set *model.Settings, userBotUsername string, cus
 	if link.MieruOn(set) && access.AllowsBuiltin(model.LocalNodeID, model.LaneMieru) {
 		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoMieru, &u), link.Mieru(u, set)})
 	}
+	// The Telegram proxy: the link that adds it to Telegram, not a VPN client's.
+	if link.MTProtoOn(set) && access.AllowsBuiltin(model.LocalNodeID, model.LaneMTProto) {
+		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoMTProto, &u), link.MTProto(u, set)})
+	}
 	for _, in := range custom {
 		if !access.AllowsInbound(in.ID) {
 			continue
@@ -157,6 +161,12 @@ func (rt *Router) applyTLSHints(set *model.Settings) {
 	if set.MieruEnabled {
 		if up, _ := rt.mgr.MieruStatus(); !up {
 			set.MieruEnabled = false
+		}
+	}
+	// The Telegram proxy likewise.
+	if set.MTProtoEnabled {
+		if up, _ := rt.mgr.MTProtoStatus(); !up {
+			set.MTProtoEnabled = false
 		}
 	}
 	set.CertSHA256 = rt.mgr.CertPinSHA256()

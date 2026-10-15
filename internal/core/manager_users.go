@@ -709,7 +709,8 @@ func (m *Manager) RotateSubToken(ctx context.Context, id int64) (*model.User, er
 // refresh. The old keys stop working on the master and the nodes with the next sync,
 // and connections open on them are cut as for a removed user — theirs alone: Hysteria2
 // puts the user back under an alias of their email (xray placeUsers), mieru closes the
-// connections that carried them (mieru rawConns).
+// connections that carried them (mieru rawConns). Their Telegram proxy secret derives from
+// the UUID too: the proxy has to be added again, from the subscription page.
 func (m *Manager) ResetUserUUID(ctx context.Context, id int64) (*model.User, error) {
 	password, err := auth.RandomPassword()
 	if err != nil {

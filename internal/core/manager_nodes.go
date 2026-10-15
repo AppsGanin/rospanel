@@ -45,6 +45,9 @@ func (m *Manager) CreateNode(name, host string) (*model.Node, error) {
 	if errors.Is(err, store.ErrNodeNameTaken) {
 		return nil, invalidCode("err.nodeNameTaken", "нода с таким названием уже есть — имя должно быть уникальным")
 	}
+	if err == nil {
+		m.claimNodeMTProtoDomain(n)
+	}
 	return n, err
 }
 
@@ -241,6 +244,10 @@ func (m *Manager) NodeConnectionsInfo(id int64) (*ConnectionsStatus, error) {
 	st.MieruError = m.nodeMieruErr[id]
 	m.nodeGeoMu.Unlock()
 	st.MieruRunning = n.ServesMieru && st.MieruError == "" && derefBool(n.MieruEnabled)
+	m.nodeGeoMu.Lock()
+	st.MTProtoError = m.nodeMTProtoErr[id]
+	m.nodeGeoMu.Unlock()
+	st.MTProtoRunning = n.ServesMTProto && st.MTProtoError == "" && derefBool(n.MTProtoEnabled)
 	return st, nil
 }
 
@@ -347,6 +354,30 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 	if err != nil {
 		return err
 	}
+	curMTProtoPort := 0
+	if n.Connections != nil {
+		curMTProtoPort = n.Connections.MTProtoPort
+	}
+	if curMTProtoPort == 0 {
+		curMTProtoPort = nodeSettings(masterSet, n).MTProtoPort // the default the node has been told so far
+	}
+	mtprotoOn, mtprotoAsked := u.Protocols["mtproto"]
+	if !mtprotoAsked {
+		mtprotoOn = derefBool(n.MTProtoEnabled)
+	}
+	mtprotoHeld := mtprotoHeldOn(withConnPorts(*nodeSettings(masterSet, n), u, awgPort), nodeCustom)
+	if mieruOn && mieruPort > 0 {
+		mtprotoHeld.HoldTCP(mieruPort, "mieru")
+	}
+	mtprotoPort, err := resolveMTProtoPort(u.MTProtoPort, mtprotoOn, derefBool(n.MTProtoEnabled),
+		curMTProtoPort, mtprotoHeld, false)
+	if err != nil {
+		return err
+	}
+	mtprotoDomain, err := resolveMTProtoDomain(u.MTProtoDomain)
+	if err != nil {
+		return err
+	}
 	if err := m.store.SetNodeProtocols(id,
 		u.Protocols["vless"], u.Protocols["hysteria2"], u.Protocols["reality"]); err != nil {
 		return err
@@ -368,6 +399,23 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 	if on, ok := u.Protocols["anytls"]; ok {
 		if err := m.store.SetNodeAnyTLSEnabled(id, on); err != nil {
 			return err
+		}
+	}
+	if mtprotoAsked {
+		if err := m.store.SetNodeMTProtoEnabled(id, mtprotoOn); err != nil {
+			return err
+		}
+	}
+	if u.MTProtoDomainReset {
+		mtprotoDomain = nodeSettings(masterSet, n).MTProtoAutoDomain()
+	}
+	if mtprotoDomain != "" && mtprotoDomain != n.MTProtoDomain {
+		if err := m.store.SetNodeMTProtoDomain(id, mtprotoDomain); err != nil {
+			return err
+		}
+	} else if mtprotoOn {
+		if cur, err := m.store.GetNode(id); err == nil {
+			m.claimNodeMTProtoDomain(cur) // switched on just now: keep what it runs with
 		}
 	}
 	if u.Protocols["awg"] || u.RegenAWGKeys {
@@ -421,6 +469,8 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		MieruTransport:     mieruTransport,
 		MieruName:          connNames["mieru"],
 		AnyTLSName:         connNames["anytls"],
+		MTProtoPort:        mtprotoPort,
+		MTProtoName:        nodeMTProtoName(n),
 	}
 	if err := m.store.SetNodeConnections(id, blob); err != nil {
 		return err
@@ -664,4 +714,12 @@ func validateDNSList(dns *string) error {
 		}
 	}
 	return nil
+}
+
+// nodeMTProtoName keeps a node's MTProto name as it was: the editor has no field for it.
+func nodeMTProtoName(n *model.Node) string {
+	if n.Connections != nil {
+		return n.Connections.MTProtoName
+	}
+	return ""
 }

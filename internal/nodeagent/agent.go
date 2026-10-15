@@ -35,6 +35,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/mieru"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/mtproto"
 	"github.com/AppsGanin/rospanel/internal/naive"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/nodestate"
@@ -293,6 +294,12 @@ type Agent struct {
 	mieruMu  sync.Mutex // a sync's Apply and a retry, so neither overwrites the other's outcome
 	mieruErr atomic.Pointer[string]
 
+	// mtproto is the Telegram proxy on the port the panel gives (internal/mtproto); its
+	// users are mtproto-in's clients in the config last applied.
+	mtproto    *mtproto.Server
+	mtprotoMu  sync.Mutex
+	mtprotoErr atomic.Pointer[string]
+
 	// anytls answers AnyTLS behind the decoy (internal/anytls); its users are
 	// anytls-in's clients in the config last applied.
 	anytls *anytls.Server
@@ -550,6 +557,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		awg:          awg.New(),
 		naive:        naive.New(xray.NaiveInnerAddr),
 		mieru:        mieru.New(xray.MieruInnerAddr),
+		mtproto:      mtproto.New(xray.MTProtoInnerAddr),
 		turn:         turnrelay.New(),
 		policyBlock:  ipblock.New(ipblock.TablePolicy),
 		ipBan:        ipblock.NewPermanent(ipblock.TableBanned),
@@ -1174,20 +1182,23 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 	a.retryAWG()
 	awgUp, awgErr := a.awgState()
 	a.retryMieru()
+	a.retryMTProto()
 	_ = a.turn.Retry() // still failing is reported below, as TurnDown
 	conns, connsMore := a.takeConns(connsChunkMax)
 	req := nodeapi.SyncRequest{
-		ConfigHash:  hash,
-		DeltaRev:    nodeapi.DeltaRev,
-		Naive:       true,
-		Mieru:       true,
-		AnyTLS:      a.anytls != nil,
-		MieruError:  a.mieruError(),
-		UpdateError: a.updateErr,
-		TurnDown:    a.turn.Failed(),
-		StateTag:    a.splitTag(),
-		NodeVersion: version.Version,
-		XrayVersion: a.sup.Version(),
+		ConfigHash:   hash,
+		DeltaRev:     nodeapi.DeltaRev,
+		Naive:        true,
+		Mieru:        true,
+		AnyTLS:       a.anytls != nil,
+		MieruError:   a.mieruError(),
+		MTProto:      a.mtproto != nil,
+		MTProtoError: a.mtprotoError(),
+		UpdateError:  a.updateErr,
+		TurnDown:     a.turn.Failed(),
+		StateTag:     a.splitTag(),
+		NodeVersion:  version.Version,
+		XrayVersion:  a.sup.Version(),
 		// Serving, not Running: a sync that happens to land during a deliberate
 		// restart (cert renewal, config push, operator bounce) must not report the
 		// node as down for a whole poll cycle over a one-second gap.
@@ -1407,6 +1418,7 @@ func (a *Agent) applyUsers(st *nodeapi.NodeState) error {
 	}
 	a.syncNaive(data)
 	a.syncMieru(data, m.Mieru)
+	a.syncMTProto(data, m.MTProto)
 	a.syncAnyTLS(data)
 	switch how {
 	case xray.RawUnchanged:
@@ -1608,6 +1620,9 @@ func (a *Agent) shutdown() {
 	if a.mieru != nil {
 		a.mieru.Close()
 	}
+	if a.mtproto != nil {
+		a.mtproto.Close()
+	}
 	a.turn.Close()
 	a.operaSup.Stop()
 	if a.redirectSrv != nil {
@@ -1698,6 +1713,9 @@ func (a *Agent) selfUpdate(parent context.Context) (swapped, again bool, why str
 	}
 	if a.mieru != nil {
 		a.mieru.Close()
+	}
+	if a.mtproto != nil {
+		a.mtproto.Close()
 	}
 	a.turn.Close()
 	return true, false, ""

@@ -401,6 +401,7 @@ func runServer(dataDir string) {
 	sup.Stop()
 	mgr.StopAWG()
 	mgr.StopMieru()
+	mgr.StopMTProto()
 	mgr.StopTurn()
 
 	// Let the background loops finish what they are in the middle of — a flush, a
@@ -558,6 +559,7 @@ func statsPollLoop(mgr *core.Manager) func(context.Context) {
 				}
 			})
 			safeTick("mieru retry", mgr.RetryMieru)
+			safeTick("mtproto retry", mgr.RetryMTProto)
 			safeTick("turn relay retry", mgr.RetryTurn)
 			safeTick("awg retry", mgr.RetryAWG)
 		})

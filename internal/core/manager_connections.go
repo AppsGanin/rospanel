@@ -80,6 +80,13 @@ type ConnectionsStatus struct {
 	MieruTransport string `json:"mieru_transport"`
 	MieruRunning   bool   `json:"mieru_running"`
 	MieruError     string `json:"mieru_error,omitempty"`
+
+	// MTProto (see internal/mtproto): its port, the domain its secrets carry, and —
+	// for the master — whether it listens.
+	MTProtoPort    int    `json:"mtproto_port"`
+	MTProtoDomain  string `json:"mtproto_domain"`
+	MTProtoRunning bool   `json:"mtproto_running"`
+	MTProtoError   string `json:"mtproto_error,omitempty"`
 }
 
 // ConnectionsInfo reports the master's enabled protocols and their connection
@@ -92,6 +99,7 @@ func (m *Manager) ConnectionsInfo() (*ConnectionsStatus, error) {
 	st := buildConnectionsStatus(set)
 	st.AWGRunning, st.AWGError = m.AWGStatus()
 	st.MieruRunning, st.MieruError = m.MieruStatus()
+	st.MTProtoRunning, st.MTProtoError = m.MTProtoStatus()
 	return st, nil
 }
 
@@ -130,6 +138,8 @@ func buildConnectionsStatus(set *model.Settings) *ConnectionsStatus {
 		AWGDNS:            set.AWGDNS,
 		MieruPort:         set.MieruPort,
 		MieruTransport:    model.MieruTransportOr(set.MieruTransport),
+		MTProtoPort:       set.MTProtoPort,
+		MTProtoDomain:     set.MTProtoDomainOr(),
 		Protocols: []ConnInfo{
 			{
 				Key:         "vless",
@@ -202,6 +212,16 @@ func buildConnectionsStatus(set *model.Settings) *ConnectionsStatus {
 				Port:        awgPortLabel(set.AWGPort),
 				Note:        "",
 				Enabled:     set.AWGEnabled,
+			},
+			{
+				Key:         "mtproto",
+				Name:        model.ProtoMTProto,
+				DisplayName: set.MTProtoName,
+				Transport:   "TCP (fake TLS)",
+				Security:    "MTProto + TLS",
+				Port:        awgPortLabel(set.MTProtoPort),
+				Note:        "",
+				Enabled:     set.MTProtoEnabled,
 			},
 		},
 	}
@@ -333,6 +353,13 @@ type ConnectionsUpdate struct {
 	// mieru: port (0 = keep / pick one) and transport ("TCP" or "UDP").
 	MieruPort      int    `json:"mieru_port"`
 	MieruTransport string `json:"mieru_transport"`
+
+	// MTProto: port (0 = keep / pick one) and the domain in its secrets ("" = keep;
+	// another one gives every user a new link). MTProtoDomainReset goes back to the
+	// default one (MTProtoAutoDomain).
+	MTProtoPort        int    `json:"mtproto_port"`
+	MTProtoDomain      string `json:"mtproto_domain"`
+	MTProtoDomainReset bool   `json:"mtproto_domain_reset,omitempty"`
 }
 
 // resolveObfs decides the Salamander key a save lands on: a freshly minted one when
@@ -524,6 +551,19 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	if err != nil {
 		return err
 	}
+	mtprotoHeld := mtprotoHeldOn(withConnPorts(*set, u, awgPort), localCustom)
+	if u.Protocols["mieru"] && mieruPort > 0 {
+		mtprotoHeld.HoldTCP(mieruPort, "mieru")
+	}
+	mtprotoPort, err := resolveMTProtoPort(u.MTProtoPort, u.Protocols["mtproto"], set.MTProtoEnabled,
+		set.MTProtoPort, mtprotoHeld, true)
+	if err != nil {
+		return err
+	}
+	mtprotoDomain, err := resolveMTProtoDomain(u.MTProtoDomain)
+	if err != nil {
+		return err
+	}
 	for key, en := range u.Protocols {
 		if err := m.store.SetProtocolEnabled(key, en); err != nil {
 			return err
@@ -534,6 +574,17 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	}
 	if err := m.store.SetMieruConfig(mieruPort, mieruTransport, connNames["mieru"]); err != nil {
 		return err
+	}
+	if err := m.store.SetMTProtoConfig(mtprotoPort, set.MTProtoName); err != nil {
+		return err
+	}
+	if u.MTProtoDomainReset {
+		mtprotoDomain = set.MTProtoAutoDomain()
+	}
+	if mtprotoDomain != "" && mtprotoDomain != set.MTProtoDomain {
+		if err := m.store.SetMTProtoDomain(mtprotoDomain); err != nil {
+			return err
+		}
 	}
 	if u.Protocols["awg"] || u.RegenAWGKeys {
 		if err := m.ensureMasterAWGIdentity(set, u.RegenAWGKeys); err != nil {
