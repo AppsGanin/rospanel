@@ -113,6 +113,11 @@ func Latest(ctx context.Context, repo string) (*Release, error) {
 	return rel, nil
 }
 
+// Complete reports whether the release carries what Apply needs. A release is
+// published before its binaries are uploaded to it, so for a minute or two the
+// newest one cannot be installed yet.
+func (r *Release) Complete() bool { return r.AssetURL != "" && r.ChecksumURL != "" }
+
 // IsNewer reports whether semver `latest` is strictly newer than `current`
 // (numeric, dot-separated; non-numeric or shorter parts compare conservatively).
 func IsNewer(latest, current string) bool {

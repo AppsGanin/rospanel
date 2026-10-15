@@ -1068,7 +1068,7 @@ system client's (`external_id`, from `POST /v1/signup`).
 GET $BASE/v1/summary          → users / online / traffic totals / xray + cert status
 GET $BASE/v1/system           → live CPU / RAM / disk / network / VPN throughput
 GET $BASE/v1/system/auto-update       → {"cron": "0 4 * * *", "nodes": true, "last_at": …, "last": "latest"}
-POST $BASE/v1/system/auto-update {"cron": "0 4 * * *", "nodes": true}  ("" turns it off)
+POST $BASE/v1/system/auto-update {"cron": "0 4 * * *"}  ("" turns it off; the nodes always follow)
 GET $BASE/v1/health/report    → full self-diagnostics (xray, config, TLS, geo, egress lanes)
 GET $BASE/v1/nodes/{id}/health → one server's diagnostics (id 0 = the master)
 GET $BASE/v1/nodes/{id}/logs   → a node's recent log lines

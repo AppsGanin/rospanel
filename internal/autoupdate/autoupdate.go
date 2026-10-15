@@ -118,7 +118,9 @@ func (s *Service) maybeUpdate(ctx context.Context) {
 		return
 	}
 	s.lastFired = minute
-	s.RunOnce(ctx, set.AutoUpdateNodes)
+	// The servers always follow: a panel that updated alone would leave its nodes a
+	// release behind until someone noticed.
+	s.RunOnce(ctx, true)
 }
 
 // RunOnce makes one attempt and records its outcome. On an install it ends by

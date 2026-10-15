@@ -95,6 +95,9 @@ type SyncRequest struct {
 	AnyTLS      bool   `json:"anytls,omitempty"`
 	MieruError  string `json:"mieru_error,omitempty"`
 	XrayRunning bool   `json:"xray_running"`
+	// UpdateError is why the self-update the operator asked for did not happen; empty
+	// once it does, or while there is nothing to report.
+	UpdateError string `json:"update_error,omitempty"`
 	// TurnDown is the TURN relay ports this node was told to run and could not listen
 	// on; the panel leaves their inbounds out of its subscriptions while they stay down.
 	TurnDown []int `json:"turn_down,omitempty"`
