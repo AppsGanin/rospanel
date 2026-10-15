@@ -2683,7 +2683,59 @@ export interface NodeView {
   // whether each is on there.
   bridges?: { bridge: string; name: string; enabled: boolean }[]
   proxy: SystemProxy // this server's system proxy (SOCKS/HTTP forward listeners)
+  // The last check of this server from other countries; absent until one ran.
+  reach?: ReachSummary
 }
+
+// Reachability from other countries (Globalping): a TCP ping to the server's main
+// port from probes in each country. A probe that failed on its own side is "failed"
+// and counts toward neither side.
+export interface ReachSummary {
+  at: number
+  countries: { code: string; ok: number; answered: number; blocked: boolean }[]
+}
+
+export interface ReachProbe {
+  country: string
+  city: string
+  network: string
+  asn: number
+  state: 'ok' | 'blocked' | 'failed'
+  rtt_ms?: number
+  resolved?: string
+}
+
+export interface ReachCountry {
+  code: string
+  ok: number
+  blocked: number
+  failed: number
+  probes: ReachProbe[]
+}
+
+export interface ReachReport {
+  server_id: number
+  host: string
+  port: number
+  at: number // 0 = not checked since the panel started
+  countries: ReachCountry[]
+}
+
+export interface ReachConfig {
+  countries: string[]
+  probes: number // per country
+  every: number // minutes between monitor rounds; 0 = only on demand
+  threshold: number // percent
+  has_token: boolean
+}
+
+export const getReachConfig = () => api<ReachConfig>('api/reach')
+// token: undefined keeps the stored one, "" clears it.
+export const setReachConfig = (c: Omit<ReachConfig, 'has_token'>, token?: string) =>
+  api<ReachConfig>('api/reach', { method: 'POST', body: JSON.stringify({ ...c, token }) })
+export const getNodeReach = (id: number) => api<ReachReport>(`api/nodes/${id}/reach`)
+export const checkNodeReach = (id: number) =>
+  api<ReachReport>(`api/nodes/${id}/reach`, { method: 'POST' })
 
 // SystemProxy is one server's forward proxy: SOCKS5 and/or HTTP listeners for
 // traffic that is NOT a VPN client (a scraper, a bot, another panel chaining its

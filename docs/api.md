@@ -549,6 +549,10 @@ enabled node automatically, and each server can be edited independently.
 | `POST` | `/v1/nodes/{id}/proxy` | Configure that server's system proxy (`id` 0 = the master). |
 | `POST` | `/v1/nodes/{id}/placement` | Edit that server's placement and traffic cap (`id` 0 = the master). |
 | `GET` | `/v1/nodes/{id}/health` | One server's self-diagnostics. |
+| `GET` | `/v1/nodes/{id}/reach` | A server's last check from other countries (Globalping; `at` 0 = not checked yet). |
+| `POST` | `/v1/nodes/{id}/reach` | Check a server from other countries now (takes up to a minute). |
+| `GET` | `/v1/reach` | Countries, probes per country, monitor interval and threshold of that check. |
+| `POST` | `/v1/reach` | Set them; `token` (Globalping) omitted keeps the stored one, `""` clears it. |
 | `GET` | `/v1/nodes/{id}/logs` | A node's recent log lines. |
 
 **Register a node** — body `{ "name": "NL #1", "host": "nl1.example.com" }`. The
@@ -1071,6 +1075,8 @@ GET $BASE/v1/system/auto-update       → {"cron": "0 4 * * *", "nodes": true, "
 POST $BASE/v1/system/auto-update {"cron": "0 4 * * *"}  ("" turns it off; the nodes always follow)
 GET $BASE/v1/health/report    → full self-diagnostics (xray, config, TLS, geo, egress lanes)
 GET $BASE/v1/nodes/{id}/health → one server's diagnostics (id 0 = the master)
+POST $BASE/v1/nodes/{id}/reach → {"host": …, "port": 443, "countries": [{"code": "RU", "ok": 9, "blocked": 1, "failed": 0, "probes": […]}]}
+POST $BASE/v1/reach {"countries": ["RU", "CN", "IR"], "probes": 10, "every": 60, "threshold": 50}  (every 0 = only on demand)
 GET $BASE/v1/nodes/{id}/logs   → a node's recent log lines
 GET $BASE/v1/backup/info       → what a backup taken now would contain
 GET $BASE/v1/backup            → download that backup (.tar.gz body, not JSON)

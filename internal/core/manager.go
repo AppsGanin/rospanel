@@ -466,6 +466,11 @@ type Manager struct {
 	// refreshes it and the subscription path reads it (see manager_node_traffic.go).
 	nodeTraffic nodeTrafficCache
 	nodeAlerts  map[int64]*nodeAlertState
+
+	// reach is the reachability monitor's state (manager_reach.go); reachAPI points it
+	// at another Globalping endpoint ("" = the real one), for tests.
+	reach    reachState
+	reachAPI string
 }
 
 // nodeLogEntry is a node's last-reported log tail.
@@ -560,6 +565,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	// invisible until something it writes to has already been torn down.
 	m.runAsync(func() { m.guard.cleanupLoop(m.done) })
 	m.runAsync(m.nodeWatchLoop)
+	m.runAsync(m.reachLoop)
 	m.runAsync(m.reconcileLoop)
 	m.runAsync(m.proxyLoop)
 	m.runAsync(m.geoLoop)         // auto-refresh geo databases on the operator's cadence

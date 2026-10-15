@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -71,6 +72,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	var subShowConfigs, statusEn, maintenanceMode, probeDetect, watchdogEnabled int
 	var probeBlock int
 	var routingCfg, subRulesJSON, subDPIJSON string
+	var reachCountries string
 	var masterHideFull, masterHideOver, awgEn, naiveEn, mieruEn, anytlsEn, hideOffline, subHappCrypt, subTGBind, subTGRebind, subShowClash, tgMailingSwitch int
 	var awgParamsJSON, connPolicyJSON string
 	var walletEn, refFirstOnly, winbackEn, autoUpdateNodes, blacklistEn, planChange int
@@ -131,7 +133,8 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       sub_page_url, sub_show_clash, legal_path, tg_mailing_switch,
 		       naive_enabled, naive_name,
 		       mieru_enabled, mieru_port, mieru_transport, mieru_name,
-		       anytls_enabled, anytls_name
+		       anytls_enabled, anytls_name,
+		       reach_countries, reach_probes, reach_every, reach_threshold, reach_token
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -192,6 +195,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&naiveEn, &st.NaiveName,
 		&mieruEn, &st.MieruPort, &st.MieruTransport, &st.MieruName,
 		&anytlsEn, &st.AnyTLSName,
+		&reachCountries, &st.Reach.Probes, &st.Reach.Every, &st.Reach.Threshold, &st.Reach.Token,
 	)
 	if err != nil {
 		return nil, err
@@ -234,6 +238,8 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		_ = json.Unmarshal([]byte(trafficPacksJSON), &st.TrafficPacks)
 	}
 	st.AWGPrivateKey = decField(st.AWGPrivateKey)
+	st.Reach.Token = decField(st.Reach.Token)
+	st.Reach.Countries = splitCountries(reachCountries)
 	if awgParamsJSON != "" {
 		_ = json.Unmarshal([]byte(awgParamsJSON), &st.AWGParams)
 	}
@@ -867,6 +873,25 @@ func (s *Store) SetAutoUpdate(cron string, nodes bool) error {
 func (s *Store) SetAutoUpdateResult(at int64, result string) error {
 	_, err := s.db.Exec(`UPDATE settings SET auto_update_last_at = ?, auto_update_last = ? WHERE id = 1`, at, result)
 	return err
+}
+
+// SetReach stores the reachability settings (see model.ReachSettings).
+func (s *Store) SetReach(r model.ReachSettings) error {
+	_, err := s.db.Exec(`UPDATE settings SET reach_countries = ?, reach_probes = ?, reach_every = ?,
+		reach_threshold = ?, reach_token = ?, updated_at = unixepoch() WHERE id = 1`,
+		strings.Join(r.Countries, ","), r.Probes, r.Every, r.Threshold, encField(r.Token))
+	return err
+}
+
+// splitCountries reads the stored comma-separated country list.
+func splitCountries(s string) []string {
+	out := []string{}
+	for _, c := range strings.Split(s, ",") {
+		if c = strings.TrimSpace(c); c != "" {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // SetTelegramMenuURL records the address the user bot's menu button was pointed at.

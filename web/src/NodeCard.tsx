@@ -28,6 +28,7 @@ import {
   IconButton,
   IconDots,
   IconGear,
+  IconGlobe,
   IconPulse,
   IconRestart,
   IconTerminal,
@@ -43,6 +44,7 @@ import { MasterSettingsDialog } from "./MasterSettingsDialog";
 import { NodeSettingsDialog } from "./NodeSettingsDialog";
 import { useCan } from "./role";
 import { agentSkew, nodeState, serverName } from "./NodeStatus";
+import { ReachBadges, ReachDialog } from "./ReachPanel";
 
 function fmtSeen(unix: number): string {
   if (!unix) return i18n.t("nodes.neverJoined");
@@ -78,6 +80,7 @@ export function NodeCard({
   decoys,
   geo,
   panelVersion,
+  reachOn,
   servers,
   onChanged,
   onRegen,
@@ -87,6 +90,8 @@ export function NodeCard({
   decoys: string[];
   geo: GeoCategories;
   panelVersion: string;
+  // Whether the check from other countries is on (its settings list countries).
+  reachOn: boolean;
   // Every server, for a cascade lane's exits (CascadeServer).
   servers?: CascadeServer[];
   onChanged: () => void;
@@ -106,6 +111,7 @@ export function NodeCard({
   const [showingLogs, setShowingLogs] = useState(false);
   const [showingConfig, setShowingConfig] = useState(false);
   const [showingHealth, setShowingHealth] = useState(false);
+  const [showingReach, setShowingReach] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removeCreds, setRemoveCreds] = useState<StepUp>(EMPTY_STEP_UP);
@@ -265,6 +271,11 @@ export function NodeCard({
               <IconPulse size={16} />
             </IconButton>
           )}
+          {canServers && reachOn && (
+            <IconButton title={t("reach.cardAction")} onClick={() => setShowingReach(true)}>
+              <IconGlobe size={16} />
+            </IconButton>
+          )}
           {/* The generated config carries the server's private keys: servers.manage. */}
           {canManage && (
             <IconButton title={t("xray.configTitle")} onClick={() => setShowingConfig(true)}>
@@ -366,6 +377,24 @@ export function NodeCard({
               </span>
               {sublineTail && ` · ${sublineTail}`}
             </span>
+            {/* At least one badge's height whether or not the server has been checked, so
+                the card does not grow when the first badges arrive; more countries wrap. */}
+            {canServers && reachOn && (
+              <span className="flex min-h-5 items-center">
+                {node.reach && node.reach.countries.length > 0 ? (
+                  <ReachBadges summary={node.reach} onClick={() => setShowingReach(true)} />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowingReach(true)}
+                    className="flex items-center gap-1 text-[11px] text-ink-muted transition hover:text-accent"
+                  >
+                    <IconGlobe size={12} />
+                    {t("reach.cardAction")}
+                  </button>
+                )}
+              </span>
+            )}
           </span>
 
           <span className="flex shrink-0 flex-col items-end lg:order-3 lg:ms-auto">
@@ -443,6 +472,9 @@ export function NodeCard({
       >
         <HealthPanel nodeId={node.id} />
       </Modal>
+      {showingReach && (
+        <ReachDialog node={node} onClose={() => setShowingReach(false)} onChecked={onChanged} />
+      )}
       {showingConfig && (
         <XrayConfigView
           nodeId={node.id}

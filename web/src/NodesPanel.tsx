@@ -6,6 +6,7 @@ import {
   checkUpdate,
   getGeoCategories,
   getMe,
+  getReachConfig,
   getSettings,
   listNodes,
   updateAllNodes,
@@ -20,6 +21,7 @@ import { reloadOnVersion } from "./update";
 import { useCan } from "./role";
 import { AddNodeDialog, InstallCommandModal } from "./AddNodeDialog";
 import { NodeCard } from "./NodeCard";
+import { ReachSettingsDialog } from "./ReachPanel";
 import { agentSkew, cmpVersion, serverName } from "./NodeStatus";
 
 export function NodesPanel() {
@@ -34,6 +36,9 @@ export function NodesPanel() {
   // the master and every node — one panel-side geosite/geoip).
   const [geo, setGeo] = useState<GeoCategories>({ geosite: [], geoip: [], iplist: [] });
   const [adding, setAdding] = useState(false);
+  const [reachSettings, setReachSettings] = useState(false);
+  // The check from other countries is off while its settings list no countries.
+  const [reachOn, setReachOn] = useState(false);
   const [installCmd, setInstallCmd] = useState<string | null>(null);
   const [panelVersion, setPanelVersion] = useState("");
   // The newest release, and the one the master could update to when it is behind.
@@ -57,6 +62,10 @@ export function NodesPanel() {
     getMe()
       .then((m) => setPanelVersion(m.version || ""))
       .catch(() => {});
+    if (canServers)
+      getReachConfig()
+        .then((c) => setReachOn(c.countries.length > 0))
+        .catch(() => {});
     if (canUpdate)
       checkUpdate()
         .then((u) => {
@@ -180,6 +189,11 @@ export function NodesPanel() {
             {t("nodes.addNode")}
           </Button>
         )}
+        {canServers && (
+          <Button size="sm" variant="outline" color="gray" onClick={() => setReachSettings(true)}>
+            {t("reach.button")}
+          </Button>
+        )}
         {canUpdate && remoteCount > 0 && behind.length > 0 && (
           <Button size="sm" variant="outline" color="gray" onClick={() => updateNodes()}>
             {t("nodes.updateAll")}
@@ -214,6 +228,7 @@ export function NodesPanel() {
           decoys={decoys}
           geo={geo}
           panelVersion={panelVersion}
+          reachOn={reachOn}
           servers={nodes.map((s) => ({
             id: s.id,
             name: s.name,
@@ -262,6 +277,17 @@ export function NodesPanel() {
             setAdding(false);
             load();
           }}
+        />
+      )}
+      {reachSettings && (
+        <ReachSettingsDialog
+          // What a monitor round checks: the master with an address, and every node
+          // in service and connected.
+          servers={
+            nodes.filter((n) => (n.is_local ? !!n.host : n.enabled && n.joined && !!n.host)).length
+          }
+          onClose={() => setReachSettings(false)}
+          onSaved={(c) => setReachOn(c.countries.length > 0)}
         />
       )}
       {installCmd && (

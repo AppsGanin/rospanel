@@ -451,6 +451,8 @@ var en = map[string]string{
 	"notify.pluginPaused":        "⏸ <b>Plugin %s paused</b>\n%s\nTurn it back on in Settings → Plugins once the cause is fixed.",
 	"notify.pluginRetrying":      "⏸ <b>Plugin %s stopped</b>\n%s\nThe panel tries it again in 5 minutes, then less often.",
 	"notify.nodeBack":            "✅ <b>Contact with the server restored</b>",
+	"notify.reachLost":           "🚫 <b>Server unreachable from %s</b>\n%s\n%d of %d Globalping probes got through.",
+	"notify.reachBack":           "✅ <b>Server reachable again from %s</b>\n%s\n%d of %d Globalping probes got through.",
 	"notify.nodeXrayCrashed":     "⚠️ <b>Xray crashed</b>\n%s\nThe agent restarts the process automatically.",
 	"notify.nodeXrayBack":        "✅ <b>Xray is running again</b>",
 	"notify.nodeCertRenewed":     "🔒 <b>TLS certificate renewed</b>\n%s",

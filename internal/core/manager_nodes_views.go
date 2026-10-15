@@ -111,6 +111,9 @@ type NodeView struct {
 	// subscription orders servers by; see model.Placement and sub.Order.
 	model.Placement
 	OnlineUsers int `json:"online_users"`
+	// Reach is the last check of this server from other countries (nil ⇒ never
+	// checked since the panel started).
+	Reach *ReachSummary `json:"reach,omitempty"`
 }
 
 // NodeViews returns the local server (node 0) followed by every remote node, each
@@ -246,6 +249,10 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			v.HostUptime = h.HostUptime
 		}
 		views = append(views, v)
+	}
+	reach := m.reachSummaries(set.Reach.Threshold)
+	for i := range views {
+		views[i].Reach = reach[views[i].ID]
 	}
 	return views, nil
 }

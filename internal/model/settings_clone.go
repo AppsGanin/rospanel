@@ -23,6 +23,7 @@ func (s *Settings) Clone() *Settings {
 	c.BillingPeriods = slices.Clone(s.BillingPeriods)
 	c.TrafficPacks = slices.Clone(s.TrafficPacks)
 	c.ConnPolicy.Countries = slices.Clone(s.ConnPolicy.Countries)
+	c.Reach.Countries = slices.Clone(s.Reach.Countries)
 	c.Routing = s.Routing.clone()
 	return &c
 }
