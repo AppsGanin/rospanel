@@ -2163,7 +2163,9 @@ const ru = {
   },
 
   dns: {
-    presets: "Готовые наборы",
+    groupGeneral: "Обычные",
+    groupAdblock: "Блокировка рекламы",
+    groupUnblock: "Обход геоблокировки",
     customServers: "Свои серверы",
     customHint: "По одному в строке: IP, localhost или URL (https://, h2c://, tcp://, их варианты +local, quic+local://). Серверы https://, h2c:// и tcp://, заданные именем хоста, Xray опрашивает после остальных.",
   },

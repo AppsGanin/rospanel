@@ -2165,7 +2165,9 @@ const zh: Dict = {
   },
 
   dns: {
-    presets: "预设",
+    groupGeneral: "常规",
+    groupAdblock: "拦截广告",
+    groupUnblock: "绕过地区限制",
     customServers: "自定义服务器",
     customHint: "每行一个：IP、localhost 或 URL（https://、h2c://、tcp://、它们的 +local 形式、quic+local://）。以主机名指定的 https://、h2c:// 和 tcp:// 服务器排在其余服务器之后查询。",
   },

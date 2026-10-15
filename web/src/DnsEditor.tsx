@@ -1,24 +1,42 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Checkbox, SettingRow, Textarea } from "./ui";
+import { cn, MICRO, Mono, SettingRow, Textarea, useReadOnly } from "./ui";
 
-// DnsPreset contributes its servers IN ORDER — primary first, then the secondary —
-// so ticking one preset gives redundancy in a single click. Xray queries them in the
-// listed order.
+// A provider offers one or more variants — plain addresses, DoH, a regional DoH — and
+// each variant is a preset that contributes its servers IN ORDER (primary first, then
+// the secondary), so ticking one gives redundancy in a single click. Xray queries them
+// in the listed order.
 type DnsPreset = { key: string; label: string; servers: string[] };
-const POPULAR_DNS: DnsPreset[] = [
-  { key: "cloudflare", label: "Cloudflare — 1.1.1.1 / 1.0.0.1", servers: ["1.1.1.1", "1.0.0.1"] },
-  { key: "cloudflare-doh", label: "Cloudflare DoH", servers: ["https://cloudflare-dns.com/dns-query"] },
-  { key: "google", label: "Google — 8.8.8.8 / 8.8.4.4", servers: ["8.8.8.8", "8.8.4.4"] },
-  { key: "google-doh", label: "Google DoH", servers: ["https://dns.google/dns-query"] },
-  { key: "quad9", label: "Quad9 — 9.9.9.9 / 149.112.112.112", servers: ["9.9.9.9", "149.112.112.112"] },
-  { key: "adguard", label: "AdGuard — 94.140.14.14 / 94.140.15.15", servers: ["94.140.14.14", "94.140.15.15"] },
-  { key: "yandex", label: "Yandex — 77.88.8.8 / 77.88.8.1", servers: ["77.88.8.8", "77.88.8.1"] },
-  { key: "xbox-doh", label: "Xbox DNS — DoH", servers: ["https://xbox-dns.ru/dns-query"] },
-  { key: "xbox", label: "Xbox DNS — 111.88.96.50 / 111.88.96.51", servers: ["111.88.96.50", "111.88.96.51"] },
-  { key: "geohide-doh", label: "GeoHide — DoH", servers: ["https://dns.geohide.ru:444/dns-query"] },
-  { key: "geohide", label: "GeoHide — 45.155.204.190 / 37.230.192.51", servers: ["45.155.204.190", "37.230.192.51"] },
+type DnsGroup = "general" | "adblock" | "unblock";
+type DnsProvider = { name: string; group: DnsGroup; variants: DnsPreset[] };
+
+const ip = (key: string, ...servers: string[]): DnsPreset => ({ key, label: "IP", servers });
+const doh = (key: string, url: string, label = "DoH"): DnsPreset => ({ key, label, servers: [url] });
+
+const PROVIDERS: DnsProvider[] = [
+  { name: "Cloudflare", group: "general", variants: [ip("cloudflare", "1.1.1.1", "1.0.0.1"), doh("cloudflare-doh", "https://cloudflare-dns.com/dns-query")] },
+  { name: "Google", group: "general", variants: [ip("google", "8.8.8.8", "8.8.4.4"), doh("google-doh", "https://dns.google/dns-query")] },
+  { name: "Quad9", group: "general", variants: [ip("quad9", "9.9.9.9", "149.112.112.112"), doh("quad9-doh", "https://dns.quad9.net/dns-query")] },
+  { name: "AdGuard Unfiltered", group: "general", variants: [ip("adguard-unfiltered", "94.140.14.140", "94.140.14.141"), doh("adguard-unfiltered-doh", "https://unfiltered.adguard-dns.com/dns-query")] },
+  { name: "Yandex", group: "general", variants: [ip("yandex", "77.88.8.8", "77.88.8.1"), doh("yandex-doh", "https://common.dot.dns.yandex.net/dns-query")] },
+  { name: "AdGuard", group: "adblock", variants: [ip("adguard", "94.140.14.14", "94.140.15.15"), doh("adguard-doh", "https://dns.adguard-dns.com/dns-query")] },
+  {
+    name: "GeoHide",
+    group: "unblock",
+    variants: [
+      ip("geohide", "159.194.200.33", "37.230.192.51"),
+      doh("geohide-doh", "https://geohide.ru/dns-query"),
+      doh("geohide-eu-doh", "https://eu.geohide.ru/dns-query", "DoH EU"),
+      doh("geohide-us-doh", "https://us.geohide.ru/dns-query", "DoH US"),
+    ],
+  },
+  { name: "Comss", group: "unblock", variants: [ip("comss", "83.220.169.155", "212.109.195.93"), doh("comss-doh", "https://dns.comss.one/dns-query")] },
+  { name: "Malw", group: "unblock", variants: [ip("malw", "179.254.166.171", "164.5.224.81"), doh("malw-doh", "https://dns.malw.link/dns-query")] },
 ];
+
+const GROUPS: DnsGroup[] = ["general", "adblock", "unblock"];
+
+const POPULAR_DNS: DnsPreset[] = PROVIDERS.flatMap((p) => p.variants);
 
 // serversForKeys flattens the selected presets' servers in preset order, deduping
 // (a server can't appear twice in the Xray DNS list).
@@ -108,17 +126,47 @@ export function DnsEditor({
       st.custom,
     );
 
+  const groupTitle: Record<DnsGroup, string> = {
+    general: t("dns.groupGeneral"),
+    adblock: t("dns.groupAdblock"),
+    unblock: t("dns.groupUnblock"),
+  };
+
   return (
     <>
-      <SettingRow label={t("dns.presets")}>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {POPULAR_DNS.map((d) => (
-            <Checkbox
-              key={d.key}
-              checked={st.sel.includes(d.key)}
-              onChange={() => toggle(d.key)}
-              label={d.label}
-            />
+      <SettingRow>
+        <div className="flex flex-col gap-3">
+          {GROUPS.map((g) => (
+            <div key={g}>
+              <p className={cn(MICRO, "mb-1.5")}>{groupTitle[g]}</p>
+              <div className="divide-y divide-gray-100 rounded-xl border border-gray-200">
+                {PROVIDERS.filter((p) => p.group === g).map((p) => {
+                  const on = p.variants.some((v) => st.sel.includes(v.key));
+                  const addrs = p.variants.find((v) => v.label === "IP")?.servers;
+                  return (
+                    <div key={p.name} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2">
+                      {/* basis-44: room for the addresses, or the variants wrap below them
+                          rather than pressing them under the chips. */}
+                      <div className="min-w-0 flex-1 basis-44">
+                        <p className={cn("text-sm", on ? "font-semibold text-ink" : "text-ink")}>{p.name}</p>
+                        {addrs && <Mono className="block text-[11px] text-ink-muted">{addrs.join(" · ")}</Mono>}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {p.variants.map((v) => (
+                          <VariantChip
+                            key={v.key}
+                            label={v.label}
+                            title={v.servers.join("\n")}
+                            checked={st.sel.includes(v.key)}
+                            onToggle={() => toggle(v.key)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           ))}
         </div>
       </SettingRow>
@@ -132,5 +180,37 @@ export function DnsEditor({
         />
       </SettingRow>
     </>
+  );
+}
+
+// VariantChip switches one variant of a provider on or off.
+function VariantChip({
+  label,
+  title,
+  checked,
+  onToggle,
+}: {
+  label: string;
+  title: string;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  const ro = useReadOnly();
+  return (
+    <button
+      type="button"
+      aria-pressed={checked}
+      title={title}
+      disabled={ro}
+      onClick={onToggle}
+      className={cn(
+        "inline-flex h-7 items-center rounded-full border bg-white px-2.5 text-xs font-medium transition disabled:opacity-60",
+        checked
+          ? "border-accent text-accent"
+          : "border-gray-200 text-ink-muted hover:border-gray-300 hover:text-ink",
+      )}
+    >
+      {label}
+    </button>
   );
 }
