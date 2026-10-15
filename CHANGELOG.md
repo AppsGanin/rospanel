@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.7.0](https://github.com/AppsGanin/rospanel/compare/v5.6.0...v5.7.0) (2026-10-15)
+
+
+### Features
+
+* **i18n:** Persian, right to left ([f318d93](https://github.com/AppsGanin/rospanel/commit/f318d9358f7780057ce9b36be6834d2f5b0279aa))
+* **mtproto:** Telegram proxy on a port of its own ([d7c5c2a](https://github.com/AppsGanin/rospanel/commit/d7c5c2a82bb1fe24c6c9becc7265b25042e7ce66))
+* **reach:** check servers from other countries through Globalping ([c247167](https://github.com/AppsGanin/rospanel/commit/c24716790bb8945f961fd4310fb55232ab03c6b6))
+* **web:** the language picker in the top bar, and a row on the phone ([f12e496](https://github.com/AppsGanin/rospanel/commit/f12e4960653aace5e2a86b311ca558a846256bbd))
+
+
+### Bug Fixes
+
+* **mtproto:** bound the DC port to 16 bits and reuse one record buffer ([616313e](https://github.com/AppsGanin/rospanel/commit/616313e5409dd4c43393d79d4ba7ed7377e312b7))
+* **sub:** the Telegram proxy's Copy takes the tg:// link ([ee68384](https://github.com/AppsGanin/rospanel/commit/ee68384b88f22cda8f1340dda546bfbd5a22fa27))
+* **update:** offer a release only once its binaries are uploaded ([28b8a32](https://github.com/AppsGanin/rospanel/commit/28b8a32a84ed3a06625b0c11cd27d8d34e488e1e))
+
 ## [5.6.0](https://github.com/AppsGanin/rospanel/compare/v5.5.0...v5.6.0) (2026-10-15)
 
 
