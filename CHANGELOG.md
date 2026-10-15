@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.5.0](https://github.com/AppsGanin/rospanel/compare/v5.4.0...v5.5.0) (2026-10-15)
+
+
+### Features
+
+* **dns:** more presets, grouped by provider with IP/DoH variants ([7bb4c1f](https://github.com/AppsGanin/rospanel/commit/7bb4c1ff4f394b6312a55dff205af382c9b6ef18))
+
 ## [5.4.0](https://github.com/AppsGanin/rospanel/compare/v5.3.0...v5.4.0) (2026-10-14)
 
 
