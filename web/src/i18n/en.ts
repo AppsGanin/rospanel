@@ -2165,7 +2165,9 @@ const en: Dict = {
   },
 
   dns: {
-    presets: "Presets",
+    groupGeneral: "Standard",
+    groupAdblock: "Ad blocking",
+    groupUnblock: "Geo-unblocking",
     customServers: "Custom servers",
     customHint: "One per line: an IP, localhost or a URL (https://, h2c://, tcp://, their +local forms, quic+local://). https://, h2c:// and tcp:// servers named by a host are asked after the rest.",
   },

@@ -2074,7 +2074,9 @@ const ar: Dict = {
   },
 
   dns: {
-    presets: "مجموعات جاهزة",
+    groupGeneral: "عادية",
+    groupAdblock: "حظر الإعلانات",
+    groupUnblock: "تجاوز الحظر الجغرافي",
     customServers: "خوادم مخصصة",
     customHint: "واحد في كل سطر: IP أو localhost أو URL (https:// و h2c:// و tcp:// وصيغها +local و quic+local://). خوادم https:// و h2c:// و tcp:// المحددة باسم مضيف يستعلمها Xray بعد البقية.",
   },
