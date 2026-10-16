@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.8.0](https://github.com/AppsGanin/rospanel/compare/v5.7.0...v5.8.0) (2026-10-16)
+
+
+### Features
+
+* maintenance off subscriptions, scheduled broadcasts, self-service link and Telegram limits, monthly summary ([c9e7c12](https://github.com/AppsGanin/rospanel/commit/c9e7c12d229648dfab23cd6c1c076cb9d96fceb6))
+* **status:** incident timeline, subscription page notices, incident webhooks ([82810f5](https://github.com/AppsGanin/rospanel/commit/82810f5bf554ebd83b312c4b483e7fa53478d307))
+* **status:** incidents and maintenance on a redesigned status page ([f421a94](https://github.com/AppsGanin/rospanel/commit/f421a9478e9e3d189ea14028e99108e26540b6bc))
+* **sub:** switch the subscription page off ([ec67638](https://github.com/AppsGanin/rospanel/commit/ec67638fbc966b827bc4c7f9344eb1c2687ab2d4))
+* **xray:** pin Xray-core v26.10.10 ([111982d](https://github.com/AppsGanin/rospanel/commit/111982def45881c5d81e455cf5c0144bfe28d537))
+
+
+### Bug Fixes
+
+* **mieru:** keep accepting after an Accept error ([4b68919](https://github.com/AppsGanin/rospanel/commit/4b6891934d1e332ee6d1c20a80925145583d3ab0))
+* **stats:** keep the traffic counted before a restart ([eed8859](https://github.com/AppsGanin/rospanel/commit/eed885939918a49d0b0ba6ff2254be0ee0a6ceb4))
+
 ## [5.7.0](https://github.com/AppsGanin/rospanel/compare/v5.6.0...v5.7.0) (2026-10-15)
 
 
