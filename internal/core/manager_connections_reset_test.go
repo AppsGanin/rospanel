@@ -13,7 +13,7 @@ import (
 func TestResetNodeConnectionsRestoresTheFactoryState(t *testing.T) {
 	t.Parallel()
 	m := nodeTestManager(t)
-	syncedNode(t, m.store, "edge", "26.7.28")
+	syncedNode(t, m.store, "edge", "26.10.10")
 	nodes, err := m.store.ListNodes()
 	if err != nil || len(nodes) != 1 {
 		t.Fatalf("nodes: %v %v", nodes, err)

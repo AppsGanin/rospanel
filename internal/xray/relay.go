@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/extsub"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
@@ -70,7 +69,7 @@ func relayRouting(opts Options, vless, reality []VLESSClient) ([]Outbound, []Rou
 			continue
 		}
 		outTag := relayOutboundTag(r.ExtID)
-		o, ok := extsub.XrayOutbound(r.Link, outTag)
+		o, ok := linkOutbound(r.Link, outTag, opts.LegacyUDPHop)
 		if !ok {
 			continue // a link the panel read but cannot express is left out, not guessed at
 		}

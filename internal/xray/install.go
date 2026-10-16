@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -23,7 +24,7 @@ import (
 // Why pinned: Xray 26.3.27 shipped a broken Hysteria2 server-side auth handshake
 // (26.6.x fixes it). A floating "latest" can silently regress, so we pin an exact
 // release and its checksums.
-const PinnedVersion = "v26.7.28"
+const PinnedVersion = "v26.10.10"
 
 // VersionMatchesPinned reports whether a reported Xray version is the pinned
 // release, tolerating a leading "v": PinnedVersion carries it, but `xray version`
@@ -33,16 +34,42 @@ func VersionMatchesPinned(v string) bool {
 	return strings.TrimPrefix(v, "v") == strings.TrimPrefix(PinnedVersion, "v")
 }
 
+// ReadsUDPHopMask reports whether an Xray of version v ("26.9.30", a leading "v"
+// allowed) hops ports by the udp mask: 26.9.9 brought the mask and 26.9.30 fixed it.
+// An unknown version is taken as one that does not, since an older core refuses the
+// whole config over the mask, where a newer one only ignores the older form.
+func ReadsUDPHopMask(v string) bool {
+	parts := strings.Split(strings.TrimPrefix(strings.TrimSpace(v), "v"), ".")
+	if len(parts) < 3 {
+		return false
+	}
+	var n [3]int
+	for i := range n {
+		x, err := strconv.Atoi(parts[i])
+		if err != nil {
+			return false
+		}
+		n[i] = x
+	}
+	since := [3]int{26, 9, 30}
+	for i := range n {
+		if n[i] != since[i] {
+			return n[i] > since[i]
+		}
+	}
+	return true
+}
+
 // pinnedSHA256 is the SHA-256 of each platform's Xray release zip for
 // PinnedVersion, taken from XTLS's published <asset>.dgst files. The downloaded
 // archive is rejected if it doesn't match — this defends against a corrupted,
 // truncated, or substituted binary before it is extracted and run as root. Update
 // these together with PinnedVersion.
 var pinnedSHA256 = map[string]string{
-	"Xray-linux-64.zip":        "8195d909f1109b8f3d99eefe401a3c451d7bf4af71f24d3815420f77e5dd2a40",
-	"Xray-linux-arm64-v8a.zip": "f5698bb218ada3b4022db26fafc39601c5f53b46b19eb76c9616325985807501",
-	"Xray-macos-64.zip":        "812f7d9de6d3506795eabda2f6928ba301c632c3fe6fa39c52ea8e0ed9e4e244",
-	"Xray-macos-arm64-v8a.zip": "9b99a351febe31b7e0c7f22deeb1577a1da0b98aaa51aec7fd17832e68cf63d6",
+	"Xray-linux-64.zip":        "72a5fde819713a103c6fc26a87aa025c1518c918a34eba4bc38d64dc0728e5d9",
+	"Xray-linux-arm64-v8a.zip": "58e339e67827220175b3a1c6f66f48ccd086b79209f30ba1c0bcb47885d4c22a",
+	"Xray-macos-64.zip":        "f99119d4aa662ae2e9a2adf57eccf3dad1b43035ae2e06ccc3949c8256e33fd0",
+	"Xray-macos-arm64-v8a.zip": "7b1711eaeefd90f27082cf49c311aa57dad44ac13146faab3f0c1601158ea6c8",
 }
 
 // releaseAsset returns the XTLS release zip name for the current platform.

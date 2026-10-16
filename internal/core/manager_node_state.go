@@ -225,13 +225,21 @@ func nodeStructureKey(n *model.Node, x *nodeStateInputs, managerOpts xray.Option
 		// Built per node from other servers' settings (cascadeOpts), so not in opts.
 		Cascade map[string][]model.ProxyEndpoint
 		Bridges []xray.Bridge
-	}{x.geoGen, set, node, x.inbounds, x.relays, x.proxies, opts, xray.PinnedVersion, x.opts.Cascade, x.opts.Bridges}))
+		// The node's Xray version is left out above, but whether it reads the udp hop
+		// mask is not: the config is written for it (generateNodeState).
+		LegacyHop bool
+	}{x.geoGen, set, node, x.inbounds, x.relays, x.proxies, opts, xray.PinnedVersion, x.opts.Cascade, x.opts.Bridges, nodeLegacyHop(n)}))
 	if !d.ok {
 		return key, false
 	}
 	copy(key[:], d.h.Sum(nil))
 	return key, true
 }
+
+// nodeLegacyHop reports whether the node's Xray predates the udp hop mask. A node
+// that has not said which Xray it runs is given the older form: on a newer core it
+// only costs the hopping, the mask on an older one costs the whole config.
+func nodeLegacyHop(n *model.Node) bool { return !xray.ReadsUDPHopMask(n.XrayVersion) }
 
 // digester writes a canonical encoding of a value: every field, exported or not and
 // whatever its JSON tag says (keys and secrets are json:"-" and very much part of a

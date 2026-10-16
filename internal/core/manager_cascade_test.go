@@ -49,7 +49,7 @@ func cascadeFixture(t *testing.T) (*Manager, *model.Node) {
 	if err := m.store.SetProtocolEnabled("reality", true); err != nil {
 		t.Fatal(err)
 	}
-	syncedNode(t, m.store, "ru", "26.7.28")
+	syncedNode(t, m.store, "ru", "26.10.10")
 	nodes, _ := m.store.ListNodes()
 	n := &nodes[0]
 	yes := true
@@ -252,7 +252,7 @@ func TestNodeEditCannotSwitchOffAnExitsBridge(t *testing.T) {
 	t.Parallel()
 	m, entry := cascadeFixture(t)
 	// A second node, the exit of a cascade on the master over its REALITY.
-	syncedNode(t, m.store, "de", "26.7.28")
+	syncedNode(t, m.store, "de", "26.10.10")
 	nodes, _ := m.store.ListNodes()
 	var exit *model.Node
 	for i := range nodes {
