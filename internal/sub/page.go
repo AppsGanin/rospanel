@@ -139,6 +139,11 @@ type pageText struct {
 	AccessTitle    string
 	AccessHint     string
 	AccessCopy     string
+	RotateTitle    string
+	RotateLink     string
+	RotateHint     string
+	RotateConfirm  string
+	RotateFailed   string
 	TGBind         string
 	TGBindHint     string
 	TGChange       string
@@ -247,6 +252,11 @@ func text(lang i18n.Lang) pageText {
 		AccessTitle:    t("sub.accessTitle"),
 		AccessHint:     t("sub.accessHint"),
 		AccessCopy:     t("sub.accessCopy"),
+		RotateTitle:    t("sub.rotateTitle"),
+		RotateLink:     t("sub.rotateLink"),
+		RotateHint:     t("sub.rotateHint"),
+		RotateConfirm:  t("sub.rotateConfirm"),
+		RotateFailed:   t("sub.rotateFailed"),
 		TGBind:         t("sub.tgBind"),
 		TGBindHint:     t("sub.tgBindHint"),
 		TGChange:       t("sub.tgChange"),
@@ -895,12 +905,20 @@ func relTime(sec int64, lang i18n.Lang) string {
 type Access struct {
 	TGLink   string // the bot's link that binds this account to the Telegram that opens it
 	TGLinked bool   // already linked: the link moves it to another Telegram
+	// TGWait says when the Telegram may be changed instead of the link: it was moved
+	// more recently than the operator allows.
+	TGWait string
 	// Legal are the operator's documents the page links to at its foot.
 	Legal []LegalLink
 	// Blocks are what plugins add at the top of the page (internal/plugin).
 	Blocks []Block
 	// ThemeCSS is the theme plugin's stylesheet, applied over the page's own.
 	ThemeCSS string
+	// RotatePath is where the reader reissues their own link, "" when the operator
+	// does not allow it (Settings.SubSelfRotateHours); RotateWait says how often they
+	// may, in their language.
+	RotatePath string
+	RotateWait string
 	// Notices are the status page's incidents and maintenance the reader should know
 	// of: going on now, or due soon. StatusURL links to the page, "" when it is off.
 	Notices   []Notice

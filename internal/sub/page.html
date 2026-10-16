@@ -348,6 +348,14 @@
       .btn.alt:hover {
         background: color-mix(in srgb, var(--brand) 20%, transparent);
       }
+      /* Something that cannot be taken back: red whatever the brand colour is. */
+      .btn.danger {
+        background: #dc2626;
+        color: #fff;
+      }
+      .btn.danger:hover {
+        background: #b91c1c;
+      }
       .btn:disabled {
         opacity: 0.6;
         cursor: default;
@@ -1382,7 +1390,17 @@
           <a class="btn alt" style="margin-top: 14px" href="{{.Access.TGLink}}" target="_blank" rel="noopener noreferrer" onclick="return tgAccess(this, {{.Access.TGLinked}})">{{if .Access.TGLinked}}{{.L.TGChange}}{{else}}{{.L.TGBind}}{{end}}</a>
           {{if not .Access.TGLinked}}<p class="muted" style="margin: 6px 0 0">{{.L.TGBindHint}}</p>{{end}}
           {{end}}
+          {{if .Access.TGWait}}<p class="muted" style="margin: 14px 0 0">{{.Access.TGWait}}</p>{{end}}
         </div>
+
+        {{if .Access.RotatePath}}
+        <!-- Last, and apart: it breaks the link everywhere it was added. -->
+        <div class="card" id="rotate-card">
+          <div class="lbl" style="margin-bottom: 6px">{{.L.RotateTitle}}</div>
+          <p class="muted" style="margin: 0">{{.L.RotateHint}}</p>
+          <button class="btn danger" onclick="rotateLink(this)">{{.L.RotateLink}}</button>
+        </div>
+        {{end}}
       </section>
 
       {{if .Billing.Show}}
@@ -1931,6 +1949,41 @@
             el.textContent = o;
           }, 1200);
         });
+      }
+      // Reissuing the link: the old one stops working at once, so the page moves to
+      // the new address itself — this page lives at the old one.
+      var ROTATE_PATH = "{{.Access.RotatePath}}";
+      function rotateLink(el) {
+        if (!ROTATE_PATH) return;
+        askThen({{.L.RotateConfirm}}, function () {
+          doRotate(el);
+        });
+      }
+      function doRotate(el) {
+        var old = el.textContent;
+        el.textContent = "…";
+        el.disabled = true;
+        fetch(ROTATE_PATH, { method: "POST", headers: { "X-RosPanel-Sub": "1" } })
+          .then(function (r) {
+            return r.json().then(
+              function (d) { return { ok: r.ok, status: r.status, d: d }; },
+              function () { return { ok: false, status: r.status, d: {} }; }
+            );
+          })
+          .then(function (x) {
+            if (x.ok && x.d.url) {
+              location.replace(x.d.url);
+              return;
+            }
+            alert(x.status === 429 ? {{.Access.RotateWait}} : {{.L.RotateFailed}});
+            el.textContent = old;
+            el.disabled = false;
+          })
+          .catch(function () {
+            alert({{.L.NetworkError}});
+            el.textContent = old;
+            el.disabled = false;
+          });
       }
       // Unbinding your own device. The row is identified by the id the client sent,
       // which is opaque text — so it travels in the body rather than the URL. A

@@ -151,3 +151,18 @@ func T(lang Lang, key string, args ...any) string {
 	}
 	return fmt.Sprintf(s, args...)
 }
+
+// Every words an interval given in hours as the tail of "at most once every …":
+// "an hour", "a day", "a week", or so many days.
+func Every(lang Lang, hours int) string {
+	switch hours {
+	case 1:
+		return T(lang, "sub.everyHour")
+	case 24:
+		return T(lang, "sub.everyDay")
+	case 168:
+		return T(lang, "sub.everyWeek")
+	default:
+		return T(lang, "sub.everyDays", (hours+23)/24)
+	}
+}

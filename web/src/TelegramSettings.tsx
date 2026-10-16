@@ -90,6 +90,7 @@ const ADMIN_EVENTS: { key: string; label: string; desc?: string }[] = [
   { key: "update", label: "tg.evUpdateLabel", desc: "tg.evUpdateDesc" },
   { key: "plugins", label: "tg.evPluginsLabel", desc: "tg.evPluginsDesc" },
   { key: "reach", label: "tg.evReachLabel", desc: "tg.evReachDesc" },
+  { key: "monthly", label: "tg.evMonthlyLabel", desc: "tg.evMonthlyDesc" },
 ];
 
 // USER_EVENTS are what the user bot tells the person themselves. Keys must match
@@ -161,6 +162,7 @@ export function TelegramSettings() {
   const [userTgBind, setUserTgBind] = useState(true);
   // Off unless the operator opts in: whoever holds a page link could take the bot account.
   const [userTgRebind, setUserTgRebind] = useState(false);
+  const [userTgRebindHours, setUserTgRebindHours] = useState(0);
   // The bot's broadcast on/off button (shown by default).
   const [userMailingSwitch, setUserMailingSwitch] = useState(true);
   const [adminEvents, setAdminEvents] = useState<AdminEvents>({});
@@ -192,6 +194,7 @@ export function TelegramSettings() {
     userRegCode: "",
     userTgBind: true,
     userTgRebind: false,
+    userTgRebindHours: 0,
     userMailingSwitch: true,
     adminEvents: {} as AdminEvents,
     userEvents: {} as AdminEvents,
@@ -219,6 +222,7 @@ export function TelegramSettings() {
         setUserRegCode(cfg.user_reg_code || "");
         setUserTgBind(cfg.user_tg_bind ?? true);
         setUserTgRebind(cfg.user_tg_rebind ?? false);
+        setUserTgRebindHours(cfg.user_tg_rebind_hours ?? 0);
         setUserMailingSwitch(cfg.user_mailing_switch ?? true);
         setAdminEvents(cfg.admin_events || {});
         setUserEvents(cfg.user_events || {});
@@ -249,6 +253,7 @@ export function TelegramSettings() {
           userRegCode: cfg.user_reg_code || "",
           userTgBind: cfg.user_tg_bind ?? true,
           userTgRebind: cfg.user_tg_rebind ?? false,
+          userTgRebindHours: cfg.user_tg_rebind_hours ?? 0,
           userMailingSwitch: cfg.user_mailing_switch ?? true,
           adminEvents: cfg.admin_events || {},
           userEvents: cfg.user_events || {},
@@ -314,6 +319,7 @@ export function TelegramSettings() {
     userRegCode.trim() !== saved.userRegCode.trim() ||
     userTgBind !== saved.userTgBind ||
     userTgRebind !== saved.userTgRebind ||
+    userTgRebindHours !== saved.userTgRebindHours ||
     userMailingSwitch !== saved.userMailingSwitch ||
     !sameEvents(adminEvents, saved.adminEvents) ||
     !sameEvents(userEvents, saved.userEvents, USER_EVENTS) ||
@@ -346,6 +352,7 @@ export function TelegramSettings() {
         user_reg_code: userRegCode.trim(),
         user_tg_bind: userTgBind,
         user_tg_rebind: userTgRebind,
+        user_tg_rebind_hours: userTgRebindHours,
         user_mailing_switch: userMailingSwitch,
         admin_events: adminEvents,
         user_events: userEvents,
@@ -368,6 +375,7 @@ export function TelegramSettings() {
         userRegCode: userRegCode.trim(),
         userTgBind,
         userTgRebind,
+        userTgRebindHours,
         userMailingSwitch,
         adminEvents,
         userEvents,
@@ -403,6 +411,7 @@ export function TelegramSettings() {
     setUserRegCode(saved.userRegCode);
     setUserTgBind(saved.userTgBind);
     setUserTgRebind(saved.userTgRebind);
+    setUserTgRebindHours(saved.userTgRebindHours);
     setUserMailingSwitch(saved.userMailingSwitch);
     setAdminEvents(saved.adminEvents);
     setUserEvents(saved.userEvents);
@@ -758,6 +767,25 @@ export function TelegramSettings() {
           checked={userTgRebind}
           onChange={setUserTgRebind}
         />
+        {userTgRebind && (
+          <SettingRow
+            label={t("tg.rebindEvery.label")}
+            hint={t("tg.rebindEvery.hint")}
+            field={
+              <Select
+                data={[
+                  { value: "0", label: t("tg.rebindEvery.none") },
+                  { value: "1", label: t("subs.selfRotate.hour") },
+                  { value: "24", label: t("subs.selfRotate.day") },
+                  { value: "168", label: t("subs.selfRotate.week") },
+                  { value: "720", label: t("subs.selfRotate.month") },
+                ]}
+                value={String(userTgRebindHours)}
+                onChange={(v) => setUserTgRebindHours(Number(v))}
+              />
+            }
+          />
+        )}
         <ToggleRow
           label={t("tg.mailingSwitch")}
           hint={t("tg.mailingSwitchHint")}

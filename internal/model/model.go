@@ -446,6 +446,7 @@ type Subscriber struct {
 // Broadcast statuses. There is no "draft": a broadcast row exists only once it has
 // been launched, so nothing half-composed can be mistaken for something queued.
 const (
+	BroadcastScheduled = "scheduled" // waiting for ScheduledAt; no recipients yet
 	BroadcastRunning   = "running"
 	BroadcastPaused    = "paused"
 	BroadcastDone      = "done"
@@ -539,6 +540,8 @@ type Broadcast struct {
 	CreatedAt   int64             `json:"created_at"`
 	StartedAt   int64             `json:"started_at"`
 	FinishedAt  int64             `json:"finished_at"`
+	// ScheduledAt is when a scheduled broadcast goes out; its audience is read then.
+	ScheduledAt int64 `json:"scheduled_at"`
 
 	Total   int `json:"total"`
 	Sent    int `json:"sent"`
@@ -887,6 +890,10 @@ type UptimeDay struct {
 // quarter"); beyond that the rows answer nothing anyone asks.
 const UptimeRetentionDays = 90
 
+// SelfRotateChoices are the intervals Settings.SubSelfRotateHours may take, in
+// hours: off, an hour, a day, a week, thirty days.
+var SelfRotateChoices = []int{0, 1, 24, 168, 720}
+
 // StatusPathOr returns the status page's URL segment, defaulting to "status".
 func (s *Settings) StatusPathOr() string {
 	if p := strings.TrimSpace(s.StatusPath); p != "" {
@@ -1085,6 +1092,12 @@ type Settings struct {
 	MasterPlacement Placement `json:"-"`
 	// ConnPolicy is where clients are allowed to connect from (connpolicy.go).
 	ConnPolicy ConnPolicy `json:"-"`
+	// SubSelfRotateHours lets a user reissue their own subscription link from its page
+	// (the old one stops working), for a link they believe has leaked — at most once
+	// per that many hours; 0 does not let them.
+	SubSelfRotateHours int `json:"-"`
+	// MonthlyReportSent is the month ('YYYY-MM') the admin bot last summed up.
+	MonthlyReportSent string `json:"-"`
 	// SubHideOffline drops a node from subscriptions while it is not reporting.
 	// Off by default — see migration 0062 for why that is the safer side.
 	SubHideOffline bool `json:"-"`
@@ -1300,6 +1313,8 @@ type Settings struct {
 	// refuses the move when it is off).
 	SubTGBind   bool `json:"-"`
 	SubTGRebind bool `json:"-"`
+	// SubTGRebindHours limits such a move to once per that many hours (0: no limit).
+	SubTGRebindHours int `json:"-"`
 	// TGMailingSwitch shows the user bot's broadcast on/off button (default on).
 	TGMailingSwitch bool `json:"-"`
 
@@ -1446,6 +1461,9 @@ const (
 	// AdminEventReach fires when a server stops answering from a country the operator
 	// watches (Globalping probes there), and again when it answers again.
 	AdminEventReach int64 = 1 << 13
+	// AdminEventMonthly is the summary of the month before, sent on the 1st: revenue,
+	// users, traffic, uptime, incidents.
+	AdminEventMonthly int64 = 1 << 14
 )
 
 // AdminEventCatalog is the stable key→flag mapping the settings API/UI iterate
@@ -1468,6 +1486,7 @@ var AdminEventCatalog = []struct {
 	{"update", AdminEventUpdate},
 	{"plugins", AdminEventPlugins},
 	{"reach", AdminEventReach},
+	{"monthly", AdminEventMonthly},
 }
 
 // ReachSettings configure the check of every server from other countries through

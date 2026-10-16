@@ -32,6 +32,8 @@ type broadcastForm struct {
 	Text     string                  `json:"text"`
 	Audience string                  `json:"audience"`
 	Buttons  []model.BroadcastButton `json:"buttons"`
+	// ScheduledAt sends it later (unix seconds); 0 sends it now.
+	ScheduledAt int64 `json:"scheduled_at"`
 }
 
 // parseBroadcastForm reads the multipart body into a broadcast plus the attachment
@@ -50,9 +52,10 @@ func parseBroadcastForm(w http.ResponseWriter, r *http.Request) (*model.Broadcas
 		return nil, nil, "", false
 	}
 	b := &model.Broadcast{
-		Text:     form.Text,
-		Audience: form.Audience,
-		Buttons:  form.Buttons,
+		Text:        form.Text,
+		Audience:    form.Audience,
+		Buttons:     form.Buttons,
+		ScheduledAt: form.ScheduledAt,
 	}
 	file, header, err := r.FormFile("media")
 	if err != nil {
@@ -146,6 +149,11 @@ func (rt *Router) createBroadcast(w http.ResponseWriter, r *http.Request) {
 			writeErrDetail(w, http.StatusInternalServerError, "err.attachmentSaveFailed", "не удалось сохранить вложение: ", err.Error())
 			return
 		}
+	}
+	if created.Status == model.BroadcastScheduled {
+		// Started at its time, with the audience read then (core.StartDueBroadcasts).
+		writeJSON(w, http.StatusOK, created)
+		return
 	}
 	if err := rt.mgr.StartBroadcast(created.ID); err != nil {
 		// Same reasoning as the save-media failure above: a row left paused with an

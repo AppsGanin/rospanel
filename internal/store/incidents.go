@@ -12,17 +12,19 @@ import (
 
 // Status page incidents and maintenance windows (migration 0127).
 
-const incidentCols = `id, kind, title, body, node_ids, starts_at, ends_at, resolved_at, created_at, updated_at`
+const incidentCols = `id, kind, title, body, node_ids, starts_at, ends_at, resolved_at, created_at, updated_at, hide_in_sub`
 
 func scanIncident(sc interface{ Scan(...any) error }) (model.Incident, error) {
 	var (
 		in    model.Incident
 		nodes string
 	)
+	var hide int
 	if err := sc.Scan(&in.ID, &in.Kind, &in.Title, &in.Body, &nodes, &in.StartsAt,
-		&in.EndsAt, &in.ResolvedAt, &in.CreatedAt, &in.UpdatedAt); err != nil {
+		&in.EndsAt, &in.ResolvedAt, &in.CreatedAt, &in.UpdatedAt, &hide); err != nil {
 		return in, err
 	}
+	in.HideInSub = hide != 0
 	in.NodeIDs = []int64{}
 	_ = json.Unmarshal([]byte(nodes), &in.NodeIDs)
 	return in, nil
@@ -128,10 +130,10 @@ func (s *Store) GetIncident(id int64) (*model.Incident, error) {
 // CreateIncident stores a new incident and fills in its id.
 func (s *Store) CreateIncident(in *model.Incident) error {
 	res, err := s.db.Exec(`INSERT INTO incidents
-		(kind, title, body, node_ids, starts_at, ends_at, resolved_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		(kind, title, body, node_ids, starts_at, ends_at, resolved_at, created_at, updated_at, hide_in_sub)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		in.Kind, in.Title, in.Body, incidentNodes(in.NodeIDs), in.StartsAt, in.EndsAt,
-		in.ResolvedAt, in.CreatedAt, in.UpdatedAt)
+		in.ResolvedAt, in.CreatedAt, in.UpdatedAt, boolToInt(in.HideInSub))
 	if err != nil {
 		return err
 	}
@@ -144,9 +146,9 @@ func (s *Store) CreateIncident(in *model.Incident) error {
 // so an edit racing a resolve cannot undo it.
 func (s *Store) UpdateIncident(in *model.Incident) (bool, error) {
 	res, err := s.db.Exec(`UPDATE incidents SET kind = ?, title = ?, body = ?, node_ids = ?,
-		starts_at = ?, ends_at = ?, updated_at = ? WHERE id = ?`,
+		starts_at = ?, ends_at = ?, updated_at = ?, hide_in_sub = ? WHERE id = ?`,
 		in.Kind, in.Title, in.Body, incidentNodes(in.NodeIDs), in.StartsAt, in.EndsAt,
-		in.UpdatedAt, in.ID)
+		in.UpdatedAt, boolToInt(in.HideInSub), in.ID)
 	if err != nil {
 		return false, err
 	}

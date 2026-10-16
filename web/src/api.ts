@@ -1087,6 +1087,9 @@ export interface SubSettings {
   sub_order_mode: string
   // Drop a node from subscriptions while it is offline (off by default).
   sub_hide_offline: boolean
+  // Users may reissue their own subscription link at most once per this many hours
+  // (0 = they may not).
+  sub_self_rotate: number
   // The operator's own subscription page: browsers opening a subscription link are
   // redirected there, {token} replaced by the user's token. Empty = the panel's page.
   sub_page_url: string
@@ -1162,6 +1165,9 @@ export interface Incident {
   resolved_at: number
   created_at: number
   updated_at: number
+  // hide_in_sub takes the named servers out of subscriptions while maintenance is
+  // under way.
+  hide_in_sub: boolean
   updates: IncidentUpdate[]
 }
 
@@ -1201,6 +1207,7 @@ export const saveIncident = (inc: Incident, notify: boolean) =>
       node_ids: inc.node_ids,
       starts_at: inc.starts_at,
       ends_at: inc.ends_at,
+      hide_in_sub: inc.hide_in_sub,
       notify,
       lang: currentLang(),
     }),
@@ -1614,6 +1621,8 @@ export interface TelegramInfo {
   // default), and moving a linked one to another Telegram (off by default).
   user_tg_bind?: boolean
   user_tg_rebind?: boolean
+  // At most one move to another Telegram per this many hours (0: no limit).
+  user_tg_rebind_hours?: number
   // The bot's broadcast on/off button (shown by default).
   user_mailing_switch?: boolean
   admin_events: Record<string, boolean> // admin notification categories (key→on)
@@ -1671,6 +1680,7 @@ export const saveTelegram = (t: {
   user_reg_code: string
   user_tg_bind: boolean
   user_tg_rebind: boolean
+  user_tg_rebind_hours: number
   user_mailing_switch: boolean
   admin_events: Record<string, boolean>
   user_events: Record<string, boolean>
@@ -1735,7 +1745,7 @@ export const testTelegramBackup = () =>
 
 // Mass broadcasts through the user bot. The audience is snapshotted when a broadcast
 // starts, so total never moves once it is running.
-export type BroadcastStatus = 'running' | 'paused' | 'done' | 'cancelled'
+export type BroadcastStatus = 'scheduled' | 'running' | 'paused' | 'done' | 'cancelled'
 // A plain key ("all", "expired") or a parameterised one carrying its horizon
 // ("seen:7"). The string is what gets stored and displayed, so the parameter travels
 // with it rather than in a second field that would have to be kept in sync.
@@ -1768,6 +1778,8 @@ export interface Broadcast {
   skipped: number
   // Accounts it went to through the external system (broadcast.sent).
   hook_users: number
+  // When a scheduled one goes out (unix seconds); its audience is read then.
+  scheduled_at: number
 }
 
 export const listBroadcasts = () => api<Broadcast[]>('api/broadcasts')
@@ -1781,7 +1793,7 @@ export const broadcastAudience = (audience: BroadcastAudience) =>
 // broadcastForm packs the composed message the way both create and test expect: a
 // JSON "payload" part plus an optional file, since an attachment can't ride in JSON.
 const broadcastForm = (
-  b: { text: string; audience: BroadcastAudience; buttons: BroadcastButton[] },
+  b: { text: string; audience: BroadcastAudience; buttons: BroadcastButton[]; scheduled_at?: number },
   media: File | null,
 ) => {
   const fd = new FormData()
@@ -1791,7 +1803,7 @@ const broadcastForm = (
 }
 
 export const createBroadcast = (
-  b: { text: string; audience: BroadcastAudience; buttons: BroadcastButton[] },
+  b: { text: string; audience: BroadcastAudience; buttons: BroadcastButton[]; scheduled_at?: number },
   media: File | null,
 ) => apiForm<Broadcast>('api/broadcasts', broadcastForm(b, media))
 

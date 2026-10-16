@@ -20,6 +20,10 @@ import (
 func (rt *Router) buildAccess(r *http.Request, u model.User, set *model.Settings) sub.Access {
 	var a sub.Access
 	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
+	if set.SubSelfRotateHours > 0 {
+		a.RotatePath = sub.URL(set, u.SubToken) + "/rotate"
+		a.RotateWait = i18n.T(lang, "sub.rotateWait", i18n.Every(lang, set.SubSelfRotateHours))
+	}
 	terms, privacy := rt.legalLinks(set)
 	if terms != "" {
 		a.Legal = append(a.Legal, sub.LegalLink{Title: sub.LegalTitle(model.LegalTerms, lang), URL: terms})
@@ -40,6 +44,14 @@ func (rt *Router) buildAccess(r *http.Request, u model.User, set *model.Settings
 	linked := u.TgChatID != 0
 	if !set.TGUserBotEnabled || (linked && !set.SubTGRebind) || (!linked && !set.SubTGBind) {
 		return a
+	}
+	// Moved too recently: the page says how often it may, rather than offering a
+	// button the bot would refuse.
+	if every := int64(set.SubTGRebindHours) * 3600; linked && every > 0 {
+		if at, err := rt.mgr.Store().TGChangedAt(u.ID); err == nil && time.Now().Unix()-at < every {
+			a.TGWait = i18n.T(lang, "sub.tgChangeWait", i18n.Every(lang, set.SubTGRebindHours))
+			return a
+		}
 	}
 	bot := botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL())
 	if bot == "" {

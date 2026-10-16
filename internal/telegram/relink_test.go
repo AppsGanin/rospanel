@@ -277,3 +277,66 @@ func TestFirstSignUpGetsATrialOnce(t *testing.T) {
 		t.Fatalf("first sign-up: trial=%v recorded=%v", trial, st.ChatHadTrial(5005))
 	}
 }
+
+// A move to another Telegram waits out the interval the operator set since the
+// account was last linked by its code — the first link included.
+func TestLinkCodeMoveWaitsOutTheInterval(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	sent := map[int64][]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var p struct {
+			ChatID int64  `json:"chat_id"`
+			Text   string `json:"text"`
+		}
+		_ = json.Unmarshal(body, &p)
+		mu.Lock()
+		sent[p.ChatID] = append(sent[p.ChatID], p.Text)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1}}`))
+	}))
+	defer srv.Close()
+	st, err := store.Open(filepath.Join(t.TempDir(), "rebind-wait.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	u, _ := st.CreateUser("ann", "uuid-a", "pw", "tok-a", 0, 0, 0)
+	s := NewUser(relinkPanel{st: st}, st)
+	client := newTestClient(srv.URL+"/bot", "111:AAA")
+	ctx := context.Background()
+	set := &model.Settings{SubTGRebind: true, SubTGRebindHours: 24}
+
+	// The first link, by code: recorded.
+	if err := st.SetUserTgLinkCode(u.ID, "aaaaaaaaaaaaaaaa"); err != nil {
+		t.Fatal(err)
+	}
+	s.linkByCode(ctx, client, set, 1001, "aaaaaaaaaaaaaaaa", true)
+	if got, _ := st.GetUserByTelegramChatID(1001); got == nil || got.ID != u.ID {
+		t.Fatal("the first link did not take")
+	}
+	// A move right after: refused, said why.
+	if err := st.SetUserTgLinkCode(u.ID, "bbbbbbbbbbbbbbbb"); err != nil {
+		t.Fatal(err)
+	}
+	s.linkByCode(ctx, client, set, 2002, "bbbbbbbbbbbbbbbb", true)
+	if got, _ := st.GetUserByTelegramChatID(1001); got == nil || got.ID != u.ID {
+		t.Fatal("moved within the interval")
+	}
+	mu.Lock()
+	refusal := strings.Join(sent[2002], "\n")
+	mu.Unlock()
+	if !strings.Contains(refusal, "сутки") && !strings.Contains(refusal, "day") {
+		t.Errorf("the refusal does not say how often:\n%s", refusal)
+	}
+	// A day later it may.
+	if err := st.ExecForTest(`UPDATE users SET tg_changed_at = tg_changed_at - 86401 WHERE id = ?`, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	s.linkByCode(ctx, client, set, 2002, "bbbbbbbbbbbbbbbb", true)
+	if got, _ := st.GetUserByTelegramChatID(2002); got == nil || got.ID != u.ID {
+		t.Fatal("refused after the interval")
+	}
+}

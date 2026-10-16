@@ -144,7 +144,7 @@ func TestAPISubscriptionTelegramLink(t *testing.T) {
 	if again, _ := view(); again != link {
 		t.Errorf("a second read minted a new code: %q, then %q", link, again)
 	}
-	if err := st.SetSubTGBinding(false, false); err != nil {
+	if err := st.SetSubTGBinding(false, false, 0); err != nil {
 		t.Fatal(err)
 	}
 	if link, _ := view(); link != "" {

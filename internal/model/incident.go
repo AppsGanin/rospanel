@@ -16,8 +16,11 @@ type Incident struct {
 	// none: it is over when the operator says so.
 	EndsAt     int64 `json:"ends_at"`
 	ResolvedAt int64 `json:"resolved_at"`
-	CreatedAt  int64 `json:"created_at"`
-	UpdatedAt  int64 `json:"updated_at"`
+	// HideInSub takes the servers a maintenance window names out of subscriptions
+	// while it is under way (migration 0129). Never set on an incident.
+	HideInSub bool  `json:"hide_in_sub"`
+	CreatedAt int64 `json:"created_at"`
+	UpdatedAt int64 `json:"updated_at"`
 	// Updates is its course so far, oldest first (migration 0128).
 	Updates []IncidentUpdate `json:"updates"`
 }
@@ -116,4 +119,23 @@ func (i *Incident) Concerns(nodeID int64) bool {
 		}
 	}
 	return false
+}
+
+// MonthReport is what the admin bot sums a month up with on the 1st.
+type MonthReport struct {
+	RevenueRub  int   // paid money, refunds by the payment system left out
+	Payments    int   // orders paid with money (not from the balance)
+	NewUsers    int   // accounts created in the month
+	Users       int   // accounts now
+	ActiveUsers int   // of them, active now
+	Traffic     int64 // bytes, every server
+	Incidents   int   // posted on the status page in the month
+	Maintenance int
+	Uptime      []MonthUptime // per server that was sampled
+}
+
+// MonthUptime is one server's samples over the month.
+type MonthUptime struct {
+	NodeID    int64
+	Up, Total int
 }

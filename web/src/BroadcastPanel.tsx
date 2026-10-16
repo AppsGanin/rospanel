@@ -19,11 +19,13 @@ import { AutoRules } from "./AutoRules";
 import { useMessageHooks } from "./messageHooks";
 import { useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { fromMoment, MomentField, type Moment, toMoment } from "./MomentField";
 import { inPanelTz } from "./tz";
 import {
   Badge,
   Button,
   CenterLoader,
+  Checkbox,
   cn,
   EmptyState,
   IconButton,
@@ -70,6 +72,8 @@ const statusMeta = (
   status: Broadcast["status"],
 ): { label: string; color: string } => {
   switch (status) {
+    case "scheduled":
+      return { label: i18n.t("bc.stScheduled"), color: "brand" };
     case "running":
       return { label: i18n.t("bc.stRunning"), color: "blue" };
     case "paused":
@@ -137,6 +141,9 @@ export function BroadcastPanel({ userBot }: { userBot: boolean }) {
   const [reach, setReach] = useState<number | null>(null);
   const [hookReach, setHookReach] = useState(0);
   const [busy, setBusy] = useState(false);
+  // Sending later: when, in the panel's timezone. Defaults to an hour from now.
+  const [later, setLater] = useState(false);
+  const [at, setAt] = useState<Moment>(() => toMoment(Math.floor(Date.now() / 1000) + 3600));
   const [testing, setTesting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const { confirm, confirmNode } = useConfirm();
@@ -195,23 +202,47 @@ export function BroadcastPanel({ userBot }: { userBot: boolean }) {
   };
 
   const send = async () => {
-    const ok = await confirm({
-      title: t("bc.startTitle"),
-      body:
-        reach === null
-          ? t("bc.startBodyUnknown")
-          : t("bc.startBody", { count: reach + hookReach }),
-      confirmLabel: t("bc.start"),
-    });
+    const when = later ? fromMoment(at) : 0;
+    if (later && when <= Date.now() / 1000) {
+      notifyError(t("bc.scheduleInPast"));
+      return;
+    }
+    const ok = await confirm(
+      later
+        ? {
+            title: t("bc.scheduleTitle"),
+            body: t("bc.scheduleBody", { when: fmtTime(when) }),
+            confirmLabel: t("bc.schedule"),
+          }
+        : {
+            title: t("bc.startTitle"),
+            body:
+              reach === null
+                ? t("bc.startBodyUnknown")
+                : t("bc.startBody", { count: reach + hookReach }),
+            confirmLabel: t("bc.start"),
+          },
+    );
     if (!ok) return;
+    // The dialog may have stayed open past the time picked.
+    if (later && when <= Date.now() / 1000) {
+      notifyError(t("bc.scheduleInPast"));
+      return;
+    }
     setBusy(true);
     try {
-      await createBroadcast(payload, media);
+      const created = await createBroadcast({ ...payload, scheduled_at: when }, media);
       setText("");
       setButtons([]);
       clearMedia();
+      setLater(false);
+      setAt(toMoment(Math.floor(Date.now() / 1000) + 3600));
       await load();
-      notifySuccess(t("bc.started"));
+      notifySuccess(
+        created.status === "scheduled"
+          ? t("bc.scheduled", { when: fmtTime(created.scheduled_at) })
+          : t("bc.started"),
+      );
     } catch (e) {
       notifyError(errMessage(e));
     } finally {
@@ -403,11 +434,22 @@ export function BroadcastPanel({ userBot }: { userBot: boolean }) {
             )}
           </div>
 
+          {/* Sending later: the audience is read when it goes out, not now. */}
+          <div className="flex flex-col gap-2 border-t border-brand-600/10 px-3.5 py-2.5">
+            <Checkbox
+              checked={later}
+              onChange={setLater}
+              label={t("bc.later")}
+              hint={t("bc.laterHint")}
+            />
+            {later && <MomentField label={t("bc.laterAt")} value={at} onChange={setAt} />}
+          </div>
+
           {/* The section's own footer: the two ways to send, and what the test one
               does, on the panel's bottom edge. */}
           <div className="flex flex-wrap items-center gap-2 border-t border-brand-600/10 bg-gray-50/95 px-3.5 py-2.5">
             <Button size="sm" loading={busy} onClick={send} disabled={!canSend}>
-              {t("bc.startBroadcast")}
+              {t(later ? "bc.schedule" : "bc.startBroadcast")}
             </Button>
             <Button
               size="sm"
@@ -466,7 +508,9 @@ function BroadcastRow({
     <div className="flex flex-col gap-1.5 border-t border-gray-100 px-3.5 py-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <Mono className="text-[11px] text-ink-muted">
-          {fmtTime(b.started_at || b.created_at)}
+          {b.status === "scheduled"
+            ? t("bc.scheduledFor", { when: fmtTime(b.scheduled_at) })
+            : fmtTime(b.started_at || b.created_at)}
         </Mono>
         <Badge color={st.color} size="xs">
           {st.label}
@@ -486,22 +530,25 @@ function BroadcastRow({
         {b.text || <span className="text-ink-muted">{t("bc.noText")}</span>}
       </p>
 
-      <div className="flex items-center gap-2">
-        <span className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-200">
-          <span
-            className="block h-full rounded-full bg-brand-600 transition-all"
-            style={{ width: `${pct}%` }}
-          />
-        </span>
-        <Mono className="shrink-0 text-[11px] text-ink-muted">
-          {b.total > 0 && t("bc.progress", { done, total: b.total, sent: b.sent })}
-          {b.total > 0 && b.hook_users > 0 && " · "}
-          {b.hook_users > 0 && t("bc.hookN", { count: b.hook_users })}
-          {b.failed > 0 && ` · ${t("bc.failedN", { count: b.failed })}`}
-          {b.blocked > 0 && ` · ${t("bc.blockedN", { count: b.blocked })}`}
-          {b.skipped > 0 && ` · ${t("bc.skippedN", { count: b.skipped })}`}
-        </Mono>
-      </div>
+      {/* A scheduled one has no recipients yet: nothing to show progress of. */}
+      {b.status !== "scheduled" && (
+        <div className="flex items-center gap-2">
+          <span className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-200">
+            <span
+              className="block h-full rounded-full bg-brand-600 transition-all"
+              style={{ width: `${pct}%` }}
+            />
+          </span>
+          <Mono className="shrink-0 text-[11px] text-ink-muted">
+            {b.total > 0 && t("bc.progress", { done, total: b.total, sent: b.sent })}
+            {b.total > 0 && b.hook_users > 0 && " · "}
+            {b.hook_users > 0 && t("bc.hookN", { count: b.hook_users })}
+            {b.failed > 0 && ` · ${t("bc.failedN", { count: b.failed })}`}
+            {b.blocked > 0 && ` · ${t("bc.blockedN", { count: b.blocked })}`}
+            {b.skipped > 0 && ` · ${t("bc.skippedN", { count: b.skipped })}`}
+          </Mono>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2 empty:hidden">
         {b.status === "running" && (
@@ -524,7 +571,7 @@ function BroadcastRow({
             {t("bc.resume")}
           </Button>
         )}
-        {(b.status === "running" || b.status === "paused") && (
+        {(b.status === "running" || b.status === "paused" || b.status === "scheduled") && (
           <Button
             variant="outline"
             color="red"

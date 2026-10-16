@@ -30,6 +30,10 @@ const (
 // recipient list, and starts it. The audience is snapshotted here and never
 // recomputed: a run that re-evaluated itself would pick up people who arrived
 // halfway and give a progress total that moves under the operator's feet.
+//
+// One with ScheduledAt in the future is stored scheduled instead, with no recipients:
+// its audience is read when it goes out (StartDueBroadcasts) — who is "active" next
+// Friday is not who is active today.
 func (m *Manager) CreateBroadcast(ctx context.Context, b *model.Broadcast) (*model.Broadcast, error) {
 	b.Text = strings.TrimSpace(b.Text)
 	b.Audience = strings.TrimSpace(b.Audience)
@@ -39,43 +43,40 @@ func (m *Manager) CreateBroadcast(ctx context.Context, b *model.Broadcast) (*mod
 	if err := validateBroadcast(b); err != nil {
 		return nil, err
 	}
+	now := time.Now().Unix()
+	switch {
+	case b.ScheduledAt < 0:
+		b.ScheduledAt = 0
+	case b.ScheduledAt != 0 && b.ScheduledAt <= now:
+		// Asked for later, and later has passed (the confirm dialog stayed open): sent
+		// now it would reach everyone while the operator was told it waits.
+		return nil, invalidCode("err.broadcastInPast", "время отправки уже прошло — выберите другое")
+	case b.ScheduledAt > now+broadcastScheduleMax:
+		return nil, invalidCode("err.broadcastTooFar", "отложить рассылку можно не больше чем на год")
+	}
 
 	set, err := m.store.GetSettings()
 	if err != nil {
 		return nil, err
 	}
-	// Delivery runs on the user bot's token, and — with a webhook on broadcast.sent —
-	// through the external system to the accounts the bot does not reach. With
-	// neither nothing would ever be sent and the broadcast would sit at 0 % with no
-	// explanation.
-	bot := set.TGUserBotEnabled && strings.TrimSpace(set.TGUserBotToken) != ""
-	hook := m.webhookWanted(model.WebhookBroadcastSent)
-	switch {
-	case !bot && !hook:
-		return nil, invalidCode("err.enableUserBotFirst", "сначала включите пользовательского бота — рассылка идёт через него")
-	case !bot && b.MediaKind != "":
-		return nil, invalidCode("err.attachmentNeedsBot", "вложение доставляет только бот в Telegram — отправьте текст")
-	}
-
-	var chats []int64
-	if bot {
-		if chats, err = m.audienceChats(b.Audience); err != nil {
-			return nil, err
-		}
-	}
-	var hookUsers []model.User
-	if hook {
-		if hookUsers, err = m.audienceHookUsers(b.Audience, bot); err != nil {
-			return nil, err
-		}
-	}
-	if len(chats) == 0 && len(hookUsers) == 0 {
-		return nil, invalidCode("err.audienceEmpty", "в выбранной аудитории нет получателей")
-	}
-
 	b.CreatedBy = actor.From(ctx).Name
+	if b.ScheduledAt > 0 {
+		if _, err := m.broadcastChannels(b, set); err != nil {
+			return nil, err
+		}
+		b.HookUsers = 0
+		id, err := m.store.CreateBroadcast(b, now)
+		if err != nil {
+			return nil, err
+		}
+		return m.store.GetBroadcast(id)
+	}
+
+	chats, hookUsers, err := m.broadcastAudience(b, set)
+	if err != nil {
+		return nil, err
+	}
 	b.HookUsers = len(hookUsers)
-	now := time.Now().Unix()
 	id, err := m.store.CreateBroadcast(b, now)
 	if err != nil {
 		return nil, err
@@ -91,12 +92,130 @@ func (m *Manager) CreateBroadcast(ctx context.Context, b *model.Broadcast) (*mod
 	return m.store.GetBroadcast(id)
 }
 
+// broadcastScheduleMax is how far ahead a broadcast may be scheduled, and
+// broadcastLateMax how late one may still go out after the panel was down.
+const (
+	broadcastScheduleMax = 366 * 24 * 3600
+	broadcastLateMax     = 24 * 3600
+)
+
+// broadcastChannels reports whether a broadcast can be delivered at all: on the user
+// bot's token and — with a webhook on broadcast.sent — through the external system to
+// the accounts the bot does not reach. With neither nothing would ever be sent and the
+// broadcast would sit at 0 % with no explanation.
+func (m *Manager) broadcastChannels(b *model.Broadcast, set *model.Settings) (bot bool, err error) {
+	bot = set.TGUserBotEnabled && strings.TrimSpace(set.TGUserBotToken) != ""
+	hook := m.webhookWanted(model.WebhookBroadcastSent)
+	switch {
+	case !bot && !hook:
+		return false, invalidCode("err.enableUserBotFirst", "сначала включите пользовательского бота — рассылка идёт через него")
+	case !bot && b.MediaKind != "":
+		return false, invalidCode("err.attachmentNeedsBot", "вложение доставляет только бот в Telegram — отправьте текст")
+	}
+	return bot, nil
+}
+
+// broadcastAudience resolves who a broadcast goes to now: the bot's chats, and the
+// accounts the external system delivers to.
+func (m *Manager) broadcastAudience(b *model.Broadcast, set *model.Settings) ([]int64, []model.User, error) {
+	bot, err := m.broadcastChannels(b, set)
+	if err != nil {
+		return nil, nil, err
+	}
+	var chats []int64
+	if bot {
+		if chats, err = m.audienceChats(b.Audience); err != nil {
+			return nil, nil, err
+		}
+	}
+	var hookUsers []model.User
+	if m.webhookWanted(model.WebhookBroadcastSent) {
+		if hookUsers, err = m.audienceHookUsers(b.Audience, bot); err != nil {
+			return nil, nil, err
+		}
+	}
+	if len(chats) == 0 && len(hookUsers) == 0 {
+		return nil, nil, invalidCode("err.audienceEmpty", "в выбранной аудитории нет получателей")
+	}
+	return chats, hookUsers, nil
+}
+
+// StartDueBroadcasts sends the scheduled broadcasts whose time has come: each one's
+// audience is read now, then it runs like any other. One that cannot go out — the bot
+// switched off since, nobody left in the audience — is cancelled and logged; the
+// operator sees it cancelled in the list.
+func (m *Manager) StartDueBroadcasts(now int64) {
+	ids, err := m.store.DueBroadcasts(now)
+	if err != nil {
+		logErr("broadcasts: reading the scheduled ones failed", "err", err)
+		return
+	}
+	for _, id := range ids {
+		// Claimed first: a second runner cannot start it twice, and an operator's
+		// cancel after the claim is kept by StartBroadcast's conditional start.
+		if ok, err := m.store.SetBroadcastStatusIf(id, model.BroadcastScheduled, model.BroadcastPaused, 0); err != nil || !ok {
+			continue
+		}
+		b, err := m.store.GetBroadcast(id)
+		if err == nil && now-b.ScheduledAt > broadcastLateMax {
+			// The panel was down past its time by more than a day: news that late is
+			// not news any more.
+			logWarn("broadcasts: a scheduled broadcast is too late to go out — cancelled", "id", id, "due", b.ScheduledAt)
+			m.AbandonBroadcast(id)
+			continue
+		}
+		if err := m.startScheduled(id); err != nil {
+			var ve *ValidationError
+			if !errors.As(err, &ve) {
+				// The database, not the broadcast: back to waiting, the next tick retries.
+				logWarn("broadcasts: a scheduled broadcast could not start — retrying", "id", id, "err", err)
+				_, _ = m.store.SetBroadcastStatusIf(id, model.BroadcastPaused, model.BroadcastScheduled, 0)
+				continue
+			}
+			logWarn("broadcasts: a scheduled broadcast could not go out — cancelled", "id", id, "err", err)
+			m.AbandonBroadcast(id)
+		}
+	}
+}
+
+func (m *Manager) startScheduled(id int64) error {
+	b, err := m.store.GetBroadcast(id)
+	if err != nil {
+		return err
+	}
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return err
+	}
+	chats, hookUsers, err := m.broadcastAudience(b, set)
+	if err != nil {
+		return err
+	}
+	if err := m.store.AddBroadcastTargets(id, chats); err != nil {
+		return err
+	}
+	if err := m.store.SetBroadcastHookUsers(id, len(hookUsers)); err != nil {
+		return err
+	}
+	if len(hookUsers) > 0 {
+		m.broadcastHooks.Store(id, hookUsers)
+	}
+	return m.StartBroadcast(id)
+}
+
 // StartBroadcast begins delivery of a freshly created broadcast: the bot's run, and
 // broadcast.sent to the external system. One with nothing for the bot is done then.
 func (m *Manager) StartBroadcast(id int64) error {
 	now := time.Now().Unix()
-	if err := m.store.SetBroadcastStatus(id, model.BroadcastRunning, now); err != nil {
+	// Only from paused, where it was created or claimed: an operator's cancel that
+	// landed meanwhile is not overwritten into a run.
+	started, err := m.store.StartBroadcastIf(id, now)
+	if err != nil {
 		return err
+	}
+	if !started {
+		m.broadcastHooks.Delete(id)
+		return nil
 	}
 	b, err := m.store.GetBroadcast(id)
 	if err != nil {
@@ -409,6 +528,10 @@ func (m *Manager) SetBroadcastStatus(id int64, status string) error {
 	}
 	if b.Status == model.BroadcastDone || b.Status == model.BroadcastCancelled {
 		return invalidCode("err.broadcastFinished", "рассылка уже завершена")
+	}
+	// A scheduled one has no recipients yet: it can be called off, not run or paused.
+	if b.Status == model.BroadcastScheduled && status != model.BroadcastCancelled {
+		return invalidCode("err.broadcastScheduled", "рассылка ещё не началась — её можно только отменить")
 	}
 	switch status {
 	case model.BroadcastPaused, model.BroadcastRunning, model.BroadcastCancelled:

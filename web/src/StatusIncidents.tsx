@@ -18,13 +18,12 @@ import { useAction } from "./hooks";
 import { td } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { useCan } from "./role";
-import { ymdOf, zonedParts, zonedToMs } from "./tz";
+import { fromMoment, MomentField, type Moment, toMoment } from "./MomentField";
 import {
   Badge,
   Button,
   Checkbox,
   cn,
-  DatePicker,
   Drawer,
   EmptyState,
   IconButton,
@@ -58,24 +57,6 @@ function phaseOf(inc: Incident, now: number): Phase {
 
 const PHASE_ORDER: Record<Phase, number> = { active: 0, scheduled: 1, done: 2 };
 
-// A moment as the editor holds it: a date and a wall-clock time in the panel's zone.
-type Moment = { date: string; time: string };
-
-const pad = (n: number) => String(n).padStart(2, "0");
-
-function toMoment(unix: number): Moment {
-  if (!unix) return { date: "", time: "" };
-  const p = zonedParts(unix * 1000);
-  return { date: ymdOf(unix * 1000), time: `${pad(p.h)}:${pad(p.mi)}` };
-}
-
-function fromMoment(m: Moment): number {
-  if (!m.date) return 0;
-  const [y, mo, d] = m.date.split("-").map(Number);
-  const [h, mi] = (m.time || "00:00").split(":").map(Number);
-  return Math.floor(zonedToMs(y, mo, d, h || 0, mi || 0, 0) / 1000);
-}
-
 // A fresh entry starts now; maintenance is moved to its real window by hand.
 function blank(kind: IncidentKind): Incident {
   const now = Math.floor(Date.now() / 1000);
@@ -90,6 +71,7 @@ function blank(kind: IncidentKind): Incident {
     resolved_at: 0,
     created_at: 0,
     updated_at: 0,
+    hide_in_sub: kind === "maintenance",
     updates: [],
   };
 }
@@ -376,7 +358,8 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
                     { value: "maintenance", label: t("incidents.kindMaintenance") },
                   ]}
                   value={editor.kind}
-                  onChange={(v) => patch({ kind: v as IncidentKind })}
+                  // New maintenance takes its servers out of subscriptions unless told not to.
+                  onChange={(v) => patch({ kind: v as IncidentKind, hide_in_sub: v === "maintenance" })}
                 />
               )}
               <TextInput
@@ -424,6 +407,15 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
                   value={end}
                   onChange={setEnd}
                   clearable
+                />
+              )}
+              {/* Only for named servers: the whole service under works stays in. */}
+              {maint && !servers.every((sv) => editor.node_ids.includes(sv.id)) && (
+                <Checkbox
+                  checked={editor.hide_in_sub}
+                  onChange={(hide_in_sub) => patch({ hide_in_sub })}
+                  label={t("incidents.hideInSub")}
+                  hint={t("incidents.hideInSubHint")}
                 />
               )}
               {canNotify && editedPhase !== "done" && (
@@ -507,42 +499,6 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
         </p>
       </Modal>
     </>
-  );
-}
-
-// MomentField is a date and a time on one row, in the panel's timezone.
-function MomentField({
-  label,
-  hint,
-  value,
-  onChange,
-  clearable,
-}: {
-  label: string;
-  hint?: string;
-  value: Moment;
-  onChange: (m: Moment) => void;
-  clearable?: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="grid grid-cols-[minmax(0,1fr)_7.5rem] items-end gap-2">
-        <DatePicker
-          label={label}
-          value={value.date}
-          clearable={clearable}
-          onChange={(date) => onChange({ date, time: date ? value.time || "00:00" : "" })}
-        />
-        <TextInput
-          type="time"
-          ariaLabel={label}
-          value={value.time}
-          disabled={!value.date}
-          onChange={(time) => onChange({ ...value, time })}
-        />
-      </div>
-      {hint && <p className="text-xs text-ink-muted">{hint}</p>}
-    </div>
   );
 }
 

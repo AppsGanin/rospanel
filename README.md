@@ -684,6 +684,15 @@ to them in the bot.
 expiring soon, long-inactive, never connected) with an image and a button. Delivery is driven
 by a recipient table, so an interrupted broadcast **resumes instead of restarting**, and nobody
 gets the message twice.
+A broadcast can wait for its date and time; its audience is read when it goes out.
+
+**Month in review** — on the 1st the admin bot sums up the month before: revenue, users, traffic,
+server uptime and incidents.
+
+**A new link by the user** — when allowed (*Settings → Subscriptions*, at most once an hour to once
+every 30 days), the subscription page offers a fresh link for one that leaked; the old one stops
+working at once. Moving the account to another Telegram from that page can be limited the same way
+(*Settings → Telegram*).
 
 **REST API** with named keys (`Authorization: Bearer`), **OpenAPI generated from the code** and
 Swagger UI. It covers both halves of the panel: the users, plans, orders and servers you
@@ -727,7 +736,7 @@ Incidents and planned maintenance are posted on it from the same screen — a ti
 concerned, and a window for maintenance — and can go to every active subscriber through the bot.
 Each keeps a course of short updates (investigating, identified, monitoring, a closing note), shows on
 the subscription page while it is current or due within three days, and is managed over
-`/v1/incidents` with `incident.*` webhooks.
+`/v1/incidents` with `incident.*` webhooks. Maintenance can take its servers out of subscriptions for its window.
 
 #### 🧩 Plugins (beta)
 

@@ -134,6 +134,32 @@ func (m *Manager) subPageIncidents() ([]model.Incident, error) {
 	return append(active, ahead...), nil
 }
 
+// MaintenanceHiddenServers is the servers a maintenance window under way takes out
+// of subscriptions (HideInSub, naming them). Read from the cached list the
+// subscription page uses, the phase judged now: a window opens and closes on time.
+func (m *Manager) MaintenanceHiddenServers() map[int64]bool {
+	list, err := m.SubPageIncidents()
+	if err != nil {
+		return nil
+	}
+	now := time.Now().Unix()
+	var out map[int64]bool
+	for i := range list {
+		in := &list[i]
+		if !in.HideInSub || in.Kind != model.IncidentKindMaintenance || len(in.NodeIDs) == 0 ||
+			in.Phase(now) != model.IncidentActive {
+			continue
+		}
+		if out == nil {
+			out = map[int64]bool{}
+		}
+		for _, id := range in.NodeIDs {
+			out[id] = true
+		}
+	}
+	return out
+}
+
 // SaveIncident creates an incident (ID 0) or rewrites one, returning what was stored.
 // Whether it is resolved is not set here: ResolveIncident does that.
 func (m *Manager) SaveIncident(in model.Incident) (*model.Incident, error) {
@@ -218,6 +244,7 @@ func (m *Manager) validateIncident(in *model.Incident, now int64, kept []int64) 
 		// on the page as current before it began.
 		in.StartsAt = min(in.StartsAt, now)
 		in.EndsAt = 0
+		in.HideInSub = false
 	} else if in.EndsAt != 0 && in.EndsAt <= in.StartsAt {
 		return invalidCode("err.incidentWindow", "конец работ должен быть позже начала")
 	}
@@ -364,7 +391,8 @@ func (m *Manager) emitIncident(event string, in *model.Incident, update *model.I
 		"id": in.ID, "kind": in.Kind, "title": in.Title, "body": in.Body,
 		"node_ids": nodes, "servers": m.incidentServerNames(in),
 		"starts_at": in.StartsAt, "ends_at": in.EndsAt, "resolved_at": in.ResolvedAt,
-		"phase": in.Phase(time.Now().Unix()), "updates": updates,
+		"hide_in_sub": in.HideInSub,
+		"phase":       in.Phase(time.Now().Unix()), "updates": updates,
 		"status_url": statusPageURL(set),
 	}
 	if update != nil {

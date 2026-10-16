@@ -270,6 +270,13 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		}
 		rt.handleSubWallet(w, r, leaf, *u, set)
 
+	case "rotate":
+		if !subActionAllowed(r) {
+			rt.currentDecoy().ServeHTTP(w, r)
+			return
+		}
+		rt.handleSubRotate(w, r, *u, set)
+
 	case "devices/unbind":
 		if !subActionAllowed(r) {
 			rt.currentDecoy().ServeHTTP(w, r)
@@ -960,6 +967,40 @@ func (rt *Router) handleSubDeviceUnbind(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	writeOK(w)
+}
+
+// handleSubRotate reissues the user's own subscription link, when the operator allows
+// it, at most once per the interval they set: the old one stops working, and the
+// answer carries the new page's address.
+func (rt *Router) handleSubRotate(w http.ResponseWriter, r *http.Request, u model.User, set *model.Settings) {
+	if r.Method != http.MethodPost || set.SubSelfRotateHours <= 0 {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	now := time.Now().Unix()
+	ok, err := rt.mgr.Store().ClaimSelfRotate(u.ID, now, int64(set.SubSelfRotateHours)*3600)
+	if err != nil {
+		writeSubErr(w, err, i18n.FromAcceptLanguage(r.Header.Get("Accept-Language")))
+		return
+	}
+	if !ok {
+		writeErrCode(w, http.StatusTooManyRequests, "err.tooManyAttempts", "слишком много попыток, повторите позже")
+		return
+	}
+	// The keys go with the link: configs already imported from a leaked link stop
+	// working too, not just its refreshes.
+	ctx := subActorCtx(r, u)
+	if _, err := rt.mgr.ResetUserUUID(ctx, u.ID); err != nil {
+		_ = rt.mgr.Store().ReleaseSelfRotate(u.ID, now)
+		writeSubErr(w, err, i18n.FromAcceptLanguage(r.Header.Get("Accept-Language")))
+		return
+	}
+	nu, err := rt.mgr.RotateSubToken(ctx, u.ID)
+	if err != nil {
+		writeSubErr(w, err, i18n.FromAcceptLanguage(r.Header.Get("Accept-Language")))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"url": sub.URL(set, nu.SubToken)})
 }
 
 // admitDevice runs the HWID device cap for one subscription fetch. It returns true

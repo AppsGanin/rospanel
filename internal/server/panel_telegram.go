@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -29,28 +30,29 @@ func (rt *Router) getTelegram(w http.ResponseWriter, r *http.Request) {
 	}
 	userEvents, expiringDays := rt.mgr.UserNotifyPrefs()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"enabled":             set.TGBotEnabled,
-		"token":               set.TGBotToken,
-		"backup_cron":         set.TGBackupCron,
-		"lang":                set.BotLang(),
-		"proxy":               set.TGProxy,
-		"proxy_mode":          set.TGProxyModeOr(),
-		"chat_ids":            chats,
-		"link_code":           set.TGLinkCode,
-		"bot_username":        botUsername(r.Context(), set.TGBotToken, set.TelegramProxyURL()),
-		"user_enabled":        set.TGUserBotEnabled,
-		"user_token":          set.TGUserBotToken,
-		"user_reg_enabled":    set.TGUserRegEnabled,
-		"user_reg_mode":       set.RegMode(),
-		"user_reg_code":       set.TGUserRegCode,
-		"user_bot_username":   botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL()),
-		"user_miniapp_url":    sub.MiniAppURL(set),
-		"user_tg_bind":        set.SubTGBind,
-		"user_tg_rebind":      set.SubTGRebind,
-		"user_mailing_switch": set.TGMailingSwitch,
-		"admin_events":        rt.mgr.AdminEventPrefs(),
-		"user_events":         userEvents,
-		"user_expiring_days":  expiringDays,
+		"enabled":              set.TGBotEnabled,
+		"token":                set.TGBotToken,
+		"backup_cron":          set.TGBackupCron,
+		"lang":                 set.BotLang(),
+		"proxy":                set.TGProxy,
+		"proxy_mode":           set.TGProxyModeOr(),
+		"chat_ids":             chats,
+		"link_code":            set.TGLinkCode,
+		"bot_username":         botUsername(r.Context(), set.TGBotToken, set.TelegramProxyURL()),
+		"user_enabled":         set.TGUserBotEnabled,
+		"user_token":           set.TGUserBotToken,
+		"user_reg_enabled":     set.TGUserRegEnabled,
+		"user_reg_mode":        set.RegMode(),
+		"user_reg_code":        set.TGUserRegCode,
+		"user_bot_username":    botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL()),
+		"user_miniapp_url":     sub.MiniAppURL(set),
+		"user_tg_bind":         set.SubTGBind,
+		"user_tg_rebind":       set.SubTGRebind,
+		"user_tg_rebind_hours": set.SubTGRebindHours,
+		"user_mailing_switch":  set.TGMailingSwitch,
+		"admin_events":         rt.mgr.AdminEventPrefs(),
+		"user_events":          userEvents,
+		"user_expiring_days":   expiringDays,
 
 		"support_enabled":      set.TGSupportEnabled,
 		"support_token":        set.TGSupportBotToken,
@@ -85,6 +87,8 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 		// Telegram.
 		UserTGBind   *bool `json:"user_tg_bind"`
 		UserTGRebind *bool `json:"user_tg_rebind"`
+		// UserTGRebindHours: at most one move per that many hours (0: no limit).
+		UserTGRebindHours *int `json:"user_tg_rebind_hours"`
 		// UserMailingSwitch shows the bot's broadcast on/off button.
 		UserMailingSwitch *bool           `json:"user_mailing_switch"`
 		AdminEvents       map[string]bool `json:"admin_events"`
@@ -174,8 +178,16 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if req.UserTGBind != nil || req.UserTGRebind != nil {
-		if err := rt.mgr.Store().SetSubTGBinding(or(req.UserTGBind, cur.SubTGBind), or(req.UserTGRebind, cur.SubTGRebind)); err != nil {
+	if req.UserTGBind != nil || req.UserTGRebind != nil || req.UserTGRebindHours != nil {
+		hours := cur.SubTGRebindHours
+		if req.UserTGRebindHours != nil {
+			hours = *req.UserTGRebindHours
+		}
+		if !slices.Contains(model.SelfRotateChoices, hours) {
+			writeErrCode(w, http.StatusBadRequest, "err.badValue", "недопустимое значение")
+			return
+		}
+		if err := rt.mgr.Store().SetSubTGBinding(or(req.UserTGBind, cur.SubTGBind), or(req.UserTGRebind, cur.SubTGRebind), hours); err != nil {
 			writeManagerErr(w, err)
 			return
 		}

@@ -1840,3 +1840,46 @@ func (s *Store) SetUserCreatedAt(id, at int64) error {
 	_, err := s.db.Exec(`UPDATE users SET created_at = ? WHERE id = ?`, at, id)
 	return err
 }
+
+// ClaimSelfRotate records that a user reissues their own link now, unless they did
+// within the last `every` seconds; it reports whether they may.
+func (s *Store) ClaimSelfRotate(userID, now, every int64) (bool, error) {
+	res, err := s.db.Exec(`UPDATE users SET self_rotated_at = ? WHERE id = ? AND self_rotated_at <= ?`,
+		now, userID, now-every)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// TGChangedAt is when a user's account was last linked to a Telegram by its code.
+func (s *Store) TGChangedAt(userID int64) (int64, error) {
+	var at int64
+	err := s.db.QueryRow(`SELECT tg_changed_at FROM users WHERE id = ?`, userID).Scan(&at)
+	return at, err
+}
+
+// ClaimTGLink records that a user's account is linked to a Telegram by its code now.
+// A move from another Telegram (change) is refused when the last link was within
+// `every` seconds; it reports whether the link may go ahead.
+func (s *Store) ClaimTGLink(userID, now, every int64, change bool) (bool, error) {
+	q, args := `UPDATE users SET tg_changed_at = ? WHERE id = ?`, []any{now, userID}
+	if change && every > 0 {
+		q += ` AND tg_changed_at <= ?`
+		args = append(args, now-every)
+	}
+	res, err := s.db.Exec(q, args...)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// ReleaseSelfRotate takes back a claim whose reissue failed, so the user is not held
+// for the whole interval by an error of ours.
+func (s *Store) ReleaseSelfRotate(userID, at int64) error {
+	_, err := s.db.Exec(`UPDATE users SET self_rotated_at = 0 WHERE id = ? AND self_rotated_at = ?`, userID, at)
+	return err
+}
