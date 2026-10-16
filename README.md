@@ -930,7 +930,7 @@ are not responsible for how third parties use the project.
 
 ---
 
-## 🧑‍💻 Development
+## 💻 Development
 
 ```bash
 # frontend (after changes in web/)
