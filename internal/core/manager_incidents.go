@@ -5,6 +5,7 @@ import (
 	"html"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -52,6 +53,87 @@ func (m *Manager) IncidentServers() ([]IncidentServer, error) {
 	return out, nil
 }
 
+// subNoticeAhead is how far ahead the subscription page announces maintenance.
+const subNoticeAhead = 3 * 24 * time.Hour
+
+// subIncidentCache holds SubPageIncidents for subIncidentTTL: every subscription
+// page opened asks, and the answer changes only when the operator writes or a
+// window opens — half a minute late at worst, like the status page.
+type subIncidentCache struct {
+	mu   sync.Mutex
+	at   time.Time
+	list []model.Incident
+}
+
+const subIncidentTTL = 30 * time.Second
+
+// incidentsChanged drops the cached answer: the operator expects the page to say
+// what they just posted.
+func (m *Manager) incidentsChanged() {
+	m.subIncidents.mu.Lock()
+	m.subIncidents.at = time.Time{}
+	m.subIncidents.mu.Unlock()
+}
+
+// SubPageIncidents is what the subscription page tells its reader: what is going
+// on now, then maintenance due within three days, soonest first. An entry whose
+// servers have all left the status page is about nothing the reader can be on.
+// The slice is shared: callers read it, never change it.
+func (m *Manager) SubPageIncidents() ([]model.Incident, error) {
+	c := &m.subIncidents
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.at.IsZero() && time.Since(c.at) < subIncidentTTL {
+		return c.list, nil
+	}
+	list, err := m.subPageIncidents()
+	if err != nil {
+		return nil, err
+	}
+	c.list, c.at = list, time.Now()
+	return list, nil
+}
+
+func (m *Manager) subPageIncidents() ([]model.Incident, error) {
+	now := time.Now()
+	list, err := m.store.IncidentsForPage(now.Unix(), now.Unix())
+	if err != nil || len(list) == 0 {
+		return nil, err
+	}
+	servers, err := m.IncidentServers()
+	if err != nil {
+		return nil, err
+	}
+	shown := func(in *model.Incident) bool {
+		if len(in.NodeIDs) == 0 {
+			return true
+		}
+		for _, s := range servers {
+			if in.Concerns(s.ID) {
+				return true
+			}
+		}
+		return false
+	}
+	var active, ahead []model.Incident
+	horizon := now.Add(subNoticeAhead).Unix()
+	for i := range list {
+		in := &list[i]
+		if !shown(in) {
+			continue
+		}
+		switch in.Phase(now.Unix()) {
+		case model.IncidentActive:
+			active = append(active, *in)
+		case model.IncidentScheduled:
+			if in.StartsAt <= horizon {
+				ahead = append([]model.Incident{*in}, ahead...) // the store hands latest first
+			}
+		}
+	}
+	return append(active, ahead...), nil
+}
+
 // SaveIncident creates an incident (ID 0) or rewrites one, returning what was stored.
 // Whether it is resolved is not set here: ResolveIncident does that.
 func (m *Manager) SaveIncident(in model.Incident) (*model.Incident, error) {
@@ -71,6 +153,11 @@ func (m *Manager) SaveIncident(in model.Incident) (*model.Incident, error) {
 	}
 	var kept []int64
 	if old != nil {
+		// The kind is chosen once: the stages of its course depend on it, and an
+		// incident turned into maintenance would carry steps maintenance cannot have.
+		if model.ValidIncidentKind(in.Kind) && in.Kind != old.Kind {
+			return nil, invalidCode("err.incidentKindLocked", "тип записи после создания не меняется — удалите её и создайте новую")
+		}
 		kept = old.NodeIDs
 	}
 	if err := m.validateIncident(&in, now, kept); err != nil {
@@ -83,6 +170,9 @@ func (m *Manager) SaveIncident(in model.Incident) (*model.Incident, error) {
 		if err := m.store.CreateIncident(&in); err != nil {
 			return nil, err
 		}
+		in.Updates = []model.IncidentUpdate{}
+		m.incidentsChanged()
+		m.emitIncident(model.WebhookIncidentCreated, &in, nil)
 		return &in, nil
 	}
 	if ok, err := m.store.UpdateIncident(&in); err != nil {
@@ -92,7 +182,16 @@ func (m *Manager) SaveIncident(in model.Incident) (*model.Incident, error) {
 	}
 	// Read back rather than assemble: whether it is resolved is the store's, and a
 	// resolve may have landed while this edit was being made.
-	return m.store.GetIncident(in.ID)
+	m.incidentsChanged()
+	saved, err := m.store.GetIncident(in.ID)
+	if err != nil {
+		return nil, err
+	}
+	if saved == nil { // deleted in the meantime
+		return nil, invalidCode("err.incidentNotFound", "запись не найдена")
+	}
+	m.emitIncident(model.WebhookIncidentUpdated, saved, nil)
+	return saved, nil
 }
 
 // validateIncident checks and normalises what the operator wrote. kept are the
@@ -147,8 +246,13 @@ func (m *Manager) validateIncident(in *model.Incident, now int64, kept []int64) 
 // ResolveIncident marks an incident resolved, or a maintenance window finished,
 // now, and reports whether this call did it. One that is already over — resolved
 // before, or a window that closed by itself — is left as it is: its end is history.
-// Maintenance that has not begun cannot be finished; it is moved or deleted.
-func (m *Manager) ResolveIncident(id int64) (*model.Incident, bool, error) {
+// Maintenance that has not begun cannot be finished; it is moved or deleted. note,
+// when given, closes its course (stage resolved).
+func (m *Manager) ResolveIncident(id int64, note string) (*model.Incident, bool, error) {
+	note = strings.TrimSpace(strings.ReplaceAll(note, "\r\n", "\n"))
+	if n := utf8.RuneCountInString(note); n > model.IncidentBodyMax {
+		return nil, false, invalidCode("err.incidentBodyLong", "текст длиннее {{max}} символов", map[string]any{"max": model.IncidentBodyMax})
+	}
 	in, err := m.store.GetIncident(id)
 	if err != nil {
 		return nil, false, err
@@ -163,21 +267,121 @@ func (m *Manager) ResolveIncident(id int64) (*model.Incident, bool, error) {
 	case model.IncidentScheduled:
 		return nil, false, invalidCode("err.incidentNotStarted", "работы ещё не начались — перенесите их или удалите запись")
 	}
-	ok, err := m.store.ResolveIncident(id, now)
+	ok, err := m.store.ResolveIncident(id, now, note)
 	if err != nil {
 		return nil, false, err
 	}
+	m.incidentsChanged()
 	if in, err = m.store.GetIncident(id); err != nil {
 		return nil, false, err
 	}
 	if in == nil {
 		return nil, false, invalidCode("err.incidentNotFound", "запись не найдена")
 	}
+	if ok {
+		m.emitIncident(model.WebhookIncidentResolved, in, nil)
+	}
 	return in, ok, nil
+}
+
+// AddIncidentUpdate posts a step in an incident's course. A course goes on after
+// the end too (what was found afterwards), so a finished incident takes updates.
+func (m *Manager) AddIncidentUpdate(id int64, stage, body string) (*model.Incident, *model.IncidentUpdate, error) {
+	in, err := m.store.GetIncident(id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if in == nil {
+		return nil, nil, invalidCode("err.incidentNotFound", "запись не найдена")
+	}
+	stage = strings.TrimSpace(stage)
+	if stage == "" {
+		stage = model.IncidentStageUpdate
+	}
+	if !model.ValidIncidentStage(in.Kind, stage) {
+		return nil, nil, invalidCode("err.incidentStage", "такой этап не подходит для этой записи")
+	}
+	body = strings.TrimSpace(strings.ReplaceAll(body, "\r\n", "\n"))
+	if body == "" {
+		return nil, nil, invalidCode("err.incidentUpdateEmpty", "напишите, что изменилось")
+	}
+	if n := utf8.RuneCountInString(body); n > model.IncidentBodyMax {
+		return nil, nil, invalidCode("err.incidentBodyLong", "текст длиннее {{max}} символов", map[string]any{"max": model.IncidentBodyMax})
+	}
+	u := model.IncidentUpdate{IncidentID: id, Stage: stage, Body: body, CreatedAt: time.Now().Unix()}
+	if ok, err := m.store.AddIncidentUpdate(&u); err != nil {
+		return nil, nil, err
+	} else if !ok {
+		return nil, nil, invalidCode("err.incidentNotFound", "запись не найдена")
+	}
+	m.incidentsChanged()
+	if in, err = m.store.GetIncident(id); err != nil {
+		return nil, nil, err
+	}
+	if in == nil { // deleted in the meantime
+		return nil, nil, invalidCode("err.incidentNotFound", "запись не найдена")
+	}
+	m.emitIncident(model.WebhookIncidentUpdated, in, &u)
+	return in, &u, nil
+}
+
+// DeleteIncidentUpdate takes back one step of a course — posted by mistake.
+func (m *Manager) DeleteIncidentUpdate(id int64) error {
+	incident, err := m.store.DeleteIncidentUpdate(id)
+	if err != nil {
+		return err
+	}
+	if incident == 0 {
+		return invalidCode("err.incidentUpdateNotFound", "обновление не найдено")
+	}
+	m.incidentsChanged()
+	// A copy of the course kept elsewhere has to drop the step too.
+	if in, err := m.store.GetIncident(incident); err == nil && in != nil {
+		m.emitIncident(model.WebhookIncidentUpdated, in, nil)
+	}
+	return nil
+}
+
+// emitIncident tells webhooks and plugins about an incident. update is the step
+// that was just posted, for incident.updated.
+func (m *Manager) emitIncident(event string, in *model.Incident, update *model.IncidentUpdate) {
+	if !m.webhookWanted(event) {
+		return
+	}
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return
+	}
+	nodes := in.NodeIDs
+	if nodes == nil {
+		nodes = []int64{}
+	}
+	updates := in.Updates
+	if updates == nil {
+		updates = []model.IncidentUpdate{}
+	}
+	d := map[string]any{
+		"id": in.ID, "kind": in.Kind, "title": in.Title, "body": in.Body,
+		"node_ids": nodes, "servers": m.incidentServerNames(in),
+		"starts_at": in.StartsAt, "ends_at": in.EndsAt, "resolved_at": in.ResolvedAt,
+		"phase": in.Phase(time.Now().Unix()), "updates": updates,
+		"status_url": statusPageURL(set),
+	}
+	if update != nil {
+		d["update"] = update
+	}
+	m.EmitWebhook(event, d)
 }
 
 // DeleteIncident removes an incident from the page and the history.
 func (m *Manager) DeleteIncident(id int64) error {
+	in, err := m.store.GetIncident(id)
+	if err != nil {
+		return err
+	}
+	if in == nil {
+		return invalidCode("err.incidentNotFound", "запись не найдена")
+	}
 	ok, err := m.store.DeleteIncident(id)
 	if err != nil {
 		return err
@@ -185,22 +389,64 @@ func (m *Manager) DeleteIncident(id int64) error {
 	if !ok {
 		return invalidCode("err.incidentNotFound", "запись не найдена")
 	}
+	m.incidentsChanged()
+	m.emitIncident(model.WebhookIncidentDeleted, in, nil)
 	return nil
 }
 
 // NotifyIncident sends the incident to every user with an active subscription
 // through the user bot, worded in lang (the operator's own text is sent as typed).
-// resolved announces that it is over instead.
+// resolved announces that it is over instead, with the closing note if one was
+// given.
 func (m *Manager) NotifyIncident(ctx context.Context, in *model.Incident, lang i18n.Lang, resolved bool) error {
-	set, err := m.store.GetSettings()
-	if err != nil {
-		return err
-	}
 	if !resolved && in.Phase(time.Now().Unix()) == model.IncidentDone {
 		// Announcing an entry that is over would read to every user as current.
 		return invalidCode("err.incidentOver", "запись уже завершена — сообщать не о чем")
 	}
-	text := m.incidentMessage(in, set, lang, resolved)
+	return m.sendIncidentNotice(ctx, in, incidentNoticeFor(in, lang, resolved), lang)
+}
+
+// incidentNoticeFor is the message announcing an incident, or its end.
+func incidentNoticeFor(in *model.Incident, lang i18n.Lang, resolved bool) incidentNotice {
+	n := incidentNotice{icon: "⚠️", head: i18n.T(lang, "status.kindIncident"), text: in.Body, window: true}
+	switch {
+	case resolved:
+		n = incidentNotice{icon: "✅", head: i18n.T(lang, "status.msgResolved")}
+		if in.Kind == model.IncidentKindMaintenance {
+			n.head = i18n.T(lang, "status.msgMaintenanceDone")
+		}
+		if k := len(in.Updates); k > 0 && in.Updates[k-1].Stage == model.IncidentStageResolved {
+			n.text = in.Updates[k-1].Body
+		}
+	case in.Kind == model.IncidentKindMaintenance:
+		n.icon, n.head = "🛠", i18n.T(lang, "status.kindMaintenance")
+	}
+	return n
+}
+
+// NotifyIncidentUpdate sends one step of an incident's course to the same users.
+func (m *Manager) NotifyIncidentUpdate(ctx context.Context, in *model.Incident, u *model.IncidentUpdate, lang i18n.Lang) error {
+	if in.Phase(time.Now().Unix()) == model.IncidentDone {
+		return invalidCode("err.incidentOver", "запись уже завершена — сообщать не о чем")
+	}
+	return m.sendIncidentNotice(ctx, in, incidentNotice{
+		icon: "🔄", head: status.StageLabel(lang, in.Kind, u.Stage), text: u.Body,
+	}, lang)
+}
+
+// incidentNotice is one message about an incident: its icon and heading word, the
+// text under the title, and whether to state the maintenance window.
+type incidentNotice struct {
+	icon, head, text string
+	window           bool
+}
+
+func (m *Manager) sendIncidentNotice(ctx context.Context, in *model.Incident, n incidentNotice, lang i18n.Lang) error {
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return err
+	}
+	text := m.incidentMessage(in, n, set, lang)
 	b, err := m.CreateBroadcast(ctx, &model.Broadcast{Text: text, Audience: model.AudienceActive})
 	if err != nil {
 		return err
@@ -217,20 +463,20 @@ func (m *Manager) NotifyIncident(ctx context.Context, in *model.Incident, lang i
 // incidentMessage is the Telegram HTML the users get, kept within a message's
 // length: escaping can grow the operator's text several times over (every & is five
 // characters), so the text is shortened rather than the notice refused.
-func (m *Manager) incidentMessage(in *model.Incident, set *model.Settings, lang i18n.Lang, resolved bool) string {
-	msg := m.incidentHTML(in, in.Body, set, lang, resolved)
+func (m *Manager) incidentMessage(in *model.Incident, n incidentNotice, set *model.Settings, lang i18n.Lang) string {
+	msg := m.incidentHTML(in, n, n.text, set, lang)
 	if utf8.RuneCountInString(msg) <= broadcastTextMax {
 		return msg
 	}
 	// The longest start of the text that fits with an ellipsis: the message grows
 	// with the prefix, so a binary search finds it.
-	body := []rune(in.Body)
-	fits := func(n int) (string, bool) {
+	body := []rune(n.text)
+	fits := func(k int) (string, bool) {
 		text := ""
-		if n > 0 {
-			text = strings.TrimSpace(string(body[:n])) + "…"
+		if k > 0 {
+			text = strings.TrimSpace(string(body[:k])) + "…"
 		}
-		out := m.incidentHTML(in, text, set, lang, resolved)
+		out := m.incidentHTML(in, n, text, set, lang)
 		return out, utf8.RuneCountInString(out) <= broadcastTextMax
 	}
 	lo, hi := 0, len(body)
@@ -246,25 +492,14 @@ func (m *Manager) incidentMessage(in *model.Incident, set *model.Settings, lang 
 	return msg
 }
 
-func (m *Manager) incidentHTML(in *model.Incident, bodyText string, set *model.Settings, lang i18n.Lang, resolved bool) string {
-	var head, icon string
-	switch {
-	case resolved && in.Kind == model.IncidentKindMaintenance:
-		icon, head = "✅", i18n.T(lang, "status.msgMaintenanceDone")
-	case resolved:
-		icon, head = "✅", i18n.T(lang, "status.msgResolved")
-	case in.Kind == model.IncidentKindMaintenance:
-		icon, head = "🛠", i18n.T(lang, "status.kindMaintenance")
-	default:
-		icon, head = "⚠️", i18n.T(lang, "status.kindIncident")
-	}
+func (m *Manager) incidentHTML(in *model.Incident, n incidentNotice, text string, set *model.Settings, lang i18n.Lang) string {
 	var sb strings.Builder
-	sb.WriteString(icon + " <b>" + html.EscapeString(head) + ": " + html.EscapeString(in.Title) + "</b>")
-	if bodyText != "" && !resolved {
-		sb.WriteString("\n\n" + html.EscapeString(bodyText))
+	sb.WriteString(n.icon + " <b>" + html.EscapeString(n.head) + ": " + html.EscapeString(in.Title) + "</b>")
+	if text != "" {
+		sb.WriteString("\n\n" + html.EscapeString(text))
 	}
 	var facts []string
-	if in.Kind == model.IncidentKindMaintenance && !resolved {
+	if n.window && in.Kind == model.IncidentKindMaintenance {
 		facts = append(facts, "🕐 "+html.EscapeString(status.Window(lang, m.loc(), in.StartsAt, in.EndsAt)))
 	}
 	if names := m.incidentServerNames(in); names != "" {
@@ -273,10 +508,18 @@ func (m *Manager) incidentHTML(in *model.Incident, bodyText string, set *model.S
 	if len(facts) > 0 {
 		sb.WriteString("\n\n" + strings.Join(facts, "\n"))
 	}
-	if set.StatusEnabled && set.Host != "" {
-		sb.WriteString("\n\n" + html.EscapeString("https://"+set.Host+"/"+set.StatusPathOr()))
+	if url := statusPageURL(set); url != "" {
+		sb.WriteString("\n\n" + html.EscapeString(url))
 	}
 	return sb.String()
+}
+
+// statusPageURL is the public status page's address, "" while it is off.
+func statusPageURL(set *model.Settings) string {
+	if !set.StatusEnabled || set.Host == "" {
+		return ""
+	}
+	return "https://" + set.Host + "/" + set.StatusPathOr()
 }
 
 // incidentServerNames is the servers an incident names, "" when it is the whole

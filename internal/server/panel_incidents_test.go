@@ -59,7 +59,7 @@ func TestIncidentReachesTheStatusPage(t *testing.T) {
 	if w := panelJSON(t, rt, http.MethodPost, fmt.Sprintf("/api/incidents/%d/resolve", id), `{}`, c); w.Code != http.StatusOK {
 		t.Fatalf("resolve: %d %s", w.Code, w.Body.String())
 	}
-	if body := getFrom(h, "/status").Body.String(); !strings.Contains(body, `<details class="past">`) || strings.Contains(body, `class="tag srv-tag maintenance-tone"`) {
+	if body := getFrom(h, "/status").Body.String(); !strings.Contains(body, `<details class="past `) || strings.Contains(body, `class="tag srv-tag maintenance-tone"`) {
 		t.Error("a resolved entry did not move to the history")
 	}
 
@@ -172,5 +172,76 @@ func TestAPIIncidents(t *testing.T) {
 	}
 	if w := apiDo(t, h, http.MethodDelete, fmt.Sprintf("%s/v1/incidents/%d", base, id), limited.RawKey, ""); w.Code != http.StatusBadRequest {
 		t.Errorf("delete twice: %d", w.Code)
+	}
+}
+
+// What is going on reaches the subscription page, linked to the status page; a step
+// of the course posted in the panel reaches the status page.
+func TestIncidentOnSubPageAndCourse(t *testing.T) {
+	t.Parallel()
+	h, mgr, st := nodeAPITestServer(t)
+	rt := h.(*Router)
+	if err := st.SetStatusPage(true, "status"); err != nil {
+		t.Fatal(err)
+	}
+	rt.setStatusPath("status")
+	u, err := mgr.CreateUser(t.Context(), "reader", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	subPage := func() string {
+		req := httptest.NewRequest(http.MethodGet, "/sub/"+u.SubToken, nil)
+		req.Header.Set("Accept", "text/html")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Body.String()
+	}
+	if strings.Contains(subPage(), `class="notices"`) {
+		t.Fatal("a notice block with nothing to say")
+	}
+	c := signIn(t, st, "owner", model.RoleOwner, false)
+	w := panelJSON(t, rt, http.MethodPost, "/api/incidents", `{"kind":"incident","title":"Slow <NL>","body":"use Main"}`, c)
+	var saved struct {
+		Incident model.Incident `json:"incident"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &saved); err != nil || saved.Incident.ID == 0 {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+	page := subPage()
+	for _, want := range []string{`class="notice-card incident"`, "Slow &lt;NL&gt;", "use Main", `href="/status"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("subscription page lacks %q", want)
+		}
+	}
+
+	w = panelJSON(t, rt, http.MethodPost, fmt.Sprintf("/api/incidents/%d/updates", saved.Incident.ID),
+		`{"stage":"identified","body":"provider link overloaded"}`, c)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"stage":"identified"`) {
+		t.Fatalf("post update: %d %s", w.Code, w.Body.String())
+	}
+	status := getFrom(h, "/status").Body.String()
+	if !strings.Contains(status, `class="course"`) || !strings.Contains(status, "provider link overloaded") {
+		t.Error("the course is not on the status page")
+	}
+	if w := panelJSON(t, rt, http.MethodPost, fmt.Sprintf("/api/incidents/%d/resolve", saved.Incident.ID), `{"note":"fixed"}`, c); w.Code != http.StatusOK {
+		t.Fatalf("resolve: %d %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(subPage(), `class="notices"`) {
+		t.Error("a resolved incident is still on the subscription page")
+	}
+}
+
+// The subscription page shows an entry about the whole service or about a server
+// the reader can use — not one about a server their groups keep them off.
+func TestConcernsAny(t *testing.T) {
+	t.Parallel()
+	reached := map[int64]bool{0: true}
+	for _, c := range []struct {
+		ids  []int64
+		want bool
+	}{{nil, true}, {[]int64{0}, true}, {[]int64{2, 0}, true}, {[]int64{2}, false}} {
+		if got := concernsAny(&model.Incident{NodeIDs: c.ids}, reached); got != c.want {
+			t.Errorf("%v: %v, want %v", c.ids, got, c.want)
+		}
 	}
 }

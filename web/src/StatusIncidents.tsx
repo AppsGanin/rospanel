@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  addIncidentUpdate,
   deleteIncident,
+  deleteIncidentUpdate,
   listIncidents,
   resolveIncident,
   saveIncident,
@@ -9,6 +11,7 @@ import {
   type IncidentKind,
   type IncidentSaved,
   type IncidentServer,
+  type IncidentStage,
 } from "./api";
 import { fmtStamp } from "./format";
 import { useAction } from "./hooks";
@@ -34,9 +37,11 @@ import {
   Panel,
   ReadOnly,
   SegmentedControl,
+  Select,
   SettingRow,
   Textarea,
   TextInput,
+  useConfirm,
 } from "./ui";
 
 type Phase = "scheduled" | "active" | "done";
@@ -85,6 +90,7 @@ function blank(kind: IncidentKind): Incident {
     resolved_at: 0,
     created_at: 0,
     updated_at: 0,
+    updates: [],
   };
 }
 
@@ -104,8 +110,12 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
   const [start, setStart] = useState<Moment>({ date: "", time: "" });
   const [end, setEnd] = useState<Moment>({ date: "", time: "" });
   const [notify, setNotify] = useState(false);
+  // Whether the servers were ticked differently: an entry saved without touching
+  // them keeps what it named, even if that is every server shown today.
+  const [pickedServers, setPickedServers] = useState(false);
   const [resolving, setResolving] = useState<Incident | null>(null);
   const [resolveNotify, setResolveNotify] = useState(false);
+  const [resolveNote, setResolveNote] = useState("");
   const [deleting, setDeleting] = useState<Incident | null>(null);
   const { busy, run } = useAction();
 
@@ -121,11 +131,15 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
   useEffect(reload, [reload]);
 
   const open = (inc: Incident) => {
-    setEditor({ ...inc, node_ids: [...(inc.node_ids ?? [])] });
+    // The editor holds the servers ticked; the whole service (none named) is every
+    // server ticked.
+    const named = inc.node_ids ?? [];
+    setEditor({ ...inc, node_ids: named.length ? [...named] : servers.map((s) => s.id) });
     setEditorTitle(inc.title);
     setStart(toMoment(inc.starts_at));
     setEnd(toMoment(inc.ends_at));
     setNotify(false);
+    setPickedServers(false);
   };
   const patch = (d: Partial<Incident>) => editor && setEditor({ ...editor, ...d });
 
@@ -143,8 +157,20 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
 
   const save = () => {
     if (!editor) return;
+    if (editor.node_ids.length === 0) {
+      notifyError(t("incidents.pickServer"));
+      return;
+    }
+    // Every server ticked is the whole service: one added later is covered too. An
+    // entry whose servers were left alone keeps the list it had.
+    const everyServer =
+      servers.every((s) => editor.node_ids.includes(s.id)) &&
+      editor.node_ids.every((id) => servers.some((s) => s.id === id));
+    const stored = list?.find((i) => i.id === editor.id)?.node_ids ?? [];
+    const nodeIds = !pickedServers && editor.id ? stored : everyServer ? [] : editor.node_ids;
     const inc: Incident = {
       ...editor,
+      node_ids: nodeIds,
       title: editor.title.trim(),
       starts_at: fromMoment(start),
       ends_at: editor.kind === "maintenance" ? fromMoment(end) : 0,
@@ -161,7 +187,7 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
     if (!resolving) return;
     const id = resolving.id;
     run(async () => {
-      const r = await resolveIncident(id, resolveNotify && canNotify);
+      const r = await resolveIncident(id, resolveNotify && canNotify, resolveNote.trim());
       setResolving(null);
       done(r, t("incidents.resolvedOk"), resolveNotify && canNotify);
     }).catch((e) => notifyError(errMessage(e)));
@@ -198,6 +224,9 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
       ? `${fmtStamp(inc.starts_at)} – ${fmtStamp(inc.ends_at)}`
       : fmtStamp(inc.starts_at);
   const maint = editor?.kind === "maintenance";
+  // The entry as last loaded: its course comes from there, so a posted update shows
+  // up as soon as the list reloads.
+  const current = editor?.id ? list?.find((i) => i.id === editor.id) : undefined;
   // Where the entry stands as edited: one that is over is not announced as news.
   const editedPhase = editor
     ? phaseOf(
@@ -205,7 +234,6 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
         now,
       )
     : "active";
-  const allServers = (editor?.node_ids.length ?? 0) === 0;
   // The servers to tick, plus any the entry names that have left the status page
   // since — shown by number so they can be unticked.
   const editorServers = [
@@ -236,6 +264,8 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
                 variant="filled"
                 color="brand"
                 title={t("incidents.new")}
+                // The servers to tick come with the list.
+                disabled={!list || !!err}
                 onClick={() => open(blank("incident"))}
               >
                 <IconPlus />
@@ -291,6 +321,7 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
                       disabled={busy}
                       onClick={() => {
                         setResolveNotify(false);
+                        setResolveNote("");
                         setResolving(inc);
                       }}
                     >
@@ -330,15 +361,24 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
         {editor && (
           <ReadOnly when={!canManage}>
             <div className="flex flex-col gap-4">
-              <SegmentedControl
-                fullWidth
-                data={[
-                  { value: "incident", label: t("incidents.kindIncident") },
-                  { value: "maintenance", label: t("incidents.kindMaintenance") },
-                ]}
-                value={editor.kind}
-                onChange={(v) => patch({ kind: v as IncidentKind })}
-              />
+              {/* The kind is chosen once: its course's stages depend on it. */}
+              {editor.id ? (
+                <div>
+                  <Badge color={maint ? "brand" : "orange"}>
+                    {t(maint ? "incidents.kindMaintenance" : "incidents.kindIncident")}
+                  </Badge>
+                </div>
+              ) : (
+                <SegmentedControl
+                  fullWidth
+                  data={[
+                    { value: "incident", label: t("incidents.kindIncident") },
+                    { value: "maintenance", label: t("incidents.kindMaintenance") },
+                  ]}
+                  value={editor.kind}
+                  onChange={(v) => patch({ kind: v as IncidentKind })}
+                />
+              )}
               <TextInput
                 label={t("incidents.titleLabel")}
                 placeholder={t(maint ? "incidents.titlePhMaint" : "incidents.titlePh")}
@@ -355,26 +395,21 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
               <div className="flex flex-col gap-2">
                 <span className="text-xs font-medium text-ink">{t("incidents.servers")}</span>
                 <div className="flex max-h-52 flex-col gap-1.5 overflow-y-auto rounded-lg border border-gray-200/80 bg-white/50 p-2">
-                  <Checkbox
-                    checked={allServers}
-                    onChange={(c) => patch({ node_ids: c ? [] : servers.map((s) => s.id) })}
-                    label={t("incidents.allServers")}
-                  />
-                  {!allServers &&
-                    editorServers.map((s) => (
-                      <Checkbox
-                        key={s.id}
-                        checked={editor.node_ids.includes(s.id)}
-                        onChange={(c) =>
-                          patch({
-                            node_ids: c
-                              ? [...editor.node_ids, s.id]
-                              : editor.node_ids.filter((id) => id !== s.id),
-                          })
-                        }
-                        label={s.name}
-                      />
-                    ))}
+                  {editorServers.map((s) => (
+                    <Checkbox
+                      key={s.id}
+                      checked={editor.node_ids.includes(s.id)}
+                      onChange={(c) => {
+                        setPickedServers(true);
+                        patch({
+                          node_ids: c
+                            ? [...editor.node_ids, s.id]
+                            : editor.node_ids.filter((id) => id !== s.id),
+                        });
+                      }}
+                      label={s.name}
+                    />
+                  ))}
                 </div>
               </div>
               <MomentField
@@ -397,6 +432,17 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
                   onChange={setNotify}
                   label={t(editor.id ? "incidents.notifyUpdate" : "incidents.notify")}
                   hint={t("incidents.notifyHint")}
+                />
+              )}
+              {editor.id > 0 && current && (
+                <IncidentCourse
+                  incident={current}
+                  canNotify={canNotify}
+                  onDone={(r, ok, notified) => done(r, ok, notified)}
+                  onDeleted={() => {
+                    reload();
+                    notifySuccess(t("incidents.updateDeleted"));
+                  }}
                 />
               )}
             </div>
@@ -423,6 +469,13 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
           <p className="text-sm leading-relaxed text-ink-muted">
             {t("incidents.resolveBody", { title: resolving?.title ?? "" })}
           </p>
+          <Textarea
+            label={t("incidents.note")}
+            placeholder={t("incidents.notePh")}
+            rows={3}
+            value={resolveNote}
+            onChange={setResolveNote}
+          />
           {canNotify && (
             <Checkbox
               checked={resolveNotify}
@@ -489,6 +542,118 @@ function MomentField({
         />
       </div>
       {hint && <p className="text-xs text-ink-muted">{hint}</p>}
+    </div>
+  );
+}
+
+const STAGES: IncidentStage[] = ["investigating", "identified", "monitoring", "update"];
+
+// IncidentCourse is the "how it is going" feed of an entry: the steps posted so far,
+// newest first, and a box to post the next one — optionally sent to the users.
+function IncidentCourse({
+  incident,
+  canNotify,
+  onDone,
+  onDeleted,
+}: {
+  incident: Incident;
+  canNotify: boolean;
+  onDone: (r: IncidentSaved, ok: string, notified: boolean) => void;
+  onDeleted: () => void;
+}) {
+  const { t } = useTranslation();
+  const maint = incident.kind === "maintenance";
+  const [stage, setStage] = useState<IncidentStage>(maint ? "update" : "investigating");
+  const [body, setBody] = useState("");
+  const [notify, setNotify] = useState(false);
+  const { busy, run } = useAction();
+  const { confirm, confirmNode } = useConfirm();
+  const over = phaseOf(incident, Math.floor(Date.now() / 1000)) === "done";
+  const label = (s: IncidentStage) =>
+    s === "resolved"
+      ? t(maint ? "incidents.stage.done" : "incidents.stage.resolved")
+      : t(`incidents.stage.${s}`);
+
+  const post = () =>
+    run(async () => {
+      const send = notify && canNotify && !over;
+      const r = await addIncidentUpdate(incident.id, maint ? "update" : stage, body.trim(), send);
+      setBody("");
+      setNotify(false);
+      onDone(r, t("incidents.updatePosted"), send);
+    });
+  const remove = async (id: number) => {
+    const ok = await confirm({
+      title: t("incidents.deleteUpdateTitle"),
+      confirmLabel: t("common.delete"),
+      danger: true,
+    });
+    if (!ok) return;
+    run(async () => {
+      await deleteIncidentUpdate(id);
+      onDeleted();
+    });
+  };
+
+  const updates = [...(incident.updates ?? [])].reverse();
+  return (
+    <div className="flex flex-col gap-2.5 border-t border-gray-100 pt-4">
+      {confirmNode}
+      <span className="text-xs font-medium text-ink">{t("incidents.course")}</span>
+      {updates.length > 0 && (
+        <ol className="flex flex-col gap-2">
+          {updates.map((u) => (
+            <li key={u.id} className="flex items-start gap-2 rounded-lg bg-gray-50 px-2.5 py-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline gap-x-2 text-xs">
+                  <span className="font-semibold text-ink">{label(u.stage)}</span>
+                  <span className="text-ink-muted">{fmtStamp(u.created_at)}</span>
+                </div>
+                <p className="mt-0.5 whitespace-pre-line break-words text-[13px] text-ink" dir="auto">
+                  {u.body}
+                </p>
+              </div>
+              <IconButton
+                compact
+                color="red"
+                title={t("incidents.deleteUpdate")}
+                disabled={busy}
+                onClick={() => remove(u.id)}
+              >
+                <IconTrash size={14} />
+              </IconButton>
+            </li>
+          ))}
+        </ol>
+      )}
+      {!maint && (
+        <Select
+          label={t("incidents.stageLabel")}
+          data={STAGES.map((s) => ({ value: s, label: label(s) }))}
+          value={stage}
+          onChange={(v) => setStage(v as IncidentStage)}
+        />
+      )}
+      <Textarea
+        label={t("incidents.updateBody")}
+        placeholder={t(maint ? "incidents.updatePhMaint" : "incidents.updatePh")}
+        rows={3}
+        value={body}
+        onChange={setBody}
+      />
+      {canNotify && !over && (
+        <Checkbox
+          checked={notify}
+          onChange={setNotify}
+          label={t("incidents.notifyPost")}
+          hint={t("incidents.notifyHint")}
+        />
+      )}
+      <div className="flex justify-end">
+        <Button size="sm" variant="light" onClick={post} loading={busy} disabled={!body.trim()}>
+          {t("incidents.post")}
+        </Button>
+      </div>
     </div>
   );
 }

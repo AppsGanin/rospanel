@@ -214,8 +214,10 @@ type Manager struct {
 	// believed about (see manager_node_served.go).
 	served servedRegistry
 
-	tzMu sync.RWMutex
-	tz   *time.Location // operator timezone for the local-day stats boundary
+	// subIncidents memoizes SubPageIncidents (see there).
+	subIncidents subIncidentCache
+	tzMu         sync.RWMutex
+	tz           *time.Location // operator timezone for the local-day stats boundary
 
 	sys *sysstat.Sampler // host metrics sampler for the dashboard (nil until started)
 

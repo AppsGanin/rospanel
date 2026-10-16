@@ -32,6 +32,15 @@ type (
 		Lang     string  `json:"lang"`
 	}
 	apiIncidentResolveReq struct {
+		Note   string `json:"note"` // closes its course as a "resolved" update, optional
+		Notify bool   `json:"notify"`
+		Lang   string `json:"lang"`
+	}
+	// apiIncidentUpdateReq is a step of an incident's course: stage investigating |
+	// identified | monitoring (incidents only) | update (default).
+	apiIncidentUpdateReq struct {
+		Stage  string `json:"stage"`
+		Body   string `json:"body"`
 		Notify bool   `json:"notify"`
 		Lang   string `json:"lang"`
 	}
@@ -100,7 +109,7 @@ func (rt *Router) apiResolveIncident(w http.ResponseWriter, r *http.Request, id 
 	if !apiMayNotify(w, r, req.Notify) {
 		return
 	}
-	in, changed, err := rt.mgr.ResolveIncident(id)
+	in, changed, err := rt.mgr.ResolveIncident(id, req.Note)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
@@ -108,6 +117,33 @@ func (rt *Router) apiResolveIncident(w http.ResponseWriter, r *http.Request, id 
 	rt.dropStatusCache()
 	// Only the call that ended it announces it: a repeat is not news.
 	writeAPIData(w, http.StatusOK, rt.apiNotifyIncident(r, in, req.Notify && changed, req.Lang, true))
+}
+
+func (rt *Router) apiAddIncidentUpdate(w http.ResponseWriter, r *http.Request, id int64) {
+	var req apiIncidentUpdateReq
+	if !apiDecode(w, r, &req) || !apiMayNotify(w, r, req.Notify) {
+		return
+	}
+	in, u, err := rt.mgr.AddIncidentUpdate(id, req.Stage, req.Body)
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	rt.dropStatusCache()
+	out := apiIncidentResp{Incident: in}
+	if req.Notify {
+		out.NotifyError = apiNotifyErr(rt.mgr.NotifyIncidentUpdate(r.Context(), in, u, i18n.Normalize(req.Lang)))
+	}
+	writeAPIData(w, http.StatusCreated, out)
+}
+
+func (rt *Router) apiDeleteIncidentUpdate(w http.ResponseWriter, _ *http.Request, id int64) {
+	if err := rt.mgr.DeleteIncidentUpdate(id); err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	rt.dropStatusCache()
+	writeAPIData(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (rt *Router) apiDeleteIncident(w http.ResponseWriter, _ *http.Request, id int64) {
@@ -136,9 +172,15 @@ func (rt *Router) apiNotifyIncident(r *http.Request, in *model.Incident, notify 
 	if !notify {
 		return out
 	}
-	err := rt.mgr.NotifyIncident(r.Context(), in, i18n.Normalize(lang), resolved)
+	out.NotifyError = apiNotifyErr(rt.mgr.NotifyIncident(r.Context(), in, i18n.Normalize(lang), resolved))
+	return out
+}
+
+// apiNotifyErr is a notification failure in the API's terms: the reason's key and
+// its English text, nil when there was none.
+func apiNotifyErr(err error) *apiNotifyError {
 	if err == nil {
-		return out
+		return nil
 	}
 	ne := &apiNotifyError{Message: err.Error()}
 	var ve *core.ValidationError
@@ -148,6 +190,5 @@ func (rt *Router) apiNotifyIncident(r *http.Request, in *model.Incident, notify 
 			ne.Message = msg
 		}
 	}
-	out.NotifyError = ne
-	return out
+	return ne
 }

@@ -699,6 +699,12 @@ const (
 	WebhookNodeUp   = "node.up"
 	WebhookXrayDown = "xray.down"
 	WebhookXrayUp   = "xray.up"
+	// The status page's incidents and maintenance: posted, changed (an edit, or a
+	// step of its course in data.update), resolved or finished, deleted.
+	WebhookIncidentCreated  = "incident.created"
+	WebhookIncidentUpdated  = "incident.updated"
+	WebhookIncidentResolved = "incident.resolved"
+	WebhookIncidentDeleted  = "incident.deleted"
 )
 
 // WebhookEventCatalog is the stable key list the settings UI iterates over (display
@@ -748,6 +754,10 @@ var WebhookEventCatalog = []string{
 	WebhookNodeUp,
 	WebhookXrayDown,
 	WebhookXrayUp,
+	WebhookIncidentCreated,
+	WebhookIncidentUpdated,
+	WebhookIncidentResolved,
+	WebhookIncidentDeleted,
 }
 
 // ValidWebhookEvent reports whether k is a known webhook event key.

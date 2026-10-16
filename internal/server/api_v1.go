@@ -387,6 +387,8 @@ func (rt *Router) apiMux() http.Handler {
 	nodeAudit("POST /v1/incidents/{id}", "apiIncidentSaved", idFn(rt.apiUpdateIncident))
 	nodeAudit("POST /v1/incidents/{id}/resolve", "apiIncidentResolved", idFn(rt.apiResolveIncident))
 	nodeAudit("DELETE /v1/incidents/{id}", "apiIncidentDeleted", idFn(rt.apiDeleteIncident))
+	nodeAudit("POST /v1/incidents/{id}/updates", "apiIncidentUpdate", idFn(rt.apiAddIncidentUpdate))
+	nodeAudit("DELETE /v1/incidents/updates/{id}", "apiIncidentUpdateDeleted", idFn(rt.apiDeleteIncidentUpdate))
 	hf("GET /v1/payments", rt.apiPaymentProviders)
 	nodeAudit("POST /v1/payments", "apiPaymentProvider", rt.apiSavePaymentProvider)
 

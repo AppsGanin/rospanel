@@ -725,6 +725,9 @@ servers are up and 90 days of uptime history. Names and availability only: no ad
 users, no traffic, and no page at all until you switch it on.
 Incidents and planned maintenance are posted on it from the same screen — a title, a text, the servers
 concerned, and a window for maintenance — and can go to every active subscriber through the bot.
+Each keeps a course of short updates (investigating, identified, monitoring, a closing note), shows on
+the subscription page while it is current or due within three days, and is managed over
+`/v1/incidents` with `incident.*` webhooks.
 
 #### 🧩 Plugins (beta)
 

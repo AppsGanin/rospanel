@@ -405,11 +405,28 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 	call("delete_billing_promos_by_id", map[string]any{"id": promo})
 
 	incident := newID("post_incidents", call("post_incidents", map[string]any{
-		"body": map[string]any{"kind": "maintenance", "title": "sweep works", "node_ids": []int64{0}},
+		"body": map[string]any{"kind": "incident", "title": "sweep incident", "node_ids": []int64{0}},
 	}))
 	call("post_incidents_by_id", map[string]any{
-		"id": incident, "body": map[string]any{"kind": "incident", "title": "sweep incident"},
+		"id": incident, "body": map[string]any{"kind": "incident", "title": "sweep incident, renamed"},
 	})
+	posted := call("post_incidents_by_id_updates", map[string]any{
+		"id": incident, "body": map[string]any{"stage": "identified", "body": "sweep cause"},
+	})
+	var course struct {
+		Data struct {
+			Incident struct {
+				Updates []struct {
+					ID int64 `json:"id"`
+				} `json:"updates"`
+			} `json:"incident"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(posted), &course); err != nil || len(course.Data.Incident.Updates) != 1 {
+		t.Errorf("post_incidents_by_id_updates: no update in the answer: %s", posted)
+	} else {
+		call("delete_incidents_updates_by_id", map[string]any{"id": course.Data.Incident.Updates[0].ID})
+	}
 	call("post_incidents_by_id_resolve", map[string]any{"id": incident})
 	call("delete_incidents_by_id", map[string]any{"id": incident})
 	call("delete_nodes_by_id", map[string]any{"id": added})

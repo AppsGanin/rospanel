@@ -18,6 +18,39 @@ type Incident struct {
 	ResolvedAt int64 `json:"resolved_at"`
 	CreatedAt  int64 `json:"created_at"`
 	UpdatedAt  int64 `json:"updated_at"`
+	// Updates is its course so far, oldest first (migration 0128).
+	Updates []IncidentUpdate `json:"updates"`
+}
+
+// IncidentUpdate is one step in an incident's course: what the operator learned or
+// did, and when.
+type IncidentUpdate struct {
+	ID         int64  `json:"id"`
+	IncidentID int64  `json:"incident_id"`
+	Stage      string `json:"stage"` // IncidentStage*
+	Body       string `json:"body"`
+	CreatedAt  int64  `json:"created_at"`
+}
+
+// Stages of an incident's course. Maintenance takes only update and resolved.
+const (
+	IncidentStageInvestigating = "investigating"
+	IncidentStageIdentified    = "identified"
+	IncidentStageMonitoring    = "monitoring"
+	IncidentStageUpdate        = "update"
+	IncidentStageResolved      = "resolved" // the closing note, posted with the resolve
+)
+
+// ValidIncidentStage reports whether an update of the stage can be posted on an
+// incident of the kind. resolved is not posted by hand: resolving writes it.
+func ValidIncidentStage(kind, stage string) bool {
+	switch stage {
+	case IncidentStageUpdate:
+		return true
+	case IncidentStageInvestigating, IncidentStageIdentified, IncidentStageMonitoring:
+		return kind == IncidentKindIncident
+	}
+	return false
 }
 
 const (
