@@ -1084,6 +1084,30 @@ GET $BASE/v1/backup            → download that backup (.tar.gz body, not JSON)
 GET $BASE/v1/metrics           → Prometheus exposition (text, not JSON)
 ```
 
+#### Incidents and maintenance (the status page)
+
+```
+GET    $BASE/v1/incidents                → {"incidents": [...], "servers": [{"id": 0, "name": "Main"}, ...]}
+POST   $BASE/v1/incidents                {"kind": "maintenance", "title": "Works on NL", "body": "…",
+                                          "node_ids": [2], "starts_at": 1767225000, "ends_at": 1767236000,
+                                          "notify": true, "lang": "en"}          → 201 {"incident": {...}}
+POST   $BASE/v1/incidents/{id}           same body: rewrite it (whether it is resolved is kept)
+POST   $BASE/v1/incidents/{id}/updates   {"stage": "identified", "body": "Found it", "notify": true}
+POST   $BASE/v1/incidents/{id}/resolve   {"note": "Fixed", "notify": true}       (body optional)
+DELETE $BASE/v1/incidents/updates/{id}
+DELETE $BASE/v1/incidents/{id}
+```
+
+`kind` is `incident` (open until resolved) or `maintenance` (scheduled before
+`starts_at`, under way until `ends_at` — 0 means until resolved). `node_ids` empty means
+the whole service; the ids are those `servers` lists. An update's `stage` is
+`investigating`, `identified` or `monitoring` (incidents only) or `update` (both, the
+default); the `note` given with a resolve closes the course as a `resolved` step.
+`notify` sends it to every user with an active subscription through the user bot and
+needs the broadcasts permission; when it could not go out the incident is saved anyway
+and `notify_error` says why. Maintenance that has not begun cannot be resolved — move
+it or delete it.
+
 `/v1/metrics` is a scrape target for Prometheus, authenticated with the same API key:
 
 ```yaml
@@ -1261,6 +1285,10 @@ body is never read).
 | `node.up` | the server is back; `data.down_seconds` |
 | `xray.down` | Xray stopped on a server (`data.node_id` 0 is the master); `data.reason` on the master |
 | `xray.up` | Xray is back; `data.down_seconds` |
+| `incident.created` | an incident or maintenance window was posted; `data` is the incident (`id`, `kind`, `title`, `body`, `node_ids`, `servers` — the named servers' names, comma-separated, `""` for the whole service — `starts_at`, `ends_at`, `resolved_at`, `phase`, `updates`, `status_url`) |
+| `incident.updated` | it was edited, a step of its course was posted (`data.update`: `stage`, `body`, `created_at`) or one was taken back (no `data.update`; `data.updates` is the course as it now is) |
+| `incident.resolved` | it was resolved, or maintenance was marked finished; a window that simply closes at `ends_at` sends nothing |
+| `incident.deleted` | it was deleted; `data` is the incident as it was |
 | `broadcast.sent` | a broadcast went out — one delivery per broadcast: `data.id`, `data.text`, `data.buttons`, `data.audience`, `data.media_kind`/`data.media_name`, `data.telegram_recipients` (chats the bot sends it to), `data.users` (`id`, `external_id`) — the accounts in the audience the bot does not reach, except who turned mailings off in the bot. With this event subscribed broadcasts work with the bot off (text only) |
 
 ## Delivery format

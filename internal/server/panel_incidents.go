@@ -66,13 +66,14 @@ func (rt *Router) saveIncident(w http.ResponseWriter, r *http.Request, id int64)
 
 func (rt *Router) resolveIncident(w http.ResponseWriter, r *http.Request, id int64) {
 	var req struct {
+		Note   string `json:"note"` // the closing words of its course, optional
 		Notify bool   `json:"notify"`
 		Lang   string `json:"lang"`
 	}
 	if !decodeJSON(w, r, &req) || !rt.mayNotify(w, r, req.Notify) {
 		return
 	}
-	in, changed, err := rt.mgr.ResolveIncident(id)
+	in, changed, err := rt.mgr.ResolveIncident(id, req.Note)
 	if err != nil {
 		writeManagerErr(w, err)
 		return
@@ -80,6 +81,42 @@ func (rt *Router) resolveIncident(w http.ResponseWriter, r *http.Request, id int
 	rt.dropStatusCache()
 	// Only the call that ended it announces it: a second click is not news.
 	rt.answerIncident(w, r, in, req.Notify && changed, req.Lang, true)
+}
+
+// addIncidentUpdate posts a step of an incident's course, and tells the users
+// about it when asked.
+func (rt *Router) addIncidentUpdate(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		Stage  string `json:"stage"`
+		Body   string `json:"body"`
+		Notify bool   `json:"notify"`
+		Lang   string `json:"lang"`
+	}
+	if !decodeJSON(w, r, &req) || !rt.mayNotify(w, r, req.Notify) {
+		return
+	}
+	in, u, err := rt.mgr.AddIncidentUpdate(id, req.Stage, req.Body)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	rt.dropStatusCache()
+	out := map[string]any{"incident": in}
+	if req.Notify {
+		if err := rt.mgr.NotifyIncidentUpdate(r.Context(), in, u, i18n.Normalize(req.Lang)); err != nil {
+			out["notify_error"] = codedErr(err)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (rt *Router) deleteIncidentUpdate(w http.ResponseWriter, _ *http.Request, id int64) {
+	if err := rt.mgr.DeleteIncidentUpdate(id); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	rt.dropStatusCache()
+	writeOK(w)
 }
 
 func (rt *Router) deleteIncident(w http.ResponseWriter, _ *http.Request, id int64) {
@@ -108,13 +145,19 @@ func (rt *Router) answerIncident(w http.ResponseWriter, r *http.Request, in *mod
 	out := map[string]any{"incident": in}
 	if notify {
 		if err := rt.mgr.NotifyIncident(r.Context(), in, i18n.Normalize(lang), resolved); err != nil {
-			notifyErr := map[string]any{"error": err.Error()}
-			var ve *core.ValidationError
-			if errors.As(err, &ve) {
-				notifyErr["code"], notifyErr["args"] = ve.Code, ve.Args
-			}
-			out["notify_error"] = notifyErr
+			out["notify_error"] = codedErr(err)
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// codedErr is a failure beside a success, as the panel renders it: the dictionary
+// code and its arguments when there are some, the text otherwise.
+func codedErr(err error) map[string]any {
+	out := map[string]any{"error": err.Error()}
+	var ve *core.ValidationError
+	if errors.As(err, &ve) {
+		out["code"], out["args"] = ve.Code, ve.Args
+	}
+	return out
 }

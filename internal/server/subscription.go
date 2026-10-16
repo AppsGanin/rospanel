@@ -817,6 +817,7 @@ func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Sett
 			slog.Warn("sub: tunnel identity", "user", u.ID, "err", err)
 		}
 	}
+	rt.subNotices(&access, set, servers, lang)
 	html, err := sub.Page(u, set, servers, rt.buildBilling(u, set, lang, rt.mgr.PaymentMethods()),
 		rt.buildDevices(u, set, lang), access, showDownload, lang)
 	if err != nil {

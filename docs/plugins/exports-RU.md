@@ -98,6 +98,7 @@ export function onEvent(e) {
 | `user.device_bound`, `user.device_limited` | новое устройство; упёрся в лимит |
 | `user.telegram_linked` | к аккаунту привязан Telegram |
 | `node.down`, `node.up`, `xray.down`, `xray.up` | сервер или Xray пропал и вернулся |
+| `incident.created`, `incident.updated`, `incident.resolved`, `incident.deleted` | сбои и работы на странице статуса: опубликованы, изменены или дополнены ходом событий, завершены, удалены |
 | `user.message`, `broadcast.sent` | сообщение или рассылка от оператора |
 
 ## Задачи по расписанию

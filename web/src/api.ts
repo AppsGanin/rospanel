@@ -1162,6 +1162,18 @@ export interface Incident {
   resolved_at: number
   created_at: number
   updated_at: number
+  updates: IncidentUpdate[]
+}
+
+// IncidentUpdate is one step of an incident's course; "resolved" is the closing
+// note given with the resolve.
+export type IncidentStage = 'investigating' | 'identified' | 'monitoring' | 'update' | 'resolved'
+export interface IncidentUpdate {
+  id: number
+  incident_id: number
+  stage: IncidentStage
+  body: string
+  created_at: number
 }
 
 export interface IncidentServer {
@@ -1194,11 +1206,20 @@ export const saveIncident = (inc: Incident, notify: boolean) =>
     }),
   })
 
-export const resolveIncident = (id: number, notify: boolean) =>
+export const resolveIncident = (id: number, notify: boolean, note = '') =>
   api<IncidentSaved>(`api/incidents/${id}/resolve`, {
     method: 'POST',
-    body: JSON.stringify({ notify, lang: currentLang() }),
+    body: JSON.stringify({ note, notify, lang: currentLang() }),
   })
+
+export const addIncidentUpdate = (id: number, stage: IncidentStage, body: string, notify: boolean) =>
+  api<IncidentSaved>(`api/incidents/${id}/updates`, {
+    method: 'POST',
+    body: JSON.stringify({ stage, body, notify, lang: currentLang() }),
+  })
+
+export const deleteIncidentUpdate = (id: number) =>
+  api<{ ok: boolean }>(`api/incidents/updates/${id}`, { method: 'DELETE' })
 
 export const deleteIncident = (id: number) =>
   api<{ ok: boolean }>(`api/incidents/${id}`, { method: 'DELETE' })

@@ -132,6 +132,20 @@ var (
 		f("name", "text", "nodeName", "Германия"),
 		f("host", "text", "nodeHost", "de.example.com"),
 	}
+	incidentFields = []Field{
+		f("id", "number", "incidentId", 7),
+		f("kind", "text", "incidentKind", "maintenance"),
+		f("title", "text", "incidentTitle", "Работы на сервере NL"),
+		f("body", "text", "incidentBody", "Сервер будет недоступен до 30 минут."),
+		f("node_ids", "list", "incidentNodeIds", []any{2}),
+		f("servers", "text", "incidentServers", "Нидерланды"),
+		f("starts_at", "time", "incidentStartsAt", 1767225000),
+		f("ends_at", "time", "incidentEndsAt", 1767236000),
+		f("resolved_at", "time", "incidentResolvedAt", 0),
+		f("phase", "text", "incidentPhase", "active"),
+		f("updates", "list", "incidentUpdates", []any{}),
+		f("status_url", "text", "statusUrl", "https://vpn.example.com/status"),
+	}
 )
 
 func with(base []Field, more ...Field) []Field {
@@ -286,6 +300,12 @@ var events = []EventInfo{
 		maybe(f("host", "text", "nodeHost", "de.example.com")),
 		f("down_seconds", "number", "downSeconds", 35),
 	}},
+	{Event: model.WebhookIncidentCreated, Fields: with(incidentFields)},
+	{Event: model.WebhookIncidentUpdated, Fields: with(incidentFields,
+		maybe(f("update.stage", "text", "updateStage", "identified")),
+		maybe(f("update.body", "text", "updateBody", "Нашли причину, чиним.")))},
+	{Event: model.WebhookIncidentResolved, Fields: with(incidentFields)},
+	{Event: model.WebhookIncidentDeleted, Fields: with(incidentFields)},
 }
 
 // EventCatalog is what the builder offers, the samples filled in.

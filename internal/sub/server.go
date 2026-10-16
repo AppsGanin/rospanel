@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/AppsGanin/rospanel/internal/extsub"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"strings"
 )
 
 // Server is one server as a subscription sees it: its effective settings (host, SNI,
@@ -43,6 +44,26 @@ func (s Server) allowsInbound(id int64) bool {
 	return !s.Hidden[model.SubProtoCustom] && s.Access.AllowsInbound(id)
 }
 func (s Server) allowsExt(id int64) bool { return s.Access.AllowsExt(id) }
+
+// Reaches reports whether the user may use anything on this server: a built-in
+// lane of it, or one of its custom inbounds.
+func (s Server) Reaches() bool {
+	if s.Access.All {
+		return true
+	}
+	prefix := model.BuiltinToken(s.Set.ServerID, "")
+	for tok := range s.Access.Tokens {
+		if strings.HasPrefix(tok, prefix) {
+			return true
+		}
+	}
+	for _, in := range s.Custom {
+		if s.Access.AllowsInbound(in.ID) {
+			return true
+		}
+	}
+	return false
+}
 
 // externalEndpoints is the external servers the user may have, in the shape the
 // format converters read.

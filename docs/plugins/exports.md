@@ -96,6 +96,7 @@ Events often needed:
 | `user.device_bound`, `user.device_limited` | a new device; the device limit reached |
 | `user.telegram_linked` | a Telegram was linked to the account |
 | `node.down`, `node.up`, `xray.down`, `xray.up` | a server or Xray went down and came back |
+| `incident.created`, `incident.updated`, `incident.resolved`, `incident.deleted` | the status page's incidents and maintenance: posted, changed or given a step of its course, finished, deleted |
 | `user.message`, `broadcast.sent` | a message or a broadcast from the operator |
 
 ## Scheduled jobs

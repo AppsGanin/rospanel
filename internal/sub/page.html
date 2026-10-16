@@ -226,6 +226,71 @@
       .plugin-block p { margin: 0 0 0.5em; }
       .plugin-block p:last-child { margin: 0; }
       .plugin-block.notice { border-inline-start: 3px solid var(--brand); }
+      /* The status page's notices: what is broken or being worked on now, and
+         maintenance due soon. Amber for an incident, the accent for maintenance. */
+      .notices {
+        display: grid;
+        gap: 8px;
+        margin: 0 0 14px;
+      }
+      .notice-card {
+        --tone: var(--warning-fg);
+        position: relative;
+        padding: 12px 14px;
+        padding-inline-start: 17px;
+        border-radius: 14px;
+        background: color-mix(in srgb, var(--tone) 9%, var(--surface));
+        border: 1px solid color-mix(in srgb, var(--tone) 28%, transparent);
+        overflow: hidden;
+      }
+      .notice-card.maintenance {
+        --tone: var(--accent-fg);
+      }
+      .notice-card::before {
+        content: "";
+        position: absolute;
+        inset-block: 0;
+        inset-inline-start: 0;
+        width: 4px;
+        background: var(--tone);
+      }
+      .notice-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 4px;
+      }
+      .ntag {
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: var(--tone);
+      }
+      .ntag.soft {
+        color: var(--muted);
+        font-weight: 700;
+      }
+      .notice-title {
+        font-weight: 800;
+        overflow-wrap: anywhere;
+      }
+      .notice-body {
+        margin-top: 2px;
+        font-size: 0.9rem;
+        white-space: pre-line;
+        overflow-wrap: anywhere;
+      }
+      .notice-when {
+        margin-top: 4px;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      .notice-more {
+        justify-self: start;
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--accent-fg);
+        text-decoration: none;
+      }
       .card {
         background: var(--surface);
         border: 1px solid var(--line);
@@ -1109,6 +1174,22 @@
       </div>
       {{if .HasLimit}}
       <div class="bar"><div style="width:{{.UsedPct}}%"></div></div>
+      {{end}}
+
+      {{if .Access.Notices}}
+      <section class="notices" aria-label="{{.Access.NoticesLabel}}">
+        {{range .Access.Notices}}
+        <div class="notice-card {{.Kind}}">
+          <div class="notice-tags">
+            <span class="ntag">{{.Label}}</span>{{if .Scheduled}}<span class="ntag soft">{{.Scheduled}}</span>{{end}}
+          </div>
+          <div class="notice-title" dir="auto">{{.Title}}</div>
+          {{if .Body}}<div class="notice-body" dir="auto">{{.Body}}</div>{{end}}
+          <div class="notice-when">{{.When}}</div>
+        </div>
+        {{end}}
+        {{if .Access.StatusURL}}<a class="notice-more" href="{{.Access.StatusURL}}" target="_blank" rel="noopener">{{.Access.StatusMore}}</a>{{end}}
+      </section>
       {{end}}
 
       {{if .Billing.Show}}

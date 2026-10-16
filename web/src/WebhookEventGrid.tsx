@@ -58,6 +58,10 @@ const GROUPS: { key: string; events: string[] }[] = [
   { key: "referral", events: ["user.referred", "referral.reward", "promo.winback", "promo.redeemed"] },
   { key: "messages", events: ["user.message", "user.auto_message", "broadcast.sent", "user.mailing"] },
   { key: "servers", events: ["node.down", "node.up", "xray.down", "xray.up"] },
+  {
+    key: "status",
+    events: ["incident.created", "incident.updated", "incident.resolved", "incident.deleted"],
+  },
 ];
 
 export function WebhookEventGrid({

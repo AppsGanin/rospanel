@@ -140,7 +140,7 @@ func TestRenderIncidentsEscapedAndPlaced(t *testing.T) {
 	for _, want := range []string{
 		`class="hero incident-tone"`, d.L.StateIncident, d.L.Active,
 		`<span class="tag srv-tag incident-tone">` + d.L.Incident + `</span>`, // the server's badge
-		`<details class="past">`, d.L.Resolved + " Oct 15, 12:00 MSK",
+		`<details class="past `, d.L.Resolved + " Oct 15, 12:00 MSK",
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("page lacks %q", want)
@@ -182,5 +182,32 @@ func TestSetIncidentsOrphansAndHistoryOrder(t *testing.T) {
 	want := "ended in between|long, ended yesterday|gone, ended|short, last week"
 	if got := strings.Join(titles, "|"); got != want {
 		t.Errorf("history order %q, want %q", got, want)
+	}
+}
+
+// The course reads newest first, its closing note worded as the end of its kind.
+func TestCourseOnThePage(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(at(16, 12, 0), 0).In(msk)
+	d := themed(t, "", i18n.EN)
+	d.HeadlineOK = true
+	d.SetIncidents([]model.Incident{{
+		Kind: model.IncidentKindMaintenance, Title: "works", StartsAt: at(16, 9, 0), EndsAt: at(16, 11, 0),
+		ResolvedAt: at(16, 10, 30),
+		Updates: []model.IncidentUpdate{
+			{Stage: model.IncidentStageUpdate, Body: "halfway <b>", CreatedAt: at(16, 10, 0)},
+			{Stage: model.IncidentStageResolved, Body: "done", CreatedAt: at(16, 10, 30)},
+		},
+	}}, now, i18n.EN)
+	if len(d.History) != 1 || len(d.History[0].Updates) != 2 {
+		t.Fatalf("history %+v", d.History)
+	}
+	first, second := d.History[0].Updates[0], d.History[0].Updates[1]
+	if first.Stage != "Maintenance completed" || first.At != "Oct 16, 10:30 MSK" || second.Stage != "Update" {
+		t.Errorf("course %+v", d.History[0].Updates)
+	}
+	html := render(t, d)
+	if !strings.Contains(html, "halfway &lt;b&gt;") || strings.Contains(html, "halfway <b>") {
+		t.Error("a course step was not escaped")
 	}
 }

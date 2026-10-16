@@ -3,11 +3,14 @@ package server
 import (
 	"context"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/plugin"
 	"github.com/AppsGanin/rospanel/internal/plugin/manifest"
+	"github.com/AppsGanin/rospanel/internal/status"
 	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/telegram"
 )
@@ -81,4 +84,71 @@ func (rt *Router) pluginLinks(ctx context.Context, u model.User, links []string)
 		return links
 	}
 	return rt.plugins.TransformLinks(ctx, pluginUser(u), links)
+}
+
+// subNoticeBodyMax keeps a notice to a few lines: the page is about the reader's
+// subscription, and the whole story is a link away.
+const subNoticeBodyMax = 280
+
+// subNotices puts the status page's current incidents and soon-due maintenance on
+// the subscription page — the ones about a server the reader can use, or about the
+// whole service.
+func (rt *Router) subNotices(a *sub.Access, set *model.Settings, servers []sub.Server, lang i18n.Lang) {
+	list, err := rt.mgr.SubPageIncidents()
+	if err != nil || len(list) == 0 {
+		return
+	}
+	reached := map[int64]bool{}
+	for _, s := range servers {
+		if s.Reaches() {
+			reached[s.Set.ServerID] = true
+		}
+	}
+	loc, now := rt.mgr.Location(), time.Now().Unix()
+	for i := range list {
+		in := &list[i]
+		if !concernsAny(in, reached) {
+			continue
+		}
+		n := sub.Notice{Kind: in.Kind, Title: in.Title, Body: shorten(in.Body, subNoticeBodyMax), NodeIDs: in.NodeIDs}
+		if in.Phase(now) == model.IncidentScheduled {
+			n.Scheduled = i18n.T(lang, "status.phaseScheduled")
+		}
+		if in.Kind == model.IncidentKindMaintenance {
+			n.Label = i18n.T(lang, "status.kindMaintenance")
+			n.When = status.Window(lang, loc, in.StartsAt, in.EndsAt)
+		} else {
+			n.Label = i18n.T(lang, "status.kindIncident")
+			n.When = i18n.T(lang, "status.since", status.Stamp(lang, time.Unix(in.StartsAt, 0).In(loc)))
+		}
+		a.Notices = append(a.Notices, n)
+	}
+	a.NoticesLabel = i18n.T(lang, "status.title")
+	if len(a.Notices) > 0 && set.StatusEnabled {
+		a.StatusURL = "/" + set.StatusPathOr()
+		a.StatusMore = i18n.T(lang, "sub.statusMore")
+	}
+}
+
+// concernsAny reports whether an incident is about the whole service or names a
+// server in reached.
+func concernsAny(in *model.Incident, reached map[int64]bool) bool {
+	if len(in.NodeIDs) == 0 {
+		return true
+	}
+	for _, id := range in.NodeIDs {
+		if reached[id] {
+			return true
+		}
+	}
+	return false
+}
+
+// shorten cuts s to at most max runes, ending with an ellipsis when it did.
+func shorten(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return strings.TrimSpace(string(r[:max-1])) + "…"
 }

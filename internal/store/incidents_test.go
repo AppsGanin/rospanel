@@ -34,14 +34,26 @@ func TestIncidentsCRUD(t *testing.T) {
 	}
 	// Resolving is a one-way step of its own: the first call wins, a second changes
 	// nothing.
-	if ok, err := s.ResolveIncident(in.ID, 150); err != nil || !ok {
+	if ok, err := s.ResolveIncident(in.ID, 150, ""); err != nil || !ok {
 		t.Fatalf("resolve: %v %v", ok, err)
 	}
-	if ok, _ := s.ResolveIncident(in.ID, 160); ok {
+	if ok, _ := s.ResolveIncident(in.ID, 160, "late"); ok {
 		t.Error("an incident resolved twice")
 	}
-	if again, _ = s.GetIncident(in.ID); again.ResolvedAt != 150 {
-		t.Errorf("resolved at %d, want 150", again.ResolvedAt)
+	if again, _ = s.GetIncident(in.ID); again.ResolvedAt != 150 || len(again.Updates) != 0 {
+		t.Errorf("resolved at %d, want 150; a refused resolve wrote its note: %+v", again.ResolvedAt, again.Updates)
+	}
+	// The closing note lands with the resolve, in the same step.
+	other := model.Incident{Kind: model.IncidentKindIncident, Title: "y", StartsAt: 1, CreatedAt: 1, UpdatedAt: 1}
+	if err := s.CreateIncident(&other); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := s.ResolveIncident(other.ID, 300, "fixed"); err != nil || !ok {
+		t.Fatalf("resolve with note: %v %v", ok, err)
+	}
+	if got, _ := s.GetIncident(other.ID); len(got.Updates) != 1 || got.Updates[0].Stage != model.IncidentStageResolved ||
+		got.Updates[0].Body != "fixed" || got.Updates[0].CreatedAt != 300 {
+		t.Errorf("closing note %+v", got.Updates)
 	}
 
 	if ok, err := s.DeleteIncident(in.ID); err != nil || !ok {
@@ -94,5 +106,45 @@ func TestIncidentsForPage(t *testing.T) {
 	want := []string{"finished early lately", "open", "open-ended", "planned", "resolved lately", "under way", "window closed lately"}
 	if !slices.Equal(titles, want) {
 		t.Errorf("page incidents = %v, want %v", titles, want)
+	}
+}
+
+// A course is read back with its incident, in order, and goes with it.
+func TestIncidentUpdates(t *testing.T) {
+	t.Parallel()
+	s := openTestStore(t)
+	in := model.Incident{Kind: model.IncidentKindIncident, Title: "x", StartsAt: 100, CreatedAt: 100, UpdatedAt: 100}
+	if err := s.CreateIncident(&in); err != nil {
+		t.Fatal(err)
+	}
+	for i, st := range []string{model.IncidentStageInvestigating, model.IncidentStageIdentified} {
+		u := model.IncidentUpdate{IncidentID: in.ID, Stage: st, Body: st, CreatedAt: int64(200 + i)}
+		if ok, err := s.AddIncidentUpdate(&u); err != nil || !ok || u.ID == 0 {
+			t.Fatalf("add %s: %v %v", st, ok, err)
+		}
+	}
+	if ok, err := s.AddIncidentUpdate(&model.IncidentUpdate{IncidentID: in.ID + 99, Stage: "update", Body: "x", CreatedAt: 1}); err != nil || ok {
+		t.Errorf("an update for no incident: %v %v", ok, err)
+	}
+	got, _ := s.GetIncident(in.ID)
+	if len(got.Updates) != 2 || got.Updates[0].Stage != model.IncidentStageInvestigating || got.UpdatedAt != 100 {
+		t.Errorf("course %+v, updated_at %d", got.Updates, got.UpdatedAt)
+	}
+	list, _ := s.ListIncidents(10)
+	if len(list) != 1 || len(list[0].Updates) != 2 {
+		t.Errorf("list carries no course: %+v", list)
+	}
+	if incident, err := s.DeleteIncidentUpdate(got.Updates[0].ID); err != nil || incident != in.ID {
+		t.Errorf("delete update: %d %v", incident, err)
+	}
+	if incident, _ := s.DeleteIncidentUpdate(got.Updates[0].ID); incident != 0 {
+		t.Error("an update deleted twice")
+	}
+	if _, err := s.DeleteIncident(in.ID); err != nil {
+		t.Fatal(err)
+	}
+	var left int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM incident_updates`).Scan(&left); err != nil || left != 0 {
+		t.Errorf("updates outlived their incident: %d (%v)", left, err)
 	}
 }

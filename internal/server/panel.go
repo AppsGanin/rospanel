@@ -436,6 +436,8 @@ func (rt *Router) panelMux() http.Handler {
 	canSettingsManage("POST /api/incidents/{id}", withID(rt.updateIncident))
 	canSettingsManage("POST /api/incidents/{id}/resolve", withID(rt.resolveIncident))
 	canSettingsManage("DELETE /api/incidents/{id}", withID(rt.deleteIncident))
+	canSettingsManage("POST /api/incidents/{id}/updates", withID(rt.addIncidentUpdate))
+	canSettingsManage("DELETE /api/incidents/updates/{id}", withID(rt.deleteIncidentUpdate))
 	canRoutingManage("POST /api/settings/dns", rt.setXrayDNS)
 	authedOwner("POST /api/settings/local-backup", rt.setLocalBackup)
 	canSettingsManage("POST /api/settings/autodelete", rt.setUserAutoDelete)

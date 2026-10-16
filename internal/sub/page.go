@@ -901,6 +901,27 @@ type Access struct {
 	Blocks []Block
 	// ThemeCSS is the theme plugin's stylesheet, applied over the page's own.
 	ThemeCSS string
+	// Notices are the status page's incidents and maintenance the reader should know
+	// of: going on now, or due soon. StatusURL links to the page, "" when it is off.
+	Notices   []Notice
+	StatusURL string
+	// StatusMore is the link's text and NoticesLabel the block's name, in the
+	// reader's language.
+	StatusMore   string
+	NoticesLabel string
+}
+
+// Notice is one incident or maintenance window as the subscription page shows it.
+type Notice struct {
+	Kind      string // incident | maintenance
+	Label     string // the kind, worded
+	Title     string
+	Body      string // shortened
+	When      string
+	Scheduled string // "planned", worded, for maintenance not begun yet; "" otherwise
+	// NodeIDs are the servers it concerns (empty: the whole service), to match
+	// against the ones the reader can use. Not rendered.
+	NodeIDs []int64
 }
 
 // Block is one block a plugin adds: a note, Markdown, a notice or a button. HTML is

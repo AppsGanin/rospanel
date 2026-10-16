@@ -47,10 +47,18 @@ type Notice struct {
 	Label   string // the kind, worded
 	Title   string
 	Body    string
-	When    string // when it started, or the maintenance window
-	Ended   string // when it was over, "" while it is not
-	Servers string // the servers it names, "" for the whole service
-	Updated string // when it was last edited, "" if never after it was posted
+	When    string         // when it started, or the maintenance window
+	Ended   string         // when it was over, "" while it is not
+	Servers string         // the servers it names, "" for the whole service
+	Updated string         // when it was last edited, "" if never after it was posted
+	Updates []NoticeUpdate // its course, newest first
+}
+
+// NoticeUpdate is one step of a notice's course.
+type NoticeUpdate struct {
+	Stage string // the stage, worded
+	Body  string
+	At    string
 }
 
 // Day is one bar: a class picking its colour and a title a cursor reveals.
@@ -257,6 +265,14 @@ func (d *Data) SetIncidents(incidents []model.Incident, now time.Time, lang i18n
 			}
 		}
 		n.Servers = strings.Join(named, ", ")
+		for j := len(in.Updates) - 1; j >= 0; j-- {
+			u := in.Updates[j]
+			n.Updates = append(n.Updates, NoticeUpdate{
+				Stage: StageLabel(lang, in.Kind, u.Stage),
+				Body:  u.Body,
+				At:    Stamp(lang, time.Unix(u.CreatedAt, 0).In(loc)),
+			})
+		}
 		// Named servers that have all left the page (switched off, deleted) leave a
 		// notice about nothing a customer can be on: it would read as concerning the
 		// whole service. Its history stays.
@@ -308,6 +324,18 @@ func (d *Data) SetIncidents(incidents []model.Incident, now time.Time, lang i18n
 	if !d.HeadlineOK {
 		d.State = "down"
 	}
+}
+
+// StageLabel words a step of a course; the closing one reads as the end of its kind.
+func StageLabel(lang i18n.Lang, kind, stage string) string {
+	if stage == model.IncidentStageResolved {
+		if kind == model.IncidentKindMaintenance {
+			return i18n.T(lang, "status.msgMaintenanceDone")
+		}
+		return i18n.T(lang, "status.msgResolved")
+	}
+	key := "status.stage." + stage // status.stage.{investigating,identified,monitoring,update}
+	return i18n.T(lang, key)
 }
 
 // Stamp prints a moment as the page's readers expect it in their language: day,
