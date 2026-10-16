@@ -71,6 +71,7 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"sub_dpi":              set.SubDPI,
 		"sub_order_mode":       set.SubOrderMode,
 		"sub_hide_offline":     set.SubHideOffline,
+		"sub_self_rotate":      set.SubSelfRotateHours,
 		"maintenance_mode":     set.MaintenanceMode,
 		"probe_detect":         set.ProbeDetect,
 		"probe_block":          set.ProbeBlock,
@@ -451,6 +452,7 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		HappCrypt      bool   `json:"sub_happ_crypt"`
 		OrderMode      string `json:"sub_order_mode"`
 		HideOffline    bool   `json:"sub_hide_offline"`
+		SelfRotate     int    `json:"sub_self_rotate"` // hours, 0 = off (model.SelfRotateChoices)
 		PageURL        string `json:"sub_page_url"`
 	}
 	if !decodeJSON(w, r, &req) {
@@ -461,22 +463,23 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.TrimSpace(req.Path)
 	err := rt.mgr.SaveSubSettings(&model.Settings{
-		SubPath:           path,
-		SubBase64:         req.Base64,
-		SubNameInTitle:    req.NameInTitle,
-		SubTitle:          strings.TrimSpace(req.Title),
-		SubRouting:        req.Routing,
-		SubRoutingHapp:    strings.TrimSpace(req.RoutingHapp),
-		SubRoutingIncy:    strings.TrimSpace(req.RoutingIncy),
-		SubRoutingMihomo:  strings.TrimSpace(req.RoutingMihomo),
-		SubUpdateInterval: req.UpdateInterval,
-		SubAnnounce:       req.Announce,
-		SubShowConfigs:    req.ShowConfigs,
-		SubShowClash:      req.ShowClash,
-		SubHappCrypt:      req.HappCrypt,
-		SubOrderMode:      strings.TrimSpace(req.OrderMode),
-		SubHideOffline:    req.HideOffline,
-		SubPageURL:        req.PageURL,
+		SubPath:            path,
+		SubBase64:          req.Base64,
+		SubNameInTitle:     req.NameInTitle,
+		SubTitle:           strings.TrimSpace(req.Title),
+		SubRouting:         req.Routing,
+		SubRoutingHapp:     strings.TrimSpace(req.RoutingHapp),
+		SubRoutingIncy:     strings.TrimSpace(req.RoutingIncy),
+		SubRoutingMihomo:   strings.TrimSpace(req.RoutingMihomo),
+		SubUpdateInterval:  req.UpdateInterval,
+		SubAnnounce:        req.Announce,
+		SubShowConfigs:     req.ShowConfigs,
+		SubShowClash:       req.ShowClash,
+		SubHappCrypt:       req.HappCrypt,
+		SubOrderMode:       strings.TrimSpace(req.OrderMode),
+		SubHideOffline:     req.HideOffline,
+		SubSelfRotateHours: req.SelfRotate,
+		SubPageURL:         req.PageURL,
 	})
 	if err != nil {
 		writeManagerErr(w, err)

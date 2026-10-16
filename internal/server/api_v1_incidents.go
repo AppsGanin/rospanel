@@ -28,8 +28,11 @@ type (
 		NodeIDs  []int64 `json:"node_ids"`
 		StartsAt int64   `json:"starts_at"`
 		EndsAt   int64   `json:"ends_at"`
-		Notify   bool    `json:"notify"`
-		Lang     string  `json:"lang"`
+		// HideInSub takes the named servers out of subscriptions while maintenance
+		// is under way.
+		HideInSub bool   `json:"hide_in_sub"`
+		Notify    bool   `json:"notify"`
+		Lang      string `json:"lang"`
 	}
 	apiIncidentResolveReq struct {
 		Note   string `json:"note"` // closes its course as a "resolved" update, optional
@@ -86,7 +89,7 @@ func (rt *Router) apiSaveIncident(w http.ResponseWriter, r *http.Request, id int
 	}
 	in, err := rt.mgr.SaveIncident(model.Incident{
 		ID: id, Kind: req.Kind, Title: req.Title, Body: req.Body,
-		NodeIDs: req.NodeIDs, StartsAt: req.StartsAt, EndsAt: req.EndsAt,
+		NodeIDs: req.NodeIDs, StartsAt: req.StartsAt, EndsAt: req.EndsAt, HideInSub: req.HideInSub,
 	})
 	if err != nil {
 		writeAPIManagerErr(w, err)

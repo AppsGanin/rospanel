@@ -693,6 +693,14 @@ func (s *UserService) linkByCode(ctx context.Context, client *Client, set *model
 			return
 		}
 		oldChat = u.TgChatID
+		// And no more often than the operator set: asked here, before the question
+		// about moving, and settled atomically below.
+		if every := int64(set.SubTGRebindHours) * 3600; every > 0 {
+			if at, err := s.store.TGChangedAt(u.ID); err == nil && time.Now().Unix()-at < every {
+				s.send(ctx, client, chatID, i18n.T(lang, "user.rebindTooSoon", i18n.Every(lang, set.SubTGRebindHours)))
+				return
+			}
+		}
 	}
 	cur, curOK := s.findLinkedUser(chatID)
 	here := curOK && cur.ID != u.ID
@@ -728,6 +736,12 @@ func (s *UserService) linkByCode(ctx context.Context, client *Client, set *model
 	// must not both move the account.
 	if ok, err := s.store.ClaimUserTgLinkCode(u.ID, code); err != nil || !ok {
 		s.send(ctx, client, chatID, i18n.T(lang, "user.codeInvalid"))
+		return
+	}
+	// When it was linked is recorded for every link by code — the first one too, so a
+	// move right after it waits like any other.
+	if ok, err := s.store.ClaimTGLink(u.ID, time.Now().Unix(), int64(set.SubTGRebindHours)*3600, oldChat != 0); err != nil || !ok {
+		s.send(ctx, client, chatID, i18n.T(lang, "user.rebindTooSoon", i18n.Every(lang, set.SubTGRebindHours)))
 		return
 	}
 	if err := s.store.SetUserTelegramChat(u.ID, chatID); err != nil {

@@ -1100,7 +1100,9 @@ DELETE $BASE/v1/incidents/{id}
 
 `kind` is `incident` (open until resolved) or `maintenance` (scheduled before
 `starts_at`, under way until `ends_at` — 0 means until resolved). `node_ids` empty means
-the whole service; the ids are those `servers` lists. An update's `stage` is
+the whole service; the ids are those `servers` lists. `hide_in_sub` (maintenance only) takes the
+named servers out of subscriptions while the window is under way — unless that would leave a
+subscription with no server. An update's `stage` is
 `investigating`, `identified` or `monitoring` (incidents only) or `update` (both, the
 default); the `note` given with a resolve closes the course as a `resolved` step.
 `notify` sends it to every user with an active subscription through the user bot and

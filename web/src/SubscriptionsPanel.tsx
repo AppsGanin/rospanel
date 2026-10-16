@@ -57,6 +57,7 @@ const EMPTY_SUB: SubSettings = {
   sub_happ_crypt: false,
   sub_order_mode: "manual",
   sub_hide_offline: false,
+  sub_self_rotate: 0,
   sub_page_url: "",
 };
 
@@ -128,6 +129,7 @@ export function SubscriptionsPanel() {
           sub_happ_crypt: d.sub_happ_crypt ?? false,
           sub_order_mode: d.sub_order_mode ?? "manual",
           sub_hide_offline: d.sub_hide_offline ?? false,
+          sub_self_rotate: d.sub_self_rotate ?? 0,
           sub_page_url: d.sub_page_url ?? "",
         };
         load(init);
@@ -263,6 +265,23 @@ export function SubscriptionsPanel() {
           hint={t("subs.hideOfflineHint")}
           checked={s.sub_hide_offline}
           onChange={(v) => patch({ sub_hide_offline: v })}
+        />
+        <SettingRow
+          label={t("subs.selfRotate.label")}
+          hint={t("subs.selfRotate.hint")}
+          field={
+            <Select
+              data={[
+                { value: "0", label: t("subs.selfRotate.off") },
+                { value: "1", label: t("subs.selfRotate.hour") },
+                { value: "24", label: t("subs.selfRotate.day") },
+                { value: "168", label: t("subs.selfRotate.week") },
+                { value: "720", label: t("subs.selfRotate.month") },
+              ]}
+              value={String(s.sub_self_rotate)}
+              onChange={(v) => patch({ sub_self_rotate: Number(v) })}
+            />
+          }
         />
 
         <SettingRow

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -667,6 +668,9 @@ func (m *Manager) SaveSubSettings(st *model.Settings) error {
 		return invalidCode("err.announceTooLong",
 			"объявление: не длиннее {{max}} символов (сейчас {{count}}) — клиенты обрежут остальное",
 			map[string]any{"max": announceMaxRunes, "count": n})
+	}
+	if !slices.Contains(model.SelfRotateChoices, st.SubSelfRotateHours) {
+		return invalidCode("err.badValue", "недопустимое значение")
 	}
 	st.SubPageURL = strings.TrimSpace(st.SubPageURL)
 	if st.SubPageURL != "" && !model.ValidSubPageURL(st.SubPageURL) {

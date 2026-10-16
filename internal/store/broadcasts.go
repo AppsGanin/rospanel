@@ -26,6 +26,7 @@ const maxKeptBroadcasts = 50
 // caller has finished putting everything in place — an attachment is written to disk
 // after the row exists (it is named by id), and a worker that saw the row as running
 // in between would find no file and stop the run.
+// One with ScheduledAt set is inserted scheduled instead, to be started at its time.
 func (s *Store) CreateBroadcast(b *model.Broadcast, now int64) (int64, error) {
 	buttons := ""
 	if len(b.Buttons) > 0 {
@@ -35,13 +36,17 @@ func (s *Store) CreateBroadcast(b *model.Broadcast, now int64) (int64, error) {
 		}
 		buttons = string(raw)
 	}
+	status := model.BroadcastPaused
+	if b.ScheduledAt > 0 {
+		status = model.BroadcastScheduled
+	}
 	var id int64
 	err := s.db.QueryRow(
 		`INSERT INTO broadcasts (created_by, text, media_kind, media_name, buttons_json,
-		                         audience, status, created_at, hook_users)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		                         audience, status, created_at, hook_users, scheduled_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 		b.CreatedBy, b.Text, b.MediaKind, b.MediaName, buttons,
-		b.Audience, model.BroadcastPaused, now, b.HookUsers,
+		b.Audience, status, now, b.HookUsers, b.ScheduledAt,
 	).Scan(&id)
 	if err != nil {
 		return 0, err
@@ -307,7 +312,7 @@ func (s *Store) ListBroadcasts(limit int) ([]model.Broadcast, error) {
 }
 
 const broadcastSelect = `SELECT id, created_by, text, media_kind, media_file_id, media_name,
-       buttons_json, audience, status, created_at, started_at, finished_at, hook_users FROM broadcasts`
+       buttons_json, audience, status, created_at, started_at, finished_at, hook_users, scheduled_at FROM broadcasts`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
@@ -315,7 +320,7 @@ func scanBroadcastRow(r rowScanner) (*model.Broadcast, error) {
 	var b model.Broadcast
 	var buttons string
 	if err := r.Scan(&b.ID, &b.CreatedBy, &b.Text, &b.MediaKind, &b.MediaFileID, &b.MediaName,
-		&buttons, &b.Audience, &b.Status, &b.CreatedAt, &b.StartedAt, &b.FinishedAt, &b.HookUsers); err != nil {
+		&buttons, &b.Audience, &b.Status, &b.CreatedAt, &b.StartedAt, &b.FinishedAt, &b.HookUsers, &b.ScheduledAt); err != nil {
 		return nil, err
 	}
 	if buttons != "" {
@@ -358,4 +363,48 @@ func (s *Store) fillCounts(b *model.Broadcast) error {
 		}
 	}
 	return rows.Err()
+}
+
+// DueBroadcasts is the scheduled broadcasts whose time has come, oldest first — only
+// those created more than a few seconds ago, so one whose attachment is still being
+// written to disk is not started without it.
+func (s *Store) DueBroadcasts(now int64) ([]int64, error) {
+	rows, err := s.db.Query(`SELECT id FROM broadcasts WHERE status = ? AND scheduled_at <= ?
+		AND created_at <= ? ORDER BY scheduled_at, id`, model.BroadcastScheduled, now, now-dueSettle)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// dueSettle is how old a scheduled broadcast must be before it may start.
+const dueSettle = 10
+
+// SetBroadcastHookUsers records how many accounts a broadcast went to through the
+// external system — known only once its audience is read.
+func (s *Store) SetBroadcastHookUsers(id int64, n int) error {
+	_, err := s.db.Exec(`UPDATE broadcasts SET hook_users = ? WHERE id = ?`, n, id)
+	return err
+}
+
+// StartBroadcastIf moves a paused broadcast to running, stamping when it started, and
+// reports whether it did — false when the operator cancelled it meanwhile.
+func (s *Store) StartBroadcastIf(id, at int64) (bool, error) {
+	res, err := s.db.Exec(`UPDATE broadcasts SET status = ?,
+		started_at = CASE WHEN started_at = 0 THEN ? ELSE started_at END
+		WHERE id = ? AND status = ?`, model.BroadcastRunning, at, id, model.BroadcastPaused)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }

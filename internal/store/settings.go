@@ -136,7 +136,8 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       mieru_enabled, mieru_port, mieru_transport, mieru_name,
 		       anytls_enabled, anytls_name,
 		       reach_countries, reach_probes, reach_every, reach_threshold, reach_token,
-		       mtproto_enabled, mtproto_port, mtproto_name, mtproto_domain
+		       mtproto_enabled, mtproto_port, mtproto_name, mtproto_domain,
+		       sub_self_rotate, monthly_report_sent, sub_tg_rebind_hours
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -199,6 +200,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&anytlsEn, &st.AnyTLSName,
 		&reachCountries, &st.Reach.Probes, &st.Reach.Every, &st.Reach.Threshold, &st.Reach.Token,
 		&mtprotoEn, &st.MTProtoPort, &st.MTProtoName, &st.MTProtoDomain,
+		&st.SubSelfRotateHours, &st.MonthlyReportSent, &st.SubTGRebindHours,
 	)
 	if err != nil {
 		return nil, err
@@ -531,6 +533,7 @@ func (s *Store) SetSubSettings(st *model.Settings) error {
 			sub_routing_happ = ?, sub_routing_incy = ?, sub_routing_mihomo = ?,
 			sub_update_interval = ?, sub_announce = ?, sub_show_configs = ?,
 			sub_order_mode = ?, sub_hide_offline = ?, sub_happ_crypt = ?, sub_page_url = ?, sub_show_clash = ?,
+			sub_self_rotate = ?,
 			updated_at = unixepoch()
 		WHERE id = 1`,
 		st.SubPath,
@@ -539,8 +542,21 @@ func (s *Store) SetSubSettings(st *model.Settings) error {
 		st.SubUpdateInterval, st.SubAnnounce, boolToInt(st.SubShowConfigs),
 		model.OrderModeOr(st.SubOrderMode), boolToInt(st.SubHideOffline), boolToInt(st.SubHappCrypt),
 		st.SubPageURL, boolToInt(st.SubShowClash),
+		st.SubSelfRotateHours,
 	)
 	return err
+}
+
+// SetMonthlyReportSent records the month ('YYYY-MM') whose summary the admin bot
+// sent, and reports whether this call did it — false when it was already recorded,
+// so two runners cannot both send it.
+func (s *Store) SetMonthlyReportSent(month string) (bool, error) {
+	res, err := s.db.Exec(`UPDATE settings SET monthly_report_sent = ? WHERE id = 1 AND monthly_report_sent <> ?`, month, month)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // SetTGMailingSwitch stores whether the user bot shows its broadcast on/off button
@@ -552,9 +568,10 @@ func (s *Store) SetTGMailingSwitch(on bool) error {
 
 // SetSubTGBinding stores whether the subscription page offers binding Telegram and
 // changing it (see migration 0101).
-func (s *Store) SetSubTGBinding(bind, rebind bool) error {
-	_, err := s.db.Exec(`UPDATE settings SET sub_tg_bind = ?, sub_tg_rebind = ?, updated_at = unixepoch() WHERE id = 1`,
-		boolToInt(bind), boolToInt(rebind))
+func (s *Store) SetSubTGBinding(bind, rebind bool, rebindHours int) error {
+	_, err := s.db.Exec(`UPDATE settings SET sub_tg_bind = ?, sub_tg_rebind = ?, sub_tg_rebind_hours = ?,
+		updated_at = unixepoch() WHERE id = 1`,
+		boolToInt(bind), boolToInt(rebind), rebindHours)
 	return err
 }
 
