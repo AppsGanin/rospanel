@@ -121,8 +121,14 @@ func TestXrayOutbound(t *testing.T) {
 	if hs["hysteriaSettings"].(map[string]any)["auth"] != "pw@x" {
 		t.Fatalf("hysteria password not unescaped: %v", hs)
 	}
-	if hs["finalmask"] == nil {
-		t.Fatal("mport did not become a udpHop range")
+	// For client apps: the form share links carry, which older client cores read.
+	if fm, _ := json.Marshal(hs["finalmask"]); string(fm) != `{"quicParams":{"udpHop":{"ports":"20000-30000"}}}` {
+		t.Fatalf("mport did not become a udpHop range: %s", fm)
+	}
+	// For our own Xray: the udp mask the pinned release reads.
+	so, _ := ServerOutbound(hy2Link, "t2")
+	if fm, _ := json.Marshal(so["streamSettings"].(map[string]any)["finalmask"]); string(fm) != `{"udp":[{"settings":{"mode":"intervalRemote","remotePorts":"20000-30000"},"type":"udphop"}]}` {
+		t.Fatalf("our Xray did not get a udphop mask: %s", fm)
 	}
 	o, ok = XrayOutbound(ssModern, "t3")
 	if !ok || o["protocol"] != "shadowsocks" {
@@ -268,6 +274,75 @@ func TestClashHTTPUpgradeNamesTheNetworkOnce(t *testing.T) {
 		_, line, ok := ClashProxy(ep)
 		if !ok || strings.Count(line, "network:") != 1 || !strings.Contains(line, "network: ws") || !strings.Contains(line, "v2ray-http-upgrade: true") {
 			t.Errorf("clash httpupgrade: %v %s", ok, line)
+		}
+	}
+}
+
+// A link's own finalmask in the form share links carry (quicParams.udpHop) reaches
+// our Xray as the udp mask it reads; the rest of the mask is kept.
+func TestHopToUDPMask(t *testing.T) {
+	t.Parallel()
+	link := "hysteria2://pw@5.6.7.8:443?sni=x&fm=" + url.QueryEscape(url.QueryEscape(
+		`{"quicParams":{"udpHop":{"ports":"20000-30000","interval":15},"congestion":"bbr"},"udp":[{"type":"salamander","settings":{"password":"s"}}]}`)) + "#Hy2"
+	o, ok := ServerOutbound(link, "t")
+	if !ok {
+		t.Fatal("not parsed")
+	}
+	fm, _ := json.Marshal(o["streamSettings"].(map[string]any)["finalmask"])
+	want := `{"quicParams":{"congestion":"bbr"},"udp":[{"settings":{"password":"s"},"type":"salamander"},` +
+		`{"settings":{"interval":15,"mode":"intervalRemote","remotePorts":"20000-30000"},"type":"udphop"}]}`
+	if string(fm) != want {
+		t.Errorf("finalmask\n%s\nwant\n%s", fm, want)
+	}
+}
+
+// A link that already hops the new way, or whose udp masks are not a list, is left
+// as it came: no second hop, nothing dropped.
+func TestHopToUDPMaskLeavesUnknownShapes(t *testing.T) {
+	t.Parallel()
+	for name, mask := range map[string]string{
+		"already hops": `{"quicParams":{"udpHop":{"ports":"20000-30000"}},"udp":[{"type":"udphop","settings":{"mode":"intervalRemote","remotePorts":"1-2"}}]}`,
+		"udp object":   `{"quicParams":{"udpHop":{"ports":"20000-30000"}},"udp":{"type":"salamander"}}`,
+		"empty ports":  `{"quicParams":{"udpHop":{"ports":""}}}`,
+	} {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(mask), &m); err != nil {
+			t.Fatal(err)
+		}
+		before, _ := json.Marshal(m)
+		got, _ := json.Marshal(hopToUDPMask(m))
+		if name == "already hops" {
+			if strings.Count(string(got), "udphop") != 1 || strings.Contains(string(got), "udpHop") {
+				t.Errorf("%s: %s", name, got)
+			}
+			continue
+		}
+		if string(got) != string(before) {
+			t.Errorf("%s: changed to %s", name, got)
+		}
+	}
+}
+
+// Xray refuses a whole config holding plaintext VLESS or Trojan to a public
+// address, so such a link is not taken; to a private one it still is.
+func TestXrayOutboundPlaintextToPublic(t *testing.T) {
+	t.Parallel()
+	for link, want := range map[string]bool{
+		"vless://11111111-1111-1111-1111-111111111111@5.6.7.8:443?type=tcp#a":                                         false,
+		"vless://11111111-1111-1111-1111-111111111111@ex.com:443?type=ws&security=none#a":                             false,
+		"trojan://pw@5.6.7.8:443?type=tcp#a":                                                                          false,
+		"trojan://pw@ex.com:443?security=tls&sni=ex.com#a":                                                            true,
+		"trojan://pw@ex.com:443?security=reality&sni=ex.com&pbk=k&fp=chrome#a":                                        true,
+		"vless://11111111-1111-1111-1111-111111111111@10.0.0.2:443?type=tcp#a":                                        true,
+		"vless://11111111-1111-1111-1111-111111111111@[fd00::2]:443?type=tcp#a":                                       true,
+		"vless://11111111-1111-1111-1111-111111111111@100.100.1.1:443?type=tcp#a":                                     true,
+		"trojan://pw@backend:443#a":                                                                                   true,
+		"trojan://pw@box.lan:443#a":                                                                                   true,
+		"vless://11111111-1111-1111-1111-111111111111@ex.com:443?security=tls&sni=ex.com#a":                           true,
+		"vless://11111111-1111-1111-1111-111111111111@ex.com:443?encryption=mlkem768x25519plus.native.0rtt.AbC-d_e#a": true,
+	} {
+		if _, ok := XrayOutbound(link, "t"); ok != want {
+			t.Errorf("%s: taken=%v, want %v", link, ok, want)
 		}
 	}
 }

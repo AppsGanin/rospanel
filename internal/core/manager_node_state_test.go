@@ -291,6 +291,17 @@ func TestNodeStateKeyCoversEveryField(t *testing.T) {
 		}
 	}
 
+	// The node's Xray version is out, except whether it reads the udp hop mask: that
+	// changes the config written for it.
+	older, newer, newest := *n, *n, *n
+	older.XrayVersion, newer.XrayVersion, newest.XrayVersion = "26.7.28", "26.10.10", "26.11.1"
+	kOld, _ := nodeStateKey(&older, x, m.opts)
+	kNew, _ := nodeStateKey(&newer, x, m.opts)
+	kNewest, _ := nodeStateKey(&newest, x, m.opts)
+	if kOld == kNew || kNew != kNewest {
+		t.Error("the udp hop form is not what the fingerprint tells the node's Xray versions apart by")
+	}
+
 	// Nothing degraded is remembered.
 	y := *x
 	y.inbErr = errors.New("unreadable")

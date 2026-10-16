@@ -58,3 +58,41 @@ func TestLaneUpstreamMayBeAShareLink(t *testing.T) {
 		}
 	}
 }
+
+// A share link's port hopping is written in the form the Xray the config is for
+// reads: the udp mask for one that has it, quicParams.udpHop for an older one, which
+// refuses the whole config over the mask.
+func TestLaneLinkHopFollowsXrayVersion(t *testing.T) {
+	t.Parallel()
+	rc := model.RoutingConfig{Lanes: []model.EgressLane{
+		{ID: "partner", Name: "partner", Enabled: true, Domains: []string{"example.com"}},
+	}}
+	pool := map[string][]model.ProxyEndpoint{"partner": {
+		{Protocol: "hysteria2", Address: "9.9.9.9", Port: 443, Link: "hysteria2://pw@9.9.9.9:443?sni=x&mport=20000-30000#h"},
+	}}
+	for legacy, want := range map[bool]string{
+		false: `"type":"udphop"`,
+		true:  `"udpHop":{"ports":"20000-30000"}`,
+	} {
+		cfg, err := Generate(laneSettings(rc), nil, Options{PanelDest: "127.0.0.1:8080", LegacyUDPHop: legacy}, pool)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(cfg)
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("legacy=%v: config lacks %s", legacy, want)
+		}
+	}
+}
+
+func TestReadsUDPHopMask(t *testing.T) {
+	t.Parallel()
+	for v, want := range map[string]bool{
+		"26.9.30": true, "v26.9.30": true, "26.10.10": true, "27.1.1": true, "26.12.0": true,
+		"26.9.9": false, "26.7.28": false, "25.12.31": false, "": false, "26.9": false, "dev": false,
+	} {
+		if got := ReadsUDPHopMask(v); got != want {
+			t.Errorf("%q: %v, want %v", v, got, want)
+		}
+	}
+}

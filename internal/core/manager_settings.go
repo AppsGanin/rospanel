@@ -230,6 +230,12 @@ func (m *Manager) genOptsFor(serverID int64) (xray.Options, error) {
 	// The front is the master's own: a node's agent puts its lane behind a front itself,
 	// when it has one to put it behind (xray.FrontVLESSRaw).
 	opts.FrontVLESS = serverID == model.LocalNodeID && m.frontVLESS
+	// The panel's own Xray is the pinned one, unless pointed elsewhere (XRAY_BIN).
+	if m.sup != nil {
+		if v := m.sup.Version(); v != "" {
+			opts.LegacyUDPHop = !xray.ReadsUDPHopMask(v)
+		}
+	}
 	access, err := m.store.AccessMap()
 	if err != nil {
 		return opts, fmt.Errorf("load access map: %w", err)

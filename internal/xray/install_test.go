@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -38,10 +39,7 @@ func TestBinaryVersionReadsTheFirstLine(t *testing.T) {
 // re-download, no touching the file.
 func TestEnsureBinaryKeepsThePinnedRelease(t *testing.T) {
 	dir := t.TempDir()
-	want := versionStub(t, dir, "26.7.28")
-	if PinnedVersion != "v26.7.28" {
-		t.Skipf("stub speaks 26.7.28; pin moved to %s", PinnedVersion)
-	}
+	want := versionStub(t, dir, strings.TrimPrefix(PinnedVersion, "v"))
 	before, err := os.Stat(want)
 	if err != nil {
 		t.Fatal(err)

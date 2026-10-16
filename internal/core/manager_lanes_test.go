@@ -29,8 +29,8 @@ func TestLaneName(t *testing.T) {
 func TestNodeLanesTakeOnlyTheNodesOwn(t *testing.T) {
 	t.Parallel()
 	m := nodeTestManager(t)
-	syncedNode(t, m.store, "edge", "26.7.28")
-	syncedNode(t, m.store, "other", "26.7.28")
+	syncedNode(t, m.store, "edge", "26.10.10")
+	syncedNode(t, m.store, "other", "26.10.10")
 	nodes, _ := m.store.ListNodes()
 	own, other := nodes[0].ID, nodes[1].ID
 	mk := func(server int64, port int) string {

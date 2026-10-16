@@ -78,6 +78,12 @@ type Options struct {
 	// receives a config that needs one.
 	FrontVLESS bool
 
+	// LegacyUDPHop is set for an Xray older than the udp hop mask (ReadsUDPHopMask):
+	// port hopping on a share-link outbound stays in the quicParams form, which such a
+	// core reads and a newer one ignores, rather than the mask it would refuse the
+	// whole config over.
+	LegacyUDPHop bool
+
 	// Relays are the external servers this server carries traffic on to (relay.go).
 	Relays []Relay
 	// Cascade are the upstreams of this server's cascade lanes by lane ID — our own
@@ -318,7 +324,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 			continue
 		}
 		active[lane.ID] = true
-		outbounds = append(outbounds, proxyOutbounds(lane.ID, pool)...)
+		outbounds = append(outbounds, proxyOutbounds(lane.ID, pool, opts.LegacyUDPHop)...)
 	}
 	if set.WarpEnabled && !warpActive {
 		unusable["warp"] = true
@@ -527,6 +533,15 @@ func laneTagPrefix(laneID string) string { return "proxy-" + laneID + "-" }
 // laneBalancerTag is the routing target for a lane's traffic.
 func laneBalancerTag(laneID string) string { return "pool-" + laneID }
 
+// linkOutbound is the outbound a share link dials, with port hopping in the form
+// the Xray it is for reads (Options.LegacyUDPHop).
+func linkOutbound(link, tag string, legacyHop bool) (map[string]any, bool) {
+	if legacyHop {
+		return extsub.XrayOutbound(link, tag)
+	}
+	return extsub.ServerOutbound(link, tag)
+}
+
 // operaBalancerTag is a single-member balancer wrapping the Opera outbound: an
 // Observatory health-probe lets it fall back when the free VPN upstream is
 // unreachable — to direct, or to block under StrictEgress — and recover when it's back.
@@ -535,12 +550,12 @@ const operaBalancerTag = "opera-out"
 // proxyOutbounds builds one outbound per upstream of a lane: a socks/http proxy
 // as such, a share link as the outbound an app would build from it. Either way the
 // tag is the lane's, so the balancer and the Observatory treat them alike.
-func proxyOutbounds(laneID string, proxies []model.ProxyEndpoint) []Outbound {
+func proxyOutbounds(laneID string, proxies []model.ProxyEndpoint, legacyHop bool) []Outbound {
 	out := make([]Outbound, 0, len(proxies))
 	for i, p := range proxies {
 		tag := fmt.Sprintf("%s%d", laneTagPrefix(laneID), i)
 		if p.Link != "" {
-			o, ok := extsub.XrayOutbound(p.Link, tag)
+			o, ok := linkOutbound(p.Link, tag, legacyHop)
 			if !ok {
 				continue // a link the panel accepted but cannot express is skipped, not guessed at
 			}

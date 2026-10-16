@@ -3,6 +3,7 @@ package extsub
 import (
 	"encoding/base64"
 	"encoding/json"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -82,8 +83,51 @@ func XrayOutbound(raw, tag string) (map[string]any, bool) {
 	default:
 		return nil, false
 	}
-	out["streamSettings"] = xrayStream(q)
+	stream := xrayStream(q)
+	if stream["security"] == "none" && (out["protocol"] == "trojan" || user0Enc(out) == "none") && !privateAddress(host) {
+		// Xray refuses a whole config holding plaintext VLESS or Trojan to a public
+		// address (since 26.9.9) — the server's own, for an upstream or a relay.
+		return nil, false
+	}
+	out["streamSettings"] = stream
 	return out, true
+}
+
+// user0Enc is the VLESS encryption of the outbound's one user, "" for another
+// protocol.
+func user0Enc(out map[string]any) string {
+	settings, _ := out["settings"].(map[string]any)
+	vnext, _ := settings["vnext"].([]map[string]any)
+	if len(vnext) == 0 {
+		return ""
+	}
+	users, _ := vnext[0]["users"].([]map[string]any)
+	if len(users) == 0 {
+		return ""
+	}
+	enc, _ := users[0]["encryption"].(string)
+	return enc
+}
+
+// privateAddress reports whether Xray lets an unencrypted VLESS or Trojan outbound
+// dial host. It is a subset of Xray's own private lists, so what passes here
+// passes there.
+func privateAddress(host string) bool {
+	if ip, err := netip.ParseAddr(host); err == nil {
+		ip = ip.Unmap()
+		return ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() ||
+			netip.MustParsePrefix("100.64.0.0/10").Contains(ip)
+	}
+	h := strings.TrimSuffix(strings.ToLower(host), ".")
+	if h != "" && !strings.Contains(h, ".") {
+		return true // a dotless name
+	}
+	for _, zone := range []string{"localhost", "local", "lan", "internal", "localdomain", "home.arpa"} {
+		if h == zone || strings.HasSuffix(h, "."+zone) {
+			return true
+		}
+	}
+	return false
 }
 
 // vmessOutbound reads the JSON a vmess:// link carries. The fields are the ones
@@ -182,6 +226,63 @@ func hysteriaStream(q url.Values, password string) map[string]any {
 		s["finalmask"] = map[string]any{"quicParams": map[string]any{"udpHop": map[string]any{"ports": mport}}}
 	}
 	return s
+}
+
+// ServerOutbound is XrayOutbound for the panel's own Xray: port hopping goes in the
+// form the pinned release reads. XrayOutbound keeps the quicParams.udpHop form share
+// links carry, because it also writes configs for client apps, whose cores may be
+// older — and an older core refuses the udp mask outright, where a newer one only
+// ignores the old form (no hopping, one port).
+func ServerOutbound(link, tag string) (map[string]any, bool) {
+	o, ok := XrayOutbound(link, tag)
+	if !ok {
+		return o, ok
+	}
+	if ss, _ := o["streamSettings"].(map[string]any); ss != nil {
+		if mask, _ := ss["finalmask"].(map[string]any); mask != nil {
+			ss["finalmask"] = hopToUDPMask(mask)
+		}
+	}
+	return o, ok
+}
+
+// udpHopMask is port hopping as a UDP mask: Xray reads it since 26.9.9, and fixed
+// it in 26.9.30. The
+// older quicParams.udpHop form passes `xray -test` there and is then ignored —
+// every packet goes to one port.
+func udpHopMask(ports any, interval any) map[string]any {
+	settings := map[string]any{"mode": "intervalRemote", "remotePorts": ports}
+	if interval != nil {
+		settings["interval"] = interval
+	}
+	return map[string]any{"type": "udphop", "settings": settings}
+}
+
+// hopToUDPMask moves quicParams.udpHop (what share links and client configs carry)
+// into the udp mask our Xray reads; the rest of the mask is kept.
+func hopToUDPMask(mask map[string]any) map[string]any {
+	qp, _ := mask["quicParams"].(map[string]any)
+	hop, _ := qp["udpHop"].(map[string]any)
+	if hop == nil || hop["ports"] == nil || hop["ports"] == "" {
+		return mask
+	}
+	udp, isList := mask["udp"].([]any)
+	if mask["udp"] != nil && !isList {
+		return mask // a shape we do not know is left to Xray as it came
+	}
+	delete(qp, "udpHop")
+	if len(qp) == 0 {
+		delete(mask, "quicParams")
+	}
+	for _, m := range udp {
+		if mm, _ := m.(map[string]any); mm["type"] == "udphop" {
+			return mask // the link already hops the new way
+		}
+	}
+	// Last in the list: Xray reverses it and takes only a first mask that dials
+	// itself, which the hop is; anywhere else the config is refused.
+	mask["udp"] = append(udp, udpHopMask(hop["ports"], hop["interval"]))
+	return mask
 }
 
 // xrayStream maps the link's transport and security parameters onto Xray's

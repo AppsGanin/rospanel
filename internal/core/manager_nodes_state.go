@@ -225,6 +225,7 @@ func (m *Manager) generateNodeState(n *model.Node, x *nodeStateInputs, users []m
 	opts := x.opts
 	opts.ServerID = n.ID
 	opts.Access = in.access
+	opts.LegacyUDPHop = nodeLegacyHop(n)
 	if x.inbErr != nil {
 		// Soft, as in genOptsFor: the built-in lanes still keep the server reachable.
 		logErr("inbounds: load failed", "server", n.ID, "err", x.inbErr)
