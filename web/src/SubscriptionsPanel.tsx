@@ -58,6 +58,7 @@ const EMPTY_SUB: SubSettings = {
   sub_order_mode: "manual",
   sub_hide_offline: false,
   sub_self_rotate: 0,
+  sub_page_enabled: true,
   sub_page_url: "",
 };
 
@@ -130,6 +131,7 @@ export function SubscriptionsPanel() {
           sub_order_mode: d.sub_order_mode ?? "manual",
           sub_hide_offline: d.sub_hide_offline ?? false,
           sub_self_rotate: d.sub_self_rotate ?? 0,
+          sub_page_enabled: d.sub_page_enabled ?? true,
           sub_page_url: d.sub_page_url ?? "",
         };
         load(init);
@@ -195,6 +197,12 @@ export function SubscriptionsPanel() {
     <div className="flex flex-1 flex-col gap-3.5">
       {/* What the subscription link is and what comes back from it. */}
       <Panel title={t("subs.format")}>
+        <ToggleRow
+          label={t("subs.pageEnabled")}
+          hint={t("subs.pageEnabledHint")}
+          checked={s.sub_page_enabled}
+          onChange={(v) => patch({ sub_page_enabled: v })}
+        />
         <SettingRow
           label={t("subs.path")}
           hint={

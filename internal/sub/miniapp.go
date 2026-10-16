@@ -21,7 +21,7 @@ func IsMiniAppPath(set *model.Settings, seg string) bool {
 // MiniAppURL is the Mini App's address — for the bot's menu button and for
 // @BotFather's "Configure Mini App" — or "" while the panel has no host.
 func MiniAppURL(set *model.Settings) string {
-	if strings.TrimSpace(set.Host) == "" || set.MiniAppPath == "" {
+	if strings.TrimSpace(set.Host) == "" || set.MiniAppPath == "" || !set.SubPageReachable() {
 		return ""
 	}
 	return "https://" + set.Host + "/" + set.SubPathOr() + "/" + set.MiniAppPath

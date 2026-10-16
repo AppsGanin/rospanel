@@ -90,6 +90,11 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 				http.Redirect(w, r, to, http.StatusFound)
 				return
 			}
+			// The page switched off: a browser gets what any unknown path gets.
+			if !set.SubPageEnabled {
+				rt.currentDecoy().ServeHTTP(w, r)
+				return
+			}
 			lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
 			access := rt.buildAccess(r, *u, set)
 			if err := rt.servePage(w, *u, set, access, lang, clientIP(r)); err != nil {
@@ -1057,7 +1062,10 @@ func setSubHeaders(w http.ResponseWriter, u model.User, set *model.Settings, sup
 	w.Header().Set("Subscription-Userinfo", fmt.Sprintf(
 		"upload=%d; download=%d; total=%d; expire=%d",
 		u.UsedUp, u.UsedDown, u.DataLimit, u.ExpireAt))
-	w.Header().Set("Profile-Web-Page-Url", sub.URL(set, u.SubToken))
+	// The apps show it as a button that opens a browser: only while there is a page.
+	if set.SubPageReachable() {
+		w.Header().Set("Profile-Web-Page-Url", sub.URL(set, u.SubToken))
+	}
 	if supportURL != "" {
 		// Happ shows it as a support button on the traffic bar; Telegram links get
 		// the TG icon. Points the client at the public user bot.
@@ -1618,7 +1626,8 @@ func termTitle(plan string, periods int) string {
 // on to their own page. With the user bot off it is the decoy, like any unknown path.
 func handleMiniApp(rt *Router, w http.ResponseWriter, r *http.Request, leaf string) {
 	set, err := rt.mgr.Store().GetSettings()
-	if err != nil || !set.TGUserBotEnabled || strings.TrimSpace(set.TGUserBotToken) == "" {
+	// It leads to the subscription page: off with it.
+	if err != nil || !set.TGUserBotEnabled || strings.TrimSpace(set.TGUserBotToken) == "" || !set.SubPageReachable() {
 		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}

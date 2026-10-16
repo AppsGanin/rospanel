@@ -714,6 +714,13 @@ func (c *Client) GetChatMenuButton(ctx context.Context) (*MenuButton, error) {
 	return &b, nil
 }
 
+// ResetChatMenuButton puts the bot's menu button back to Telegram's default.
+func (c *Client) ResetChatMenuButton(ctx context.Context) error {
+	return c.call(ctx, "setChatMenuButton", map[string]any{
+		"menu_button": MenuButton{Type: "default"},
+	}, nil)
+}
+
 // SetChatMenuButton makes the bot's default menu button open a Mini App.
 func (c *Client) SetChatMenuButton(ctx context.Context, text, url string) error {
 	return c.call(ctx, "setChatMenuButton", map[string]any{

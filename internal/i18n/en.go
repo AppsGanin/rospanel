@@ -259,6 +259,7 @@ var en = map[string]string{
 	"user.btnSupport":        "💬 Support",
 	"user.btnCancel":         "⬅️ Cancel",
 	"user.btnMySub":          "👤 My account",
+	"user.cardSubLink":       "🔗 Subscription link (add it to your app):\n<code>%s</code>",
 	"user.btnPlans":          "💳 Plans",
 	"user.btnRefresh":        "🔄 Refresh",
 	"user.btnLegal":          "📄 Documents",

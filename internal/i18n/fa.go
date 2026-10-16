@@ -257,6 +257,7 @@ var fa = map[string]string{
 	"user.btnSupport":        "💬 پشتیبانی",
 	"user.btnCancel":         "⬅️ لغو",
 	"user.btnMySub":          "👤 حساب من",
+	"user.cardSubLink":       "🔗 لینک اشتراک (آن را به برنامه‌تان اضافه کنید):\n<code>%s</code>",
 	"user.btnPlans":          "💳 طرح‌ها",
 	"user.btnRefresh":        "🔄 به‌روزرسانی",
 	"user.btnLegal":          "📄 اسناد",

@@ -1092,6 +1092,10 @@ type Settings struct {
 	MasterPlacement Placement `json:"-"`
 	// ConnPolicy is where clients are allowed to connect from (connpolicy.go).
 	ConnPolicy ConnPolicy `json:"-"`
+	// SubPageEnabled serves the panel's own subscription page to a browser opening a
+	// subscription link (and the Mini App); off, the browser gets the decoy and apps
+	// keep their subscription.
+	SubPageEnabled bool `json:"-"`
 	// SubSelfRotateHours lets a user reissue their own subscription link from its page
 	// (the old one stops working), for a link they believe has leaked — at most once
 	// per that many hours; 0 does not let them.
@@ -1794,6 +1798,10 @@ func (s *Settings) SubPathOr() string {
 
 // SubPageToken is the placeholder SubPageURL replaces with the user's token.
 const SubPageToken = "{token}"
+
+// SubPageReachable reports whether a browser opening a subscription link lands on a
+// page: the panel's own (unless switched off) or the operator's (SubPageURL).
+func (s *Settings) SubPageReachable() bool { return s.SubPageEnabled || s.SubPageURL != "" }
 
 // SubPageRedirect is where a browser opening the user's subscription link goes, or
 // "" for the panel's own page.

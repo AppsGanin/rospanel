@@ -257,6 +257,7 @@ var zh = map[string]string{
 	"user.btnSupport":        "💬 客服",
 	"user.btnCancel":         "⬅️ 取消",
 	"user.btnMySub":          "👤 我的账户",
+	"user.cardSubLink":       "🔗 订阅链接（添加到您的应用中）：\n<code>%s</code>",
 	"user.btnPlans":          "💳 套餐",
 	"user.btnRefresh":        "🔄 刷新",
 	"user.btnLegal":          "📄 文件",
