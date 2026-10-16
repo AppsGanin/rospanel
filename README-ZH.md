@@ -697,7 +697,7 @@ rospanel node uninstall [-y]            删除节点服务（保留数据）
 
 ---
 
-## 🧑‍💻 开发
+## 💻 开发
 
 ```bash
 # 前端（修改 web/ 之后）
