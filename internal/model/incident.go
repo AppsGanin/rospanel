@@ -1,0 +1,86 @@
+package model
+
+// Incident is an operator's notice on the public status page: something broke, or a
+// planned maintenance window (migration 0127).
+type Incident struct {
+	ID    int64  `json:"id"`
+	Kind  string `json:"kind"` // IncidentKind*
+	Title string `json:"title"`
+	Body  string `json:"body"`
+	// NodeIDs are the servers it concerns (LocalNodeID is the panel's own); empty is
+	// the whole service.
+	NodeIDs []int64 `json:"node_ids"`
+	// StartsAt is when an incident began, or when a maintenance window opens.
+	StartsAt int64 `json:"starts_at"`
+	// EndsAt is when a maintenance window closes, 0 when open-ended. An incident has
+	// none: it is over when the operator says so.
+	EndsAt     int64 `json:"ends_at"`
+	ResolvedAt int64 `json:"resolved_at"`
+	CreatedAt  int64 `json:"created_at"`
+	UpdatedAt  int64 `json:"updated_at"`
+}
+
+const (
+	IncidentKindIncident    = "incident"
+	IncidentKindMaintenance = "maintenance"
+)
+
+// Where an incident stands at a given moment.
+const (
+	IncidentScheduled = "scheduled" // maintenance that has not started
+	IncidentActive    = "active"
+	IncidentDone      = "done"
+)
+
+// Limits on what the operator writes: a title is one line on the page, the text a
+// short paragraph (and a Telegram message, which tops out at 4096).
+const (
+	IncidentTitleMax = 200
+	IncidentBodyMax  = 2000
+)
+
+// ValidIncidentKind reports whether k is a known kind.
+func ValidIncidentKind(k string) bool {
+	return k == IncidentKindIncident || k == IncidentKindMaintenance
+}
+
+// Phase is where the incident stands at now (unix seconds). A maintenance window
+// ends by itself at EndsAt; an incident only when resolved.
+func (i *Incident) Phase(now int64) string {
+	switch {
+	case i.ResolvedAt > 0:
+		return IncidentDone
+	case i.Kind != IncidentKindMaintenance:
+		return IncidentActive
+	case now < i.StartsAt:
+		return IncidentScheduled
+	case i.EndsAt > 0 && now >= i.EndsAt:
+		return IncidentDone
+	}
+	return IncidentActive
+}
+
+// EndedAt is when a finished incident ended: when it was resolved, or the close of
+// its maintenance window. 0 while it is not over.
+func (i *Incident) EndedAt(now int64) int64 {
+	if i.Phase(now) != IncidentDone {
+		return 0
+	}
+	if i.ResolvedAt > 0 && (i.EndsAt == 0 || i.ResolvedAt < i.EndsAt || i.Kind != IncidentKindMaintenance) {
+		return i.ResolvedAt
+	}
+	return i.EndsAt
+}
+
+// Concerns reports whether the incident covers the server.
+func (i *Incident) Concerns(nodeID int64) bool {
+	if len(i.NodeIDs) == 0 {
+		return true
+	}
+	for _, id := range i.NodeIDs {
+		if id == nodeID {
+			return true
+		}
+	}
+	return false
+}

@@ -35,6 +35,7 @@ import {
 } from "./CronPicker";
 import { useAction } from "./hooks";
 import { ConnPolicyCard, EMPTY_POLICY } from "./ConnPolicyCard";
+import { StatusIncidents } from "./StatusIncidents";
 import { notifySuccess } from "./notify";
 import { useCan, useIsOwner } from "./role";
 import { browserTimezone, setPanelTimezone, tzOptions } from "./tz";
@@ -453,6 +454,13 @@ export function GeneralSettings() {
         />
       </Panel>
       </ReadOnly>
+      )}
+
+      {/* What the status page says about outages and planned works. */}
+      {canSetView && (
+        <StatusIncidents
+          statusPath={savedStatus.enabled ? savedStatus.path || "status" : ""}
+        />
       )}
 
       {/* What the panel keeps and for how long. */}

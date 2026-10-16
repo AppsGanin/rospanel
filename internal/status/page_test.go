@@ -62,13 +62,13 @@ func TestRenderShowsStateUptimeAndHeadline(t *testing.T) {
 	if !strings.Contains(html, d.L.SomeDown) || strings.Contains(html, d.L.AllUp) {
 		t.Error("the headline does not reflect an outage")
 	}
-	if !strings.Contains(html, `class="dot bad"`) {
-		t.Error("the headline dot is not red during an outage")
+	if !strings.Contains(html, `class="hero down-tone"`) {
+		t.Error("the headline is not red during an outage")
 	}
 	if !strings.Contains(html, `class="state ok"`) || !strings.Contains(html, `class="state bad"`) {
 		t.Error("per-server state classes missing")
 	}
-	if !strings.Contains(html, d.L.Uptime+" 99.95%") {
+	if !strings.Contains(html, d.L.Uptime+" <b>99.95%</b>") {
 		t.Error("the uptime figure is not shown next to its label")
 	}
 	// A server with no samples says so instead of showing 0.00%, which would read
@@ -90,7 +90,7 @@ func TestRenderShowsStateUptimeAndHeadline(t *testing.T) {
 
 	d.HeadlineOK = true
 	html = render(t, d)
-	if !strings.Contains(html, d.L.AllUp) || !strings.Contains(html, `class="dot ok"`) {
+	if !strings.Contains(html, d.L.AllUp) || !strings.Contains(html, `class="hero ok-tone"`) {
 		t.Error("the all-clear headline is not rendered")
 	}
 }

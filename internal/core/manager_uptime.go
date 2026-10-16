@@ -55,6 +55,7 @@ func (m *Manager) PurgeOldUptime() {
 // name, a state and a history. No host, no address, no version — the page answers
 // to strangers, and everything beyond "is it working" is reconnaissance.
 type StatusServer struct {
+	ID      int64
 	Name    string
 	Up      bool
 	Days    []StatusDay // oldest first, one per day in the window
@@ -78,6 +79,8 @@ type StatusReport struct {
 	// clock every other date in the panel is printed on. The page shows it, and a
 	// reader deciding whether an outage is current needs it to mean what they think.
 	At time.Time
+	// Incidents is what the operator posted that the page shows, latest start first.
+	Incidents []model.Incident
 }
 
 // StatusPageData assembles the status report over the last `days` days.
@@ -122,7 +125,7 @@ func (m *Manager) StatusPageData(days int) (*StatusReport, error) {
 	rep := &StatusReport{AllUp: true, Days: days, At: now.In(m.loc())}
 	unix := now.Unix()
 	add := func(id int64, name string, up bool) {
-		s := StatusServer{Name: name, Up: up}
+		s := StatusServer{ID: id, Name: name, Up: up}
 		var upSamples, total int
 		for _, day := range calendar {
 			d := byNode[id][day]
@@ -138,23 +141,41 @@ func (m *Manager) StatusPageData(days int) (*StatusReport, error) {
 		rep.Servers = append(rep.Servers, s)
 	}
 
-	// The master's own label when the operator set one (multi-node installs name
-	// their servers), else the generic local-node name.
-	masterName := set.MasterLabel
-	if masterName == "" {
-		masterName = model.LocalNodeName
-	}
-	add(model.LocalNodeID, masterName, m.sup.Running())
+	add(model.LocalNodeID, masterStatusName(set), m.sup.Running())
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
 	for i := range nodes {
 		n := &nodes[i]
-		if !n.Enabled || !n.Joined() {
+		if !statusShows(n) {
 			continue
 		}
 		add(n.ID, n.Name, n.Online(unix) && n.XrayRunning)
 	}
+
+	// What the operator posted: everything not over yet, and what ended within the
+	// history the page shows.
+	since := now.AddDate(0, 0, -statusIncidentHistoryDays).Unix()
+	if rep.Incidents, err = m.store.IncidentsForPage(unix, since); err != nil {
+		return nil, err
+	}
 	return rep, nil
 }
+
+// statusIncidentHistoryDays is how far back the page lists incidents that are over
+// (status.noEvents names the number).
+const statusIncidentHistoryDays = 30
+
+// masterStatusName is the master's own label when the operator set one (multi-node
+// installs name their servers), else the generic local-node name.
+func masterStatusName(set *model.Settings) string {
+	if set.MasterLabel != "" {
+		return set.MasterLabel
+	}
+	return model.LocalNodeName
+}
+
+// statusShows reports whether the status page lists a node: switched off or never
+// joined, it is not a server a customer can be on.
+func statusShows(n *model.Node) bool { return n.Enabled && n.Joined() }
 
 func ratio(up, total int) float64 {
 	if total <= 0 {

@@ -1,0 +1,494 @@
+import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import {
+  deleteIncident,
+  listIncidents,
+  resolveIncident,
+  saveIncident,
+  type Incident,
+  type IncidentKind,
+  type IncidentSaved,
+  type IncidentServer,
+} from "./api";
+import { fmtStamp } from "./format";
+import { useAction } from "./hooks";
+import { td } from "./i18n";
+import { errMessage, notifyError, notifySuccess } from "./notify";
+import { useCan } from "./role";
+import { ymdOf, zonedParts, zonedToMs } from "./tz";
+import {
+  Badge,
+  Button,
+  Checkbox,
+  cn,
+  DatePicker,
+  Drawer,
+  EmptyState,
+  IconButton,
+  IconCheck,
+  IconExternal,
+  IconPencil,
+  IconPlus,
+  IconTrash,
+  Modal,
+  Panel,
+  ReadOnly,
+  SegmentedControl,
+  SettingRow,
+  Textarea,
+  TextInput,
+} from "./ui";
+
+type Phase = "scheduled" | "active" | "done";
+
+// phaseOf mirrors model.Incident.Phase: a maintenance window ends by itself at its
+// close, an incident only when resolved.
+function phaseOf(inc: Incident, now: number): Phase {
+  if (inc.resolved_at > 0) return "done";
+  if (inc.kind !== "maintenance") return "active";
+  if (now < inc.starts_at) return "scheduled";
+  if (inc.ends_at > 0 && now >= inc.ends_at) return "done";
+  return "active";
+}
+
+const PHASE_ORDER: Record<Phase, number> = { active: 0, scheduled: 1, done: 2 };
+
+// A moment as the editor holds it: a date and a wall-clock time in the panel's zone.
+type Moment = { date: string; time: string };
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+function toMoment(unix: number): Moment {
+  if (!unix) return { date: "", time: "" };
+  const p = zonedParts(unix * 1000);
+  return { date: ymdOf(unix * 1000), time: `${pad(p.h)}:${pad(p.mi)}` };
+}
+
+function fromMoment(m: Moment): number {
+  if (!m.date) return 0;
+  const [y, mo, d] = m.date.split("-").map(Number);
+  const [h, mi] = (m.time || "00:00").split(":").map(Number);
+  return Math.floor(zonedToMs(y, mo, d, h || 0, mi || 0, 0) / 1000);
+}
+
+// A fresh entry starts now; maintenance is moved to its real window by hand.
+function blank(kind: IncidentKind): Incident {
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    id: 0,
+    kind,
+    title: "",
+    body: "",
+    node_ids: [],
+    starts_at: now,
+    ends_at: 0,
+    resolved_at: 0,
+    created_at: 0,
+    updated_at: 0,
+  };
+}
+
+// StatusIncidents is the operator's list of incidents and maintenance windows shown
+// on the public status page, and optionally sent to the users through the bot.
+export function StatusIncidents({ statusPath }: { statusPath: string }) {
+  const { t } = useTranslation();
+  const canManage = useCan("settings.manage");
+  const canNotify = useCan("broadcasts.manage");
+  const [list, setList] = useState<Incident[] | null>(null);
+  const [servers, setServers] = useState<IncidentServer[]>([]);
+  const [err, setErr] = useState("");
+  const [editor, setEditor] = useState<Incident | null>(null);
+  // The title the entry was opened with: the drawer's header names what is being
+  // edited, not the field's every keystroke.
+  const [editorTitle, setEditorTitle] = useState("");
+  const [start, setStart] = useState<Moment>({ date: "", time: "" });
+  const [end, setEnd] = useState<Moment>({ date: "", time: "" });
+  const [notify, setNotify] = useState(false);
+  const [resolving, setResolving] = useState<Incident | null>(null);
+  const [resolveNotify, setResolveNotify] = useState(false);
+  const [deleting, setDeleting] = useState<Incident | null>(null);
+  const { busy, run } = useAction();
+
+  const reload = useCallback(() => {
+    listIncidents()
+      .then((r) => {
+        setList(r.incidents ?? []);
+        setServers(r.servers ?? []);
+        setErr("");
+      })
+      .catch((e) => setErr(errMessage(e)));
+  }, []);
+  useEffect(reload, [reload]);
+
+  const open = (inc: Incident) => {
+    setEditor({ ...inc, node_ids: [...(inc.node_ids ?? [])] });
+    setEditorTitle(inc.title);
+    setStart(toMoment(inc.starts_at));
+    setEnd(toMoment(inc.ends_at));
+    setNotify(false);
+  };
+  const patch = (d: Partial<Incident>) => editor && setEditor({ ...editor, ...d });
+
+  // done reports the outcome: saved, and whether the message to the users went out.
+  const done = (r: IncidentSaved, ok: string, notified: boolean) => {
+    reload();
+    if (r.notify_error) {
+      const e = r.notify_error;
+      const reason = e.code && td(e.code, e.args) !== e.code ? td(e.code, e.args) : e.error;
+      notifyError(t("incidents.notifyFailed", { reason }));
+    } else {
+      notifySuccess(notified ? t("incidents.notifySent") : ok);
+    }
+  };
+
+  const save = () => {
+    if (!editor) return;
+    const inc: Incident = {
+      ...editor,
+      title: editor.title.trim(),
+      starts_at: fromMoment(start),
+      ends_at: editor.kind === "maintenance" ? fromMoment(end) : 0,
+    };
+    run(async () => {
+      const send = notify && canNotify && editedPhase !== "done";
+      const r = await saveIncident(inc, send);
+      setEditor(null);
+      done(r, t("incidents.saved"), send);
+    }).catch((e) => notifyError(errMessage(e)));
+  };
+
+  const resolve = () => {
+    if (!resolving) return;
+    const id = resolving.id;
+    run(async () => {
+      const r = await resolveIncident(id, resolveNotify && canNotify);
+      setResolving(null);
+      done(r, t("incidents.resolvedOk"), resolveNotify && canNotify);
+    }).catch((e) => notifyError(errMessage(e)));
+  };
+
+  const remove = () => {
+    if (!deleting) return;
+    const id = deleting.id;
+    run(async () => {
+      await deleteIncident(id);
+      setDeleting(null);
+      reload();
+      notifySuccess(t("incidents.deleted"));
+    }).catch((e) => notifyError(errMessage(e)));
+  };
+
+  const now = Math.floor(Date.now() / 1000);
+  const rows = (list ?? [])
+    .map((inc) => ({ inc, phase: phaseOf(inc, now) }))
+    // Going on first, then what is planned (soonest first), then the past.
+    .sort(
+      (a, b) =>
+        PHASE_ORDER[a.phase] - PHASE_ORDER[b.phase] ||
+        (a.phase === "scheduled" ? a.inc.starts_at - b.inc.starts_at : 0),
+    );
+  // A server that has left the status page since is still named, by its number:
+  // the entry is about it, not about the whole service.
+  const serverNames = (ids: number[]) =>
+    ids.length === 0
+      ? t("incidents.allServers")
+      : ids.map((id) => servers.find((s) => s.id === id)?.name ?? `#${id}`).join(", ");
+  const when = (inc: Incident) =>
+    inc.kind === "maintenance" && inc.ends_at
+      ? `${fmtStamp(inc.starts_at)} – ${fmtStamp(inc.ends_at)}`
+      : fmtStamp(inc.starts_at);
+  const maint = editor?.kind === "maintenance";
+  // Where the entry stands as edited: one that is over is not announced as news.
+  const editedPhase = editor
+    ? phaseOf(
+        { ...editor, starts_at: fromMoment(start), ends_at: maint ? fromMoment(end) : 0 },
+        now,
+      )
+    : "active";
+  const allServers = (editor?.node_ids.length ?? 0) === 0;
+  // The servers to tick, plus any the entry names that have left the status page
+  // since — shown by number so they can be unticked.
+  const editorServers = [
+    ...servers,
+    ...(editor?.node_ids ?? [])
+      .filter((id) => !servers.some((s) => s.id === id))
+      .map((id) => ({ id, name: `#${id}` })),
+  ];
+
+  return (
+    <>
+      <ReadOnly when={!canManage}>
+        <Panel
+          title={t("incidents.title")}
+          aside={
+            <span className="flex items-center gap-1">
+              {statusPath && (
+                <IconButton
+                  nav
+                  href={`${window.location.origin}/${statusPath}`}
+                  target="_blank"
+                  title={t("incidents.openPage")}
+                >
+                  <IconExternal />
+                </IconButton>
+              )}
+              <IconButton
+                variant="filled"
+                color="brand"
+                title={t("incidents.new")}
+                onClick={() => open(blank("incident"))}
+              >
+                <IconPlus />
+              </IconButton>
+            </span>
+          }
+        >
+          <SettingRow
+            hint={
+              <>
+                {t("incidents.hint")}
+                {!statusPath && (
+                  <span className="mt-1 block text-warning">{t("incidents.pageOff")}</span>
+                )}
+              </>
+            }
+          />
+          {err ? (
+            <SettingRow hint={<span className="text-danger">{err}</span>} />
+          ) : !list ? null : rows.length === 0 ? (
+            <EmptyState title={t("incidents.none")} />
+          ) : (
+            rows.map(({ inc, phase }) => (
+              <div
+                key={inc.id}
+                className={cn(
+                  "flex items-start gap-3 border-t border-gray-100 px-3.5 py-2.5",
+                  phase === "done" && "opacity-60",
+                )}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge size="xs" color={inc.kind === "maintenance" ? "brand" : "orange"}>
+                      {t(inc.kind === "maintenance" ? "incidents.kindMaintenance" : "incidents.kindIncident")}
+                    </Badge>
+                    <Badge
+                      size="xs"
+                      color={phase === "active" ? (inc.kind === "maintenance" ? "brand" : "red") : "gray"}
+                    >
+                      {t(`incidents.phase.${phase}`)}
+                    </Badge>
+                    <span className="min-w-0 truncate text-[13px] font-medium text-ink">{inc.title}</span>
+                  </div>
+                  <p className="mt-0.5 truncate text-[11px] text-ink-muted">
+                    {when(inc)} · {serverNames(inc.node_ids)}
+                  </p>
+                </div>
+                <span className="flex shrink-0 gap-0.5">
+                  {phase === "active" && (
+                    <IconButton
+                      color="teal"
+                      title={t("incidents.resolve")}
+                      disabled={busy}
+                      onClick={() => {
+                        setResolveNotify(false);
+                        setResolving(inc);
+                      }}
+                    >
+                      <IconCheck size={16} />
+                    </IconButton>
+                  )}
+                  <IconButton title={t("common.edit")} nav onClick={() => open(inc)}>
+                    <IconPencil size={16} />
+                  </IconButton>
+                  <IconButton color="red" title={t("common.delete")} disabled={busy} onClick={() => setDeleting(inc)}>
+                    <IconTrash size={16} />
+                  </IconButton>
+                </span>
+              </div>
+            ))
+          )}
+        </Panel>
+      </ReadOnly>
+
+      <Drawer
+        open={!!editor}
+        onClose={() => setEditor(null)}
+        title={editor?.id ? editorTitle : t("incidents.new")}
+        footer={
+          editor ? (
+            <div className="flex justify-end gap-2">
+              <Button variant="light" color="gray" size="sm" onClick={() => setEditor(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button size="sm" onClick={save} loading={busy} disabled={!canManage}>
+                {t(editor.id ? "common.save" : "common.create")}
+              </Button>
+            </div>
+          ) : undefined
+        }
+      >
+        {editor && (
+          <ReadOnly when={!canManage}>
+            <div className="flex flex-col gap-4">
+              <SegmentedControl
+                fullWidth
+                data={[
+                  { value: "incident", label: t("incidents.kindIncident") },
+                  { value: "maintenance", label: t("incidents.kindMaintenance") },
+                ]}
+                value={editor.kind}
+                onChange={(v) => patch({ kind: v as IncidentKind })}
+              />
+              <TextInput
+                label={t("incidents.titleLabel")}
+                placeholder={t(maint ? "incidents.titlePhMaint" : "incidents.titlePh")}
+                value={editor.title}
+                onChange={(title) => patch({ title })}
+              />
+              <Textarea
+                label={t("incidents.body")}
+                placeholder={t("incidents.bodyPh")}
+                rows={4}
+                value={editor.body}
+                onChange={(body) => patch({ body })}
+              />
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-medium text-ink">{t("incidents.servers")}</span>
+                <div className="flex max-h-52 flex-col gap-1.5 overflow-y-auto rounded-lg border border-gray-200/80 bg-white/50 p-2">
+                  <Checkbox
+                    checked={allServers}
+                    onChange={(c) => patch({ node_ids: c ? [] : servers.map((s) => s.id) })}
+                    label={t("incidents.allServers")}
+                  />
+                  {!allServers &&
+                    editorServers.map((s) => (
+                      <Checkbox
+                        key={s.id}
+                        checked={editor.node_ids.includes(s.id)}
+                        onChange={(c) =>
+                          patch({
+                            node_ids: c
+                              ? [...editor.node_ids, s.id]
+                              : editor.node_ids.filter((id) => id !== s.id),
+                          })
+                        }
+                        label={s.name}
+                      />
+                    ))}
+                </div>
+              </div>
+              <MomentField
+                label={t(maint ? "incidents.startsMaint" : "incidents.starts")}
+                value={start}
+                onChange={setStart}
+              />
+              {maint && (
+                <MomentField
+                  label={t("incidents.ends")}
+                  hint={t("incidents.endsHint")}
+                  value={end}
+                  onChange={setEnd}
+                  clearable
+                />
+              )}
+              {canNotify && editedPhase !== "done" && (
+                <Checkbox
+                  checked={notify}
+                  onChange={setNotify}
+                  label={t(editor.id ? "incidents.notifyUpdate" : "incidents.notify")}
+                  hint={t("incidents.notifyHint")}
+                />
+              )}
+            </div>
+          </ReadOnly>
+        )}
+      </Drawer>
+
+      <Modal
+        open={!!resolving}
+        onClose={() => setResolving(null)}
+        title={t(resolving?.kind === "maintenance" ? "incidents.finishTitle" : "incidents.resolveTitle")}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="light" color="gray" onClick={() => setResolving(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={resolve} loading={busy}>
+              {t("incidents.resolve")}
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-sm leading-relaxed text-ink-muted">
+            {t("incidents.resolveBody", { title: resolving?.title ?? "" })}
+          </p>
+          {canNotify && (
+            <Checkbox
+              checked={resolveNotify}
+              onChange={setResolveNotify}
+              label={t("incidents.notify")}
+              hint={t("incidents.notifyHint")}
+            />
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        title={t("incidents.deleteTitle")}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="light" color="gray" onClick={() => setDeleting(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button color="red" onClick={remove} loading={busy}>
+              {t("common.delete")}
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-sm leading-relaxed text-ink-muted">
+          {t("incidents.deleteBody", { title: deleting?.title ?? "" })}
+        </p>
+      </Modal>
+    </>
+  );
+}
+
+// MomentField is a date and a time on one row, in the panel's timezone.
+function MomentField({
+  label,
+  hint,
+  value,
+  onChange,
+  clearable,
+}: {
+  label: string;
+  hint?: string;
+  value: Moment;
+  onChange: (m: Moment) => void;
+  clearable?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="grid grid-cols-[minmax(0,1fr)_7.5rem] items-end gap-2">
+        <DatePicker
+          label={label}
+          value={value.date}
+          clearable={clearable}
+          onChange={(date) => onChange({ date, time: date ? value.time || "00:00" : "" })}
+        />
+        <TextInput
+          type="time"
+          ariaLabel={label}
+          value={value.time}
+          disabled={!value.date}
+          onChange={(time) => onChange({ ...value, time })}
+        />
+      </div>
+      {hint && <p className="text-xs text-ink-muted">{hint}</p>}
+    </div>
+  );
+}

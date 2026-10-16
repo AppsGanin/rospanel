@@ -84,7 +84,7 @@ func statusData(rep *core.StatusReport, set *model.Settings, lang i18n.Lang) sta
 	}
 	d.Theme(set.PanelName, set.PanelTheme, lang, rep.Days)
 	for _, s := range rep.Servers {
-		row := status.Server{Name: s.Name, Up: s.Up}
+		row := status.Server{ID: s.ID, Name: s.Name, Up: s.Up}
 		if s.Samples > 0 {
 			row.Uptime = status.FormatUptime(s.Uptime)
 		}
@@ -96,7 +96,8 @@ func statusData(rep *core.StatusReport, set *model.Settings, lang i18n.Lang) sta
 		}
 		d.Servers = append(d.Servers, row)
 	}
-	d.UpdatedAt = rep.At.Format("2006-01-02 15:04 MST")
+	d.UpdatedAt = status.Stamp(lang, rep.At)
+	d.SetIncidents(rep.Incidents, rep.At, lang)
 	return d
 }
 
@@ -233,6 +234,14 @@ func (rt *Router) statusBody(set *model.Settings, lang i18n.Lang) ([]byte, error
 	}
 	rt.statusCache[string(lang)] = statusPageCache{body: body, at: time.Now()}
 	return body, nil
+}
+
+// dropStatusCache makes the next visit render the page afresh: an operator who
+// just posted an incident expects to see it there, not half a minute later.
+func (rt *Router) dropStatusCache() {
+	rt.statusMu.Lock()
+	rt.statusCache = nil
+	rt.statusMu.Unlock()
 }
 
 // statusCacheTTL matches the Cache-Control max-age the page advertises.

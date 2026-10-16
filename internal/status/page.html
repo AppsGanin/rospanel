@@ -6,6 +6,9 @@
     <!-- A status page is for customers, not for search engines: it names the
          service and its servers, and there is no reason for that to be indexed. -->
     <meta name="robots" content="noindex,nofollow" />
+    <!-- A status page is left open in a tab while something is broken; it should
+         move on its own. The server caches it for 30 s, so a minute costs nothing. -->
+    <meta http-equiv="refresh" content="60" />
     <title>{{.Title}}</title>
     <!-- The operator's own mark. The page body carries no branding — a status page is
          read for its state, not its letterhead — but a tab left open all day should
@@ -15,10 +18,7 @@
       /* ── Normalize ────────────────────────────────────────────────────────────
          Inlined rather than linked: this page must not fetch anything from another
          host (a blocked CDN would hold up paint for exactly the users this panel
-         serves), and a full normalize.css is mostly rules for elements a status page
-         does not have. What is kept is the part that actually differs between
-         browsers here: box sizing, the default body margin, font inheritance in
-         form/heading elements, and image behaviour. */
+         serves). What is kept is the part that differs between browsers here. */
       *,
       *::before,
       *::after {
@@ -27,16 +27,20 @@
       html {
         -webkit-text-size-adjust: 100%;
         text-size-adjust: 100%;
-        -moz-tab-size: 4;
-        tab-size: 4;
       }
       body,
-      h1,
+      h2,
+      h3,
       p,
-      figure {
+      ul {
         margin: 0;
       }
-      h1 {
+      ul {
+        padding: 0;
+        list-style: none;
+      }
+      h2,
+      h3 {
         font-size: inherit;
         font-weight: inherit;
       }
@@ -45,12 +49,6 @@
         display: block;
         max-width: 100%;
       }
-      a {
-        color: inherit;
-        text-decoration: none;
-      }
-      /* Respect a reader who asked for less motion; the page has no animation today,
-         but a bar strip that gains one later should not surprise them. */
       @media (prefers-reduced-motion: reduce) {
         *,
         *::before,
@@ -58,11 +56,11 @@
           animation-duration: 0.01ms !important;
           animation-iteration-count: 1 !important;
           transition-duration: 0.01ms !important;
-          scroll-behavior: auto !important;
         }
       }
 
-      /* ── Page ─────────────────────────────────────────────────────────────── */
+      /* ── Palette ──────────────────────────────────────────────────────────────
+         The operator's panel theme, so the page reads as their service. */
       :root {
         --brand: {{.Brand}};
         --brand-dark: {{.BrandDark}};
@@ -73,64 +71,276 @@
         --ok: {{.SuccessFg}};
         --warn: {{.WarningFg}};
         --bad: {{.DangerFg}};
-        --line: color-mix(in srgb, var(--ink) 12%, transparent);
+        --info: {{.InfoFg}};
+        --line: color-mix(in srgb, var(--ink) 10%, transparent);
+        --soft: color-mix(in srgb, var(--ink) 4%, var(--surface));
+        --radius: 16px;
       }
       body {
-        padding: 32px 16px 48px;
-        background: var(--bg);
+        min-height: 100vh;
+        padding: 28px 16px 40px;
+        background:
+          radial-gradient(1200px 380px at 50% -160px, color-mix(in srgb, var(--brand) 12%, transparent), transparent),
+          var(--bg);
         color: var(--ink);
-        font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
       }
-      .wrap { max-width: 720px; margin: 0 auto; }
-      .muted { color: var(--muted); }
-      .banner {
+      .wrap {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      .muted {
+        color: var(--muted);
+      }
+
+      /* ── Overall state ─────────────────────────────────────────────────────── */
+      .ok-tone {
+        --tone: var(--ok);
+      }
+      .incident-tone {
+        --tone: var(--warn);
+      }
+      .maintenance-tone {
+        --tone: var(--info);
+      }
+      .down-tone {
+        --tone: var(--bad);
+      }
+      .hero {
         display: flex;
         align-items: center;
-        gap: 10px;
-        padding: 14px 16px;
-        border-radius: 14px;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        font-weight: 700;
-        margin-bottom: 16px;
+        gap: 16px;
+        padding: 20px 22px;
+        border-radius: var(--radius);
+        background: color-mix(in srgb, var(--tone) 9%, var(--surface));
+        border: 1px solid color-mix(in srgb, var(--tone) 28%, transparent);
+        box-shadow: 0 10px 30px -18px color-mix(in srgb, var(--tone) 60%, transparent);
+        margin-bottom: 28px;
       }
-      .dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
-      .dot.ok { background: var(--ok); }
-      .dot.bad { background: var(--bad); }
-      .card {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 14px 16px;
-        margin-bottom: 12px;
+      .hero-icon {
+        position: relative;
+        flex: 0 0 auto;
+        display: grid;
+        place-items: center;
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        background: var(--tone);
+        color: #fff;
       }
-      .row {
+      .hero-icon::after {
+        content: "";
+        position: absolute;
+        inset: -5px;
+        border-radius: 50%;
+        border: 2px solid var(--tone);
+        opacity: 0;
+        animation: ring 2.4s ease-out infinite;
+      }
+      @keyframes ring {
+        0% {
+          transform: scale(0.85);
+          opacity: 0.55;
+        }
+        100% {
+          transform: scale(1.25);
+          opacity: 0;
+        }
+      }
+      .hero-title {
+        font-size: 1.3rem;
+        font-weight: 750;
+        line-height: 1.3;
+      }
+      .hero p {
+        font-size: 0.85rem;
+        margin-top: 2px;
+      }
+
+      /* ── Sections ───────────────────────────────────────────────────────────── */
+      section {
+        margin-bottom: 28px;
+      }
+      .sec-head {
         display: flex;
         align-items: baseline;
         justify-content: space-between;
         gap: 12px;
+        flex-wrap: wrap;
         margin-bottom: 10px;
+        padding-inline: 4px;
       }
-      .name { font-weight: 700; overflow-wrap: anywhere; }
-      .state { font-size: 0.85rem; font-weight: 700; }
-      .state.ok { color: var(--ok); }
-      .state.bad { color: var(--bad); }
-      /* The strip always fits its card — it must never scroll.
-         It used to: 90 bars at a 4px floor overflowed a phone, and since today is the
-         RIGHTMOST bar, the one day anybody opens a status page to look at was the one
-         off screen. Bars shrink instead (flex-basis 0, no minimum): on a narrow screen
-         they become a texture, which still answers "was it green all month" at a
-         glance, and the exact day is a tap-and-hold away via the tooltip. */
+      h2 {
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      /* Arabic script joins its letters: spacing them apart breaks the words. */
+      [dir="rtl"] h2 {
+        letter-spacing: 0;
+      }
+      .sec-head .muted {
+        font-size: 0.8rem;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+
+      /* ── Tags ───────────────────────────────────────────────────────────────── */
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 9px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        line-height: 1.6;
+        white-space: nowrap;
+        color: var(--tone);
+        background: color-mix(in srgb, var(--tone) 13%, transparent);
+      }
+      .tag.plain {
+        color: var(--muted);
+        background: var(--soft);
+      }
+      .live {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+        animation: blink 1.6s ease-in-out infinite;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0.25;
+        }
+      }
+
+      /* ── Notices ────────────────────────────────────────────────────────────── */
+      .notices {
+        display: grid;
+        gap: 12px;
+      }
+      .notice {
+        position: relative;
+        padding-block: 16px;
+        padding-inline: 20px 18px;
+        overflow: hidden;
+      }
+      .notice::before {
+        content: "";
+        position: absolute;
+        inset-block: 0;
+        inset-inline-start: 0;
+        width: 4px;
+        background: var(--tone);
+      }
+      .notice-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      .notice h3 {
+        font-size: 1.02rem;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+      .body {
+        margin-top: 6px;
+        white-space: pre-line;
+        overflow-wrap: anywhere;
+      }
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 16px;
+        margin-top: 10px;
+        font-size: 0.82rem;
+      }
+      .meta li {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .meta svg {
+        flex: 0 0 auto;
+        opacity: 0.8;
+      }
+
+      /* ── Servers ────────────────────────────────────────────────────────────── */
+      .srv {
+        padding: 16px 18px;
+      }
+      .srv + .srv {
+        border-top: 1px solid var(--line);
+      }
+      .srv-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .srv-name {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        min-width: 0;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+      .dot {
+        position: relative;
+        flex: 0 0 auto;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+      .dot.ok {
+        background: var(--ok);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent);
+      }
+      .dot.bad {
+        background: var(--bad);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 22%, transparent);
+      }
+      .state {
+        flex: 0 0 auto;
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+      .state.ok {
+        color: var(--ok);
+      }
+      .state.bad {
+        color: var(--bad);
+      }
+      /* The strip always fits its card — it must never scroll. Today is the
+         RIGHTMOST bar, the one day anybody opens a status page to look at, so the
+         bars shrink (flex-basis 0, no minimum) rather than push it off screen. On a
+         phone they become a texture; the exact day is a tap-and-hold away. */
       .bars {
         display: flex;
         gap: 2px;
+        height: 34px;
       }
       .bar {
         flex: 1 1 0;
         min-width: 0;
-        height: 30px;
-        border-radius: 2px;
+        border-radius: 3px;
         background: var(--line);
+        transition: transform 0.12s ease, filter 0.12s ease;
+      }
+      .bar:hover {
+        transform: scaleY(1.12);
+        filter: brightness(1.12);
       }
       @media (max-width: 640px) {
         .bars {
@@ -140,59 +350,253 @@
           border-radius: 1px;
         }
       }
-      .bar.up { background: var(--ok); }
-      .bar.partial { background: var(--warn); }
-      .bar.down { background: var(--bad); }
-      .bar.none { background: var(--line); }
-      /* Today, set apart so the eye lands on it: it is the reason the page was
-         opened, and in a 90-column strip the last bar is otherwise just another bar.
-         A gap works at every width; the ring is desktop-only, because around a
-         2px-wide bar on a phone it would be a blob covering its neighbour. */
+      .bar.up {
+        background: var(--ok);
+      }
+      .bar.partial {
+        background: var(--warn);
+      }
+      .bar.down {
+        background: var(--bad);
+      }
+      .bar.none {
+        background: var(--line);
+      }
+      /* Today, set apart so the eye lands on it. */
       .bar:last-child {
-        margin-inline-start: 5px;
+        margin-inline-start: 4px;
       }
       @media (min-width: 641px) {
         .bar:last-child {
           box-shadow:
             0 0 0 1.5px var(--surface),
-            0 0 0 3px color-mix(in srgb, var(--ink) 30%, transparent);
+            0 0 0 3px color-mix(in srgb, var(--ink) 28%, transparent);
         }
       }
       .legend {
         display: flex;
         justify-content: space-between;
+        gap: 12px;
         font-size: 0.78rem;
-        margin-top: 6px;
+        margin-top: 8px;
       }
-      footer { margin-top: 24px; font-size: 0.8rem; text-align: center; }
+      .legend b {
+        color: var(--ink);
+        font-weight: 650;
+      }
+      .key {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 6px 16px;
+        margin-top: 12px;
+        font-size: 0.78rem;
+      }
+      .key span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .key i {
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+      }
+
+      /* ── History ────────────────────────────────────────────────────────────── */
+      .past + .past {
+        border-top: 1px solid var(--line);
+      }
+      .past summary {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 18px;
+        cursor: pointer;
+        list-style: none;
+      }
+      .past summary::-webkit-details-marker {
+        display: none;
+      }
+      .past summary::after {
+        content: "";
+        flex: 0 0 auto;
+        width: 8px;
+        height: 8px;
+        margin-inline-start: auto;
+        border-inline-end: 2px solid var(--muted);
+        border-block-end: 2px solid var(--muted);
+        transform: rotate(45deg);
+        transition: transform 0.15s ease;
+      }
+      .past[open] summary::after {
+        transform: rotate(225deg);
+      }
+      .past-title {
+        min-width: 0;
+        font-weight: 650;
+        overflow-wrap: anywhere;
+      }
+      .past-when {
+        font-size: 0.8rem;
+        white-space: nowrap;
+      }
+      .past-body {
+        padding: 0 18px 16px;
+        font-size: 0.9rem;
+      }
+      .past-body .body {
+        margin-top: 0;
+      }
+      .empty {
+        padding: 18px;
+        text-align: center;
+        font-size: 0.9rem;
+      }
+      @media (max-width: 520px) {
+        body {
+          padding-top: 20px;
+        }
+        .hero {
+          padding: 16px;
+          gap: 14px;
+        }
+        .hero-title {
+          font-size: 1.12rem;
+        }
+        .srv,
+        .notice {
+          padding-inline: 14px;
+        }
+        .past summary {
+          flex-wrap: wrap;
+          padding-inline: 14px;
+        }
+        .past-when {
+          order: 3;
+          width: 100%;
+        }
+        .past-body {
+          padding-inline: 14px;
+        }
+      }
     </style>
   </head>
   <body>
     <div class="wrap">
-      <div class="banner">
-        <span class="dot {{if .HeadlineOK}}ok{{else}}bad{{end}}"></span>
-        <span>{{if .HeadlineOK}}{{.L.AllUp}}{{else}}{{.L.SomeDown}}{{end}}</span>
+      <div class="hero {{.State}}-tone">
+        <div class="hero-icon" aria-hidden="true">
+          {{if eq .State "ok"}}<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+          {{else if eq .State "maintenance"}}<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" /></svg>
+          {{else if eq .State "incident"}}<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 6.5v7" /><path d="M12 17.5h.01" /></svg>
+          {{else}}<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17" /></svg>{{end}}
+        </div>
+        <div>
+          <div class="hero-title">{{if eq .State "down"}}{{.L.SomeDown}}{{else if eq .State "incident"}}{{.L.StateIncident}}{{else if eq .State "maintenance"}}{{.L.StateMaint}}{{else}}{{.L.AllUp}}{{end}}</div>
+          <p class="muted">{{.L.Updated}} {{.UpdatedAt}}</p>
+        </div>
       </div>
 
-      {{range .Servers}}
-      <div class="card">
-        <div class="row">
-          <span class="name">{{.Name}}</span>
-          <span class="state {{if .Up}}ok{{else}}bad{{end}}"
-            >{{if .Up}}{{$.L.Up}}{{else}}{{$.L.Down}}{{end}}</span
-          >
+      {{if .Active}}
+      <section>
+        <div class="sec-head"><h2>{{.L.Active}}</h2></div>
+        <div class="notices">
+          {{range .Active}}
+          <article class="card notice {{.Kind}}-tone">
+            <div class="notice-head">
+              <span class="tag"><span class="live"></span>{{.Label}}</span>
+            </div>
+            <h3 dir="auto">{{.Title}}</h3>
+            {{if .Body}}<p class="body" dir="auto">{{.Body}}</p>{{end}}
+            <ul class="meta muted">
+              <li><svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>{{.When}}</li>
+              {{if .Servers}}<li><svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="7" rx="2" /><rect x="3" y="13" width="18" height="7" rx="2" /></svg>{{$.L.Affects}} {{.Servers}}</li>{{end}}
+              {{if .Updated}}<li>{{$.L.EditedAt}} {{.Updated}}</li>{{end}}
+            </ul>
+          </article>
+          {{end}}
         </div>
-        <div class="bars">
-          {{range .Days}}<span class="bar {{.Class}}" title="{{.Title}}"></span>{{end}}
-        </div>
-        <div class="legend muted">
-          <span>{{$.L.Days}}</span>
-          <span>{{if .Uptime}}{{$.L.Uptime}} {{.Uptime}}{{else}}{{$.L.NoHistory}}{{end}}</span>
-        </div>
-      </div>
+      </section>
       {{end}}
 
-      <footer class="muted">{{.L.Updated}} {{.UpdatedAt}}</footer>
+      {{if .Upcoming}}
+      <section>
+        <div class="sec-head"><h2>{{.L.Upcoming}}</h2></div>
+        <div class="notices">
+          {{range .Upcoming}}
+          <article class="card notice {{.Kind}}-tone">
+            <div class="notice-head">
+              <span class="tag">{{.Label}}</span>
+              <span class="tag plain">{{$.L.Scheduled}}</span>
+            </div>
+            <h3 dir="auto">{{.Title}}</h3>
+            {{if .Body}}<p class="body" dir="auto">{{.Body}}</p>{{end}}
+            <ul class="meta muted">
+              <li><svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>{{.When}}</li>
+              {{if .Servers}}<li><svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="7" rx="2" /><rect x="3" y="13" width="18" height="7" rx="2" /></svg>{{$.L.Affects}} {{.Servers}}</li>{{end}}
+              {{if .Updated}}<li>{{$.L.EditedAt}} {{.Updated}}</li>{{end}}
+            </ul>
+          </article>
+          {{end}}
+        </div>
+      </section>
+      {{end}}
+
+      <section>
+        <div class="sec-head">
+          <h2>{{.L.Servers}}</h2>
+          <span class="muted">{{.L.Days}}</span>
+        </div>
+        <div class="card">
+          {{range .Servers}}
+          <div class="srv">
+            <div class="srv-head">
+              <span class="srv-name">
+                <span class="dot {{if .Up}}ok{{else}}bad{{end}}"></span>
+                <span dir="auto">{{.Name}}</span>
+                {{if eq .Notice "incident"}}<span class="tag srv-tag incident-tone">{{$.L.Incident}}</span>{{else if eq .Notice "maintenance"}}<span class="tag srv-tag maintenance-tone">{{$.L.Maintenance}}</span>{{end}}
+              </span>
+              <span class="state {{if .Up}}ok{{else}}bad{{end}}">{{if .Up}}{{$.L.Up}}{{else}}{{$.L.Down}}{{end}}</span>
+            </div>
+            <div class="bars">{{range .Days}}<span class="bar {{.Class}}" title="{{.Title}}"></span>{{end}}</div>
+            <div class="legend muted">
+              <span>{{if .Uptime}}{{$.L.Uptime}} <b>{{.Uptime}}</b>{{else}}{{$.L.NoHistory}}{{end}}</span>
+              <span>{{$.L.Today}}</span>
+            </div>
+          </div>
+          {{end}}
+        </div>
+        <div class="key muted">
+          <span><i style="background: var(--ok)"></i>{{.L.LegendUp}}</span>
+          <span><i style="background: var(--warn)"></i>{{.L.LegendPartial}}</span>
+          <span><i style="background: var(--bad)"></i>{{.L.LegendDown}}</span>
+          <span><i style="background: var(--line)"></i>{{.L.LegendNone}}</span>
+        </div>
+      </section>
+
+      <section>
+        <div class="sec-head"><h2>{{.L.History}}</h2></div>
+        <div class="card">
+          {{range .History}}
+          <details class="past">
+            <summary>
+              <span class="tag {{.Kind}}-tone">{{.Label}}</span>
+              <span class="past-title" dir="auto">{{.Title}}</span>
+              <span class="past-when muted">{{if eq .Kind "maintenance"}}{{$.L.Done}}{{else}}{{$.L.Resolved}}{{end}} {{.Ended}}</span>
+            </summary>
+            <div class="past-body">
+              {{if .Body}}<p class="body" dir="auto">{{.Body}}</p>{{end}}
+              <ul class="meta muted">
+                <li><svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>{{.When}}</li>
+                {{if .Servers}}<li>{{$.L.Affects}} {{.Servers}}</li>{{end}}
+              </ul>
+            </div>
+          </details>
+          {{else}}
+          <p class="empty muted">{{.L.NoEvents}}</p>
+          {{end}}
+        </div>
+      </section>
     </div>
   </body>
 </html>

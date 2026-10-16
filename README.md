@@ -723,6 +723,8 @@ is revoked. The assistant is offered only the tools the key allows.
 **Status page** — an optional public page (*Settings → General*) showing which
 servers are up and 90 days of uptime history. Names and availability only: no addresses, no
 users, no traffic, and no page at all until you switch it on.
+Incidents and planned maintenance are posted on it from the same screen — a title, a text, the servers
+concerned, and a window for maintenance — and can go to every active subscriber through the bot.
 
 #### 🧩 Plugins (beta)
 
