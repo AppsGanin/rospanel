@@ -367,6 +367,25 @@ func apiSpecRoutes() []oaRoute {
 		// they drop to zero when traffic is reset and do NOT agree with the sum of
 		// /v1/stats/series over the same span. Reading them as lifetime totals is the
 		// obvious mistake, and it looks like a double-counting bug from the outside.
+		{method: "GET", path: "/v1/incidents", tag: "Monitoring",
+			summary: "Incidents and maintenance windows on the status page, newest first, and the servers they can name",
+			resp:    t(apiIncidentsResp{})},
+		{method: "POST", path: "/v1/incidents", tag: "Monitoring",
+			summary: "Post an incident (kind \"incident\": open until resolved) or a maintenance window (kind \"maintenance\": " +
+				"starts_at–ends_at, unix seconds; ends_at 0 = until resolved). node_ids empty = the whole service. " +
+				"notify sends it to every active subscriber through the user bot (needs the broadcasts permission; " +
+				"lang ru|en|zh|ar|fa words the message)",
+			req: t(apiIncidentReq{}), reqRequired: []string{"kind", "title"}, resp: t(apiIncidentResp{}),
+			status: 201, destructive: true},
+		{method: "POST", path: "/v1/incidents/{id}", tag: "Monitoring",
+			summary: "Rewrite an incident (same body as creating one; whether it is resolved is kept)",
+			req:     t(apiIncidentReq{}), reqRequired: []string{"kind", "title"}, resp: t(apiIncidentResp{}),
+			destructive: true},
+		{method: "POST", path: "/v1/incidents/{id}/resolve", tag: "Monitoring",
+			summary: "Mark an incident resolved or a maintenance window finished, now; optionally tell the users (body optional)",
+			req:     t(apiIncidentResolveReq{}), resp: t(apiIncidentResp{}), destructive: true},
+		{method: "DELETE", path: "/v1/incidents/{id}", tag: "Monitoring",
+			summary: "Delete an incident from the status page and its history"},
 		{method: "GET", path: "/v1/summary", tag: "Monitoring",
 			summary: "Panel summary — total_up/total_down are usage in the current quota period " +
 				"(reset with the counters), not lifetime; use /v1/stats/series for history",

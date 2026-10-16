@@ -381,6 +381,12 @@ func (rt *Router) apiMux() http.Handler {
 	id("POST /v1/billing/orders/{id}/refund", rt.apiRefundOrder)
 	nodeAudit("POST /v1/billing/promos", "apiPromoSaved", rt.apiSavePromo)
 	nodeAudit("DELETE /v1/billing/promos/{id}", "apiPromoDeleted", idFn(rt.apiDeletePromo))
+	// Incidents and maintenance on the public status page.
+	hf("GET /v1/incidents", rt.apiListIncidents)
+	nodeAudit("POST /v1/incidents", "apiIncidentSaved", rt.apiCreateIncident)
+	nodeAudit("POST /v1/incidents/{id}", "apiIncidentSaved", idFn(rt.apiUpdateIncident))
+	nodeAudit("POST /v1/incidents/{id}/resolve", "apiIncidentResolved", idFn(rt.apiResolveIncident))
+	nodeAudit("DELETE /v1/incidents/{id}", "apiIncidentDeleted", idFn(rt.apiDeleteIncident))
 	hf("GET /v1/payments", rt.apiPaymentProviders)
 	nodeAudit("POST /v1/payments", "apiPaymentProvider", rt.apiSavePaymentProvider)
 

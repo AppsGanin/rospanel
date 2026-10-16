@@ -1147,6 +1147,62 @@ export const saveStatusPage = (s: StatusPageSettings) =>
     body: JSON.stringify(s),
   })
 
+// Incident is an operator's notice on the status page: something broke, or a planned
+// maintenance window. node_ids empty means the whole service; ends_at is a
+// maintenance window's close (0: open-ended), never set on an incident.
+export type IncidentKind = 'incident' | 'maintenance'
+export interface Incident {
+  id: number
+  kind: IncidentKind
+  title: string
+  body: string
+  node_ids: number[]
+  starts_at: number
+  ends_at: number
+  resolved_at: number
+  created_at: number
+  updated_at: number
+}
+
+export interface IncidentServer {
+  id: number
+  name: string
+}
+
+// IncidentSaved carries notify_error when the incident was saved but the message
+// to the users could not go out (no user bot, nobody to send to).
+export interface IncidentSaved {
+  incident: Incident
+  notify_error?: { error: string; code?: string; args?: Record<string, unknown> }
+}
+
+export const listIncidents = () =>
+  api<{ incidents: Incident[]; servers: IncidentServer[] }>('api/incidents')
+
+export const saveIncident = (inc: Incident, notify: boolean) =>
+  api<IncidentSaved>(inc.id ? `api/incidents/${inc.id}` : 'api/incidents', {
+    method: 'POST',
+    body: JSON.stringify({
+      kind: inc.kind,
+      title: inc.title,
+      body: inc.body,
+      node_ids: inc.node_ids,
+      starts_at: inc.starts_at,
+      ends_at: inc.ends_at,
+      notify,
+      lang: currentLang(),
+    }),
+  })
+
+export const resolveIncident = (id: number, notify: boolean) =>
+  api<IncidentSaved>(`api/incidents/${id}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({ notify, lang: currentLang() }),
+  })
+
+export const deleteIncident = (id: number) =>
+  api<{ ok: boolean }>(`api/incidents/${id}`, { method: 'DELETE' })
+
 export const setUserAutoDelete = (days: number) =>
   api<{ ok: boolean }>('api/settings/autodelete', {
     method: 'POST',
