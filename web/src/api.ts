@@ -32,6 +32,9 @@ export interface User {
   // The linked Telegram account is on the shared blacklist (user card only).
   blacklisted?: boolean
   source?: string // the /start tag the user came with
+  // No page behind the subscription link (switched off, none of the operator's):
+  // the card offers no button to open it. The user card only.
+  no_sub_page?: boolean
   external_id?: string // the website's id for a client it signed up
   // Broadcasts and automatic messages go to the user; the language to write in
   // ("" unknown). The user card only.
@@ -1087,6 +1090,9 @@ export interface SubSettings {
   sub_order_mode: string
   // Drop a node from subscriptions while it is offline (off by default).
   sub_hide_offline: boolean
+  // The panel's own subscription page for browsers (on by default); off, a browser
+  // gets the decoy and apps keep their subscription.
+  sub_page_enabled: boolean
   // Users may reissue their own subscription link at most once per this many hours
   // (0 = they may not).
   sub_self_rotate: number

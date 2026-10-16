@@ -269,6 +269,7 @@ var ar = map[string]string{
 	"user.btnSupport":        "💬 الدعم",
 	"user.btnCancel":         "⬅️ إلغاء",
 	"user.btnMySub":          "👤 حسابي",
+	"user.cardSubLink":       "🔗 رابط الاشتراك (أضفه إلى تطبيقك):\n<code>%s</code>",
 	"user.btnPlans":          "💳 الباقات",
 	"user.btnRefresh":        "🔄 تحديث",
 	"user.btnLegal":          "📄 المستندات",

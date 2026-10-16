@@ -581,6 +581,8 @@ export function UserDetail({
                  account itself. Icons with their word in the title, like every other
                  row of actions in the panel. */}
           <div className="flex flex-wrap items-center gap-1">
+            {/* No page behind the link (switched off, none of the operator's): no button. */}
+            {!user.no_sub_page && (
             <IconButton
               variant="filled"
               color="brand"
@@ -592,6 +594,7 @@ export function UserDetail({
             >
               <IconExternal />
             </IconButton>
+            )}
             {canManage && (
             <>
             <IconButton title={t('usersPanel.extend')} onClick={() => setExtendOpen(true)}>

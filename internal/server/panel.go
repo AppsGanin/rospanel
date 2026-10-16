@@ -46,6 +46,10 @@ type userView struct {
 	BlacklistReason string `json:"blacklist_reason,omitempty"`
 	// Source is the /start tag the user came with (user card only).
 	Source string `json:"source,omitempty"`
+	// NoSubPage: a browser opening the subscription link gets no page (the panel's is
+	// switched off and the operator has none of their own) — the card offers no button
+	// to open it. User card only.
+	NoSubPage bool `json:"no_sub_page,omitempty"`
 	// ExternalID is the website's id for a client it signed up (POST /v1/signup);
 	// filled for one user at a time, not in lists.
 	ExternalID string `json:"external_id,omitempty"`

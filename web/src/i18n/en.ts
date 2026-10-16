@@ -1518,6 +1518,8 @@ const en: Dict = {
     },
     hideOffline: "Hide a server while it is offline",
     hideOfflineHint: "Off by default: a node blinks on updates and cert renewals, and a client refreshing in that window loses the server entry. A client that keeps it switches to a live server by itself.",
+    pageEnabled: "Subscription page",
+    pageEnabledHint: "Opens in a browser from the subscription link and in the Mini App. Off: the browser gets the decoy, apps get the subscription as usual, and the bot shows the link itself.",
     selfRotate: {
       label: "Users reissue their own link",
       hint: "A “Get a new link” button on the subscription page, for a link that leaked. The old one stops working at once.",

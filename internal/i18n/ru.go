@@ -274,6 +274,7 @@ var ru = map[string]string{
 	"user.btnSupport":        "💬 Поддержка",
 	"user.btnCancel":         "⬅️ Отмена",
 	"user.btnMySub":          "👤 Личный кабинет",
+	"user.cardSubLink":       "🔗 Ссылка подписки (добавьте её в приложение):\n<code>%s</code>",
 	"user.btnPlans":          "💳 Тарифы",
 	"user.btnRefresh":        "🔄 Обновить",
 	"user.btnLegal":          "📄 Документы",

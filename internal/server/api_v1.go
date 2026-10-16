@@ -1386,6 +1386,11 @@ func (rt *Router) apiReturnURL(given string, userID int64) string {
 	if err != nil {
 		return ""
 	}
+	// No page behind the link (the panel's switched off, none of the operator's):
+	// "" sends the payer where the bot's own payments go.
+	if !set.SubPageReachable() {
+		return ""
+	}
 	u, err := rt.mgr.Store().GetUser(userID)
 	if err != nil {
 		return ""

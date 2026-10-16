@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -127,5 +128,77 @@ func TestSubPageTelegramChangeWait(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if body := rec.Body.String(); !strings.Contains(body, "at most once every week") {
 		t.Errorf("no wait note on the page:\n%.400s", body)
+	}
+}
+
+// The page switched off: a browser gets the decoy, an app the subscription, and the
+// Mini App is gone too.
+func TestSubPageSwitchedOff(t *testing.T) {
+	t.Parallel()
+	h, mgr, st := nodeAPITestServer(t)
+	u, err := mgr.CreateUser(t.Context(), "reader", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := func(path, accept, ua string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if accept != "" {
+			req.Header.Set("Accept", accept)
+		}
+		if ua != "" {
+			req.Header.Set("User-Agent", ua)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	if body := get("/sub/"+u.SubToken, "text/html", "").Body.String(); !strings.Contains(body, "access-card") {
+		t.Fatal("the page is not served while on")
+	}
+	set, _ := st.GetSettings()
+	set.SubPageEnabled = false
+	if err := mgr.SaveSubSettings(set); err != nil {
+		t.Fatal(err)
+	}
+	page := get("/sub/"+u.SubToken, "text/html", "")
+	unknown := get("/no-such-path", "text/html", "")
+	if page.Code != unknown.Code || page.Body.String() != unknown.Body.String() {
+		t.Error("a browser opening the link gets something other than the decoy")
+	}
+	app := get("/sub/"+u.SubToken, "", "v2rayNG/1.9")
+	if app.Code != http.StatusOK || strings.Contains(app.Body.String(), "<html") || app.Body.Len() == 0 {
+		t.Errorf("an app lost its subscription: %d %.120s", app.Code, app.Body.String())
+	}
+}
+
+// With the page off, nothing hands a browser the bare link: the user card offers no
+// button, the apps get no web-page button, a hosted payment does not return to it.
+func TestSubPageOffLeavesNoWayToTheDecoy(t *testing.T) {
+	t.Parallel()
+	h, mgr, st := nodeAPITestServer(t)
+	u, err := mgr.CreateUser(t.Context(), "reader", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur, _ := st.GetSettings()
+	cur.SubPageEnabled = false
+	if err := mgr.SaveSubSettings(cur); err != nil {
+		t.Fatal(err)
+	}
+	rt := h.(*Router)
+	owner := signIn(t, st, "owner", model.RoleOwner, false)
+	card := panelJSON(t, rt, http.MethodGet, fmt.Sprintf("/api/users/%d", u.ID), "", owner)
+	if !strings.Contains(card.Body.String(), `"no_sub_page":true`) {
+		t.Errorf("the card is not told there is no page: %.200s", card.Body.String())
+	}
+	if got := rt.apiReturnURL("", u.ID); got != "" {
+		t.Errorf("a payment returns to the decoy: %q", got)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/sub/"+u.SubToken, nil)
+	req.Header.Set("User-Agent", "Happ/1.0")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if v := rec.Header().Get("Profile-Web-Page-Url"); v != "" {
+		t.Errorf("apps are offered a web page that is the decoy: %q", v)
 	}
 }

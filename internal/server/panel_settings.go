@@ -72,6 +72,7 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"sub_order_mode":       set.SubOrderMode,
 		"sub_hide_offline":     set.SubHideOffline,
 		"sub_self_rotate":      set.SubSelfRotateHours,
+		"sub_page_enabled":     set.SubPageEnabled,
 		"maintenance_mode":     set.MaintenanceMode,
 		"probe_detect":         set.ProbeDetect,
 		"probe_block":          set.ProbeBlock,
@@ -452,17 +453,32 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		HappCrypt      bool   `json:"sub_happ_crypt"`
 		OrderMode      string `json:"sub_order_mode"`
 		HideOffline    bool   `json:"sub_hide_offline"`
-		SelfRotate     int    `json:"sub_self_rotate"` // hours, 0 = off (model.SelfRotateChoices)
+		SelfRotate     *int   `json:"sub_self_rotate"` // hours, 0 = off (model.SelfRotateChoices)
 		PageURL        string `json:"sub_page_url"`
+		// PageEnabled serves the panel's own subscription page; nil keeps it as it is,
+		// so a client that does not know the field cannot switch the page off.
+		PageEnabled *bool `json:"sub_page_enabled"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
+	}
+	cur, err := rt.mgr.Settings()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	selfRotate, pageEnabled := cur.SubSelfRotateHours, cur.SubPageEnabled
+	if req.SelfRotate != nil {
+		selfRotate = *req.SelfRotate
+	}
+	if req.PageEnabled != nil {
+		pageEnabled = *req.PageEnabled
 	}
 	if req.UpdateInterval < 0 {
 		req.UpdateInterval = 0 // 0 = never
 	}
 	path := strings.TrimSpace(req.Path)
-	err := rt.mgr.SaveSubSettings(&model.Settings{
+	err = rt.mgr.SaveSubSettings(&model.Settings{
 		SubPath:            path,
 		SubBase64:          req.Base64,
 		SubNameInTitle:     req.NameInTitle,
@@ -478,7 +494,8 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		SubHappCrypt:       req.HappCrypt,
 		SubOrderMode:       strings.TrimSpace(req.OrderMode),
 		SubHideOffline:     req.HideOffline,
-		SubSelfRotateHours: req.SelfRotate,
+		SubSelfRotateHours: selfRotate,
+		SubPageEnabled:     pageEnabled,
 		SubPageURL:         req.PageURL,
 	})
 	if err != nil {

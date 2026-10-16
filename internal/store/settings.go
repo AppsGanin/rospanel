@@ -74,7 +74,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	var routingCfg, subRulesJSON, subDPIJSON string
 	var reachCountries string
 	var mtprotoEn int
-	var masterHideFull, masterHideOver, awgEn, naiveEn, mieruEn, anytlsEn, hideOffline, subHappCrypt, subTGBind, subTGRebind, subShowClash, tgMailingSwitch int
+	var masterHideFull, masterHideOver, awgEn, naiveEn, mieruEn, anytlsEn, hideOffline, subHappCrypt, subTGBind, subTGRebind, subShowClash, tgMailingSwitch, subPageEnabled int
 	var awgParamsJSON, connPolicyJSON string
 	var walletEn, refFirstOnly, winbackEn, autoUpdateNodes, blacklistEn, planChange int
 	var trafficPacksJSON string
@@ -137,7 +137,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       anytls_enabled, anytls_name,
 		       reach_countries, reach_probes, reach_every, reach_threshold, reach_token,
 		       mtproto_enabled, mtproto_port, mtproto_name, mtproto_domain,
-		       sub_self_rotate, monthly_report_sent, sub_tg_rebind_hours
+		       sub_self_rotate, monthly_report_sent, sub_tg_rebind_hours, sub_page_enabled
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -200,7 +200,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&anytlsEn, &st.AnyTLSName,
 		&reachCountries, &st.Reach.Probes, &st.Reach.Every, &st.Reach.Threshold, &st.Reach.Token,
 		&mtprotoEn, &st.MTProtoPort, &st.MTProtoName, &st.MTProtoDomain,
-		&st.SubSelfRotateHours, &st.MonthlyReportSent, &st.SubTGRebindHours,
+		&st.SubSelfRotateHours, &st.MonthlyReportSent, &st.SubTGRebindHours, &subPageEnabled,
 	)
 	if err != nil {
 		return nil, err
@@ -213,6 +213,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	st.MasterPlacement.HideWhenFull = masterHideFull != 0
 	st.MasterPlacement.HideWhenOver = masterHideOver != 0
 	st.SubHideOffline = hideOffline != 0
+	st.SubPageEnabled = subPageEnabled != 0
 	st.SubTGBind, st.SubTGRebind = subTGBind != 0, subTGRebind != 0
 	st.SubShowClash = subShowClash != 0
 	st.TGMailingSwitch = tgMailingSwitch != 0
@@ -533,7 +534,7 @@ func (s *Store) SetSubSettings(st *model.Settings) error {
 			sub_routing_happ = ?, sub_routing_incy = ?, sub_routing_mihomo = ?,
 			sub_update_interval = ?, sub_announce = ?, sub_show_configs = ?,
 			sub_order_mode = ?, sub_hide_offline = ?, sub_happ_crypt = ?, sub_page_url = ?, sub_show_clash = ?,
-			sub_self_rotate = ?,
+			sub_self_rotate = ?, sub_page_enabled = ?,
 			updated_at = unixepoch()
 		WHERE id = 1`,
 		st.SubPath,
@@ -542,7 +543,7 @@ func (s *Store) SetSubSettings(st *model.Settings) error {
 		st.SubUpdateInterval, st.SubAnnounce, boolToInt(st.SubShowConfigs),
 		model.OrderModeOr(st.SubOrderMode), boolToInt(st.SubHideOffline), boolToInt(st.SubHappCrypt),
 		st.SubPageURL, boolToInt(st.SubShowClash),
-		st.SubSelfRotateHours,
+		st.SubSelfRotateHours, boolToInt(st.SubPageEnabled),
 	)
 	return err
 }
