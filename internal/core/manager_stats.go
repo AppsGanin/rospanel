@@ -143,6 +143,16 @@ func (m *Manager) PollStats() error {
 
 // pollStatsWith is PollStats over counters already read. statsMu is held.
 func (m *Manager) pollStatsWith(stats map[string]xray.Traffic) error {
+	if err := m.recordStats(stats); err != nil {
+		return err
+	}
+	return m.enforceTraffic()
+}
+
+// recordStats writes what the counters say since the last read: the traffic, the
+// counter baselines, the per-lane totals, traffic resets that came due. statsMu is
+// held.
+func (m *Manager) recordStats(stats map[string]xray.Traffic) error {
 	// Only the counters and the quota: what the poll subtracts from and what the watch
 	// between polls measures against. Whole users were read here, every minute, to use
 	// three columns of them.
@@ -217,7 +227,7 @@ func (m *Manager) pollStatsWith(stats map[string]xray.Traffic) error {
 		})
 	}
 	m.recordLocalLanes(today)
-	return m.enforceTraffic()
+	return nil
 }
 
 // trafficEnforceDelay is how long a node's traffic report waits for the enforcement
@@ -311,6 +321,39 @@ func (m *Manager) flushBeforeRestart() {
 	m.quota.at = time.Now()
 	if err := m.pollStatsWith(stats); err != nil {
 		logWarn("stats: flushing before a restart failed", "err", err)
+	}
+}
+
+// FlushTrafficOnStop writes what Xray and the AmneziaWG tunnel have counted since
+// the last flush, for a panel that is stopping: up to a minute of everyone's traffic
+// otherwise goes with the process. Xray must still be running (the panel's unit has
+// KillMode=mixed, so systemd signals the panel alone). No enforcement pass — the
+// panel is going, and what it would decide is the next start's to decide. Bounded:
+// a stop must not hang on a stuck read.
+func (m *Manager) FlushTrafficOnStop(timeout time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if m.sup != nil && m.sup.Running() || m.statsSource != nil {
+			m.statsMu.Lock()
+			if stats, err := m.queryLocalStats(true); err != nil {
+				logWarn("stats: cannot read the counters before stopping", "err", err)
+			} else {
+				m.quota.at = time.Now()
+				if err := m.recordStats(stats); err != nil {
+					logWarn("stats: flushing before stopping failed", "err", err)
+				}
+			}
+			m.statsMu.Unlock()
+		}
+		if err := m.pollAWG(false); err != nil {
+			logWarn("awg: flushing before stopping failed", "err", err)
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		logWarn("stats: the final flush did not finish in time — stopping without it", "timeout", timeout)
 	}
 }
 

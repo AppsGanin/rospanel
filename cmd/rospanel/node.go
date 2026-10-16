@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/AppsGanin/rospanel/internal/nodeagent"
+	"github.com/AppsGanin/rospanel/internal/sysunit"
 	"github.com/AppsGanin/rospanel/internal/tuning"
 	"github.com/AppsGanin/rospanel/internal/xray"
 )
@@ -200,6 +201,10 @@ func installNodeSystemd(dataDir string) {
 		"ExecStart=" + installBinPath + " node run\n" +
 		"Restart=always\n" +
 		"RestartSec=3\n" +
+		// Signal only the agent on stop: it reads Xray's traffic counters and keeps
+		// what the panel has not acknowledged before stopping Xray itself. The whole
+		// group is still SIGKILLed if the timeout expires.
+		"KillMode=mixed\n" +
 		"CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_ADMIN\n" +
 		"AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_ADMIN\n" +
 		"NoNewPrivileges=yes\n" +
@@ -266,6 +271,7 @@ func runNodeUninstall(args []string) {
 		return
 	}
 	_ = exec.Command("systemctl", "disable", "--now", "rospanel-node").Run()
+	sysunit.RemoveDropIn(nodeUnitPath)
 	if err := os.Remove(nodeUnitPath); err != nil && !os.IsNotExist(err) {
 		log.Fatalf("node uninstall: remove unit: %v", err)
 	}

@@ -431,9 +431,11 @@ type Manager struct {
 
 	// awg is the master's AmneziaWG tunnel (see manager_awg.go); awgLast holds the
 	// counters read at the previous poll, per peer public key.
-	awg     awg.Device
-	awgMu   sync.Mutex
-	awgLast map[string]awg.PeerStat
+	awg   awg.Device
+	awgMu sync.Mutex
+	// awgPollMu runs one AmneziaWG poll at a time (see pollAWG).
+	awgPollMu sync.Mutex
+	awgLast   map[string]awg.PeerStat
 
 	// turn runs the master's TURN relays, one per WireGuard inbound (manager_wireguard.go).
 	turn *turnrelay.Relay
