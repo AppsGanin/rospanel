@@ -253,15 +253,24 @@ func (l *listener) close() {
 func (l *listener) serve() {
 	defer close(l.done)
 	defer l.legs.Wait()
+	var delay time.Duration
 	for {
 		conn, err := l.ln.Accept()
 		if err != nil {
 			if l.ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
 				return
 			}
+			// Out of descriptors, say: wait rather than spin on it.
 			slog.Debug("turn relay: accept", "err", err)
+			delay = min(max(2*delay, 5*time.Millisecond), time.Second)
+			select {
+			case <-l.ctx.Done():
+				return
+			case <-time.After(delay):
+			}
 			continue
 		}
+		delay = 0
 		if !l.take() {
 			_ = conn.Close()
 			continue

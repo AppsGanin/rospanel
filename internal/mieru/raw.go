@@ -2,6 +2,8 @@ package mieru
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"net"
 	"sync"
 	"time"
@@ -137,14 +139,32 @@ type trackedListener struct {
 	reg *rawConns
 }
 
+// Accept waits out a failure that is not the listener closing — out of file
+// descriptors, a connection reset before it was taken. mieru's accept loop stops for
+// good on the first error it sees, which would leave the port bound with nothing
+// accepting on it and nothing noticing; this way it only ever sees the close.
 func (l *trackedListener) Accept() (net.Conn, error) {
-	c, err := l.Listener.Accept()
-	if err != nil {
-		return nil, err
+	var delay time.Duration
+	for {
+		c, err := l.Listener.Accept()
+		if err == nil {
+			return l.track(c), nil
+		}
+		if errors.Is(err, net.ErrClosed) {
+			return nil, err
+		}
+		if delay == 0 {
+			slog.Warn("mieru: accept failed — retrying", "err", err)
+		}
+		delay = min(max(2*delay, 5*time.Millisecond), time.Second)
+		time.Sleep(delay)
 	}
+}
+
+func (l *trackedListener) track(c net.Conn) net.Conn {
 	rc := &rawConn{Conn: c, reg: l.reg, key: c.RemoteAddr().String(), at: time.Now(), users: map[string]struct{}{}}
 	l.reg.mu.Lock()
 	l.reg.m[rc.key] = rc
 	l.reg.mu.Unlock()
-	return rc, nil
+	return rc
 }

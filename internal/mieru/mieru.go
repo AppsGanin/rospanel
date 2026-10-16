@@ -17,6 +17,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	apicommon "github.com/enfein/mieru/v3/apis/common"
 	"github.com/enfein/mieru/v3/apis/trafficpattern"
@@ -270,6 +271,7 @@ func randomHex(n int) string {
 
 // acceptLoop takes the sessions mux opens until it is closed.
 func (s *Server) acceptLoop(mux *protocol.Mux) {
+	var delay time.Duration
 	for {
 		c, err := mux.Accept()
 		if err != nil {
@@ -279,9 +281,15 @@ func (s *Server) acceptLoop(mux *protocol.Mux) {
 			if !current {
 				return
 			}
-			slog.Warn("mieru: accept failed", "err", err)
+			// Not spinning on a failure that repeats: back off, and say so once.
+			if delay == 0 {
+				slog.Warn("mieru: accept failed", "err", err)
+			}
+			delay = min(max(2*delay, 5*time.Millisecond), time.Second)
+			time.Sleep(delay)
 			continue
 		}
+		delay = 0
 		go s.handle(c)
 	}
 }
