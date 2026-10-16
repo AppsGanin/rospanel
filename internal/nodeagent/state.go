@@ -258,6 +258,11 @@ func (a *Agent) statsLoop(ctx context.Context) {
 }
 
 func (a *Agent) sampleStats() {
+	// One sample at a time from the read to the apply: the loop, the quota watch, a
+	// restart and the stop all sample, and an older read applied after a newer one
+	// looks like a counter reset — the whole counter booked again.
+	a.sampleMu.Lock()
+	defer a.sampleMu.Unlock()
 	a.sampleAWG()
 	if !a.sup.Running() {
 		return

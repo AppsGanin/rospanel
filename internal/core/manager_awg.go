@@ -170,7 +170,15 @@ func (m *Manager) syncAWGLocked(set *model.Settings, users []model.User) {
 // traffic deltas per user, and a sighting for every peer that shook hands
 // recently, from the address it did so — which is how the device limit and the
 // online status see tunnel users at all.
-func (m *Manager) PollAWG() error {
+func (m *Manager) PollAWG() error { return m.pollAWG(true) }
+
+// pollAWG is PollAWG, with the enforcement pass optional (a stopping panel records
+// and decides nothing). One at a time from the read of the counters to their apply:
+// two polls overlapping would apply an older read after a newer one, which reads as
+// the device restarting and books every peer's whole counter again.
+func (m *Manager) pollAWG(enforce bool) error {
+	m.awgPollMu.Lock()
+	defer m.awgPollMu.Unlock()
 	if m.awg == nil || !m.awg.Running() {
 		return nil
 	}
@@ -240,6 +248,9 @@ func (m *Manager) PollAWG() error {
 	}
 	if err := m.store.ApplyLaneTraffic([]store.LaneDelta{lane}); err != nil {
 		logErr("awg: lane traffic failed", "err", err)
+	}
+	if !enforce {
+		return nil
 	}
 	return m.enforceTraffic()
 }
