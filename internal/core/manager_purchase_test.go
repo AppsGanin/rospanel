@@ -168,6 +168,7 @@ func TestPlanChange(t *testing.T) {
 	}
 	// B (600) → A (300): 10 days of B are worth 20 days of A.
 	down := Purchase{Kind: model.OrderChange, PlanID: e.a.ID, Devices: 0}
+	quotedAt := time.Now()
 	q, err := e.m.QuotePurchase(e.user(t), down)
 	if err != nil || q.Upgrade || q.TotalRub != 0 {
 		t.Fatalf("downgrade quote = %+v %v", q, err)
@@ -181,9 +182,10 @@ func TestPlanChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	u := e.user(t)
-	// The purchase prices the days left at its own moment, a second or two after the
-	// quote on a loaded run — and each of those seconds is worth two of A.
-	if d := u.ExpireAt - q.ExpireAt; u.PlanID != e.a.ID || d < -10 || d > 10 || u.DeviceLimit != 2 {
+	// The purchase prices the days left at its own moment, which on a loaded run can be
+	// tens of seconds after the quote — and each of those seconds is worth two of A.
+	lag := 2*int64(time.Since(quotedAt).Seconds()) + 4
+	if d := u.ExpireAt - q.ExpireAt; u.PlanID != e.a.ID || d < -lag || d > 4 || u.DeviceLimit != 2 {
 		t.Fatalf("after downgrade: %+v (quoted end %d)", u, q.ExpireAt)
 	}
 	// A (300) → B (600) with ~20 days left: pay ~200 ₽, end date stays.
