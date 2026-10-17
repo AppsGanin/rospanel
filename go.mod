@@ -4,19 +4,19 @@ go 1.26.9
 
 require (
 	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260828
-	github.com/enfein/mieru/v3 v3.38.1
+	github.com/enfein/mieru/v3 v3.38.2
 	github.com/go-acme/lego/v4 v4.35.2
 	github.com/google/uuid v1.6.0
-	github.com/pion/dtls/v3 v3.1.10
+	github.com/pion/dtls/v3 v3.1.11
 	github.com/pion/transport/v5 v5.1.1
-	github.com/sagernet/sing v0.8.14
+	github.com/sagernet/sing v0.9.6
 	github.com/sagernet/sing-anytls v0.0.0-20260928104022-580984e4d8cb
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/tetratelabs/wazero v1.12.0
 	github.com/yuin/goldmark v1.8.6
-	golang.org/x/crypto v0.57.0
-	golang.org/x/text v0.42.0
-	google.golang.org/protobuf v1.36.11
+	golang.org/x/crypto v0.58.0
+	golang.org/x/text v0.43.0
+	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.60.1
 )
 
@@ -32,9 +32,9 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.60.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/tools v0.50.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/tools v0.51.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	gvisor.dev/gvisor v0.0.0-20250606233247-e3c4c4cad86f // indirect
 	modernc.org/libc v1.77.1 // indirect
