@@ -120,7 +120,7 @@ var ru = map[string]string{
 	"sub.awgTitle":       "AmneziaWG",
 	"sub.awgHint":        "Для приложений AmneziaVPN и AmneziaWG: отсканируйте QR или скачайте файл и импортируйте его в приложение.",
 	"sub.awgDownload":    "Скачать конфиг",
-	"sub.turnTitle":      "WireGuard через звонки (TURN)",
+	"sub.turnTitle":      "TURN-VK",
 	"sub.tgProxyTitle":   "Прокси для Telegram",
 	"sub.tgProxyHint":    "Telegram подключается через прокси без VPN: нажмите «Добавить в Telegram» или отсканируйте QR.",
 	"sub.tgProxyAdd":     "Добавить в Telegram",
