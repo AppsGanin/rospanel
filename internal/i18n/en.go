@@ -111,7 +111,7 @@ var en = map[string]string{
 	"sub.awgTitle":       "AmneziaWG",
 	"sub.awgHint":        "For the AmneziaVPN and AmneziaWG apps: scan the QR or download the file and import it into the app.",
 	"sub.awgDownload":    "Download the config",
-	"sub.turnTitle":      "WireGuard over calls (TURN)",
+	"sub.turnTitle":      "TURN-VK",
 	"sub.tgProxyTitle":   "Telegram proxy",
 	"sub.tgProxyHint":    "Telegram connects through the proxy without a VPN: tap Add to Telegram or scan the QR.",
 	"sub.tgProxyAdd":     "Add to Telegram",

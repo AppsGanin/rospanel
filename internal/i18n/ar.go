@@ -109,7 +109,7 @@ var ar = map[string]string{
 	"sub.awgTitle":       "AmneziaWG",
 	"sub.awgHint":        "لتطبيقَي AmneziaVPN وAmneziaWG: امسح رمز QR أو نزّل الملف واستورده في التطبيق.",
 	"sub.awgDownload":    "تنزيل ملف الإعدادات",
-	"sub.turnTitle":      "WireGuard عبر المكالمات (TURN)",
+	"sub.turnTitle":      "TURN-VK",
 	"sub.tgProxyTitle":   "وكيل Telegram",
 	"sub.tgProxyHint":    "يتصل Telegram عبر الوكيل دون VPN: اضغط «إضافة إلى Telegram» أو امسح رمز QR.",
 	"sub.tgProxyAdd":     "إضافة إلى Telegram",
