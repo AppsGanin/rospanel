@@ -2265,6 +2265,7 @@ export interface BillingInfo {
   // The wallet and the referral programme.
   wallet: boolean
   topup_min: number
+  topup_max: number
   ref_mode: RefMode
   ref_percent: number
   ref_days: number
@@ -2336,6 +2337,7 @@ export const saveBilling = (b: {
   manual_label: string
   wallet: boolean
   topup_min: number
+  topup_max: number
   ref_mode: RefMode
   ref_percent: number
   ref_days: number

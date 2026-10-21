@@ -1286,10 +1286,11 @@ type Settings struct {
 	BillingManualLabel   string `json:"-"`
 
 	// WalletEnabled lets users keep a balance: top it up, pay for plans from it and
-	// have it renew their plan when it runs out. WalletTopupMin is the smallest
-	// top-up, in roubles.
+	// have it renew their plan when it runs out. WalletTopupMin and WalletTopupMax
+	// bound one top-up, in roubles.
 	WalletEnabled  bool `json:"-"`
 	WalletTopupMin int  `json:"-"`
+	WalletTopupMax int  `json:"-"`
 	// RefMode is what a referrer earns when someone they invited pays: RefOff,
 	// RefPercent (RefPercent % of the payment on their balance) or RefDays (RefDays
 	// days on their plan). RefFirstOnly pays only for that person's first payment.
@@ -1401,6 +1402,24 @@ type Settings struct {
 	// ServerPlacement is computed alongside ServerID: this server's placement, so
 	// the subscription can order the servers it spans (sub.Order).
 	ServerPlacement Placement `json:"-"`
+}
+
+// WalletTopupCeiling is the largest top-up an operator may allow, in roubles;
+// WalletTopupMaxDefault is the largest one until the operator sets their own.
+const (
+	WalletTopupCeiling    = 1_000_000
+	WalletTopupMaxDefault = 15_000
+)
+
+// TopupRange is the smallest and largest top-up a user may make, in roubles. A
+// maximum never set (0) is the default one.
+func (s *Settings) TopupRange() (lo, hi int) {
+	lo, hi = max(s.WalletTopupMin, 1), s.WalletTopupMax
+	if hi <= 0 {
+		hi = WalletTopupMaxDefault
+	}
+	hi = min(hi, WalletTopupCeiling)
+	return lo, max(hi, lo)
 }
 
 // WarpRegistered reports whether a WARP account has been provisioned.

@@ -29,7 +29,6 @@ import (
 
 // Limits on the amounts an operator and a user can enter.
 const (
-	walletTopupMax    = 1_000_000 // roubles in one top-up
 	walletAdjustMax   = 100_000_000_00
 	promoValueMaxRub  = 1_000_000
 	promoValueMaxDays = 3650
@@ -395,10 +394,10 @@ func (m *Manager) checkTopup(userID int64, amountRub int) error {
 	if !set.BillingEnabled || !set.WalletEnabled {
 		return invalidCode("err.walletOff", "баланс выключен")
 	}
-	lo := max(set.WalletTopupMin, 1)
-	if amountRub < lo || amountRub > walletTopupMax {
+	lo, hi := set.TopupRange()
+	if amountRub < lo || amountRub > hi {
 		return invalidCode("err.topupRange", "сумма пополнения: от {{min}} до {{max}} ₽",
-			map[string]any{"min": lo, "max": walletTopupMax})
+			map[string]any{"min": lo, "max": hi})
 	}
 	return nil
 }
@@ -483,8 +482,14 @@ func (m *Manager) AdjustBalance(ctx context.Context, userID, deltaKop int64, not
 
 // validateWalletSettings checks the wallet and referral settings before they are saved.
 func validateWalletSettings(st *model.Settings) error {
-	if st.WalletTopupMin < 1 || st.WalletTopupMin > walletTopupMax {
-		return invalidCode("err.topupMinRange", "минимальное пополнение: от 1 до {{max}} ₽", map[string]any{"max": walletTopupMax})
+	if st.WalletTopupMin < 1 || st.WalletTopupMin > model.WalletTopupCeiling {
+		return invalidCode("err.topupMinRange", "минимальное пополнение: от 1 до {{max}} ₽", map[string]any{"max": model.WalletTopupCeiling})
+	}
+	if st.WalletTopupMax == 0 {
+		st.WalletTopupMax = model.WalletTopupMaxDefault
+	}
+	if st.WalletTopupMax < st.WalletTopupMin || st.WalletTopupMax > model.WalletTopupCeiling {
+		return invalidCode("err.topupMaxRange", "максимальное пополнение: от минимального до {{max}} ₽", map[string]any{"max": model.WalletTopupCeiling})
 	}
 	switch st.RefMode {
 	case "", model.RefOff:

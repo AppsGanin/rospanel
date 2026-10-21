@@ -144,6 +144,7 @@ var en = map[string]string{
 	"sub.topup":            "Top up",
 	"sub.topupAmount":      "Top-up amount",
 	"sub.topupHint":        "Amount, from %d ₽",
+	"sub.topupHintRange":   "Amount, from %d to %d ₽",
 	"sub.autoRenew":        "Auto-renew from the balance",
 	"sub.renewCovered":     "On %s, %s ₽ will be taken from the balance",
 	"sub.renewShort":       "%s ₽ short to renew on %s — top up the balance",

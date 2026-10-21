@@ -109,7 +109,8 @@ func (s *UserService) handleWalletCallback(ctx context.Context, client *Client, 
 	case data == "vu:topother":
 		lang := s.lang(chatID)
 		s.setPending(chatID, "topup")
-		s.edit(ctx, client, chatID, msgID, i18n.T(lang, "user.topupEnter", topupMin(set), topupMax),
+		lo, hi := set.TopupRange()
+		s.edit(ctx, client, chatID, msgID, i18n.T(lang, "user.topupEnter", lo, hi),
 			[][]InlineButton{{{Text: i18n.T(lang, "user.btnBack"), CallbackData: "vu:wallet"}}})
 	case strings.HasPrefix(data, "vu:tamt:"):
 		if amount, err := strconv.Atoi(strings.TrimPrefix(data, "vu:tamt:")); err == nil {
@@ -241,17 +242,12 @@ func txLabel(kind string, lang i18n.Lang) string {
 	}
 }
 
-// topupMax mirrors the core's ceiling so the prompt can name it.
-const topupMax = 1_000_000
-
-func topupMin(set *model.Settings) int { return max(set.WalletTopupMin, 1) }
-
 // topupPresets are the one-tap amounts: the minimum and a few round sums above it.
 func topupPresets(set *model.Settings) []int {
-	lo := topupMin(set)
+	lo, hi := set.TopupRange()
 	out := []int{lo}
 	for _, v := range []int{300, 500, 1000, 2000} {
-		if v > lo && len(out) < 4 {
+		if v > lo && v <= hi && len(out) < 4 {
 			out = append(out, v)
 		}
 	}
@@ -276,9 +272,10 @@ func (s *UserService) showTopup(ctx context.Context, client *Client, chatID, msg
 func (s *UserService) doTopupAmount(ctx context.Context, client *Client, chatID int64, set *model.Settings, u model.User, text string) {
 	lang := s.lang(chatID)
 	amount, err := strconv.Atoi(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(text), "₽")))
-	if err != nil || amount < topupMin(set) || amount > topupMax {
+	lo, hi := set.TopupRange()
+	if err != nil || amount < lo || amount > hi {
 		s.setPending(chatID, "topup")
-		s.sendMenu(ctx, client, chatID, i18n.T(lang, "user.topupBadAmount", topupMin(set), topupMax),
+		s.sendMenu(ctx, client, chatID, i18n.T(lang, "user.topupBadAmount", lo, hi),
 			[][]InlineButton{
 				{{Text: i18n.T(lang, "user.btnBack"), CallbackData: "vu:wallet"}},
 				{{Text: i18n.T(lang, "user.btnMenu"), CallbackData: "vu:menu"}},

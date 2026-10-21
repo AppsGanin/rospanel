@@ -1505,7 +1505,7 @@
           </div>
           {{if .Billing.Topup}}
           <div class="inline-form">
-            <input id="topup-amount" type="number" inputmode="numeric" min="{{.Billing.TopupMin}}"
+            <input id="topup-amount" type="number" inputmode="numeric" min="{{.Billing.TopupMin}}" max="{{.Billing.TopupMax}}"
               placeholder="{{.Billing.TopupHint}}" aria-label="{{.L.TopupAmount}}" />
             <button class="btn" onclick="topup(this)">{{.L.Topup}}</button>
           </div>
@@ -2388,7 +2388,7 @@
       function topup(el) {
         var input = document.getElementById("topup-amount");
         var amount = parseInt(input && input.value, 10);
-        if (!amount || amount < {{.Billing.TopupMin}}) {
+        if (!amount || amount < {{.Billing.TopupMin}} || amount > {{.Billing.TopupMax}}) {
           if (input) input.focus();
           return;
         }

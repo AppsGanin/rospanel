@@ -142,6 +142,7 @@ var ar = map[string]string{
 	"sub.topup":            "شحن الرصيد",
 	"sub.topupAmount":      "مبلغ الشحن",
 	"sub.topupHint":        "المبلغ، من %d ₽",
+	"sub.topupHintRange":   "المبلغ، من %d إلى %d ₽",
 	"sub.autoRenew":        "التجديد التلقائي من الرصيد",
 	"sub.renewCovered":     "في %s سيُخصم %s ₽ من الرصيد",
 	"sub.renewShort":       "ينقصك %s ₽ للتجديد في %s — اشحن الرصيد",
