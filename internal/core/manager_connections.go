@@ -515,6 +515,9 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	// network check shouldn't slow unrelated saves.
 	if u.Protocols["reality"] && (realityDest != set.RealityDest || !set.RealityEnabled) {
 		for _, d := range dests {
+			if strings.EqualFold(d, set.OwnName()) {
+				continue // the server's own :443, served by this process
+			}
 			if err := validateRealityDestLive(d); err != nil {
 				return err
 			}

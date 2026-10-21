@@ -757,8 +757,13 @@ func bootstrapPanel(st *store.Store) (string, error) {
 			return "", err
 		}
 		// The REALITY donor and port likewise: max.ru on 8443 on every install is the
-		// same one-query signature.
-		if err := st.SetRealityPorts(core.PickRealityPort(), core.PickRealityDonor()); err != nil {
+		// same one-query signature. A server with a domain names itself instead: a
+		// known site's name sent to an address that is not that site's is what DPI drops.
+		donor := set.OwnName()
+		if donor == "" {
+			donor = core.PickRealityDonor()
+		}
+		if err := st.SetRealityPorts(core.PickRealityPort(), donor); err != nil {
 			return "", err
 		}
 	}

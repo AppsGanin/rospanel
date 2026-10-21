@@ -47,6 +47,14 @@ func (m *Manager) CreateNode(name, host string) (*model.Node, error) {
 	}
 	if err == nil {
 		m.claimNodeMTProtoDomain(n)
+		// A node with a domain names itself on its REALITY lane; one with an address
+		// follows the panel's donor.
+		if d := hostDomain(host); d != "" {
+			if err := m.store.SetNodeRealityDest(n.ID, d); err != nil {
+				return nil, err
+			}
+			n.RealityDest = d
+		}
 	}
 	return n, err
 }
@@ -95,11 +103,24 @@ func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
 	if err := m.nodeEditKeepsBridges(id, e); err != nil {
 		return err
 	}
+	prev, err := m.store.GetNode(id)
+	if err != nil {
+		return err
+	}
 	if err := m.store.UpdateNode(id, e); err != nil {
 		if errors.Is(err, store.ErrNodeNameTaken) {
 			return invalidCode("err.nodeNameTaken", "нода с таким названием уже есть — имя должно быть уникальным")
 		}
 		return err
+	}
+	// Its REALITY lane follows its own name; an empty list goes back to the panel's donor.
+	if prev != nil {
+		dest := realityDestAfterRename(prev.RealityDest, hostDomain(prev.Host), hostDomain(e.Host), false, func() string { return "" })
+		if dest != prev.RealityDest {
+			if err := m.store.SetNodeRealityDest(id, dest); err != nil {
+				return err
+			}
+		}
 	}
 	// Re-resolve this node's own lane proxies now (mirrors the master's
 	// setProxies-on-save) so a lane edit applies on the node's next pull.
@@ -208,6 +229,9 @@ func (m *Manager) SetMasterReality(dest string, regen bool) error {
 	}
 	if set.RealityEnabled && norm != set.RealityDest {
 		for _, d := range strings.Split(norm, ",") {
+			if strings.EqualFold(d, set.OwnName()) {
+				continue // the server's own :443, served by this process
+			}
 			if err := validateRealityDestLive(d); err != nil {
 				return err
 			}

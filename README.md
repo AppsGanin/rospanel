@@ -235,7 +235,8 @@ no domain and no DNS**.
 
 **What a scanner sees.** The decoy answers over HTTP/3 too: Hysteria2 serves the same site on UDP
 as on TCP, and the site advertises HTTP/3 the way Caddy does. A fresh install draws its own
-REALITY donor and port. Diagnostics warn about what gives a server away: a self-signed
+REALITY donor and port; on a server with a domain REALITY uses that domain as its SNI and its own
+:443 as the target, so a probe gets the server's real certificate. Diagnostics warn about what gives a server away: a self-signed
 certificate and a domain with words like `vpn` or `proxy` in it — the name lands in the public
 certificate transparency logs.
 
