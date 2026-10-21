@@ -62,6 +62,7 @@ func (rt *Router) getBilling(w http.ResponseWriter, r *http.Request) {
 		"manual_label":  set.BillingManualLabel,
 		"wallet":        set.WalletEnabled,
 		"topup_min":     set.WalletTopupMin,
+		"topup_max":     set.WalletTopupMax,
 		"ref_mode":      set.RefMode,
 		"ref_percent":   set.RefPercent,
 		"ref_days":      set.RefDays,
@@ -85,6 +86,7 @@ func (rt *Router) saveBilling(w http.ResponseWriter, r *http.Request) {
 		ManualLabel string `json:"manual_label"`
 		Wallet      *bool  `json:"wallet"`
 		TopupMin    int    `json:"topup_min"`
+		TopupMax    int    `json:"topup_max"`
 		RefMode     string `json:"ref_mode"`
 		RefPercent  int    `json:"ref_percent"`
 		RefDays     int    `json:"ref_days"`
@@ -118,6 +120,9 @@ func (rt *Router) saveBilling(w http.ResponseWriter, r *http.Request) {
 	// fields existed must not have its save refused over them.
 	if req.TopupMin != 0 {
 		set.WalletTopupMin = req.TopupMin
+	}
+	if req.TopupMax != 0 {
+		set.WalletTopupMax = req.TopupMax
 	}
 	if req.RefMode != "" {
 		set.RefMode = req.RefMode

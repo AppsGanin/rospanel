@@ -1344,8 +1344,11 @@ func (rt *Router) buildWallet(b *sub.Billing, u model.User, set *model.Settings,
 				b.RenewShort = true
 			}
 		}
-		b.TopupMin = max(set.WalletTopupMin, 1)
+		b.TopupMin, b.TopupMax = set.TopupRange()
 		b.TopupHint = i18n.T(lang, "sub.topupHint", b.TopupMin)
+		if b.TopupMax < model.WalletTopupCeiling {
+			b.TopupHint = i18n.T(lang, "sub.topupHintRange", b.TopupMin, b.TopupMax)
+		}
 		if w.RefBonusDays > 0 {
 			b.BonusDays = i18n.T(lang, "sub.bonusDays", w.RefBonusDays)
 		}

@@ -1284,3 +1284,42 @@ func TestRenewalOutlookMatchesAutoRenew(t *testing.T) {
 		t.Fatalf("a disabled user: %+v", r)
 	}
 }
+
+// The operator's largest top-up bounds every top-up; a maximum never set is the default.
+func TestTopupMax(t *testing.T) {
+	t.Parallel()
+	m, st, _ := walletFixture(t)
+	u := walletUser(t, st, "topmax")
+
+	if err := m.checkTopup(u.ID, model.WalletTopupMaxDefault); err != nil {
+		t.Fatalf("default maximum refused: %v", err)
+	}
+	if err := m.checkTopup(u.ID, model.WalletTopupMaxDefault+1); err == nil {
+		t.Fatal("a top-up over the default maximum was accepted")
+	}
+	set, _ := st.GetSettings()
+	set.WalletTopupMax = 500
+	if err := validateWalletSettings(set); err != nil {
+		t.Fatalf("valid max refused: %v", err)
+	}
+	if err := st.SetBillingSettings(set); err != nil {
+		t.Fatalf("billing settings: %v", err)
+	}
+	if err := m.checkTopup(u.ID, 500); err != nil {
+		t.Fatalf("500 refused: %v", err)
+	}
+	if err := m.checkTopup(u.ID, 501); err == nil {
+		t.Fatal("501 over a 500 maximum was accepted")
+	}
+
+	for _, bad := range []int{5, model.WalletTopupCeiling + 1} {
+		set.WalletTopupMax = bad
+		if err := validateWalletSettings(set); err == nil {
+			t.Fatalf("max %d accepted", bad)
+		}
+	}
+	set.WalletTopupMax = 0
+	if err := validateWalletSettings(set); err != nil || set.WalletTopupMax != model.WalletTopupMaxDefault {
+		t.Fatalf("unset max: err %v, max %d", err, set.WalletTopupMax)
+	}
+}

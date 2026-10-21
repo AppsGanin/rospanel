@@ -383,6 +383,7 @@ update: "no free plan" is a real state and must be distinguishable from "unspeci
 ```json
 { "enabled": true, "free_plan_id": 1, "trial_plan_id": 2, "payment_note": "card 1234",
   "manual": true, "manual_label": "", "wallet": true, "topup_min": 100,
+  "topup_max": 15000,
   "ref_mode": "percent", "ref_percent": 10, "ref_days": 7, "ref_first": false }
 ```
 
@@ -392,11 +393,12 @@ beside the providers, `manual_label` is its pay-button label (empty = the defaul
 wording), and `payment_note` is the text a user paying by hand is shown.
 
 `wallet` lets users keep a balance (top-ups, paying for plans from it, renewal from it);
-`topup_min` is the smallest top-up in roubles. `ref_mode` is what a referrer earns when
+`topup_min` and `topup_max` are the smallest and largest top-up in roubles (`topup_max` is
+15000 by default, at most 1000000). `ref_mode` is what a referrer earns when
 someone they invited pays money: `off`, `percent` (`ref_percent` % of the payment, top-ups
 included, onto the referrer's balance — needs `wallet`) or `days` (`ref_days` days onto their
 plan, for a plan bought with money); `ref_first` pays only for the first such payment. Left
-out, `wallet`, `topup_min`, `ref_mode`, `ref_percent`, `ref_days` and `ref_first` keep their
+out, `wallet`, `topup_min`, `topup_max`, `ref_mode`, `ref_percent`, `ref_days` and `ref_first` keep their
 stored values.
 
 **Orders and the balance** — an order's `amount_rub` is always the money to be paid in.

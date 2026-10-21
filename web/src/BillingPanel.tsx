@@ -69,6 +69,7 @@ function toCfg(d: BillingInfo, plans: TariffPlan[]): BillingInfo {
     manual_label: d.manual_label ?? "",
     wallet: !!d.wallet,
     topup_min: d.topup_min || 100,
+    topup_max: d.topup_max || 15_000,
     ref_mode: d.ref_mode || "off",
     ref_percent: d.ref_percent || 10,
     ref_days: d.ref_days || 7,
@@ -200,6 +201,7 @@ export function BillingPanel() {
     cfg.manual_label !== saved.manual_label ||
     cfg.wallet !== saved.wallet ||
     cfg.topup_min !== saved.topup_min ||
+    cfg.topup_max !== saved.topup_max ||
     cfg.ref_mode !== saved.ref_mode ||
     cfg.ref_percent !== saved.ref_percent ||
     cfg.ref_days !== saved.ref_days ||
@@ -229,6 +231,8 @@ export function BillingPanel() {
   const numbersError = (): string => {
     if (cfg.topup_min < 1 || cfg.topup_min > 1_000_000)
       return t("err.topupMinRange", { max: 1_000_000 });
+    if (cfg.topup_max < cfg.topup_min || cfg.topup_max > 1_000_000)
+      return t("err.topupMaxRange", { max: 1_000_000 });
     if (cfg.ref_mode === "percent" && (cfg.ref_percent < 1 || cfg.ref_percent > 100))
       return t("err.refPercentRange");
     if (cfg.ref_mode === "days" && (cfg.ref_days < 1 || cfg.ref_days > 365))
@@ -268,6 +272,7 @@ export function BillingPanel() {
           manual_label: cfg.manual_label,
           wallet: cfg.wallet,
           topup_min: cfg.topup_min,
+          topup_max: cfg.topup_max,
           ref_mode: cfg.ref_mode,
           ref_percent: cfg.ref_percent,
           ref_days: cfg.ref_days,
@@ -514,6 +519,17 @@ export function BillingPanel() {
                 value={String(cfg.topup_min)}
                 disabled={!cfg.wallet}
                 onChange={(v) => setCfg({ ...cfg, topup_min: Math.max(0, Math.floor(Number(v) || 0)) })}
+              />
+            }
+          />
+          <SettingRow
+            label={t("wallet.topupMax")}
+            field={
+              <TextInput
+                type="number"
+                value={String(cfg.topup_max)}
+                disabled={!cfg.wallet}
+                onChange={(v) => setCfg({ ...cfg, topup_max: Math.max(0, Math.floor(Number(v) || 0)) })}
               />
             }
           />

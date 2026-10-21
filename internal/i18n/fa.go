@@ -142,6 +142,7 @@ var fa = map[string]string{
 	"sub.topup":            "شارژ",
 	"sub.topupAmount":      "مبلغ شارژ",
 	"sub.topupHint":        "مبلغ، از %d ₽",
+	"sub.topupHintRange":   "مبلغ، از %d تا %d ₽",
 	"sub.autoRenew":        "تمدید خودکار از کیف پول",
 	"sub.renewCovered":     "در %s، مبلغ %s ₽ از کیف پول کسر می‌شود",
 	"sub.renewShort":       "%s ₽ برای تمدید در %s کم است — کیف پول را شارژ کنید",

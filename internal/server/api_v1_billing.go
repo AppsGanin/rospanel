@@ -30,6 +30,7 @@ type (
 		ManualLabel string `json:"manual_label"`  // its pay-button label ("" = the default wording)
 		Wallet      *bool  `json:"wallet"`        // users keep a balance: top-ups, paying and renewing from it
 		TopupMin    int    `json:"topup_min"`     // smallest top-up, roubles
+		TopupMax    int    `json:"topup_max"`     // largest top-up, roubles
 		RefMode     string `json:"ref_mode"`      // off | percent | days — what a referrer earns
 		RefPercent  int    `json:"ref_percent"`   // percent of an invited user's payment, onto the balance
 		RefDays     int    `json:"ref_days"`      // days onto the referrer's plan
@@ -67,6 +68,7 @@ func (rt *Router) apiGetBillingSettings(w http.ResponseWriter, _ *http.Request) 
 		ManualLabel: set.BillingManualLabel,
 		Wallet:      &set.WalletEnabled,
 		TopupMin:    set.WalletTopupMin,
+		TopupMax:    set.WalletTopupMax,
 		RefMode:     set.RefMode,
 		RefPercent:  set.RefPercent,
 		RefDays:     set.RefDays,
@@ -99,6 +101,9 @@ func (rt *Router) apiSaveBillingSettings(w http.ResponseWriter, r *http.Request)
 	// fields existed must not have its save refused over them.
 	if req.TopupMin != 0 {
 		set.WalletTopupMin = req.TopupMin
+	}
+	if req.TopupMax != 0 {
+		set.WalletTopupMax = req.TopupMax
 	}
 	if req.RefMode != "" {
 		set.RefMode = req.RefMode

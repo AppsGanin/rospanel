@@ -153,6 +153,7 @@ var ru = map[string]string{
 	"sub.topup":            "Пополнить",
 	"sub.topupAmount":      "Сумма пополнения",
 	"sub.topupHint":        "Сумма, от %d ₽",
+	"sub.topupHintRange":   "Сумма, от %d до %d ₽",
 	"sub.autoRenew":        "Автопродление с баланса",
 	"sub.renewCovered":     "%s с баланса спишется %s ₽",
 	"sub.renewShort":       "Не хватает %s ₽ на продление %s — пополните баланс",

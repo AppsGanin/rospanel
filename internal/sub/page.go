@@ -492,6 +492,7 @@ type Billing struct {
 	RenewNote  string `json:"renew_note"`
 	RenewShort bool   `json:"renew_short"`
 	TopupMin   int    `json:"topup_min"`
+	TopupMax   int    `json:"topup_max"`
 	TopupHint  string `json:"topup_hint"` // "from 100 ₽"
 	BonusDays  string `json:"bonus_days"` // banked referral days, "" when none
 	Promo      bool   `json:"promo"`      // a promo field is offered

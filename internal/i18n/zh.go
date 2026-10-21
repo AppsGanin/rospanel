@@ -142,6 +142,7 @@ var zh = map[string]string{
 	"sub.topup":            "充值",
 	"sub.topupAmount":      "充值金额",
 	"sub.topupHint":        "金额，最低 %d ₽",
+	"sub.topupHintRange":   "金额，%d 至 %d ₽",
 	"sub.autoRenew":        "从余额自动续订",
 	"sub.renewCovered":     "%s 将从余额扣除 %s ₽",
 	"sub.renewShort":       "还差 %s ₽ 才能在 %s 续订——请充值余额",
