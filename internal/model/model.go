@@ -1940,6 +1940,17 @@ func (s *Settings) OwnName() string {
 	return ""
 }
 
+// RealityTarget is where the REALITY inbound sends what is not a client. For the
+// server's own domain that is its own :443 — the decoy, with the server's real
+// certificate — dialed on loopback, with no DNS and no trip out; for a donor, the donor.
+func (s *Settings) RealityTarget() string {
+	sni := s.RealitySNI()
+	if own := s.OwnName(); own != "" && strings.EqualFold(sni, own) && s.VLESSPort > 0 {
+		return net.JoinHostPort("127.0.0.1", strconv.Itoa(s.VLESSPort))
+	}
+	return sni + ":443"
+}
+
 // RealitySNI returns the primary (first) donor domain — used as the dialed dest
 // and the sni= in share links.
 func (s *Settings) RealitySNI() string {

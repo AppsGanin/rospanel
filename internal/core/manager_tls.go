@@ -116,6 +116,13 @@ func (m *Manager) SetACMETarget(target, email, provider, eabKID, eabHMAC string)
 		return err
 	}
 	logInfo("tls: certificate issued", "target", target)
+	// The REALITY lane follows the server's own name: the old one in its donor list
+	// becomes the new one, and a server still in its first-run wizard takes it outright.
+	if dest := realityDestAfterRename(cur.RealityDest, cur.OwnName(), set.OwnName(), !cur.SetupDone, PickRealityDonor); dest != cur.RealityDest {
+		if err := m.store.SetRealityPorts(set.RealityPort, dest); err != nil {
+			logErr("tls: could not move the REALITY donor to the new name", "err", err)
+		}
+	}
 	// A restart, not just a reconcile. The cert PATH is what lives in the config, so a
 	// re-issue regenerates a byte-identical file and Supervisor.Apply short-circuits
 	// before restarting — Xray would keep presenting the previous certificate for up to

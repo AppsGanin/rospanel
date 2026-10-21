@@ -5,7 +5,10 @@ import (
 	"crypto/rand"
 	"math/big"
 	"net"
+	"net/netip"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -66,4 +69,41 @@ func shuffled(in []string) []string {
 		out[i], out[j] = out[j], out[i]
 	}
 	return out
+}
+
+// realityDestAfterRename is a server's donor list once its own name moved from oldOwn
+// to newOwn ("" for a bare address). The old name in the list becomes the new one, or
+// drops out for an address; a list left empty takes pick(). A server still in its
+// first-run wizard takes its new name outright — no link carries the donor yet.
+func realityDestAfterRename(dest, oldOwn, newOwn string, fresh bool, pick func() string) string {
+	if fresh && newOwn != "" {
+		return newOwn
+	}
+	var out []string
+	for _, d := range strings.Split(dest, ",") {
+		if d = strings.TrimSpace(d); d == "" {
+			continue
+		}
+		if oldOwn != "" && strings.EqualFold(d, oldOwn) {
+			if d = newOwn; d == "" {
+				continue
+			}
+		}
+		if !slices.ContainsFunc(out, func(o string) bool { return strings.EqualFold(o, d) }) {
+			out = append(out, d)
+		}
+	}
+	if len(out) == 0 {
+		return pick()
+	}
+	return strings.Join(out, ",")
+}
+
+// hostDomain is host when it is a domain, "" for an address.
+func hostDomain(host string) string {
+	host = strings.TrimSpace(host)
+	if _, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
+		return ""
+	}
+	return host
 }

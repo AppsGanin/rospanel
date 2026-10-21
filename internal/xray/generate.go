@@ -731,8 +731,8 @@ func realityInbound(set *model.Settings, clients []VLESSClient, sniff *Sniffing)
 			Security: "reality",
 			RealitySettings: &RealitySettings{
 				Show:         false,
-				Dest:         set.RealitySNI() + ":443", // primary donor is dialed for probes
-				ServerNames:  set.RealityServerNames(),  // all accepted SNIs
+				Dest:         set.RealityTarget(),      // dialed for probes
+				ServerNames:  set.RealityServerNames(), // all accepted SNIs
 				PrivateKey:   set.RealityPrivateKey,
 				ShortIds:     strings.Split(set.RealityShortID, ","),
 				MaxTimeDiff:  set.RealityMaxTimeDiff, // anti-replay window (ms); 0 = off
