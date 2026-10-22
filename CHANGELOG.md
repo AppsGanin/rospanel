@@ -1,5 +1,14 @@
 # Changelog
 
+## [5.9.0](https://github.com/AppsGanin/rospanel/compare/v5.8.0...v5.9.0) (2026-10-21)
+
+
+### Features
+
+* **billing:** operator-set largest top-up ([43bc313](https://github.com/AppsGanin/rospanel/commit/43bc3135467495abff276d54b656b9726863062b)), closes [#122](https://github.com/AppsGanin/rospanel/issues/122)
+* **reality:** the server's own domain is the default XHTTP masquerade ([1994d22](https://github.com/AppsGanin/rospanel/commit/1994d229bdb0689cb9a236c9ce732b08c6d70aaf))
+* **sub:** title the TURN card TURN-VK ([aea5663](https://github.com/AppsGanin/rospanel/commit/aea5663a2c78b33db6ab1c7539ef9e3619ce92fa))
+
 ## [5.8.0](https://github.com/AppsGanin/rospanel/compare/v5.7.0...v5.8.0) (2026-10-16)
 
 
