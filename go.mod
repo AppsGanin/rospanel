@@ -7,7 +7,7 @@ require (
 	github.com/enfein/mieru/v3 v3.38.2
 	github.com/go-acme/lego/v4 v4.35.2
 	github.com/google/uuid v1.6.0
-	github.com/pion/dtls/v3 v3.1.11
+	github.com/pion/dtls/v3 v3.1.15
 	github.com/pion/transport/v5 v5.1.1
 	github.com/sagernet/sing v0.9.6
 	github.com/sagernet/sing-anytls v0.0.0-20260928104022-580984e4d8cb
