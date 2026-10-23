@@ -394,4 +394,3 @@ func TestRelayOwnRouting(t *testing.T) {
 		t.Fatalf("vless through Opera: %q", d)
 	}
 }
-

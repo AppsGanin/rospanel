@@ -636,15 +636,14 @@ func (s *Supervisor) Apply(cfg *Config) error {
 	if err := os.MkdirAll(filepath.Dir(s.configPath), 0o700); err != nil {
 		return err
 	}
-	tmp := s.configPath + ".new"
+	tmp := s.stagedConfigPath()
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 
 	if s.bin != "" {
-		// -format json: the temp file lacks a .json extension, and Xray otherwise
-		// infers config format from the extension. A timeout keeps a wedged
-		// validation from holding s.mu (and thus blocking all future applies).
+		// A timeout keeps a wedged validation from holding s.mu (and thus blocking
+		// all future applies).
 		// validation under runMu (not mu) — a wedged -test can't block Running().
 		ctx, cancel := context.WithTimeout(context.Background(), validateTimeout)
 		cmd := exec.CommandContext(ctx, s.bin, "run", "-test", "-format", "json", "-c", tmp)
@@ -728,7 +727,7 @@ func (s *Supervisor) ApplyRaw(data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(s.configPath), 0o700); err != nil {
 		return err
 	}
-	tmp := s.configPath + ".new"
+	tmp := s.stagedConfigPath()
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
@@ -785,13 +784,22 @@ func (s *Supervisor) HasBackup() bool {
 // restoreBackupLocked promotes config.json.bak → config.json and restarts
 // Xray. Caller must hold s.runMu. Validation is skipped (the backup was the
 // last known-good config and was already validated when applied).
+// stagedConfigPath is where a config is written (and validated) before it is
+// renamed over the live one: config.json → config.new.json. The extension has to
+// stay last: since 26.10.21 `xray run` refuses a config file whose extension it
+// doesn't know, "-format json" or not, so a config.json.new failed every -test.
+func (s *Supervisor) stagedConfigPath() string {
+	ext := filepath.Ext(s.configPath)
+	return strings.TrimSuffix(s.configPath, ext) + ".new" + ext
+}
+
 func (s *Supervisor) restoreBackupLocked() error {
 	bak := s.configPath + ".bak"
 	data, err := os.ReadFile(bak)
 	if err != nil {
 		return fmt.Errorf("no backup config found")
 	}
-	tmp := s.configPath + ".new"
+	tmp := s.stagedConfigPath()
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
@@ -815,7 +823,7 @@ func (s *Supervisor) WriteConfig(cfg *Config) error {
 	if err := os.MkdirAll(filepath.Dir(s.configPath), 0o700); err != nil {
 		return err
 	}
-	tmp := s.configPath + ".new"
+	tmp := s.stagedConfigPath()
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}

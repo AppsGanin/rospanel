@@ -74,6 +74,7 @@ func TestWriteLocalExcludesRecoveryCopies(t *testing.T) {
 		"rospanel.db.bak-20260710-230819",
 		"rospanel.db.bak.20260710-230819",
 		"config.json.new",
+		"config.new.json",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("copy"), 0o600); err != nil {
 			t.Fatalf("seed %s: %v", name, err)
@@ -85,7 +86,7 @@ func TestWriteLocalExcludesRecoveryCopies(t *testing.T) {
 		t.Fatalf("WriteLocal: %v", err)
 	}
 	for _, name := range listArchive(t, path) {
-		if strings.Contains(name, ".bak") || strings.HasSuffix(name, ".new") {
+		if strings.Contains(name, ".bak") || strings.Contains(name, ".new") {
 			t.Errorf("archive carries recovery artifact %q", name)
 		}
 	}

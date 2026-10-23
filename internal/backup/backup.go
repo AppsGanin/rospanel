@@ -102,6 +102,7 @@ func WriteWithManifest(dataDir string, m Manifest, w io.Writer) error {
 		// that compounds.
 		if strings.HasSuffix(base, ".bak") || strings.Contains(base, ".bak-") ||
 			strings.Contains(base, ".bak.") || strings.HasSuffix(base, ".new") ||
+			strings.HasSuffix(base, ".new.json") || // the Xray config staged before a swap
 			strings.HasSuffix(base, ".tgz") || strings.Contains(base, ".corrupt-") ||
 			strings.HasSuffix(base, ".db.prev") || strings.HasSuffix(base, ".db.restore") {
 			// .db.prev/.db.restore: a plugin database's pre-update snapshot and a

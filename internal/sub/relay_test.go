@@ -119,4 +119,3 @@ func TestRelayedThroughSeveralLanes(t *testing.T) {
 		t.Fatalf("WireGuard rides %+v, want server 2 alone", v)
 	}
 }
-
