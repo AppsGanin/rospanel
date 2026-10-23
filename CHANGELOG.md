@@ -1,5 +1,26 @@
 # Changelog
 
+## [5.10.0](https://github.com/AppsGanin/rospanel/compare/v5.9.0...v5.10.0) (2026-10-23)
+
+
+### Features
+
+* **billing:** exit survey for users who did not renew ([cf4709f](https://github.com/AppsGanin/rospanel/commit/cf4709fce21afbc8c14b4f02d9fa3856f8ae9afd))
+* **extsub:** relay through many servers, with routing of its own ([03782e9](https://github.com/AppsGanin/rospanel/commit/03782e935055242b1e2e160beb1f0b16f4c07c54))
+* **extsub:** WireGuard servers from a provider ([03782e9](https://github.com/AppsGanin/rospanel/commit/03782e935055242b1e2e160beb1f0b16f4c07c54))
+* **incidents:** give users the downtime back ([cf4709f](https://github.com/AppsGanin/rospanel/commit/cf4709fce21afbc8c14b4f02d9fa3856f8ae9afd))
+* **nodes:** a server's WARP and Opera as configs of their own ([03782e9](https://github.com/AppsGanin/rospanel/commit/03782e935055242b1e2e160beb1f0b16f4c07c54))
+
+
+### Bug Fixes
+
+* **xray:** pin Xray-core v26.10.21, the old release is gone ([9499e66](https://github.com/AppsGanin/rospanel/commit/9499e66b9ac7fb726405b7e8e5d2aa3c3a3968b9))
+
+
+### Reverts
+
+* **nodes:** drop a server's WARP and Opera as configs of their own ([6db78d1](https://github.com/AppsGanin/rospanel/commit/6db78d1304b10b872cfbbe4601ce0ef3b59cee1b))
+
 ## [5.9.0](https://github.com/AppsGanin/rospanel/compare/v5.8.0...v5.9.0) (2026-10-21)
 
 
