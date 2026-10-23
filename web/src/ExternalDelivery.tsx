@@ -53,7 +53,6 @@ export function ExternalDeliveryDialog({
   const { busy, run } = useAction();
   const wg = servers.some((s) => s.protocol === "wireguard");
   const onlyWG = servers.length > 0 && servers.every((s) => s.protocol === "wireguard");
-  const udp = wg || servers.some((s) => s.protocol === "hysteria2");
 
   const [relays, setRelays] = useState<ExtRelayVia[]>(sub.relays ?? []);
   const [mode, setMode] = useState<"direct" | "via">(relays.length > 0 || onlyWG ? "via" : "direct");
@@ -109,7 +108,6 @@ export function ExternalDeliveryDialog({
     const missing = (ok: (n: NodeView) => boolean) => chosen.filter((n) => !ok(n)).map(serverName);
     const out: Way[] = [
       { value: "warp", label: "WARP", missing: missing((n) => n.warp_enabled && n.warp_registered) },
-      { value: "opera", label: "Opera", missing: missing((n) => n.opera_enabled) },
     ];
     for (const l of chosen[0]?.routing?.lanes ?? []) {
       if (!l.enabled) continue;
@@ -318,15 +316,8 @@ export function ExternalDeliveryDialog({
                   <div className="flex flex-col gap-1.5">
                     <Option on={dial === ""} onClick={() => setDial("")} title={t("extRoute.dialDirect")} hint={t("extRoute.dialDirectHint")} />
                     {ways.map((w) => {
-                      const why =
-                        w.missing.length > 0
-                          ? t("extRoute.notOn", { servers: w.missing.join(", ") })
-                          : w.value === "opera" && udp
-                            ? t("extRoute.tcpOnly")
-                            : "";
-                      const hint =
-                        why ||
-                        t(w.value === "warp" ? "extRoute.dialWarpHint" : w.value === "opera" ? "extRoute.dialOperaHint" : "extRoute.dialLaneHint");
+                      const why = w.missing.length > 0 ? t("extRoute.notOn", { servers: w.missing.join(", ") }) : "";
+                      const hint = why || t(w.value === "warp" ? "extRoute.dialWarpHint" : "extRoute.dialLaneHint");
                       return (
                         <Option
                           key={w.value}

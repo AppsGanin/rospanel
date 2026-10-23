@@ -3,7 +3,7 @@ package model
 import "testing"
 
 // Routes skip what a random UUID carries there (0x4000–0x4FFF), so no user's own UUID
-// names a relayed server, and stop short of the server's own exits (ExitRoute).
+// names a relayed server, and stop where two bytes do.
 func TestExtRoute(t *testing.T) {
 	for _, c := range []struct {
 		id    int64
@@ -11,24 +11,15 @@ func TestExtRoute(t *testing.T) {
 		ok    bool
 	}{
 		{0, 0, false}, {1, 1, true}, {0x3FFF, 0x3FFF, true},
-		{0x4000, 0x5000, true}, {0xEFEF, 0xFFEF, true}, {0xEFF0, 0, false}, {0xF000, 0, false},
+		{0x4000, 0x5000, true}, {0xEFFF, 0xFFFF, true}, {0xF000, 0, false},
 	} {
 		if r, ok := ExtRoute(c.id); r != c.route || ok != c.ok {
 			t.Errorf("ExtRoute(%#x) = %#x %v, want %#x %v", c.id, r, ok, c.route, c.ok)
 		}
 	}
-	exits := map[uint16]bool{}
-	for _, k := range ExitKinds {
-		r, _ := ExitRoute(k)
-		exits[r] = true
-	}
 	for id := int64(1); id <= 0xEFFF; id++ {
-		r, ok := ExtRoute(id)
-		if ok && r >= 0x4000 && r <= 0x4FFF {
+		if r, _ := ExtRoute(id); r >= 0x4000 && r <= 0x4FFF {
 			t.Fatalf("ExtRoute(%#x) = %#x, inside the version-4 range", id, r)
-		}
-		if ok && exits[r] {
-			t.Fatalf("ExtRoute(%#x) = %#x, an exit's route", id, r)
 		}
 	}
 }

@@ -43,8 +43,7 @@ type Relay struct {
 // relayPlan is one relayed server as its rules need it: which connections are its
 // (the route on the lane, for its users), its outbound and its routing.
 type relayPlan struct {
-	// tag names the plan's rules after the relay prefix: the external server's id, or
-	// "exit-<kind>" for one of the server's own ways out handed out as a connection.
+	// tag names the plan's rules after the relay prefix: the external server's id.
 	tag     string
 	extID   int64
 	inbound []string
@@ -460,55 +459,4 @@ func (s *Supervisor) SyncRelayRules(apiAddr string, cfg *Config) error {
 		return nil
 	}
 	return s.replaceOwnRulesLocked(apiAddr, next)
-}
-
-// exitPlans are the server's own ways out handed to users as connections
-// (model.ExitConfig): each a plan whose every connection goes to that way out. One whose
-// way out this config does not build (WARP with no account, Opera off) has no rule:
-// its connections take the ordinary routing, and the subscription does not offer it.
-func exitPlans(opts Options, exits []model.ExitConfig, vless, reality []VLESSClient, built map[string]bool) []relayPlan {
-	var plans []relayPlan
-	for _, kind := range model.ExitKinds {
-		c, ok := model.ExitFor(exits, kind)
-		route, routed := model.ExitRoute(kind)
-		if !ok || !routed || !built[kind] {
-			continue
-		}
-		var tags []string
-		var clients []VLESSClient
-		for _, lane := range c.Lanes {
-			switch lane {
-			case model.LaneVLESS:
-				tags, clients = append(tags, TagVLESS), append(clients, vless...)
-			case model.LaneReality:
-				tags, clients = append(tags, TagReality), append(clients, reality...)
-			}
-		}
-		if len(tags) == 0 {
-			continue
-		}
-		slices.Sort(tags)
-		var users []string
-		for _, cl := range clients {
-			id, ok := model.UserIDOfEmail(cl.Email)
-			if !ok || !model.AccessOf(opts.Access, id).AllowsBuiltin(opts.ServerID, kind) {
-				continue
-			}
-			if own, ok := model.UUIDRoute(cl.ID); !ok || own == route {
-				continue
-			}
-			if !slices.Contains(users, cl.Email) {
-				users = append(users, cl.Email)
-			}
-		}
-		if len(users) == 0 {
-			users = []string{relayNobody}
-		}
-		slices.Sort(users)
-		plans = append(plans, relayPlan{
-			tag: "exit-" + kind, inbound: tags, route: strconv.Itoa(int(route)), users: users,
-			routing: model.ExtRouting{Rest: kind},
-		})
-	}
-	return plans
 }

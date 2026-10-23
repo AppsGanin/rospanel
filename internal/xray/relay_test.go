@@ -395,35 +395,3 @@ func TestRelayOwnRouting(t *testing.T) {
 	}
 }
 
-// The server's WARP handed out as a connection: one rule on its route for the users
-// granted it, to the WARP balancer; Opera off builds no rule; nothing when WARP itself
-// cannot be built.
-func TestExitConfigRouting(t *testing.T) {
-	set := relaySettings()
-	set.WarpEnabled, set.WarpPrivateKey = true, "k"
-	set.ExitConfigs = []model.ExitConfig{{Kind: model.ExitWARP, Lanes: []string{model.LaneVLESS}}, {Kind: model.ExitOpera, Lanes: []string{model.LaneVLESS}}}
-	opts := relayOpts(1)
-	for id := range opts.Access {
-		opts.Access[id].Tokens[model.BuiltinToken(model.LocalNodeID, model.ExitWARP)] = id == 1
-	}
-	cfg, err := Generate(set, relayUsers(1, 2), opts, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	i := ruleIndex(cfg.Routing.Rules, func(r RouteRule) bool { return r.RuleTag == "relay-exit-warp" })
-	if i < 0 {
-		t.Fatalf("no exit rule in %+v", cfg.Routing.Rules)
-	}
-	r := cfg.Routing.Rules[i]
-	if r.BalancerTag != "warp-out" || r.VlessRoute != "65521" || !slices.Equal(r.User, []string{"u1"}) {
-		t.Fatalf("exit rule %+v", r)
-	}
-	if ruleIndex(cfg.Routing.Rules, func(r RouteRule) bool { return r.RuleTag == "relay-exit-opera" }) >= 0 {
-		t.Fatal("an exit rule for Opera, which is off")
-	}
-	set.WarpPrivateKey = ""
-	cfg, _ = Generate(set, relayUsers(1, 2), opts, nil)
-	if ruleIndex(cfg.Routing.Rules, func(r RouteRule) bool { return r.RuleTag == "relay-exit-warp" }) >= 0 {
-		t.Fatal("an exit rule for WARP with no account")
-	}
-}

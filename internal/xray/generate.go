@@ -300,11 +300,6 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	// What a relayed subscription's routing sends traffic to is built like anything
 	// the server's own routing names.
 	relayAims := relayTargets(opts.Relays)
-	for _, c := range set.ExitConfigs {
-		if len(c.Lanes) > 0 {
-			relayAims[c.Kind] = true
-		}
-	}
 	operaActive := set.OperaEnabled && (len(rc.OperaDomains) > 0 || len(rc.OperaIPs) > 0 || catchAll == "opera" || relayAims["opera"])
 
 	// Egress lanes: one outbound per upstream proxy (tag "proxy-<lane>-<n>"), one
@@ -359,8 +354,6 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	relayOuts, relayPlans := relayRouting(opts, vlessClients, realityClients, func(dial, protocol string) string {
 		return relayDialer(dial, protocol, warpActive, operaActive, active)
 	})
-	relayPlans = append(relayPlans, exitPlans(opts, set.ExitConfigs, vlessClients, realityClients,
-		map[string]bool{model.ExitWARP: warpActive, model.ExitOpera: operaActive})...)
 	outbounds = append(outbounds, relayOuts...)
 
 	var observatory *Observatory

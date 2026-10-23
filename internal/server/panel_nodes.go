@@ -178,24 +178,6 @@ type nodeRoutingReq struct {
 	OperaCountry string               `json:"opera_country"`
 }
 
-// setExitConfigs replaces a server's WARP and Opera handed out as connections
-// ({exits: [{kind, lanes, name}]}).
-func (rt *Router) setExitConfigs(w http.ResponseWriter, r *http.Request, id int64) {
-	var req struct {
-		Exits []model.ExitConfig `json:"exits"`
-	}
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-	saved, err := rt.mgr.SetExitConfigs(id, req.Exits)
-	if err != nil {
-		writeManagerErr(w, err)
-		return
-	}
-	auditDetails(r, map[string]any{"server": id, "exits": saved})
-	writeJSON(w, http.StatusOK, map[string]any{"exits": saved})
-}
-
 // setNodeRouting saves a node's per-node routing + egress override. DNS is left
 // untouched (the node's current value is preserved) — it has its own endpoint.
 func (rt *Router) setNodeRouting(w http.ResponseWriter, r *http.Request, id int64) {

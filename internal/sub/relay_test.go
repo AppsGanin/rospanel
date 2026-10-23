@@ -120,30 +120,3 @@ func TestRelayedThroughSeveralLanes(t *testing.T) {
 	}
 }
 
-// The server's WARP as a connection: an entry per lane picked, named as set or after
-// the way out, only while WARP runs here and the user may have it.
-func TestExitConfigEntries(t *testing.T) {
-	srv := relayServer("", true)
-	srv.Set.WarpEnabled, srv.Set.WarpPrivateKey = true, "k"
-	srv.Set.ExitConfigs = []model.ExitConfig{{Kind: model.ExitWARP, Lanes: []string{model.LaneVLESS, model.LaneReality}, Name: "Через WARP"}}
-	srv.Access.Tokens[model.BuiltinToken(0, model.ExitWARP)] = true
-	var names []string
-	for _, e := range srv.exitEntries(relayUser) {
-		names = append(names, e.name)
-		if !strings.Contains(e.user.UUID, "-fff1-") {
-			t.Fatalf("entry UUID %s lacks the WARP route", e.user.UUID)
-		}
-	}
-	if len(names) != 2 || names[0] != "Через WARP · TCP-TLS" || names[1] != "Через WARP · REALITY" {
-		t.Fatalf("entries %q", names)
-	}
-	delete(srv.Access.Tokens, model.BuiltinToken(0, model.ExitWARP))
-	if got := srv.exitEntries(relayUser); len(got) != 0 {
-		t.Fatalf("not granted, yet %+v", got)
-	}
-	srv.Access.Tokens[model.BuiltinToken(0, model.ExitWARP)] = true
-	srv.Set.WarpPrivateKey = ""
-	if got := srv.exitEntries(relayUser); len(got) != 0 {
-		t.Fatalf("WARP not built here, yet %+v", got)
-	}
-}

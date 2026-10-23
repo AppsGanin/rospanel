@@ -1023,9 +1023,6 @@ type Settings struct {
 	// lane ran (see MTProtoDomainOr): every link a user added carries it, and Telegram
 	// does not refresh a proxy the way a VPN app refreshes its subscription.
 	MTProtoDomain string `json:"-"`
-	// ExitConfigs are this server's WARP and Opera handed to users as connections of
-	// their own (migration 0137).
-	ExitConfigs []ExitConfig `json:"-"`
 
 	// VLESS + gRPC + REALITY inbound (separate port). REALITY borrows the TLS of a
 	// real site (RealityDest) instead of our cert. Keys/shortId/serviceName are

@@ -2800,7 +2800,6 @@ export interface NodeView {
   opera_enabled: boolean
   opera_country: string
   // The server's WARP and Opera handed to users as connections of their own.
-  exit_configs: ExitConfig[]
   traffic_coefficient: number
   // Placement in subscriptions (see PlacementFields) and the live online count.
   country: string
@@ -4004,16 +4003,3 @@ export const getUserPluginFields = (userId: number) =>
     `api/users/${userId}/plugin-fields?lang=${currentLang()}`,
   )
 
-// ExitConfig: one of a server's ways out (WARP, Opera) handed to users as a
-// connection on the lanes picked, under name ("" = the default "WARP"/"Opera").
-export interface ExitConfig {
-  kind: 'warp' | 'opera'
-  lanes: ('vless' | 'reality')[]
-  name?: string
-}
-
-export const setExitConfigs = (serverId: number, exits: ExitConfig[]) =>
-  api<{ exits: ExitConfig[] }>(`api/nodes/${serverId}/exits`, {
-    method: 'POST',
-    body: JSON.stringify({ exits }),
-  })

@@ -211,7 +211,6 @@ var auditActions = map[string]auditRoute{
 	"POST /api/nodes/master-reality":         set("masterReality"),
 	"PATCH /api/nodes/{id}":                  set("nodeChanged"),
 	"POST /api/nodes/{id}/routing":           set("nodeRouting"),
-	"POST /api/nodes/{id}/exits":             set("nodeExits"),
 	"POST /api/nodes/{id}/dns":               set("nodeDns"),
 	"POST /api/nodes/{id}/reality":           set("nodeReality"),
 	"POST /api/nodes/{id}/connections":       set("nodeConnections"),
