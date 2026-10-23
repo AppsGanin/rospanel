@@ -98,8 +98,6 @@ type Node struct {
 	// MTProtoDomain is the name in the node's MTProto secrets, kept from the first time
 	// the lane ran (see Settings.MTProtoDomain).
 	MTProtoDomain string `json:"-"`
-	// ExitConfigs: the node's own WARP and Opera as connections (Settings.ExitConfigs).
-	ExitConfigs []ExitConfig `json:"-"`
 	// ServesMTProto is ServesNaive for MTProto (nodeapi.SyncRequest.MTProto).
 	ServesMTProto bool `json:"-"`
 	// SeenIP is the address the node last reached the panel from (see SetNodeSeenIP).

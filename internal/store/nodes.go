@@ -52,7 +52,7 @@ const nodeColumns = `id, name, host, enabled,
 	traffic_limit, traffic_period, hide_when_over, traffic_reset_day,
 	awg_enabled, awg_private_key, awg_public_key, awg_params, naive_enabled, serves_naive,
 	mieru_enabled, serves_mieru, anytls_enabled, serves_anytls, seen_ip,
-	mtproto_enabled, serves_mtproto, mtproto_domain, exit_configs`
+	mtproto_enabled, serves_mtproto, mtproto_domain`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
 func generateNodeToken() (string, error) {
@@ -67,7 +67,6 @@ func generateNodeToken() (string, error) {
 // and mapping the nullable protocol overrides to *bool.
 func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	var n model.Node
-	var exitConfigs string
 	var enabled, xrayRunning, certSelfSigned, warpEn, operaEn, servesNaive, servesMieru, servesAnyTLS, servesMTProto int
 	var proxySocksEn, proxyHTTPEn, hideFull, hideOver int
 	var proxyAccounts string
@@ -94,12 +93,11 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&n.TrafficLimit, &n.TrafficPeriod, &hideOver, &n.TrafficResetDay,
 		&awgEn, &n.AWGPrivateKey, &n.AWGPublicKey, &awgParamsJSON, &naiveEn, &servesNaive,
 		&mieruEn, &servesMieru, &anytlsEn, &servesAnyTLS, &n.SeenIP,
-		&mtprotoEn, &servesMTProto, &n.MTProtoDomain, &exitConfigs,
+		&mtprotoEn, &servesMTProto, &n.MTProtoDomain,
 	); err != nil {
 		return nil, err
 	}
 	n.Enabled = enabled != 0
-	n.ExitConfigs = model.ExitConfigsOf(exitConfigs)
 	n.HideWhenFull = hideFull != 0
 	n.HideWhenOver = hideOver != 0
 	n.XrayRunning = xrayRunning != 0
@@ -747,11 +745,5 @@ func (s *Store) SetNodeAnyTLSEnabled(id int64, enabled bool) error {
 // SetNodeSeenIP records the address a node reached the panel from, when it changed.
 func (s *Store) SetNodeSeenIP(id int64, ip string) error {
 	_, err := s.db.Exec(`UPDATE nodes SET seen_ip = ? WHERE id = ? AND seen_ip != ?`, ip, id, ip)
-	return err
-}
-
-// SetNodeExitConfigs stores a node's WARP and Opera as connections.
-func (s *Store) SetNodeExitConfigs(id int64, list []model.ExitConfig) error {
-	_, err := s.db.Exec(`UPDATE nodes SET exit_configs = ? WHERE id = ?`, model.ExitConfigsJSON(list), id)
 	return err
 }

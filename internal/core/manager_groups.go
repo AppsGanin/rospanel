@@ -81,20 +81,6 @@ func (m *Manager) GroupTargets() ([]GroupTarget, error) {
 			{model.LaneAWG, s.ProtoLabel(model.ProtoAWG), model.BuiltinToken(id, model.LaneAWG), s.AWGEnabled},
 			{model.LaneMTProto, s.ProtoLabel(model.ProtoMTProto), model.BuiltinToken(id, model.LaneMTProto), s.MTProtoEnabled},
 		}
-		// The server's WARP and Opera handed out as connections are granted like lanes.
-		for _, kind := range model.ExitKinds {
-			c, on := model.ExitFor(s.ExitConfigs, kind)
-			label := c.Name
-			if label == "" {
-				label = map[string]string{model.ExitWARP: "WARP", model.ExitOpera: "Opera"}[kind]
-			}
-			// Listed once the way out runs on the server, so it can be granted before
-			// it is handed out — as a lane switched off still is.
-			runs := (kind == model.ExitWARP && s.WarpEnabled) || (kind == model.ExitOpera && s.OperaEnabled)
-			if on || runs {
-				lanes = append(lanes, GroupLaneOpt{kind, label, model.BuiltinToken(id, kind), on})
-			}
-		}
 		t := GroupTarget{ServerID: id, ServerName: name, Lanes: lanes, Inbounds: []GroupInboundOpt{}}
 		for _, in := range custom[id] {
 			t.Inbounds = append(t.Inbounds, GroupInboundOpt{
@@ -146,8 +132,7 @@ func sanitizeGrants(tokens []string) []string {
 			ok = true
 		} else if _, lane, isBuiltin := model.ParseBuiltinToken(t); isBuiltin {
 			ok = lane == model.LaneVLESS || lane == model.LaneReality || lane == model.LaneHysteria || lane == model.LaneAWG ||
-				lane == model.LaneNaive || lane == model.LaneMieru || lane == model.LaneAnyTLS || lane == model.LaneMTProto ||
-				lane == model.ExitWARP || lane == model.ExitOpera
+				lane == model.LaneNaive || lane == model.LaneMieru || lane == model.LaneAnyTLS || lane == model.LaneMTProto
 		}
 		if ok {
 			seen[t] = true

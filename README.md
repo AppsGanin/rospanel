@@ -512,9 +512,7 @@ themselves keep running, so existing connections are untouched and the operator 
 
 **block / direct / WARP / Opera** categories with priority, **geosite/geoip** presets with
 automatic database downloads, egress through **Cloudflare WARP** (WireGuard) and the free
-**Opera VPN** with region selection — and either can be **handed to users as a config of its own**
-(a VLESS entry whose traffic all leaves through it; who gets it, over which lanes and under what
-name is set per server, with the access groups). The WARP lane stands on **several Cloudflare endpoints
+**Opera VPN** with region selection. The WARP lane stands on **several Cloudflare endpoints
 at once** — different address ranges and different UDP ports, health-probed, so a provider
 that drops one range or one port costs the lane nothing. Its peers are written as addresses,
 never hostnames: Xray resolves a WireGuard endpoint through its own DNS servers, and a lane
@@ -556,7 +554,7 @@ hour, every server switches on and off on its own, and who gets them is decided 
 the partner, and speed caps, quotas, device limits and cut-off work as on your own lanes. A relayed
 subscription has **its own routing**: rules send part of the traffic elsewhere (`geoip:ru` directly
 from your server, a site through WARP or a lane), the rest goes to the partner, and your server can
-**reach the partner through WARP, Opera or a cascade lane** when it cannot reach it directly. A
+**reach the partner through WARP or a cascade lane** when it cannot reach it directly. A
 partner's **WireGuard** servers (`.conf` files or `wireguard://` links) are dialled by your server
 only — a config is one device — and reach users as VLESS configs of yours. A
 provider that requires **device binding** would refuse a caller that

@@ -218,7 +218,7 @@ func ExtRoute(id int64) (uint16, bool) {
 		return 0, false
 	case id < 0x4000:
 		return uint16(id), true
-	case id+0x1000 < 0xFFF0: // above that: the server's own exits (ExitRoute)
+	case id+0x1000 <= 0xFFFF:
 		return uint16(id + 0x1000), true
 	}
 	return 0, false

@@ -624,8 +624,6 @@ func (rt *Router) panelMux() http.Handler {
 	canServersManage("POST /api/nodes", rt.createNode)
 	canServersManage("PATCH /api/nodes/{id}", withID(rt.updateNode))
 	canRoutingManage("POST /api/nodes/{id}/routing", withID(rt.setNodeRouting))
-	// A server's WARP and Opera as connections of their own (0 = the master).
-	canRoutingManage("POST /api/nodes/{id}/exits", withID(rt.setExitConfigs))
 	canRoutingManage("POST /api/nodes/{id}/dns", withID(rt.setNodeDNS))
 	// System proxy, per server: {id} 0 is the master, anything else a node.
 	canRoutingManage("POST /api/nodes/{id}/proxy", withID(rt.setServerProxy))

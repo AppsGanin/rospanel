@@ -2,7 +2,6 @@ package sub
 
 import (
 	"net/url"
-	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -31,84 +30,7 @@ func (s Server) relayEntries(u model.User) []relayEntry {
 			}
 		}
 	}
-	return append(out, s.exitEntries(u)...)
-}
-
-// exitEntries are this server's own ways out handed to the user as connections
-// (model.ExitConfig): one entry per lane picked, the way out's route in their UUID —
-// while that way out runs here and their groups grant it.
-func (s Server) exitEntries(u model.User) []relayEntry {
-	var out []relayEntry
-	for _, kind := range model.ExitKinds {
-		c, ok := model.ExitFor(s.Set.ExitConfigs, kind)
-		if !ok || !s.exitRuns(kind) || !s.allowsBuiltin(kind) {
-			continue
-		}
-		route, _ := model.ExitRoute(kind)
-		if own, ok := model.UUIDRoute(u.UUID); !ok || own == route {
-			continue
-		}
-		id, ok := model.RouteUUID(u.UUID, route)
-		if !ok {
-			continue
-		}
-		ru := u
-		ru.UUID = id
-		name := c.Name
-		if name == "" {
-			name = exitLabel(kind)
-			if label := strings.TrimSpace(s.Set.NodeLabel); label != "" {
-				name = label + " · " + name
-			}
-		}
-		for _, lane := range c.Lanes {
-			if !s.laneRuns(lane) {
-				continue
-			}
-			n := name
-			if len(c.Lanes) > 1 {
-				n += " · " + laneShort(lane)
-			}
-			out = append(out, relayEntry{name: n, lane: lane, user: ru})
-		}
-	}
 	return out
-}
-
-// exitRuns reports whether a way out is built on this server.
-func (s Server) exitRuns(kind string) bool {
-	switch kind {
-	case model.ExitWARP:
-		return s.Set.WarpEnabled && s.Set.WarpRegistered()
-	case model.ExitOpera:
-		return s.Set.OperaEnabled
-	}
-	return false
-}
-
-// laneRuns reports whether a relay lane runs on this server and is the user's.
-func (s Server) laneRuns(lane string) bool {
-	switch lane {
-	case model.LaneVLESS:
-		return s.Set.VLESSEnabled && s.allowsBuiltin(model.LaneVLESS)
-	case model.LaneReality:
-		return s.Set.RealityEnabled && s.Set.RealityPublicKey != "" && s.allowsBuiltin(model.LaneReality)
-	}
-	return false
-}
-
-func exitLabel(kind string) string {
-	if kind == model.ExitOpera {
-		return "Opera"
-	}
-	return "WARP"
-}
-
-func laneShort(lane string) string {
-	if lane == model.LaneReality {
-		return "REALITY"
-	}
-	return "TCP-TLS"
 }
 
 // relayEntry is e reached through lane on this server, when the lane runs here and is
