@@ -44,6 +44,17 @@ func Decode(body []byte) []string {
 			}
 		}
 	}
+	// WireGuard .conf files pasted as they are: each becomes a wireguard:// link, beside
+	// whatever share links the text also holds.
+	if IsWireGuardConf(s) {
+		out := WireGuardConfLinks(s)
+		for _, l := range Lines(s) {
+			if scheme, _, ok := strings.Cut(l, "://"); ok && knownScheme(strings.ToLower(scheme)) {
+				out = append(out, l)
+			}
+		}
+		return out
+	}
 	return Lines(s)
 }
 
@@ -74,7 +85,7 @@ func hasShareLink(lines []string) bool {
 
 func knownScheme(s string) bool {
 	switch s {
-	case "vless", "vmess", "trojan", "ss", "hysteria2", "hysteria", "hy2":
+	case "vless", "vmess", "trojan", "ss", "hysteria2", "hysteria", "hy2", "wireguard", "wg":
 		return true
 	}
 	return false

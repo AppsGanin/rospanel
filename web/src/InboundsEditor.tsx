@@ -1039,27 +1039,6 @@ function InboundForm({
             />
           </div>
           <p className="text-xs text-ink-muted">{t("inb.cdnHint")}</p>
-          {v.protocol === "vless" && (
-            <div>
-              <Button
-                size="xs"
-                variant="light"
-                onClick={() =>
-                  onChange({
-                    ...v,
-                    transport: "xhttp",
-                    security: "none",
-                    mode: "packet-up",
-                    enc_mode: v.enc_mode || "native",
-                    sni: "",
-                    host: "",
-                  })
-                }
-              >
-                {t("inb.cdnPreset")}
-              </Button>
-            </div>
-          )}
         </div>
       )}
 

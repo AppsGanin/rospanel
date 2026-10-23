@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -14,7 +15,7 @@ import (
 
 // extServerSelect reads a server with the relay its subscription sets (model.ExtServer).
 const extServerSelect = `SELECT es.id, es.sub_id, es.key, es.name, es.protocol, es.host, es.port, es.link,
-	es.enabled, es.seen_at, sub.relay_lane, sub.relay_server_id
+	es.enabled, es.seen_at, sub.routing, es.custom_name
 	FROM ext_servers es JOIN ext_subscriptions sub ON sub.id = es.sub_id`
 
 // CreateExtSubscription stores a source and returns its id. Empty identity fields mean
@@ -32,9 +33,13 @@ func (s *Store) CreateExtSubscription(name, source string, id model.ExtIdentity)
 // ExtSubscriptions lists every subscription, oldest first — the order the
 // operator added them, which is the order they read the list in.
 func (s *Store) ExtSubscriptions() ([]model.ExtSubscription, error) {
+	relays, err := s.extRelays()
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.Query(`SELECT id, name, source, hwid, device_os, os_version, device_model, user_agent,
 		       enabled, last_fetch_at, last_ok_at, last_error, server_count, created_at,
-		       relay_lane, relay_server_id
+		       routing
 		FROM ext_subscriptions ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -48,14 +53,46 @@ func (s *Store) ExtSubscriptions() ([]model.ExtSubscription, error) {
 		}
 		out = append(out, x)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Relays = relaysOrEmpty(relays[out[i].ID])
+	}
+	return out, nil
+}
+
+// extRelays reads every subscription's relays: sub id → (server, lane), in order.
+func (s *Store) extRelays() (map[int64][]model.ExtRelayVia, error) {
+	rows, err := s.rdb.Query(`SELECT sub_id, server_id, lane FROM ext_relays ORDER BY sub_id, server_id, lane`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64][]model.ExtRelayVia{}
+	for rows.Next() {
+		var sub int64
+		var v model.ExtRelayVia
+		if err := rows.Scan(&sub, &v.ServerID, &v.Lane); err != nil {
+			return nil, err
+		}
+		out[sub] = append(out[sub], v)
+	}
 	return out, rows.Err()
+}
+
+func relaysOrEmpty(v []model.ExtRelayVia) []model.ExtRelayVia {
+	if v == nil {
+		return []model.ExtRelayVia{}
+	}
+	return v
 }
 
 // ExtSubscription reads one subscription; nil when there is none with that id.
 func (s *Store) ExtSubscription(id int64) (*model.ExtSubscription, error) {
 	row := s.db.QueryRow(`SELECT id, name, source, hwid, device_os, os_version, device_model, user_agent,
 		       enabled, last_fetch_at, last_ok_at, last_error, server_count, created_at,
-		       relay_lane, relay_server_id
+		       routing
 		FROM ext_subscriptions WHERE id = ?`, id)
 	x, err := scanExtSubscription(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -64,19 +101,26 @@ func (s *Store) ExtSubscription(id int64) (*model.ExtSubscription, error) {
 	if err != nil {
 		return nil, err
 	}
+	relays, err := s.extRelays()
+	if err != nil {
+		return nil, err
+	}
+	x.Relays = relaysOrEmpty(relays[x.ID])
 	return &x, nil
 }
 
 func scanExtSubscription(r rowScanner) (model.ExtSubscription, error) {
 	var x model.ExtSubscription
 	var enabled int
+	var routing string
 	if err := r.Scan(&x.ID, &x.Name, &x.Source,
 		&x.Identity.HWID, &x.Identity.DeviceOS, &x.Identity.OSVersion,
 		&x.Identity.DeviceModel, &x.Identity.UserAgent,
 		&enabled, &x.LastFetchAt, &x.LastOKAt, &x.LastError, &x.ServerCount, &x.CreatedAt,
-		&x.RelayLane, &x.RelayServerID); err != nil {
+		&routing); err != nil {
 		return x, err
 	}
+	x.Routing = extRoutingOf(routing)
 	x.Enabled = enabled != 0
 	x.Source = decField(x.Source)
 	return x, nil
@@ -95,11 +139,48 @@ func (s *Store) SetExtSubscriptionSource(id int64, name, source string, ident mo
 	return err
 }
 
-// SetExtSubscriptionRelay sets the lane and server a subscription is relayed through;
-// an empty lane hands its servers out as they are.
-func (s *Store) SetExtSubscriptionRelay(id int64, lane string, serverID int64) error {
-	_, err := s.db.Exec(`UPDATE ext_subscriptions SET relay_lane = ?, relay_server_id = ? WHERE id = ?`, lane, serverID, id)
+// SetExtSubscriptionRelays replaces the lanes of our servers a subscription is relayed
+// through; none hands its servers out as they are.
+func (s *Store) SetExtSubscriptionRelays(id int64, relays []model.ExtRelayVia) error {
+	return s.withTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM ext_relays WHERE sub_id = ?`, id); err != nil {
+			return err
+		}
+		for _, v := range relays {
+			if _, err := tx.Exec(`INSERT OR IGNORE INTO ext_relays (sub_id, server_id, lane) VALUES (?, ?, ?)`,
+				id, v.ServerID, v.Lane); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// SetExtSubscriptionRouting stores how a relayed subscription's traffic leaves the
+// relay server; the default one is stored as empty.
+func (s *Store) SetExtSubscriptionRouting(id int64, r model.ExtRouting) error {
+	raw := ""
+	if !r.IsZero() {
+		b, err := json.Marshal(r)
+		if err != nil {
+			return err
+		}
+		raw = string(b)
+	}
+	_, err := s.db.Exec(`UPDATE ext_subscriptions SET routing = ? WHERE id = ?`, raw, id)
 	return err
+}
+
+// extRoutingOf reads a stored routing; empty or unreadable is the default one.
+func extRoutingOf(raw string) model.ExtRouting {
+	var r model.ExtRouting
+	if raw != "" {
+		_ = json.Unmarshal([]byte(raw), &r)
+	}
+	if r.Rules == nil {
+		r.Rules = []model.ExtRule{}
+	}
+	return r
 }
 
 // SetExtSubscriptionEnabled switches a whole source on or off; its servers keep
@@ -132,6 +213,9 @@ func (s *Store) DeleteExtSubscription(id int64) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.Exec(`DELETE FROM group_grants WHERE token IN (SELECT 'ext:' || id FROM ext_servers WHERE sub_id = ?)`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM ext_relays WHERE sub_id = ?`, id); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM ext_servers WHERE sub_id = ?`, id); err != nil {
@@ -220,6 +304,17 @@ func (s *Store) EnabledExtServers() ([]model.ExtServer, error) {
 	return s.queryExtServers(extServerSelect + ` WHERE es.enabled = 1 AND sub.enabled = 1 ORDER BY es.sub_id, es.id`)
 }
 
+// SetExtServerName sets the operator's name for a server ("" puts the source's back)
+// and reports whether there was such a server.
+func (s *Store) SetExtServerName(id int64, name string) (bool, error) {
+	res, err := s.db.Exec(`UPDATE ext_servers SET custom_name = ? WHERE id = ?`, name, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
 // SetExtServerEnabled switches one server on or off.
 func (s *Store) SetExtServerEnabled(id int64, enabled bool) (bool, error) {
 	res, err := s.db.Exec(`UPDATE ext_servers SET enabled = ? WHERE id = ?`, boolToInt(enabled), id)
@@ -237,6 +332,12 @@ func (s *Store) SetExtSubscriptionServersEnabled(subID int64, enabled bool) erro
 }
 
 func (s *Store) queryExtServers(query string, args ...any) ([]model.ExtServer, error) {
+	// The relays first: a second query while rows hold a connection of the bounded
+	// read pool waits for one, and enough readers doing it at once wait forever.
+	relays, err := s.extRelays()
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.rdb.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -246,11 +347,18 @@ func (s *Store) queryExtServers(query string, args ...any) ([]model.ExtServer, e
 	for rows.Next() {
 		var e model.ExtServer
 		var enabled int
+		var routing string
 		if err := rows.Scan(&e.ID, &e.SubID, &e.Key, &e.Name, &e.Protocol, &e.Host, &e.Port, &e.Link, &enabled, &e.SeenAt,
-			&e.RelayLane, &e.RelayServerID); err != nil {
+			&routing, &e.CustomName); err != nil {
 			return nil, fmt.Errorf("ext_servers: %w", err)
 		}
+		e.SourceName = e.Name
+		if e.CustomName != "" {
+			e.Name = e.CustomName
+		}
 		e.Enabled = enabled != 0
+		e.Routing = extRoutingOf(routing)
+		e.Relays = relays[e.SubID]
 		e.Link = decField(e.Link)
 		out = append(out, e)
 	}

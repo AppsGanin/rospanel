@@ -91,6 +91,8 @@ type NodeView struct {
 	WarpRegistered bool   `json:"warp_registered"`
 	OperaEnabled   bool   `json:"opera_enabled"`
 	OperaCountry   string `json:"opera_country"`
+	// ExitConfigs: the server's WARP and Opera handed to users as connections.
+	ExitConfigs []model.ExitConfig `json:"exit_configs"`
 	// TrafficCoefficient scales quota consumption on this server (1.0 = neutral). The
 	// master's row (node 0) always reports 1.0 — it has no coefficient of its own.
 	TrafficCoefficient float64 `json:"traffic_coefficient"`
@@ -162,6 +164,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		WarpRegistered: set.WarpRegistered(),
 		OperaEnabled:   set.OperaEnabled,
 		OperaCountry:   set.OperaCountryOr(),
+		ExitConfigs:    exitsOrEmpty(set.ExitConfigs),
 		// The master counts traffic at face value — no coefficient of its own.
 		TrafficCoefficient: 1.0,
 		// The master's own REALITY identity.
@@ -223,6 +226,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			WarpRegistered:     n.WarpRegistered(),
 			OperaEnabled:       n.OperaEnabled,
 			OperaCountry:       n.OperaCountry,
+			ExitConfigs:        exitsOrEmpty(n.ExitConfigs),
 			Bridges:            bridgeOptions(nodeSettings(set, n)),
 			TrafficCoefficient: model.NodeCoefficientOr(n.TrafficCoefficient),
 			Placement:          n.Placement,
@@ -338,4 +342,11 @@ func (m *Manager) NodeLinkSettings() ([]*model.Settings, error) {
 		out = append(out, ns)
 	}
 	return out, nil
+}
+
+func exitsOrEmpty(v []model.ExitConfig) []model.ExitConfig {
+	if v == nil {
+		return []model.ExitConfig{}
+	}
+	return v
 }

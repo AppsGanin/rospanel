@@ -77,7 +77,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	var masterHideFull, masterHideOver, awgEn, naiveEn, mieruEn, anytlsEn, hideOffline, subHappCrypt, subTGBind, subTGRebind, subShowClash, tgMailingSwitch, subPageEnabled int
 	var awgParamsJSON, connPolicyJSON string
 	var walletEn, refFirstOnly, winbackEn, churnSurvey, autoUpdateNodes, blacklistEn, planChange int
-	var trafficPacksJSON string
+	var trafficPacksJSON, exitConfigs string
 	var billingPeriodsJSON string
 	err := s.rdb.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -137,7 +137,8 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       anytls_enabled, anytls_name,
 		       reach_countries, reach_probes, reach_every, reach_threshold, reach_token,
 		       mtproto_enabled, mtproto_port, mtproto_name, mtproto_domain,
-		       sub_self_rotate, monthly_report_sent, sub_tg_rebind_hours, sub_page_enabled
+		       sub_self_rotate, monthly_report_sent, sub_tg_rebind_hours, sub_page_enabled,
+		       exit_configs
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -201,6 +202,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&reachCountries, &st.Reach.Probes, &st.Reach.Every, &st.Reach.Threshold, &st.Reach.Token,
 		&mtprotoEn, &st.MTProtoPort, &st.MTProtoName, &st.MTProtoDomain,
 		&st.SubSelfRotateHours, &st.MonthlyReportSent, &st.SubTGRebindHours, &subPageEnabled,
+		&exitConfigs,
 	)
 	if err != nil {
 		return nil, err
@@ -208,6 +210,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	if subRulesJSON != "" {
 		_ = json.Unmarshal([]byte(subRulesJSON), &st.SubRules)
 	}
+	st.ExitConfigs = model.ExitConfigsOf(exitConfigs)
 	// A blank column (pre-0059, or never saved) reads as the defaults with every
 	// switch off; a corrupt one too — the subscription must keep serving.
 	st.MasterPlacement.HideWhenFull = masterHideFull != 0
@@ -966,5 +969,11 @@ func (s *Store) SetTelegramMenuURL(url string) error {
 // EnsureMiniAppPath gives the install its random Mini App segment if it has none.
 func (s *Store) EnsureMiniAppPath(gen func() string) error {
 	_, err := s.db.Exec(`UPDATE settings SET miniapp_path = ? WHERE id = 1 AND miniapp_path = ''`, gen())
+	return err
+}
+
+// SetExitConfigs stores the master's WARP and Opera as connections (model.ExitConfig).
+func (s *Store) SetExitConfigs(list []model.ExitConfig) error {
+	_, err := s.db.Exec(`UPDATE settings SET exit_configs = ?, updated_at = unixepoch() WHERE id = 1`, model.ExitConfigsJSON(list))
 	return err
 }

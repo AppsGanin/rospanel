@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/AppsGanin/rospanel/internal/extsub"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -199,7 +200,7 @@ func (m *Manager) SyncExtSubscription(ctx context.Context, id int64) (ExtSyncRep
 	if added > 0 || removed > 0 {
 		logInfo("extsub: servers reconciled", "id", id, "name", sub.Name, "added", added, "updated", updated, "removed", removed)
 	}
-	m.extRelayChanged(sub.RelayLane != "")
+	m.extRelayChanged(len(sub.Relays) > 0)
 	return ExtSyncReport{Added: added, Updated: updated, Removed: removed, Total: len(found)}, nil
 }
 
@@ -248,7 +249,7 @@ func (m *Manager) DeleteExtSubscription(id int64) error {
 		return err
 	}
 	logInfo("extsub: subscription removed", "id", id, "name", sub.Name)
-	m.extRelayChanged(sub.RelayLane != "")
+	m.extRelayChanged(len(sub.Relays) > 0)
 	return nil
 }
 
@@ -264,7 +265,7 @@ func (m *Manager) SetExtSubscriptionEnabled(id int64, enabled bool) error {
 	if err := m.store.SetExtSubscriptionEnabled(id, enabled); err != nil {
 		return err
 	}
-	m.extRelayChanged(sub.RelayLane != "")
+	m.extRelayChanged(len(sub.Relays) > 0)
 	return nil
 }
 
@@ -281,6 +282,24 @@ func (m *Manager) SetExtServerEnabled(id int64, enabled bool) error {
 	return nil
 }
 
+// SetExtServerName sets the name users see for an external server; "" puts the one
+// its source gives back. It changes nothing Xray runs: the name is in the
+// subscription a user fetches, so the next refresh shows it.
+func (m *Manager) SetExtServerName(id int64, name string) error {
+	name = strings.TrimSpace(name)
+	if utf8.RuneCountInString(name) > model.ExtServerNameMax || strings.ContainsAny(name, "\r\n\t") {
+		return invalidCode("err.extServerName", "название — одна строка, не длиннее {{max}} символов", map[string]any{"max": model.ExtServerNameMax})
+	}
+	ok, err := m.store.SetExtServerName(id, name)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return invalidCode("err.extServerNotFound", "сервер не найден")
+	}
+	return nil
+}
+
 // SetExtSubscriptionServersEnabled switches every server of a source at once.
 func (m *Manager) SetExtSubscriptionServersEnabled(id int64, enabled bool) error {
 	sub, err := m.store.ExtSubscription(id)
@@ -293,6 +312,6 @@ func (m *Manager) SetExtSubscriptionServersEnabled(id int64, enabled bool) error
 	if err := m.store.SetExtSubscriptionServersEnabled(id, enabled); err != nil {
 		return err
 	}
-	m.extRelayChanged(sub.RelayLane != "")
+	m.extRelayChanged(len(sub.Relays) > 0)
 	return nil
 }

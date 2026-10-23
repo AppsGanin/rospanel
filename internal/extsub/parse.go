@@ -15,7 +15,7 @@ import (
 // Endpoint is one server from a subscription: the link as it will be handed on,
 // and what the panel needs to know about it without parsing the link again.
 type Endpoint struct {
-	Protocol string // vless | vmess | trojan | ss | hysteria2
+	Protocol string // vless | vmess | trojan | ss | hysteria2 | wireguard
 	Host     string
 	Port     int
 	Name     string // the link's label (#fragment / vmess "ps"), or a made-up one
@@ -61,6 +61,8 @@ func Parse(raw string) (Endpoint, bool) {
 		return parseShadowsocks(raw)
 	case "vless", "trojan", "hysteria2", "hysteria", "hy2":
 		return parseURLLink(raw)
+	case "wireguard", "wg":
+		return parseWireGuard(raw)
 	}
 	return Endpoint{}, false
 }
@@ -223,4 +225,36 @@ func anyInt(v any) int {
 		return n
 	}
 	return 0
+}
+
+// WithName is a link labelled name: its #fragment, or a vmess link's "ps". A link
+// that cannot be read keeps its own label.
+func WithName(raw, name string) string {
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(strings.ToLower(raw), "vmess://") {
+		body := strings.TrimPrefix(raw, raw[:len("vmess://")])
+		if i := strings.IndexByte(body, '#'); i >= 0 {
+			body = body[:i]
+		}
+		data, err := happBase64(body)
+		if err != nil {
+			return raw
+		}
+		var cfg map[string]any
+		if json.Unmarshal(data, &cfg) != nil {
+			return raw
+		}
+		cfg["ps"] = name
+		out, err := json.Marshal(cfg)
+		if err != nil {
+			return raw
+		}
+		return "vmess://" + base64.StdEncoding.EncodeToString(out)
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" {
+		return raw
+	}
+	u.Fragment = name
+	return u.String()
 }

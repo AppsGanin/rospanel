@@ -85,6 +85,7 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns.WarpReserved = n.WarpReserved
 	ns.OperaEnabled = n.OperaEnabled
 	ns.OperaCountry = n.OperaCountry
+	ns.ExitConfigs = n.ExitConfigs
 
 	// System proxies are the node's OWN, never the master's: inheriting would open a
 	// listener on every node the moment the master enabled one, and would write the

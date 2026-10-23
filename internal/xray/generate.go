@@ -297,7 +297,15 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	}
 	order := normalizeOrder(rc.RoutingOrder, rc.LaneIDs())
 	catchAll := order[len(order)-1]
-	operaActive := set.OperaEnabled && (len(rc.OperaDomains) > 0 || len(rc.OperaIPs) > 0 || catchAll == "opera")
+	// What a relayed subscription's routing sends traffic to is built like anything
+	// the server's own routing names.
+	relayAims := relayTargets(opts.Relays)
+	for _, c := range set.ExitConfigs {
+		if len(c.Lanes) > 0 {
+			relayAims[c.Kind] = true
+		}
+	}
+	operaActive := set.OperaEnabled && (len(rc.OperaDomains) > 0 || len(rc.OperaIPs) > 0 || catchAll == "opera" || relayAims["opera"])
 
 	// Egress lanes: one outbound per upstream proxy (tag "proxy-<lane>-<n>"), one
 	// balancer per lane load-balancing across that lane's live proxies. A lane is
@@ -314,7 +322,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		if !lane.Enabled {
 			continue
 		}
-		routed := len(lane.Domains) > 0 || len(lane.IPs) > 0 || catchAll == lane.ID
+		routed := len(lane.Domains) > 0 || len(lane.IPs) > 0 || catchAll == lane.ID || relayAims[lane.ID]
 		if !routed {
 			continue
 		}
@@ -348,7 +356,11 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		// outbound it replaced, because now two thirds of the picks can be dead.
 		subjects = append(subjects, warpTagPrefix)
 	}
-	relayOuts, relayRules := relayRouting(opts, vlessClients, realityClients)
+	relayOuts, relayPlans := relayRouting(opts, vlessClients, realityClients, func(dial, protocol string) string {
+		return relayDialer(dial, protocol, warpActive, operaActive, active)
+	})
+	relayPlans = append(relayPlans, exitPlans(opts, set.ExitConfigs, vlessClients, realityClients,
+		map[string]bool{model.ExitWARP: warpActive, model.ExitOpera: operaActive})...)
 	outbounds = append(outbounds, relayOuts...)
 
 	var observatory *Observatory
@@ -407,10 +419,11 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 				StatsOutboundUplink: true, StatsOutboundDownlink: true,
 			},
 		},
-		DNS:         dns,
-		Inbounds:    inbounds,
-		Outbounds:   outbounds,
-		Routing:     compileRouting(expandGroups(rc, opts.Groups), order, warpActive, operaActive, active, unusable, relayRules, opts.Bridges),
+		DNS:       dns,
+		Inbounds:  inbounds,
+		Outbounds: outbounds,
+		Routing: compileRouting(expandGroups(rc, opts.Groups), order, warpActive, operaActive, active, unusable,
+			relayPlans, groupExpander(opts.Groups), opts.Bridges),
 		Observatory: observatory,
 	}, nil
 }
@@ -1383,7 +1396,7 @@ var privateEgressDomains = []string{
 	"full:instance-data.ec2.internal",
 }
 
-func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaActive bool, active, unusable map[string]bool, relay []RouteRule, bridges []Bridge) *Routing {
+func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaActive bool, active, unusable map[string]bool, relay []relayPlan, expand func([]string, bool) []string, bridges []Bridge) *Routing {
 	out := &Routing{DomainStrategy: "IPIfNonMatch"}
 	strict := rc.StrictEgress
 	byID := make(map[string]model.EgressLane, len(rc.Lanes))
@@ -1465,9 +1478,36 @@ func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaAct
 	addDomainRule(out, "block", rc.BlockDomains)
 	addIPRule(out, "block", rc.BlockIPs)
 
-	// A relayed external server takes its connections whole, ahead of every egress
-	// lane: the user picked that server (see relay.go).
-	out.Rules = append(out.Rules, relay...)
+	// A relayed external server takes its connections, ahead of every egress lane: the
+	// user picked that server (see relay.go). Its own routing may send part of them to a
+	// way out of this server's, which is judged here like the server's own lanes.
+	out.Rules = append(out.Rules, relayRules(relay, func(target, partner string) (string, string) {
+		switch target {
+		case model.ExtToPartner:
+			return partner, ""
+		case "direct", "block":
+			return target, ""
+		case "warp":
+			switch {
+			case warpActive:
+				return "", warpBalancerTag
+			case strict && unusable["warp"]:
+				return "block", ""
+			}
+		case "opera":
+			if operaActive {
+				return "", operaBalancerTag
+			}
+		default:
+			switch {
+			case active[target]:
+				return "", laneBalancerTag(target)
+			case strictLane(target) && unusable[target]:
+				return "block", ""
+			}
+		}
+		return "direct", ""
+	}, expand)...)
 
 	// Egress lanes in the configured precedence (first-match-wins).
 	emitLane := func(lane string) {
@@ -1549,6 +1589,16 @@ func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaAct
 		}
 	}
 	return out
+}
+
+// groupExpander replaces the iplist refs in a relay rule's entries: domains or IPs.
+func groupExpander(groups geo.GroupSet) func([]string, bool) []string {
+	return func(entries []string, domains bool) []string {
+		if domains {
+			return expandRefs(entries, groups, func(g geo.GroupRules) []string { return g.Domains })
+		}
+		return expandRefs(entries, groups, func(g geo.GroupRules) []string { return g.IPs })
+	}
 }
 
 // addBalancerRule appends domain + IP rules routing matched traffic to a

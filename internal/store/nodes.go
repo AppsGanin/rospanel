@@ -52,7 +52,7 @@ const nodeColumns = `id, name, host, enabled,
 	traffic_limit, traffic_period, hide_when_over, traffic_reset_day,
 	awg_enabled, awg_private_key, awg_public_key, awg_params, naive_enabled, serves_naive,
 	mieru_enabled, serves_mieru, anytls_enabled, serves_anytls, seen_ip,
-	mtproto_enabled, serves_mtproto, mtproto_domain`
+	mtproto_enabled, serves_mtproto, mtproto_domain, exit_configs`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
 func generateNodeToken() (string, error) {
@@ -67,6 +67,7 @@ func generateNodeToken() (string, error) {
 // and mapping the nullable protocol overrides to *bool.
 func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	var n model.Node
+	var exitConfigs string
 	var enabled, xrayRunning, certSelfSigned, warpEn, operaEn, servesNaive, servesMieru, servesAnyTLS, servesMTProto int
 	var proxySocksEn, proxyHTTPEn, hideFull, hideOver int
 	var proxyAccounts string
@@ -93,11 +94,12 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&n.TrafficLimit, &n.TrafficPeriod, &hideOver, &n.TrafficResetDay,
 		&awgEn, &n.AWGPrivateKey, &n.AWGPublicKey, &awgParamsJSON, &naiveEn, &servesNaive,
 		&mieruEn, &servesMieru, &anytlsEn, &servesAnyTLS, &n.SeenIP,
-		&mtprotoEn, &servesMTProto, &n.MTProtoDomain,
+		&mtprotoEn, &servesMTProto, &n.MTProtoDomain, &exitConfigs,
 	); err != nil {
 		return nil, err
 	}
 	n.Enabled = enabled != 0
+	n.ExitConfigs = model.ExitConfigsOf(exitConfigs)
 	n.HideWhenFull = hideFull != 0
 	n.HideWhenOver = hideOver != 0
 	n.XrayRunning = xrayRunning != 0
@@ -661,10 +663,19 @@ func (s *Store) ApplyNodeReport(nodeID, reportID int64, deltas []TrafficDelta, l
 // config with live user credentials (it would read the resulting decoy response as
 // "panel unreachable" and keep serving). PurgeDeletedNodes reclaims the row later.
 // Traffic history in traffic_daily is kept (rows carry the numeric node_id).
+//
+// The external subscriptions relayed through it lose that relay with it: a relay
+// through a server that is gone reaches nobody, and would keep its subscription's
+// delivery from being saved again.
 func (s *Store) DeleteNode(id int64) error {
-	_, err := s.db.Exec(
-		`UPDATE nodes SET deleted_at = unixepoch(), enabled = 0 WHERE id = ? AND deleted_at = 0`, id)
-	return err
+	return s.withTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(
+			`UPDATE nodes SET deleted_at = unixepoch(), enabled = 0 WHERE id = ? AND deleted_at = 0`, id); err != nil {
+			return err
+		}
+		_, err := tx.Exec(`DELETE FROM ext_relays WHERE server_id = ?`, id)
+		return err
+	})
 }
 
 // PurgeDeletedNodes hard-deletes tombstoned nodes whose deletion is older than the
@@ -736,5 +747,11 @@ func (s *Store) SetNodeAnyTLSEnabled(id int64, enabled bool) error {
 // SetNodeSeenIP records the address a node reached the panel from, when it changed.
 func (s *Store) SetNodeSeenIP(id int64, ip string) error {
 	_, err := s.db.Exec(`UPDATE nodes SET seen_ip = ? WHERE id = ? AND seen_ip != ?`, ip, id, ip)
+	return err
+}
+
+// SetNodeExitConfigs stores a node's WARP and Opera as connections.
+func (s *Store) SetNodeExitConfigs(id int64, list []model.ExitConfig) error {
+	_, err := s.db.Exec(`UPDATE nodes SET exit_configs = ? WHERE id = ?`, model.ExitConfigsJSON(list), id)
 	return err
 }

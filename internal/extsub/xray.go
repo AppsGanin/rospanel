@@ -32,6 +32,8 @@ func XrayOutbound(raw, tag string) (map[string]any, bool) {
 	cred := l.User.Username()
 	out := map[string]any{"tag": tag}
 	switch strings.ToLower(l.Scheme) {
+	case "wireguard", "wg":
+		return wireguardOutbound(l, tag, host, port)
 	case "vless":
 		enc := q.Get("encryption")
 		if enc == "" {

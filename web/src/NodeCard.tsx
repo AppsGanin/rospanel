@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ExitConfigsDialog } from "./ExitConfigsDialog";
 import { useTranslation } from "react-i18next";
 import type { CascadeServer } from "./RoutingEditor";
 import i18n from "./i18n";
@@ -25,6 +26,7 @@ import {
   DropdownDivider,
   DropdownItem,
   IconBraces,
+  IconExport,
   IconButton,
   IconDots,
   IconGear,
@@ -105,6 +107,7 @@ export function NodeCard({
   const canManage = useCan("servers.manage");
   const canUpdate = useCan("system.update");
   const canLogs = useCan("logs.view");
+  const canRouting = useCan("routing.manage");
   const { confirm, confirmNode } = useConfirm();
   const [reconnecting, setReconnecting] = useState(false);
   const [editingRouting, setEditingRouting] = useState(false);
@@ -112,6 +115,7 @@ export function NodeCard({
   const [showingConfig, setShowingConfig] = useState(false);
   const [showingHealth, setShowingHealth] = useState(false);
   const [showingReach, setShowingReach] = useState(false);
+  const [showingExits, setShowingExits] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removeCreds, setRemoveCreds] = useState<StepUp>(EMPTY_STEP_UP);
@@ -274,6 +278,11 @@ export function NodeCard({
           {canServers && reachOn && (
             <IconButton title={t("reach.cardAction")} onClick={() => setShowingReach(true)}>
               <IconGlobe size={16} />
+            </IconButton>
+          )}
+          {canRouting && (
+            <IconButton title={t("exits.title")} onClick={() => setShowingExits(true)}>
+              <IconExport size={16} />
             </IconButton>
           )}
           {/* The generated config carries the server's private keys: servers.manage. */}
@@ -472,6 +481,16 @@ export function NodeCard({
       >
         <HealthPanel nodeId={node.id} />
       </Modal>
+      {showingExits && (
+        <ExitConfigsDialog
+          node={node}
+          onClose={() => setShowingExits(false)}
+          onSaved={() => {
+            setShowingExits(false);
+            onChanged();
+          }}
+        />
+      )}
       {showingReach && (
         <ReachDialog node={node} onClose={() => setShowingReach(false)} onChecked={onChanged} />
       )}

@@ -119,22 +119,49 @@ func (rt *Router) setExternalEnabled(w http.ResponseWriter, r *http.Request, id 
 	writeOK(w)
 }
 
-// setExternalRelay relays a subscription through a lane of one of our servers, or —
-// with an empty lane — hands its servers out as they are.
+// setExternalRelay sets the lanes of our servers a subscription is relayed through
+// ({relays: [{server_id, lane}]}); none hands its servers out as they are. The older
+// single {lane, server_id} is still taken.
 func (rt *Router) setExternalRelay(w http.ResponseWriter, r *http.Request, id int64) {
 	var req struct {
-		Lane     string `json:"lane"`
-		ServerID int64  `json:"server_id"`
+		Relays   *[]model.ExtRelayVia `json:"relays"`
+		Routing  *model.ExtRouting    `json:"routing"` // saved with the relays when given
+		Lane     string               `json:"lane"`
+		ServerID int64                `json:"server_id"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.mgr.SetExtSubscriptionRelay(id, req.Lane, req.ServerID); err != nil {
+	relays := []model.ExtRelayVia{}
+	switch {
+	case req.Relays != nil:
+		relays = *req.Relays
+	case req.Lane != "":
+		relays = []model.ExtRelayVia{{ServerID: req.ServerID, Lane: req.Lane}}
+	}
+	sub, err := rt.mgr.SetExtSubscriptionRelays(id, relays, req.Routing)
+	if err != nil {
 		writeManagerErr(w, err)
 		return
 	}
-	auditDetails(r, map[string]any{"id": id, "relay_lane": req.Lane, "relay_server_id": req.ServerID})
-	writeOK(w)
+	auditDetails(r, map[string]any{"id": id, "relays": sub.Relays})
+	writeJSON(w, http.StatusOK, map[string]any{"subscription": sub})
+}
+
+// setExternalRouting sets how a relayed subscription's traffic leaves the relay server
+// and answers the subscription as stored.
+func (rt *Router) setExternalRouting(w http.ResponseWriter, r *http.Request, id int64) {
+	var req model.ExtRouting
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	sub, err := rt.mgr.SetExtSubscriptionRouting(id, req)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	auditDetails(r, map[string]any{"id": id, "rules": len(sub.Routing.Rules), "rest": sub.Routing.RestTarget(), "dial": sub.Routing.Dial})
+	writeJSON(w, http.StatusOK, map[string]any{"subscription": sub})
 }
 
 func (rt *Router) setExternalServersEnabled(w http.ResponseWriter, r *http.Request, id int64) {
@@ -147,6 +174,23 @@ func (rt *Router) setExternalServersEnabled(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	auditDetails(r, map[string]any{"id": id, "enabled": enabled, "all": true})
+	writeOK(w)
+}
+
+// setExternalServerName sets the name users see for an external server ({name}; empty
+// puts the source's back).
+func (rt *Router) setExternalServerName(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetExtServerName(id, req.Name); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	auditDetails(r, map[string]any{"server": id, "name": req.Name})
 	writeOK(w)
 }
 

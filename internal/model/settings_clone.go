@@ -24,6 +24,10 @@ func (s *Settings) Clone() *Settings {
 	c.TrafficPacks = slices.Clone(s.TrafficPacks)
 	c.ConnPolicy.Countries = slices.Clone(s.ConnPolicy.Countries)
 	c.Reach.Countries = slices.Clone(s.Reach.Countries)
+	c.ExitConfigs = slices.Clone(s.ExitConfigs)
+	for i := range c.ExitConfigs {
+		c.ExitConfigs[i].Lanes = slices.Clone(c.ExitConfigs[i].Lanes)
+	}
 	c.Routing = s.Routing.clone()
 	return &c
 }

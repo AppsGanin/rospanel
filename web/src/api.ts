@@ -2799,6 +2799,8 @@ export interface NodeView {
   warp_registered: boolean
   opera_enabled: boolean
   opera_country: string
+  // The server's WARP and Opera handed to users as connections of their own.
+  exit_configs: ExitConfig[]
   traffic_coefficient: number
   // Placement in subscriptions (see PlacementFields) and the live online count.
   country: string
@@ -3471,10 +3473,30 @@ export interface ExtSubscription {
   last_error?: string
   server_count: number
   created_at: number
-  // The lane ("vless" | "reality") and server the servers are relayed through; an
-  // empty lane hands them out as they are.
-  relay_lane: string
-  relay_server_id: number
+  // The lanes of our servers the servers are relayed through: each one more entry per
+  // server a user gets. None hands them out as they are.
+  relays: ExtRelayVia[]
+  // How relayed traffic leaves the relay servers.
+  routing: ExtRouting
+}
+
+export interface ExtRelayVia {
+  server_id: number
+  lane: 'vless' | 'reality'
+}
+
+// ExtRouting: rules send what they match to a target ("partner" | "direct" | "block" |
+// "warp" | "opera" | a lane id), the rest goes to rest ("" = the partner), and the
+// partner is dialled through dial ("" directly, "warp", "opera" — TCP only — or a lane).
+export interface ExtRule {
+  domains: string[]
+  ips: string[]
+  target: string
+}
+export interface ExtRouting {
+  rules: ExtRule[]
+  rest?: string
+  dial?: string
 }
 
 // ExtIdentity is what the panel presents to a subscription that requires a device.
@@ -3498,7 +3520,10 @@ export const EMPTY_EXT_IDENTITY: ExtIdentity = {
 export interface ExtServer {
   id: number
   sub_id: number
+  // name is what users see: custom_name when the operator set one, else source_name.
   name: string
+  source_name: string
+  custom_name: string
   protocol: string
   host: string
   port: number
@@ -3544,16 +3569,30 @@ export const setExternalEnabled = (id: number, enabled: boolean) =>
 
 // Relays a subscription through a lane of one of our servers, or ("" lane) hands its
 // servers out as they are.
-export const setExternalRelay = (id: number, lane: string, serverId: number) =>
-  api<{ ok: boolean }>(`api/external/${id}/relay`, {
+// setExternalRelay saves the relays, and the routing with them when given: one call,
+// checked as a whole, so a refused routing leaves the relays as they were.
+export const setExternalRelay = (id: number, relays: ExtRelayVia[], routing?: ExtRouting) =>
+  api<{ subscription: ExtSubscription }>(`api/external/${id}/relay`, {
     method: 'POST',
-    body: JSON.stringify({ lane, server_id: serverId }),
+    body: JSON.stringify({ relays, routing }),
+  })
+
+export const setExternalRouting = (id: number, routing: ExtRouting) =>
+  api<{ subscription: ExtSubscription }>(`api/external/${id}/routing`, {
+    method: 'POST',
+    body: JSON.stringify(routing),
   })
 
 export const setExternalServersEnabled = (id: number, enabled: boolean) =>
   api<{ ok: boolean }>(`api/external/${id}/servers`, {
     method: 'POST',
     body: JSON.stringify({ enabled }),
+  })
+
+export const setExternalServerName = (id: number, name: string) =>
+  api<{ ok: boolean }>(`api/external/servers/${id}/name`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
   })
 
 export const setExternalServerEnabled = (id: number, enabled: boolean) =>
@@ -3964,3 +4003,17 @@ export const getUserPluginFields = (userId: number) =>
   api<{ plugins: PluginFieldsBlock[] }>(
     `api/users/${userId}/plugin-fields?lang=${currentLang()}`,
   )
+
+// ExitConfig: one of a server's ways out (WARP, Opera) handed to users as a
+// connection on the lanes picked, under name ("" = the default "WARP"/"Opera").
+export interface ExitConfig {
+  kind: 'warp' | 'opera'
+  lanes: ('vless' | 'reality')[]
+  name?: string
+}
+
+export const setExitConfigs = (serverId: number, exits: ExitConfig[]) =>
+  api<{ exits: ExitConfig[] }>(`api/nodes/${serverId}/exits`, {
+    method: 'POST',
+    body: JSON.stringify({ exits }),
+  })

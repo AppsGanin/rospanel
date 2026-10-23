@@ -512,7 +512,9 @@ themselves keep running, so existing connections are untouched and the operator 
 
 **block / direct / WARP / Opera** categories with priority, **geosite/geoip** presets with
 automatic database downloads, egress through **Cloudflare WARP** (WireGuard) and the free
-**Opera VPN** with region selection. The WARP lane stands on **several Cloudflare endpoints
+**Opera VPN** with region selection — and either can be **handed to users as a config of its own**
+(a VLESS entry whose traffic all leaves through it; who gets it, over which lanes and under what
+name is set per server, with the access groups). The WARP lane stands on **several Cloudflare endpoints
 at once** — different address ranges and different UDP ports, health-probed, so a provider
 that drops one range or one port costs the lane nothing. Its peers are written as addresses,
 never hostnames: Xray resolves a WireGuard endpoint through its own DNS servers, and a lane
@@ -548,9 +550,15 @@ never risks live access.
 coin: another provider's servers, read from their subscription, **handed to your users** beside
 your own. The source is a link, a `happ://crypt…` link or a pasted list; a link is re-read every
 hour, every server switches on and off on its own, and who gets them is decided by the same
-**access groups** as your own lanes. A subscription can be **relayed through one of your
-servers**: users connect to your VLESS TCP-TLS or REALITY lane, the server carries the traffic on
-to the partner, and speed caps, quotas, device limits and cut-off work as on your own lanes. A
+**access groups** as your own lanes. A subscription can be **relayed through your servers**
+— any of them, each over the lanes you tick: users connect to your VLESS TCP-TLS or REALITY lane
+(one config per server and lane for every partner server), the server carries the traffic on to
+the partner, and speed caps, quotas, device limits and cut-off work as on your own lanes. A relayed
+subscription has **its own routing**: rules send part of the traffic elsewhere (`geoip:ru` directly
+from your server, a site through WARP or a lane), the rest goes to the partner, and your server can
+**reach the partner through WARP, Opera or a cascade lane** when it cannot reach it directly. A
+partner's **WireGuard** servers (`.conf` files or `wireguard://` links) are dialled by your server
+only — a config is one device — and reach users as VLESS configs of yours. A
 provider that requires **device binding** would refuse a caller that
 does not identify one, so the panel presents a device: an id derived from the source — the same
 on every read, so their side binds one slot rather than a new one per refresh — plus this build's
