@@ -75,6 +75,7 @@ const (
 	EventAutoRenew       = "balance.autorenew" // renewal from the balance switched on or off
 	EventPaymentRefunded = "payment.refunded"  // an order's money returned to the balance
 	EventWinbackSent     = "promo.winback"     // a lapsed user got a personal discount code
+	EventChurnAnswer     = "user.churn_answer" // a lapsed user said why they did not renew
 	EventUserSource      = "user.source"       // where the user came from was set by hand or the API
 	EventUserExternalID  = "user.external_id"  // the website's id for the client was set or cleared
 	EventAutoMessage     = "user.auto_message" // an automatic message (a rule) was sent
@@ -129,6 +130,7 @@ var UserEventCatalog = []string{
 	EventAutoRenew,
 	EventPaymentRefunded,
 	EventWinbackSent,
+	EventChurnAnswer,
 	EventUserSource,
 	EventUserExternalID,
 	EventAutoMessage,

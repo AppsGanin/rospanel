@@ -32,7 +32,7 @@ type UserService struct {
 	commandsFor string         // token (and plugin commands) whose command menu was already published
 	pluginChats map[int64]bool // chats with a plugin's answer being worked out (offLoop)
 	offset      int64
-	pending     map[int64]string // chatID → "reg" (awaiting display name), "promo", "topup"
+	pending     map[int64]string // chatID → "reg" (awaiting display name), "promo", "topup", "churn"
 
 	// The bot's own @username (for invite links), and when and for which token it
 	// was looked up.
@@ -152,6 +152,11 @@ func (s *UserService) Run(ctx context.Context) {
 				log.Printf("telegram: user notify to %d failed: %v", chatID, err)
 			}
 		})
+	})
+	s.panel.SetUserSurveyor(func(chatID int64) {
+		sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		s.askChurn(sendCtx, chatID)
 	})
 	s.panel.SetUserMessenger(func(chatID int64, html string, buttons []model.BroadcastButton) error {
 		set, err := s.store.GetSettings()
@@ -331,6 +336,8 @@ func (s *UserService) handleMessage(ctx context.Context, client *Client, m *Mess
 			s.doPromo(ctx, client, chatID, set, u, text)
 		case "topup":
 			s.doTopupAmount(ctx, client, chatID, set, u, text)
+		case "churn":
+			s.doChurnComment(ctx, client, chatID, u, text)
 		default:
 			s.sendUserMenu(ctx, client, chatID, set, u)
 		}
@@ -1009,6 +1016,9 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 	default:
 		if code, ok := strings.CutPrefix(cb.Data, relinkPrefix); ok {
 			s.linkByCode(ctx, client, set, chatID, code, true)
+			return
+		}
+		if s.handleChurnCallback(ctx, client, chatID, msgID, u, cb.Data) {
 			return
 		}
 		if s.handleWalletCallback(ctx, client, chatID, msgID, set, u, cb.Data) {

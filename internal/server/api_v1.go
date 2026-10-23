@@ -254,6 +254,7 @@ func (rt *Router) apiMux() http.Handler {
 	id("GET /v1/users/{id}/referrals", rt.apiUserReferrals)
 	id("POST /v1/users/{id}/autorenew", rt.apiSetAutoRenew)
 	id("POST /v1/users/{id}/promo", rt.apiRedeemPromo)
+	id("POST /v1/users/{id}/churn", rt.apiAnswerChurn)
 	id("GET /v1/users/{id}/quotes", rt.apiUserQuotes)
 	id("GET /v1/users/{id}/extras", rt.apiUserExtras)
 	id("POST /v1/users/{id}/telegram", rt.apiLinkTelegram)
@@ -386,6 +387,8 @@ func (rt *Router) apiMux() http.Handler {
 	nodeAudit("POST /v1/incidents", "apiIncidentSaved", rt.apiCreateIncident)
 	nodeAudit("POST /v1/incidents/{id}", "apiIncidentSaved", idFn(rt.apiUpdateIncident))
 	nodeAudit("POST /v1/incidents/{id}/resolve", "apiIncidentResolved", idFn(rt.apiResolveIncident))
+	// Each user it extends is in the journal already.
+	id("POST /v1/incidents/{id}/compensate", rt.apiCompensateIncident)
 	nodeAudit("DELETE /v1/incidents/{id}", "apiIncidentDeleted", idFn(rt.apiDeleteIncident))
 	nodeAudit("POST /v1/incidents/{id}/updates", "apiIncidentUpdate", idFn(rt.apiAddIncidentUpdate))
 	nodeAudit("DELETE /v1/incidents/updates/{id}", "apiIncidentUpdateDeleted", idFn(rt.apiDeleteIncidentUpdate))

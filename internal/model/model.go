@@ -664,6 +664,8 @@ const (
 	WebhookUserReferred    = "user.referred"
 	WebhookReferralReward  = "referral.reward"
 	WebhookPromoWinback    = "promo.winback"
+	// A lapsed user answered why they did not renew (data.reason, data.comment).
+	WebhookUserChurnAnswer = "user.churn_answer"
 	// A code the user entered took effect (data.kind: balance | days | percent | amount).
 	WebhookPromoRedeemed = "promo.redeemed"
 	// The term and the quota moved without a plan: the operator set limits or extended
@@ -739,6 +741,7 @@ var WebhookEventCatalog = []string{
 	WebhookUserReferred,
 	WebhookReferralReward,
 	WebhookPromoWinback,
+	WebhookUserChurnAnswer,
 	WebhookPromoRedeemed,
 	WebhookUserLimitsChanged,
 	WebhookUserTermStarted,
@@ -1302,6 +1305,9 @@ type Settings struct {
 	BillingPeriods []PeriodOffer `json:"-"`
 	// Winback sends a user whose paid term lapsed a personal discount code.
 	Winback WinbackSettings `json:"-"`
+	// ChurnSurvey asks a user whose paid term lapsed why it was not renewed: in the
+	// user bot a day later, and on the subscription page.
+	ChurnSurvey bool `json:"-"`
 	// TrafficPacks are the extra traffic on sale to users with a paid plan that has a
 	// quota; PlanChange lets users switch plans while one is active.
 	TrafficPacks []TrafficPack `json:"-"`

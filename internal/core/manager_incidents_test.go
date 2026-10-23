@@ -411,3 +411,141 @@ func TestIncidentWebhooks(t *testing.T) {
 		t.Errorf("events:\n%s\nwant\n%s", strings.Join(got, "|"), want)
 	}
 }
+
+func TestCompensateIncident(t *testing.T) {
+	t.Parallel()
+	m := bcManager(t)
+	nl := joinedNode(t, m, "NL")
+	de := joinedNode(t, m, "DE")
+	now := time.Now().Unix()
+	mk := func(name string, expire int64) int64 {
+		t.Helper()
+		u, err := m.store.CreateUser(name, "uuid-"+name, "pw", "tok-"+name, 0, expire, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := m.store.SetUserCreatedAt(u.ID, now-30*86400); err != nil {
+			t.Fatal(err)
+		}
+		return u.ID
+	}
+	setExpire := func(id, at int64) {
+		t.Helper()
+		if err := m.store.ExecForTest(`UPDATE users SET expire_at = ? WHERE id = ?`, at, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	running := mk("running", now+10*86400)
+	lapsed := mk("lapsed", now+600)      // runs out after the incident began
+	before := mk("before", now-5*3600)   // ran out before it began
+	renewed := mk("renewed", now-5*3600) // ran out before it began, renewed after
+	forever := mk("forever", 0)          // no end: nothing to give back
+	deOnly := mk("de-only", now+86400)   // may use DE only, the incident is on NL
+	g, err := m.CreateGroup("de", []string{model.BuiltinToken(de, model.LaneVLESS)}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetUserGroups(deOnly, []int64{g.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	in, err := m.SaveIncident(model.Incident{Kind: model.IncidentKindIncident, Title: "NL down",
+		NodeIDs: []int64{nl}, StartsAt: now - 4*3600})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.SnapshotAt == 0 {
+		t.Fatal("an incident posted under way recorded nobody (or the answer does not say so)")
+	}
+	// What happens after it began does not change who it hit.
+	setExpire(lapsed, now-3600)
+	setExpire(renewed, now+30*86400)
+
+	ctx := context.Background()
+	if _, err := m.CompensateIncident(ctx, in.ID, 3, false); validationCode(err) != "err.compensationNotOver" {
+		t.Fatalf("open incident compensated: %v", err)
+	}
+	if _, _, err := m.ResolveIncident(in.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.CompensateIncident(ctx, in.ID, 0, false); validationCode(err) != "err.compensationHours" {
+		t.Fatalf("0 hours: %v", err)
+	}
+	got, err := m.CompensateIncident(ctx, in.ID, 4, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CompensatedAt == 0 || got.CompensatedSeconds != 4*3600 || got.CompensatedUsers != 2 {
+		t.Fatalf("compensation recorded as %+v", got)
+	}
+	expire := func(id int64) int64 {
+		u, err := m.store.GetUser(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return u.ExpireAt
+	}
+	if e := expire(running); e != now+10*86400+4*3600 {
+		t.Errorf("running term: expire %d, want %d", e, now+10*86400+4*3600)
+	}
+	if e := expire(lapsed); e < now+4*3600 || e > time.Now().Unix()+4*3600 {
+		t.Errorf("lapsed term should get the hours from now, expire %d", e)
+	}
+	for name, c := range map[string]struct{ id, want int64 }{
+		"before": {before, now - 5*3600}, "renewed": {renewed, now + 30*86400},
+		"forever": {forever, 0}, "de-only": {deOnly, now + 86400},
+	} {
+		if e := expire(c.id); e != c.want {
+			t.Errorf("%s: expire moved to %d", name, e)
+		}
+	}
+	if _, err := m.CompensateIncident(ctx, in.ID, 4, false); validationCode(err) != "err.compensationDone" {
+		t.Fatalf("second compensation: %v", err)
+	}
+	if e := expire(running); e != now+10*86400+4*3600 {
+		t.Errorf("second compensation moved the term to %d", e)
+	}
+}
+
+// A maintenance window records who it hits when it opens, not when it is posted.
+func TestMaintenanceSnapshotAtOpening(t *testing.T) {
+	t.Parallel()
+	m := bcManager(t)
+	now := time.Now().Unix()
+	u, err := m.store.CreateUser("later", "uuid-later", "pw", "tok-later", 0, now-60, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, err := m.SaveIncident(model.Incident{Kind: model.IncidentKindMaintenance, Title: "works",
+		StartsAt: now + 3600, EndsAt: now + 7200})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in, _ = m.store.GetIncident(in.ID); in.SnapshotAt != 0 {
+		t.Fatal("a window that has not opened recorded its users")
+	}
+	if err := m.store.ExecForTest(`UPDATE users SET expire_at = ? WHERE id = ?`, now+86400, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	m.snapshotIncidents(now + 3600)
+	in, _ = m.store.GetIncident(in.ID)
+	cands, err := m.store.CompensationCandidates(in, now+7200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.SnapshotAt != now+3600 || len(cands) != 1 || cands[0].ID != u.ID {
+		t.Fatalf("snapshot at %d, candidates %+v", in.SnapshotAt, cands)
+	}
+}
+
+func TestCompensationHours(t *testing.T) {
+	t.Parallel()
+	in := &model.Incident{Kind: model.IncidentKindIncident, StartsAt: 1000, ResolvedAt: 1000 + 3601}
+	if got := CompensationHours(in, 1_000_000); got != 2 {
+		t.Fatalf("1h and a second = %d hours, want 2", got)
+	}
+	in.ResolvedAt = 1000
+	if got := CompensationHours(in, 1_000_000); got != 1 {
+		t.Fatalf("an instant = %d hours, want 1", got)
+	}
+}

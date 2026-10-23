@@ -39,6 +39,13 @@ type (
 		Notify bool   `json:"notify"`
 		Lang   string `json:"lang"`
 	}
+	// apiIncidentCompensateReq gives the users a finished incident hit hours back:
+	// hours from 1 to 2160; notify tells each of them through the user bot (needs the
+	// broadcasts permission).
+	apiIncidentCompensateReq struct {
+		Hours  int  `json:"hours"`
+		Notify bool `json:"notify"`
+	}
 	// apiIncidentUpdateReq is a step of an incident's course: stage investigating |
 	// identified | monitoring (incidents only) | update (default).
 	apiIncidentUpdateReq struct {
@@ -120,6 +127,20 @@ func (rt *Router) apiResolveIncident(w http.ResponseWriter, r *http.Request, id 
 	rt.dropStatusCache()
 	// Only the call that ended it announces it: a repeat is not news.
 	writeAPIData(w, http.StatusOK, rt.apiNotifyIncident(r, in, req.Notify && changed, req.Lang, true))
+}
+
+// apiCompensateIncident adds hours to the subscriptions of the users the incident hit.
+func (rt *Router) apiCompensateIncident(w http.ResponseWriter, r *http.Request, id int64) {
+	var req apiIncidentCompensateReq
+	if !apiDecode(w, r, &req) || !apiMayNotify(w, r, req.Notify) {
+		return
+	}
+	in, err := rt.mgr.CompensateIncident(r.Context(), id, req.Hours, req.Notify)
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	writeAPIData(w, http.StatusOK, apiIncidentResp{Incident: in})
 }
 
 func (rt *Router) apiAddIncidentUpdate(w http.ResponseWriter, r *http.Request, id int64) {

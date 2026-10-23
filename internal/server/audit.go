@@ -98,6 +98,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/incidents":                      set("incidents"),
 	"POST /api/incidents/{id}":                 set("incidents"),
 	"POST /api/incidents/{id}/resolve":         set("incidents"),
+	"POST /api/incidents/{id}/compensate":      set("incidents"),
 	"DELETE /api/incidents/{id}":               set("incidents"),
 	"POST /api/incidents/{id}/updates":         set("incidents"),
 	"DELETE /api/incidents/updates/{id}":       set("incidents"),

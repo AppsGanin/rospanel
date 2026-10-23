@@ -606,6 +606,10 @@ an admin confirms the transfer.
   every period.
 - **Win-back** (off by default) — some days after a paid subscription ends, the user gets a
   personal one-use discount code in the bot, already applied to the next payment.
+- **Exit survey** (off by default) — a day after a paid subscription ends, the bot
+  asks the reason (price, quality, no longer needed, another service, something else in their
+  words); the subscription page asks the same. Answers are in the funnel and the
+  `user.churn_answer` webhook.
 - **In the panel** — balance and history in the user card, who invited whom, promo code usage,
   top referrers, refunds to the balance, a sales funnel. A refund or chargeback made by the
   payment system is picked up by itself: the order leaves revenue and loses what it bought.
@@ -738,6 +742,8 @@ concerned, and a window for maintenance — and can go to every active subscribe
 Each keeps a course of short updates (investigating, identified, monitoring, a closing note), shows on
 the subscription page while it is current or due within three days, and is managed over
 `/v1/incidents` with `incident.*` webhooks. Maintenance can take its servers out of subscriptions for its window.
+Once an entry is over, one button gives its hours back: added to the subscription of everyone whose
+term was running when it began and who may use the servers it names, with a message in the bot.
 
 #### 🧩 Plugins (beta)
 

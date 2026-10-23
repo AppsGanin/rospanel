@@ -30,17 +30,27 @@ type WinbackCandidate struct {
 // It walks the whole users table, so it reads through the writer: the read pool is for
 // bounded lookups (a long scan there holds back the WAL checkpoint).
 func (s *Store) WinbackCandidates(floor, cut int64, limit int) ([]WinbackCandidate, error) {
+	return s.lapsedCandidates("winback_at", "", floor, cut, limit)
+}
+
+// SurveyCandidates is WinbackCandidates for the churn survey: the lapses the bot has
+// not asked about yet. A lapse a refund caused is none, and after one survey the next
+// waits for a payment: a free plan's own term running out is the same departure.
+func (s *Store) SurveyCandidates(floor, cut int64, limit int) ([]WinbackCandidate, error) {
+	return s.lapsedCandidates("survey_at", `AND u.skip < u.lapse AND (u.mark = 0 OR `+paidSince("u.mark")+`)`,
+		floor, cut, limit)
+}
+
+// lapsedCandidates finds the lapses in (floor, cut] that mark (a users column holding
+// the last lapse handled) has not caught up with, narrowed by extra.
+func (s *Store) lapsedCandidates(mark, extra string, floor, cut int64, limit int) ([]WinbackCandidate, error) {
 	rows, err := s.db.Query(
 		`SELECT id, lapse FROM (
-		     SELECT id, enabled, winback_at,
+		     SELECT id, enabled, `+mark+` AS mark, survey_skip_at AS skip,
 		            max(lapsed_at, CASE WHEN expire_at > 0 AND expire_at <= ? THEN expire_at ELSE 0 END) AS lapse
 		     FROM users) u
-		 WHERE u.enabled = 1 AND u.lapse > ? AND u.lapse <= ? AND u.winback_at < u.lapse
-		   AND EXISTS (SELECT 1 FROM payment_orders o
-		               WHERE o.user_id = u.id AND o.status = 'paid' AND o.kind = 'plan'
-		                 AND o.refunded_at = 0)
-		   AND NOT EXISTS (SELECT 1 FROM payment_orders o
-		                   WHERE o.user_id = u.id AND o.refund_source = 'provider')
+		 WHERE u.enabled = 1 AND u.lapse > ? AND u.lapse <= ? AND u.mark < u.lapse
+		   AND `+paidOnce+` `+extra+`
 		 LIMIT ?`, cut, floor, cut, limit)
 	if err != nil {
 		return nil, err
@@ -55,6 +65,21 @@ func (s *Store) WinbackCandidates(floor, cut int64, limit int) ([]WinbackCandida
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// paidOnce holds for a user (u.id) who once paid for a plan and was not refunded by
+// the payment system: someone who left, rather than someone who never bought.
+const paidOnce = `EXISTS (SELECT 1 FROM payment_orders o
+		               WHERE o.user_id = u.id AND o.status = 'paid' AND o.kind = 'plan'
+		                 AND o.refunded_at = 0)
+		   AND NOT EXISTS (SELECT 1 FROM payment_orders o
+		                   WHERE o.user_id = u.id AND o.refund_source = 'provider')`
+
+// paidSince holds for a user (u.id) who paid for a plan after the moment the column
+// or value at names, and was not refunded for it.
+func paidSince(at string) string {
+	return `EXISTS (SELECT 1 FROM payment_orders o WHERE o.user_id = u.id AND o.status = 'paid'
+		AND o.kind = 'plan' AND o.refunded_at = 0 AND o.paid_at > ` + at + `)`
 }
 
 // SkipWinback marks a lapse as handled without a code — the user came back first.

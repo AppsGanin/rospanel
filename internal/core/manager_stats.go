@@ -377,6 +377,8 @@ func (m *Manager) enforceAfterTraffic(users []model.User) error {
 	m.notifyStatusTransitions(users)
 	// Give back what the blocklist measures took, once their time is up.
 	m.LiftAbuseMeasures(time.Now().Unix())
+	// Record who an incident hits as it begins (a maintenance window opening).
+	m.snapshotIncidents(time.Now().Unix())
 	// Reconcile if the working set changed since the last applied config — e.g. a
 	// user just crossed their data limit (traffic) or expiry (time).
 	working, err := m.store.WorkingUserIDs(time.Now().Unix())

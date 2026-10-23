@@ -18,9 +18,18 @@ type Incident struct {
 	ResolvedAt int64 `json:"resolved_at"`
 	// HideInSub takes the servers a maintenance window names out of subscriptions
 	// while it is under way (migration 0129). Never set on an incident.
-	HideInSub bool  `json:"hide_in_sub"`
-	CreatedAt int64 `json:"created_at"`
-	UpdatedAt int64 `json:"updated_at"`
+	HideInSub bool `json:"hide_in_sub"`
+	// CompensatedAt is when the users it hit were given time back for it, 0 when they
+	// were not; CompensatedSeconds is how much each got, CompensatedUsers how many
+	// (migration 0132).
+	CompensatedAt      int64 `json:"compensated_at"`
+	CompensatedSeconds int64 `json:"compensated_seconds"`
+	CompensatedUsers   int   `json:"compensated_users"`
+	// SnapshotAt is when the users it hits were recorded: those with a running term
+	// as it began (migration 0134); 0 when it has not begun or predates the record.
+	SnapshotAt int64 `json:"snapshot_at"`
+	CreatedAt  int64 `json:"created_at"`
+	UpdatedAt  int64 `json:"updated_at"`
 	// Updates is its course so far, oldest first (migration 0128).
 	Updates []IncidentUpdate `json:"updates"`
 }

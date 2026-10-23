@@ -55,7 +55,7 @@ const GROUPS: { key: string; events: string[] }[] = [
       "balance.adjusted",
     ],
   },
-  { key: "referral", events: ["user.referred", "referral.reward", "promo.winback", "promo.redeemed"] },
+  { key: "referral", events: ["user.referred", "referral.reward", "promo.winback", "promo.redeemed", "user.churn_answer"] },
   { key: "messages", events: ["user.message", "user.auto_message", "broadcast.sent", "user.mailing"] },
   { key: "servers", events: ["node.down", "node.up", "xray.down", "xray.up"] },
   {

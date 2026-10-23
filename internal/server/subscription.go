@@ -282,6 +282,13 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		}
 		rt.handleSubRotate(w, r, *u, set)
 
+	case "churn":
+		if !subActionAllowed(r) {
+			rt.currentDecoy().ServeHTTP(w, r)
+			return
+		}
+		rt.handleSubChurn(w, r, *u)
+
 	case "devices/unbind":
 		if !subActionAllowed(r) {
 			rt.currentDecoy().ServeHTTP(w, r)
@@ -969,6 +976,26 @@ func (rt *Router) handleSubDeviceUnbind(w http.ResponseWriter, r *http.Request, 
 	}
 	if !ok {
 		writeErrCode(w, http.StatusNotFound, "err.deviceNotFound", "устройство не найдено")
+		return
+	}
+	writeOK(w)
+}
+
+// handleSubChurn takes the reader's answer to why they did not renew.
+func (rt *Router) handleSubChurn(w http.ResponseWriter, r *http.Request, u model.User) {
+	if r.Method != http.MethodPost {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	var req struct {
+		Reason  string `json:"reason"`
+		Comment string `json:"comment"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.AnswerChurn(subActorCtx(r, u), u.ID, req.Reason, req.Comment, "page"); err != nil {
+		writeSubErr(w, err, i18n.FromAcceptLanguage(r.Header.Get("Accept-Language")))
 		return
 	}
 	writeOK(w)

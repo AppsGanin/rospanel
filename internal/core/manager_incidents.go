@@ -67,6 +67,14 @@ type subIncidentCache struct {
 
 const subIncidentTTL = 30 * time.Second
 
+// snapshotIncidents records who the incidents under way hit, as they begin: one
+// posted now at once, a maintenance window on the poll after it opens.
+func (m *Manager) snapshotIncidents(now int64) {
+	if err := m.store.SnapshotIncidents(now); err != nil {
+		logErr("incidents: recording who they hit failed", "err", err)
+	}
+}
+
 // incidentsChanged drops the cached answer: the operator expects the page to say
 // what they just posted.
 func (m *Manager) incidentsChanged() {
@@ -197,6 +205,11 @@ func (m *Manager) SaveIncident(in model.Incident) (*model.Incident, error) {
 			return nil, err
 		}
 		in.Updates = []model.IncidentUpdate{}
+		m.snapshotIncidents(now)
+		// Read back: the record of who it hits is the store's.
+		if saved, err := m.store.GetIncident(in.ID); err == nil && saved != nil {
+			in = *saved
+		}
 		m.incidentsChanged()
 		m.emitIncident(model.WebhookIncidentCreated, &in, nil)
 		return &in, nil

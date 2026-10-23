@@ -1076,6 +1076,9 @@
       .modal.show {
         display: flex;
       }
+      #churn-other[hidden] {
+        display: none;
+      }
       .wz-plats {
         display: flex;
         flex-wrap: wrap;
@@ -1213,6 +1216,20 @@
       {{end}}
 
       <section class="pane" data-pane="sub">
+        {{with .Access.Churn}}
+        <!-- Asked once the paid term lapsed: why it was not renewed. -->
+        <div class="card" id="churn-card" style="margin-bottom: 12px">
+          <p style="margin: 0" dir="auto">{{.Question}}</p>
+          <div class="wz-plats">
+            {{range .Reasons}}<button type="button" class="chip" onclick="churnPick(this, '{{.Key}}')">{{.Label}}</button>{{end}}
+          </div>
+          <div id="churn-other" class="inline-form" style="margin-top: 10px" hidden>
+            <input id="churn-comment" type="text" maxlength="500" autocomplete="off"
+              placeholder="{{.OtherPh}}" aria-label="{{.OtherPh}}" />
+            <button class="btn alt" onclick="churnSend(this)">{{.Send}}</button>
+          </div>
+        </div>
+        {{end}}
         {{range .Access.Blocks}}
         {{if eq .Type "button"}}<a class="btn alt" style="margin: 0 0 12px" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Label}}</a>
         {{else}}<div class="card plugin-block{{if eq .Type "notice"}} notice{{end}}" dir="auto" style="margin-bottom: 12px">{{.HTML}}</div>{{end}}
@@ -1948,6 +1965,59 @@
           setTimeout(function () {
             el.textContent = o;
           }, 1200);
+        });
+      }
+      // The churn survey: a reason is sent as soon as it is picked; "other" also opens
+      // a line for a few words, sent with the button beside it.
+      {{with .Access.Churn}}
+      var CHURN_PATH = "{{.Path}}";
+      var CHURN_THANKS = {{.Thanks}};
+      {{else}}
+      var CHURN_PATH = "";
+      var CHURN_THANKS = "";
+      {{end}}
+      function churnPost(reason, comment) {
+        return fetch(CHURN_PATH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-RosPanel-Sub": "1" },
+          body: JSON.stringify({ reason: reason, comment: comment || "" }),
+        }).then(function (r) {
+          if (!r.ok) throw new Error(String(r.status));
+        });
+      }
+      function churnDone() {
+        var card = document.getElementById("churn-card");
+        if (card) card.innerHTML = "<p style=\"margin: 0\"></p>";
+        if (card) card.firstChild.textContent = CHURN_THANKS;
+      }
+      function churnPick(el, reason) {
+        if (!CHURN_PATH) return;
+        var chips = el.parentNode.querySelectorAll(".chip");
+        for (var i = 0; i < chips.length; i++) chips[i].classList.remove("on");
+        el.classList.add("on");
+        churnPost(reason).then(
+          function () {
+            if (reason === "other") {
+              var box = document.getElementById("churn-other");
+              box.hidden = false;
+              document.getElementById("churn-comment").focus();
+              return;
+            }
+            churnDone();
+          },
+          function () {
+            el.classList.remove("on");
+            alert({{.L.NetworkError}});
+          }
+        );
+      }
+      function churnSend(el) {
+        var text = document.getElementById("churn-comment").value.trim();
+        if (!text) return;
+        el.disabled = true;
+        churnPost("other", text).then(churnDone, function () {
+          el.disabled = false;
+          alert({{.L.NetworkError}});
         });
       }
       // Reissuing the link: the old one stops working at once, so the page moves to

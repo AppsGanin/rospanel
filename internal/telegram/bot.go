@@ -105,6 +105,9 @@ type Panel interface {
 	AttachReferrer(ctx context.Context, userID, chatID int64)
 	SetUserNotifier(fn func(chatID int64, html string))
 	SetUserMessenger(fn func(chatID int64, html string, buttons []model.BroadcastButton) error)
+	// The churn survey: the question is sent by the bot, the answer goes back.
+	SetUserSurveyor(fn func(chatID int64))
+	AnswerChurn(ctx context.Context, userID int64, reason, comment, source string) error
 	SetAdminNotifier(fn func(html string))
 	SetAdminModerationNotifier(fn func(reqID int64, who, details string))
 	// A sign-in from a new address, and the button under it: end every session of

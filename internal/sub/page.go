@@ -928,6 +928,50 @@ type Access struct {
 	// reader's language.
 	StatusMore   string
 	NoticesLabel string
+	// Churn asks why the lapsed term was not renewed; nil when there is nothing to ask.
+	Churn *Churn
+}
+
+// Churn is the survey card: the question, the reasons to pick from, and where the
+// answer goes.
+type Churn struct {
+	Path     string
+	Question string
+	Reasons  []ChurnReason
+	OtherPh  string
+	Send     string
+	Thanks   string
+}
+
+// ChurnReason is one answer on the card: key is what the answer is sent with.
+type ChurnReason struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+}
+
+// ChurnLabelKeys are the catalog keys of the reasons, spelled out so the catalog
+// check sees them; the bot words its buttons with them too.
+var ChurnLabelKeys = map[string]string{
+	model.ChurnPrice:      "churn.price",
+	model.ChurnQuality:    "churn.quality",
+	model.ChurnNotNeeded:  "churn.not_needed",
+	model.ChurnCompetitor: "churn.competitor",
+	model.ChurnOther:      "churn.other",
+}
+
+// NewChurn builds the survey card in lang, its answers posted to path.
+func NewChurn(path string, lang i18n.Lang) *Churn {
+	c := &Churn{
+		Path:     path,
+		Question: i18n.T(lang, "churn.question"),
+		OtherPh:  i18n.T(lang, "churn.otherPh"),
+		Send:     i18n.T(lang, "churn.send"),
+		Thanks:   i18n.T(lang, "churn.thanks"),
+	}
+	for _, r := range model.ChurnReasons {
+		c.Reasons = append(c.Reasons, ChurnReason{Key: r, Label: i18n.T(lang, ChurnLabelKeys[r])})
+	}
+	return c
 }
 
 // Notice is one incident or maintenance window as the subscription page shows it.

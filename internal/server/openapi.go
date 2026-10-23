@@ -179,6 +179,10 @@ func apiSpecRoutes() []oaRoute {
 			summary: "Enter a promo code for the user: a discount attaches to the next payment, days go onto the plan, a balance code credits the balance",
 			req:     t(apiRedeemReq{}), reqRequired: []string{"code"}, resp: t(apiRedeemResp{}),
 			destructive: true},
+		{method: "POST", path: "/v1/users/{id}/churn", tag: "Users",
+			summary: "Record the user's answer to the exit survey (while the subscription view carries churn): reason " +
+				"price | quality | not_needed | competitor | other, comment optional; a later answer replaces the reason",
+			req: t(apiChurnReq{}), reqRequired: []string{"reason"}},
 		{method: "GET", path: "/v1/users/{id}/subscription", tag: "Users",
 			summary: "The user's subscription page as data, to draw it yourself: status, traffic, term, app imports, configs, devices, payment block — under the subscription settings the panel's page keeps",
 			query:   []oaParam{{name: "lang", typ: "string", desc: "ru | en | zh | ar — the language of the texts (default en)"}},
@@ -392,6 +396,12 @@ func apiSpecRoutes() []oaRoute {
 			summary: "Mark an incident resolved or a maintenance window finished, now, with an optional closing note; " +
 				"optionally tell the users (body optional)",
 			req: t(apiIncidentResolveReq{}), resp: t(apiIncidentResp{}), destructive: true},
+		{method: "POST", path: "/v1/incidents/{id}/compensate", tag: "Monitoring",
+			summary: "Give the users a finished incident hit hours back, once: added to each subscription that was " +
+				"running when it began, for users who may use a server it names (needs users.manage); " +
+				"notify tells each of them through the user bot (needs the broadcasts permission)",
+			req: t(apiIncidentCompensateReq{}), reqRequired: []string{"hours"}, resp: t(apiIncidentResp{}),
+			destructive: true},
 		{method: "DELETE", path: "/v1/incidents/{id}", tag: "Monitoring",
 			summary: "Delete an incident from the status page and its history"},
 		{method: "GET", path: "/v1/summary", tag: "Monitoring",
