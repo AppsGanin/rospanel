@@ -81,6 +81,7 @@ function toCfg(d: BillingInfo, plans: TariffPlan[]): BillingInfo {
       percent: d.winback?.percent || 20,
       valid_days: d.winback?.valid_days || 7,
     },
+    churn_survey: !!d.churn_survey,
     traffic_packs: d.traffic_packs ?? [],
     plan_change: d.plan_change ?? true,
     plans,
@@ -208,6 +209,7 @@ export function BillingPanel() {
     cfg.ref_first !== saved.ref_first ||
     JSON.stringify(cfg.periods) !== JSON.stringify(saved.periods) ||
     JSON.stringify(cfg.winback) !== JSON.stringify(saved.winback) ||
+    cfg.churn_survey !== saved.churn_survey ||
     JSON.stringify(cfg.traffic_packs) !== JSON.stringify(saved.traffic_packs) ||
     cfg.plan_change !== saved.plan_change;
 
@@ -279,6 +281,7 @@ export function BillingPanel() {
           ref_first: cfg.ref_first,
           periods: cfg.periods,
           winback: cfg.winback,
+          churn_survey: cfg.churn_survey,
           traffic_packs: cfg.traffic_packs,
           plan_change: cfg.plan_change,
         });
@@ -624,6 +627,12 @@ export function BillingPanel() {
               }
             />
           ))}
+          {/* Its own switch: the survey asks whether or not a code is sent. */}
+          <SettingRow
+            label={t("churn.title")}
+            hint={t("churn.hint")}
+            control={<Switch checked={cfg.churn_survey} onChange={(v) => setCfg({ ...cfg, churn_survey: v })} />}
+          />
         </Panel>
 
         <Panel

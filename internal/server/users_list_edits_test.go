@@ -170,6 +170,7 @@ func TestEveryWriteUnderAUsersIDEditsOnlyThatUser(t *testing.T) {
 		"POST /v1/users/{id}/balance":           "that user's balance, not on the list",
 		"POST /v1/users/{id}/autorenew":         "that user's renewal switch, not on the list",
 		"POST /v1/users/{id}/promo":             "that user's code, balance or plan term",
+		"POST /v1/users/{id}/churn":             "that user's survey mark and answer",
 		"POST /v1/users/{id}/telegram":          "that user's chat; one linked elsewhere is refused, not moved",
 		"POST /v1/users/{id}/referrer":          "that user's referrer, not on the list",
 		"POST /v1/users/{id}/source":            "that user's source, not on the list",

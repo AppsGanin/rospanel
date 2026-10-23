@@ -149,6 +149,8 @@ type funnelView struct {
 	Funnel   model.Funnel         `json:"funnel"`
 	Winback  model.WinbackStats   `json:"winback"`
 	BySource []model.SourceFunnel `json:"by_source"`
+	// Churn is what the users whose paid term lapsed answered about why.
+	Churn model.ChurnStats `json:"churn"`
 }
 
 // funnelFor reads the funnel for ?days= (30 by default; 0 = all time).
@@ -165,6 +167,9 @@ func (rt *Router) funnelFor(r *http.Request) (funnelView, error) {
 		return out, err
 	}
 	if out.BySource, err = rt.mgr.FunnelBySource(days); err != nil {
+		return out, err
+	}
+	if out.Churn, err = rt.mgr.ChurnStats(days); err != nil {
 		return out, err
 	}
 	out.Winback, err = rt.mgr.WinbackStats()

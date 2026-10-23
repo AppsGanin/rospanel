@@ -68,6 +68,7 @@ const ACTION_COLORS: Record<string, Color> = {
   "balance.autorenew": "gray",
   "payment.refunded": "orange",
   "promo.winback": "teal",
+  "user.churn_answer": "gray",
   "user.source": "gray",
   "user.external_id": "gray",
   "user.auto_message": "teal",
@@ -209,10 +210,17 @@ export function eventDetails(e: UserEvent): string {
       if (devices) parts.push(i18n.t("events.det.devices", { count: devices }));
       const days = num(d, "extended_days");
       if (days) parts.push(i18n.t("events.det.extendedDays", { count: days }));
+      const hours = num(d, "compensated_hours");
+      if (hours) parts.push(i18n.t("events.det.compensated", { hours, title: str(d, "incident") }));
       break;
     }
     case "user.auto_message":
       return [str(d, "rule"), str(d, "code")].filter(Boolean).join(" · ");
+    case "user.churn_answer": {
+      const reason = str(d, "reason");
+      const label = reason ? i18n.t(`churn.reason.${reason}`, { defaultValue: reason }) : "";
+      return [label, str(d, "comment")].filter(Boolean).join(" · ");
+    }
     case "user.source":
       return str(d, "source") || "—";
     case "user.external_id":

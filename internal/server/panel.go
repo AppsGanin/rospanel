@@ -463,6 +463,8 @@ func (rt *Router) panelMux() http.Handler {
 	canSettingsManage("POST /api/incidents", rt.createIncident)
 	canSettingsManage("POST /api/incidents/{id}", withID(rt.updateIncident))
 	canSettingsManage("POST /api/incidents/{id}/resolve", withID(rt.resolveIncident))
+	// Compensating moves users' terms: it is the users' permission, not the page's.
+	canUsersManage("POST /api/incidents/{id}/compensate", withID(rt.compensateIncident))
 	canSettingsManage("DELETE /api/incidents/{id}", withID(rt.deleteIncident))
 	canSettingsManage("POST /api/incidents/{id}/updates", withID(rt.addIncidentUpdate))
 	canSettingsManage("DELETE /api/incidents/updates/{id}", withID(rt.deleteIncidentUpdate))

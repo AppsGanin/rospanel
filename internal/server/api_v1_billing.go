@@ -39,6 +39,9 @@ type (
 		Periods *[]model.PeriodOffer `json:"periods"`
 		// Winback sends a user whose paid term lapsed a personal discount code; left out keeps it.
 		Winback *model.WinbackSettings `json:"winback"`
+		// ChurnSurvey asks a user whose paid term lapsed why it was not renewed (the user
+		// bot a day later, and the subscription page); left out keeps it.
+		ChurnSurvey *bool `json:"churn_survey"`
 	}
 	apiMigratePlanReq struct {
 		ToPlanID int64 `json:"to_plan_id"`
@@ -75,6 +78,7 @@ func (rt *Router) apiGetBillingSettings(w http.ResponseWriter, _ *http.Request) 
 		RefFirst:    &set.RefFirstOnly,
 		Periods:     ptrTo(periodOffersOrEmpty(set.BillingPeriods)),
 		Winback:     &set.Winback,
+		ChurnSurvey: &set.ChurnSurvey,
 	})
 }
 
@@ -122,6 +126,9 @@ func (rt *Router) apiSaveBillingSettings(w http.ResponseWriter, r *http.Request)
 	}
 	if req.Winback != nil {
 		set.Winback = *req.Winback
+	}
+	if req.ChurnSurvey != nil {
+		set.ChurnSurvey = *req.ChurnSurvey
 	}
 	// Designating a plan free/trial also makes it free and re-applies it to everyone
 	// already on it — see core.SaveBillingSettings.

@@ -1174,6 +1174,13 @@ export interface Incident {
   // hide_in_sub takes the named servers out of subscriptions while maintenance is
   // under way.
   hide_in_sub: boolean
+  // When the users it hit were given time back (0: not yet), how much each got and
+  // how many got it.
+  compensated_at: number
+  compensated_seconds: number
+  compensated_users: number
+  // When the users it hits were recorded (those with a running term as it began).
+  snapshot_at: number
   updates: IncidentUpdate[]
 }
 
@@ -1223,6 +1230,12 @@ export const resolveIncident = (id: number, notify: boolean, note = '') =>
   api<IncidentSaved>(`api/incidents/${id}/resolve`, {
     method: 'POST',
     body: JSON.stringify({ note, notify, lang: currentLang() }),
+  })
+
+export const compensateIncident = (id: number, hours: number, notify: boolean) =>
+  api<{ incident: Incident }>(`api/incidents/${id}/compensate`, {
+    method: 'POST',
+    body: JSON.stringify({ hours, notify }),
   })
 
 export const addIncidentUpdate = (id: number, stage: IncidentStage, body: string, notify: boolean) =>
@@ -2272,6 +2285,7 @@ export interface BillingInfo {
   ref_first: boolean
   periods: PeriodOffer[] // discounts for buying several periods at once
   winback: WinbackSettings
+  churn_survey: boolean // ask a user whose paid term lapsed why it was not renewed
   traffic_packs: TrafficPack[]
   plan_change: boolean // users may switch plans while one is active
   plans: TariffPlan[]
@@ -2344,6 +2358,7 @@ export const saveBilling = (b: {
   ref_first: boolean
   periods: PeriodOffer[]
   winback: WinbackSettings
+  churn_survey: boolean
   traffic_packs: TrafficPack[]
   plan_change: boolean
 }) =>
@@ -2467,11 +2482,29 @@ export interface WinbackSettings {
   valid_days: number
 }
 
+export type ChurnReason = 'price' | 'quality' | 'not_needed' | 'competitor' | 'other'
+export const CHURN_REASONS: ChurnReason[] = ['price', 'quality', 'not_needed', 'competitor', 'other']
+export interface ChurnStats {
+  total: number
+  reasons: Partial<Record<ChurnReason, number>>
+  comments: {
+    user_id: number
+    user_name: string
+    reason: ChurnReason
+    comment: string
+    source: 'bot' | 'page'
+    created_at: number
+  }[]
+}
+
 // The users who joined in a period: how many took a trial, paid, and paid again —
 // and what the win-back codes did (all time).
 export interface PaymentFunnel {
   funnel: { joined: number; trial: number; paid: number; renewed: number }
   winback: { sent: number; used: number; revenue_rub: number }
+  // Why users whose paid term lapsed did not renew, over the same period: answers by
+  // reason, and the latest that came with words.
+  churn?: ChurnStats
   // The same split by where the users came from: a /start tag, "~ref" for an invite
   // link without one, "" for neither.
   by_source: {

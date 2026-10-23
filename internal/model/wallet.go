@@ -238,3 +238,46 @@ type Wallet struct {
 	PromoID   int64  `json:"promo_id"`
 	PromoCode string `json:"promo_code,omitempty"`
 }
+
+// Why a user did not renew (migration 0133).
+const (
+	ChurnPrice      = "price"
+	ChurnQuality    = "quality"
+	ChurnNotNeeded  = "not_needed"
+	ChurnCompetitor = "competitor"
+	ChurnOther      = "other"
+)
+
+// ChurnReasons are the answers offered, in the order shown.
+var ChurnReasons = []string{ChurnPrice, ChurnQuality, ChurnNotNeeded, ChurnCompetitor, ChurnOther}
+
+// ValidChurnReason reports whether r is one of ChurnReasons.
+func ValidChurnReason(r string) bool {
+	for _, c := range ChurnReasons {
+		if r == c {
+			return true
+		}
+	}
+	return false
+}
+
+// ChurnCommentMax bounds what a user writes after "other".
+const ChurnCommentMax = 500
+
+// ChurnAnswer is one user's answer to why they did not renew.
+type ChurnAnswer struct {
+	UserID    int64  `json:"user_id"`
+	UserName  string `json:"user_name"` // "" when the user is gone
+	Reason    string `json:"reason"`
+	Comment   string `json:"comment"`
+	Source    string `json:"source"` // bot | page | api
+	CreatedAt int64  `json:"created_at"`
+}
+
+// ChurnStats sums up the answers over a period: how many gave each reason, and the
+// latest answers that came with words.
+type ChurnStats struct {
+	Total    int            `json:"total"`
+	Reasons  map[string]int `json:"reasons"`
+	Comments []ChurnAnswer  `json:"comments"`
+}

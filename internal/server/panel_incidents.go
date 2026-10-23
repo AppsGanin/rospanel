@@ -86,6 +86,24 @@ func (rt *Router) resolveIncident(w http.ResponseWriter, r *http.Request, id int
 	rt.answerIncident(w, r, in, req.Notify && changed, req.Lang, true)
 }
 
+// compensateIncident adds hours to the subscriptions of the users a finished
+// incident hit, and tells them when asked.
+func (rt *Router) compensateIncident(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		Hours  int  `json:"hours"`
+		Notify bool `json:"notify"`
+	}
+	if !decodeJSON(w, r, &req) || !rt.mayNotify(w, r, req.Notify) {
+		return
+	}
+	in, err := rt.mgr.CompensateIncident(r.Context(), id, req.Hours, req.Notify)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"incident": in})
+}
+
 // addIncidentUpdate posts a step of an incident's course, and tells the users
 // about it when asked.
 func (rt *Router) addIncidentUpdate(w http.ResponseWriter, r *http.Request, id int64) {

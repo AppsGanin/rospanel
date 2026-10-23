@@ -112,6 +112,8 @@ type Manager struct {
 	deviceCheckedAt atomic.Int64
 	// winbackAt is when the win-back sweep last ran (unix); it runs hourly.
 	winbackAt atomic.Int64
+	// surveyAt is when the churn survey sweep last ran (unix); hourly too.
+	surveyAt atomic.Int64
 
 	// miniSignups bounds registrations through the Mini App entrance, webSignups
 	// those from the operator's website (Signup).
@@ -240,7 +242,8 @@ type Manager struct {
 	userMessage   func(chatID int64, html string, buttons []model.BroadcastButton) error // with URL buttons, sent at once (automatic messages)
 	adminNotify   func(html string)
 	adminModerate func(reqID int64, name, plan string)
-	adminLogin    func(LoginAlert) // a sign-in from a new address, with the revoke button
+	adminLogin    func(LoginAlert)   // a sign-in from a new address, with the revoke button
+	userSurvey    func(chatID int64) // asks why the paid term was not renewed, with the answers as buttons
 
 	// notifyThrottle bounds the rate of repeatable system alerts (Xray crash loop,
 	// cert renewal errors) so a stuck condition can't flood the admin chats.

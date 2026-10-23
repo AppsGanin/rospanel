@@ -61,6 +61,16 @@ type View struct {
 	// Blocks are what plugins add to the page: {type: text|markdown|notice|button,
 	// text, label, url} — for a page of your own to show as it sees fit.
 	Blocks []ViewBlock `json:"blocks"`
+	// Churn is the exit survey to ask, worded: present only while the user's paid
+	// term has lapsed and they have not answered (POST /v1/users/{id}/churn takes it).
+	Churn *ViewChurn `json:"churn,omitempty"`
+}
+
+// ViewChurn is the exit survey as plain values: the question and the reasons, each
+// with the key the answer is sent with.
+type ViewChurn struct {
+	Question string        `json:"question"`
+	Reasons  []ChurnReason `json:"reasons"`
 }
 
 // ViewBlock is one plugin block, as plain values.

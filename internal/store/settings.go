@@ -76,7 +76,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	var mtprotoEn int
 	var masterHideFull, masterHideOver, awgEn, naiveEn, mieruEn, anytlsEn, hideOffline, subHappCrypt, subTGBind, subTGRebind, subShowClash, tgMailingSwitch, subPageEnabled int
 	var awgParamsJSON, connPolicyJSON string
-	var walletEn, refFirstOnly, winbackEn, autoUpdateNodes, blacklistEn, planChange int
+	var walletEn, refFirstOnly, winbackEn, churnSurvey, autoUpdateNodes, blacklistEn, planChange int
 	var trafficPacksJSON string
 	var billingPeriodsJSON string
 	err := s.rdb.QueryRow(`
@@ -127,7 +127,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       sub_tpl_clash, sub_tpl_singbox, sub_tpl_xray,
 		       awg_enabled, awg_port, awg_private_key, awg_public_key, awg_params, awg_name, awg_dns,
 		       wallet_enabled, wallet_topup_min, wallet_topup_max, ref_mode, ref_percent, ref_days, ref_first_only,
-		       billing_periods, winback_enabled, winback_after_days, winback_percent, winback_valid_days,
+		       billing_periods, winback_enabled, winback_after_days, winback_percent, winback_valid_days, churn_survey,
 		       auto_update_cron, auto_update_nodes, auto_update_last_at, auto_update_last,
 		       blacklist_enabled, blacklist_url, blacklist_synced_at, blacklist_error,
 		       traffic_packs, plan_change, miniapp_path, tg_menu_url, sub_tg_bind, sub_tg_rebind,
@@ -190,7 +190,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&st.SubTplClash, &st.SubTplSingBox, &st.SubTplXray,
 		&awgEn, &st.AWGPort, &st.AWGPrivateKey, &st.AWGPublicKey, &awgParamsJSON, &st.AWGName, &st.AWGDNS,
 		&walletEn, &st.WalletTopupMin, &st.WalletTopupMax, &st.RefMode, &st.RefPercent, &st.RefDays, &refFirstOnly,
-		&billingPeriodsJSON, &winbackEn, &st.Winback.AfterDays, &st.Winback.Percent, &st.Winback.ValidDays,
+		&billingPeriodsJSON, &winbackEn, &st.Winback.AfterDays, &st.Winback.Percent, &st.Winback.ValidDays, &churnSurvey,
 		&st.AutoUpdateCron, &autoUpdateNodes, &st.AutoUpdateLastAt, &st.AutoUpdateLast,
 		&blacklistEn, &st.BlacklistURL, &st.BlacklistSyncedAt, &st.BlacklistError,
 		&trafficPacksJSON, &planChange, &st.MiniAppPath, &st.TGMenuURL, &subTGBind, &subTGRebind,
@@ -238,6 +238,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	}
 	st.RefFirstOnly = refFirstOnly != 0
 	st.Winback.Enabled = winbackEn != 0
+	st.ChurnSurvey = churnSurvey != 0
 	st.AutoUpdateNodes = autoUpdateNodes != 0
 	st.BlacklistEnabled = blacklistEn != 0
 	st.PlanChange = planChange != 0

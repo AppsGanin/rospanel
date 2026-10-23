@@ -24,6 +24,13 @@ type (
 	apiAutoRenewReq struct {
 		On *bool `json:"on"` // renew the plan from the balance when its term ends
 	}
+	// apiChurnReq is an answer to the exit survey: reason is a key the subscription
+	// view's churn.reasons lists (price | quality | not_needed | competitor | other);
+	// comment the user's own words, up to 500 characters.
+	apiChurnReq struct {
+		Reason  string `json:"reason"`
+		Comment string `json:"comment,omitempty"`
+	}
 	apiRedeemReq struct {
 		Code string `json:"code"`
 		Lang string `json:"lang,omitempty"` // ru | en | zh | ar: the language of message (default en)
@@ -192,7 +199,29 @@ func (rt *Router) apiUserSubscription(w http.ResponseWriter, r *http.Request, id
 	for _, b := range rt.pluginBlocks(r.Context(), *u, lang) {
 		view.Blocks = append(view.Blocks, sub.ViewBlock{Type: b.Type, Text: b.Text, Label: b.Label, URL: b.URL})
 	}
+	if rt.mgr.ChurnSurveyOpen(*u) {
+		c := sub.NewChurn("", lang)
+		view.Churn = &sub.ViewChurn{Question: c.Question, Reasons: c.Reasons}
+	}
 	writeAPIData(w, http.StatusOK, view)
+}
+
+// apiAnswerChurn records the user's answer to the exit survey, given on a page of
+// the operator's own.
+func (rt *Router) apiAnswerChurn(w http.ResponseWriter, r *http.Request, id int64) {
+	var req apiChurnReq
+	if !apiDecode(w, r, &req) {
+		return
+	}
+	if _, err := rt.mgr.Store().GetUser(id); err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	if err := rt.mgr.AnswerChurn(r.Context(), id, req.Reason, req.Comment, "api"); err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	writeAPIData(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // apiRedeemPromo enters a promo code for the user, as the bot or the subscription

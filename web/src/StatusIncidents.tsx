@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   addIncidentUpdate,
+  compensateIncident,
   deleteIncident,
   deleteIncidentUpdate,
   listIncidents,
@@ -29,6 +30,7 @@ import {
   IconButton,
   IconCheck,
   IconExternal,
+  IconHeart,
   IconPencil,
   IconPlus,
   IconTrash,
@@ -55,6 +57,26 @@ function phaseOf(inc: Incident, now: number): Phase {
   return "active";
 }
 
+// endedAt mirrors model.Incident.EndedAt: when a finished entry ended, 0 while it
+// is not over.
+function endedAt(inc: Incident, now: number): number {
+  if (phaseOf(inc, now) !== "done") return 0;
+  if (inc.resolved_at > 0 && (inc.ends_at === 0 || inc.resolved_at < inc.ends_at || inc.kind !== "maintenance")) {
+    return inc.resolved_at;
+  }
+  return inc.ends_at;
+}
+
+// suggestedHours mirrors core.CompensationHours: the entry's length in whole hours,
+// rounded up.
+function suggestedHours(inc: Incident, now: number): number {
+  const end = endedAt(inc, now);
+  if (!end) return 0;
+  return Math.min(Math.ceil(Math.max(end - inc.starts_at, 1) / 3600), COMPENSATION_HOURS_MAX);
+}
+
+const COMPENSATION_HOURS_MAX = 24 * 90;
+
 const PHASE_ORDER: Record<Phase, number> = { active: 0, scheduled: 1, done: 2 };
 
 // A fresh entry starts now; maintenance is moved to its real window by hand.
@@ -72,6 +94,10 @@ function blank(kind: IncidentKind): Incident {
     created_at: 0,
     updated_at: 0,
     hide_in_sub: kind === "maintenance",
+    compensated_at: 0,
+    compensated_seconds: 0,
+    compensated_users: 0,
+    snapshot_at: 0,
     updates: [],
   };
 }
@@ -82,6 +108,7 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
   const { t } = useTranslation();
   const canManage = useCan("settings.manage");
   const canNotify = useCan("broadcasts.manage");
+  const canCompensate = useCan("users.manage");
   const [list, setList] = useState<Incident[] | null>(null);
   const [servers, setServers] = useState<IncidentServer[]>([]);
   const [err, setErr] = useState("");
@@ -99,6 +126,9 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
   const [resolveNotify, setResolveNotify] = useState(false);
   const [resolveNote, setResolveNote] = useState("");
   const [deleting, setDeleting] = useState<Incident | null>(null);
+  const [compensating, setCompensating] = useState<Incident | null>(null);
+  const [compHours, setCompHours] = useState("");
+  const [compNotify, setCompNotify] = useState(true);
   const { busy, run } = useAction();
 
   const reload = useCallback(() => {
@@ -172,6 +202,22 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
       const r = await resolveIncident(id, resolveNotify && canNotify, resolveNote.trim());
       setResolving(null);
       done(r, t("incidents.resolvedOk"), resolveNotify && canNotify);
+    }).catch((e) => notifyError(errMessage(e)));
+  };
+
+  const compensate = () => {
+    if (!compensating) return;
+    const id = compensating.id;
+    const hours = Number(compHours);
+    if (!Number.isInteger(hours) || hours < 1 || hours > COMPENSATION_HOURS_MAX) {
+      notifyError(td("err.compensationHours", { max: COMPENSATION_HOURS_MAX }));
+      return;
+    }
+    run(async () => {
+      const r = await compensateIncident(id, hours, compNotify && canNotify);
+      setCompensating(null);
+      reload();
+      notifySuccess(t("incidents.compensatedOk", { users: r.incident.compensated_users }));
     }).catch((e) => notifyError(errMessage(e)));
   };
 
@@ -294,6 +340,14 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
                   <p className="mt-0.5 truncate text-[11px] text-ink-muted">
                     {when(inc)} · {serverNames(inc.node_ids)}
                   </p>
+                  {inc.compensated_at > 0 && (
+                    <p className="mt-0.5 truncate text-[11px] text-ink-muted">
+                      {t("incidents.compensated", {
+                        hours: Math.round(inc.compensated_seconds / 3600),
+                        users: inc.compensated_users,
+                      })}
+                    </p>
+                  )}
                 </div>
                 <span className="flex shrink-0 gap-0.5">
                   {phase === "active" && (
@@ -308,6 +362,20 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
                       }}
                     >
                       <IconCheck size={16} />
+                    </IconButton>
+                  )}
+                  {phase === "done" && canCompensate && inc.compensated_at === 0 && (
+                    <IconButton
+                      color="teal"
+                      title={t("incidents.compensate")}
+                      disabled={busy}
+                      onClick={() => {
+                        setCompHours(String(suggestedHours(inc, now)));
+                        setCompNotify(canNotify);
+                        setCompensating(inc);
+                      }}
+                    >
+                      <IconHeart size={16} />
                     </IconButton>
                   )}
                   <IconButton title={t("common.edit")} nav onClick={() => open(inc)}>
@@ -475,6 +543,45 @@ export function StatusIncidents({ statusPath }: { statusPath: string }) {
               label={t("incidents.notify")}
               hint={t("incidents.notifyHint")}
             />
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!compensating}
+        onClose={() => setCompensating(null)}
+        title={t("incidents.compensateTitle")}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="light" color="gray" onClick={() => setCompensating(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={compensate} loading={busy}>
+              {t("incidents.compensate")}
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-sm leading-relaxed text-ink-muted">
+            {t("incidents.compensateBody", { title: compensating?.title ?? "" })}
+          </p>
+          <div>
+            <TextInput
+              label={t("incidents.compensateHours")}
+              type="number"
+              inputMode="numeric"
+              value={compHours}
+              onChange={setCompHours}
+            />
+            {compensating && (
+              <p className="mt-1 text-[11px] text-ink-muted">
+                {t("incidents.compensateHoursHint", { hours: suggestedHours(compensating, now) })}
+              </p>
+            )}
+          </div>
+          {canNotify && (
+            <Checkbox checked={compNotify} onChange={setCompNotify} label={t("incidents.compensateNotify")} />
           )}
         </div>
       </Modal>

@@ -288,6 +288,11 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 	call("post_system_auto_update", map[string]any{"body": map[string]any{"cron": "0 4 * * *", "nodes": true}})
 	call("post_users_by_id_autorenew", map[string]any{"id": created, "body": map[string]any{"on": false}})
 	call("post_users_by_id_promo", map[string]any{"id": created, "body": map[string]any{"code": "SWEEP10"}})
+	// The survey is off here: the answer is refused for that, not for its shape.
+	if _, failure := callRaw("post_users_by_id_churn", map[string]any{"id": created,
+		"body": map[string]any{"reason": "price", "comment": "x"}}); !strings.Contains(failure, "err.churnClosed") && !strings.Contains(failure, "survey") {
+		t.Errorf("post_users_by_id_churn: %s", failure)
+	}
 	call("post_users_by_id_telegram", map[string]any{"id": created, "body": map[string]any{"chat_id": 910001}})
 	call("post_users_by_id_referrer", map[string]any{"id": created, "body": map[string]any{"referrer_id": user.ID}})
 	call("post_users_by_id_source", map[string]any{"id": created, "body": map[string]any{"source": "vk_ads"}})
@@ -428,6 +433,7 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 		call("delete_incidents_updates_by_id", map[string]any{"id": course.Data.Incident.Updates[0].ID})
 	}
 	call("post_incidents_by_id_resolve", map[string]any{"id": incident})
+	call("post_incidents_by_id_compensate", map[string]any{"id": incident, "hours": 1})
 	call("delete_incidents_by_id", map[string]any{"id": incident})
 	call("delete_nodes_by_id", map[string]any{"id": added})
 	call("delete_users_by_id", map[string]any{"id": created})

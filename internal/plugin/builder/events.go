@@ -233,6 +233,11 @@ var events = []EventInfo{
 		f("expires_at", "time", "promoExpiresAt", 1767830400),
 		f("attached", "bool", "attached", true),
 	}},
+	{Event: model.WebhookUserChurnAnswer, User: "data", Fields: []Field{
+		f("reason", "text", "churnReason", "price"),
+		maybe(f("comment", "text", "churnComment", "Слишком медленно")),
+		f("source", "text", "churnSource", "bot"),
+	}},
 	{Event: model.WebhookPromoRedeemed, User: "data", Fields: []Field{
 		f("code", "text", "code", "SPRING"),
 		f("kind", "text", "promoKind", "days"),
@@ -242,6 +247,8 @@ var events = []EventInfo{
 	}},
 	{Event: model.WebhookUserLimitsChanged, User: "data", Fields: []Field{
 		maybe(f("extended_days", "number", "extendedDays", 30)),
+		maybe(f("compensated_hours", "number", "compensatedHours", 3)),
+		maybe(f("incident_id", "number", "incidentId", 12)),
 		maybe(f("refund_order_id", "number", "refundOrderId", 501)),
 	}},
 	{Event: model.WebhookUserTermStarted, User: "data"},

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { locale, td } from "./i18n";
 import {
+  CHURN_REASONS,
   cancelPaymentOrder,
   confirmPaymentOrder,
   refundOrder,
@@ -19,6 +20,7 @@ import {
 import { UserDetail } from "./UserDetail";
 import { PaymentCallbacks } from "./PaymentCallbacks";
 import { FraudPanel } from "./FraudPanel";
+import { fmtStamp } from "./format";
 import { useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { EMPTY_STEP_UP, StepUpFields, stepUpReady, useStepUpDialog, type StepUp } from "./stepup";
@@ -468,6 +470,34 @@ export function PaymentsPage({
                     revenue: funnel.winback.revenue_rub.toLocaleString(locale()),
                   })}
                 </p>
+              )}
+              {funnel.churn && funnel.churn.total > 0 && (
+                <div className="border-t border-gray-100 px-3.5 py-2.5 text-xs text-ink-muted">
+                  <p className="font-medium text-ink">{t("churn.stats", { n: funnel.churn.total })}</p>
+                  <p className="mt-1">
+                    {CHURN_REASONS.filter((r) => funnel.churn?.reasons[r])
+                      .map((r) => {
+                        const n = funnel.churn?.reasons[r] ?? 0;
+                        return `${t(`churn.reason.${r}`)} — ${n} (${Math.round((n / (funnel.churn?.total || 1)) * 100)}%)`;
+                      })
+                      .join(" · ")}
+                  </p>
+                  {funnel.churn.comments.length > 0 && (
+                    <>
+                      <p className="mt-2 font-medium text-ink">{t("churn.latest")}</p>
+                      <ul className="mt-1 flex flex-col gap-1">
+                        {funnel.churn.comments.map((c) => (
+                          <li key={`${c.user_id}-${c.created_at}`} dir="auto">
+                            <span className="text-ink">{c.comment}</span>
+                            <span className="ms-1">
+                              — {c.user_name || `#${c.user_id}`}, {fmtStamp(c.created_at)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </div>
               )}
             </>
           )}

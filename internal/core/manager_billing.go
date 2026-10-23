@@ -1093,9 +1093,10 @@ func (m *Manager) cancelUserPlan(ctx context.Context, userID int64, lapse bool) 
 		return err
 	}
 	// The term's end, set to now, reads as a lapse; one a refund caused is no reason
-	// to send a win-back code.
+	// to send a win-back code, nor to ask why the user left.
 	if !lapse {
 		_ = m.store.SkipWinback(userID, now)
+		_ = m.store.SkipSurvey(userID, now)
 	}
 	m.afterPlanWrite(groupsChanged)
 	m.audit(ctx, userID, model.EventPlanCancelled, map[string]any{"plan": cancelled})
@@ -1115,6 +1116,7 @@ func (m *Manager) EnforceBilling(now int64) error {
 		m.autoRenew(set, now)
 	}
 	m.runWinback(set, now)
+	m.runChurnSurvey(set, now)
 	if set.BillingFreePlanID == 0 {
 		return nil
 	}

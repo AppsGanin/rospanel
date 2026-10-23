@@ -31,6 +31,9 @@ func (rt *Router) buildAccess(r *http.Request, u model.User, set *model.Settings
 	if privacy != "" {
 		a.Legal = append(a.Legal, sub.LegalLink{Title: sub.LegalTitle(model.LegalPrivacy, lang), URL: privacy})
 	}
+	if rt.mgr.ChurnSurveyOpen(u) {
+		a.Churn = sub.NewChurn(sub.URL(set, u.SubToken)+"/churn", lang)
+	}
 	if rt.plugins != nil {
 		if t, ok := rt.plugins.Theme(); ok {
 			a.ThemeCSS = sub.URL(set, u.SubToken) + "/theme/" + manifest.ThemeCSS + "?v=" + t.Version

@@ -341,11 +341,12 @@ client will display.
 | `GET` | `/v1/users/{id}/referrals` | The users this user invited, with what they paid. |
 | `GET` | `/v1/billing/promos/{id}/uses` | Who used a promo code, and the money its orders brought. |
 | `GET` | `/v1/billing/referrals` | Referral totals and the top inviters. |
-| `GET` | `/v1/billing/funnel?days=30` | Of the users who joined in the last N days (0 = all time): how many took a trial, paid, paid again; plus what win-back codes did. |
+| `GET` | `/v1/billing/funnel?days=30` | Of the users who joined in the last N days (0 = all time): how many took a trial, paid, paid again; plus what win-back codes did and why lapsed users did not renew (`churn`). |
 | `POST` | `/v1/billing/orders/{id}/refund` | Return a paid plan order's price to the balance (once). |
 | `POST` | `/v1/users/{id}/balance` | Correct a user's balance. |
 | `POST` | `/v1/users/{id}/autorenew` | Turn renewal from the balance on or off (`{"on": true}`). |
 | `POST` | `/v1/users/{id}/promo` | Enter a promo code for the user (`{"code": "SPRING"}`). |
+| `POST` | `/v1/users/{id}/churn` | The user's answer to the exit survey (`{"reason": "price", "comment": "..."}`). |
 | `GET` | `/v1/users/{id}/quotes` | What the user can buy now, priced with their discount code and balance, per term. |
 | `GET` | `/v1/users/{id}/subscription?lang=ru` | The subscription page as data, to draw it yourself. |
 | `POST` | `/v1/users/{id}/telegram` | Link the user's Telegram ID (`{"chat_id": 123}`; 0 unlinks). |
@@ -437,6 +438,15 @@ leaves revenue, takes back what it bought, and can no longer be refunded to the 
 the billing settings: that many days after a paid term lapses, the user gets a one-use code for
 that discount, attached to their next payment and sent in the bot.
 
+**Churn survey** — `"churn_survey": true` in the billing settings: a day after a paid term
+lapses the user bot asks why it was not renewed, and the subscription page asks the same while
+it stays lapsed. Reasons: `price`, `quality`, `not_needed`, `competitor`, `other` (with a
+comment). One answer per lapse. A cabinet of your own asks it too: `GET /v1/users/{id}/subscription`
+carries `churn` while there is something to ask, and `POST /v1/users/{id}/churn` takes the answer
+(`source` `api`; a later answer replaces the reason). `GET /v1/billing/funnel` carries them under `churn`:
+`{"total": 12, "reasons": {"price": 5, ...}, "comments": [{"user_id": 7, "user_name": "...",
+"reason": "other", "comment": "...", "source": "bot", "created_at": ...}]}`.
+
 **Balance** — `POST /v1/users/{id}/balance` takes `{ "amount_kop": 10000, "note": "..." }`
 (either sign; the balance cannot go below zero) and answers `{ "balance_kop": ... }`.
 `GET /v1/users/{id}/wallet` answers `{ "wallet": {...}, "history": [...], "ref_link": "..." }` —
@@ -475,7 +485,9 @@ endpoints above. It keeps the subscription settings the page keeps: `links` is e
 the page would list no configs (`show_configs` off, or a required HWID — a raw link would
 bypass the device cap), `clash_url` is absent while the page's Clash button is off or under a
 required HWID, the Happ button is the encrypted link when that is on, and `maintenance` is the
-panel's maintenance mode.
+panel's maintenance mode. `churn` is the exit survey to ask — `{question, reasons: [{key, label}]}`,
+worded in `?lang` — present only while the user's paid term has lapsed and they have not
+answered; send the chosen `key` to `POST /v1/users/{id}/churn`.
 
 **Legal documents** — `GET /v1/legal` (any key) returns the operator's user agreement and privacy
 policy, written in *Settings → Branding → Documents*: `{"terms": {...}, "privacy": {...}}`, each
@@ -1096,6 +1108,7 @@ POST   $BASE/v1/incidents                {"kind": "maintenance", "title": "Works
 POST   $BASE/v1/incidents/{id}           same body: rewrite it (whether it is resolved is kept)
 POST   $BASE/v1/incidents/{id}/updates   {"stage": "identified", "body": "Found it", "notify": true}
 POST   $BASE/v1/incidents/{id}/resolve   {"note": "Fixed", "notify": true}       (body optional)
+POST   $BASE/v1/incidents/{id}/compensate {"hours": 3, "notify": true}         (users.manage)
 DELETE $BASE/v1/incidents/updates/{id}
 DELETE $BASE/v1/incidents/{id}
 ```
@@ -1111,6 +1124,15 @@ default); the `note` given with a resolve closes the course as a `resolved` step
 needs the broadcasts permission; when it could not go out the incident is saved anyway
 and `notify_error` says why. Maintenance that has not begun cannot be resolved — move
 it or delete it.
+
+`compensate` gives time back for a finished entry, once: `hours` (1–2160) are added to
+the subscription of every enabled user whose term was running when it began and who may
+use a server it names. Who had a running term is recorded as the entry begins (when it is
+posted, or when a maintenance window opens; `snapshot_at`), so a user who renewed later
+gets nothing. A term that ran out since gets the hours from now; terms with no end are left
+alone. The incident then carries `compensated_at`, `compensated_seconds` and
+`compensated_users`; `notify` tells each of those users through the user bot and needs the
+broadcasts permission.
 
 `/v1/metrics` is a scrape target for Prometheus, authenticated with the same API key:
 
@@ -1277,6 +1299,7 @@ body is never read).
 | `user.referred` | a user signed up by someone's invite; `data.referrer_id` |
 | `referral.reward` | an invited user's payment earned the inviter (the user in `data`) a reward; `data.reward_kop`, `data.reward_days`, `data.banked`, `data.referred_user_id`, `data.order_id` |
 | `promo.winback` | a lapsed user got a personal discount code; `data.code`, `data.percent`, `data.expires_at`, `data.attached` (already on their next payment) |
+| `user.churn_answer` | a lapsed user said why they did not renew; `data.reason`, `data.comment` (when written), `data.source` (`bot`, `page` or `api`) |
 | `promo.redeemed` | a code the user entered took effect: `data.code`, `data.kind` (`balance`, `days`, `percent`, `amount`), `data.value`, `data.plan` (days), `data.balance_kop` |
 | `payment.created` | a payment order is opened |
 | `payment.paid` | an order is paid and the plan applied; `data.renewal` for an automatic renewal from the balance, `data.undelivered` when the plan could not be applied and the money went to the balance (`kind` is then `topup`) |
