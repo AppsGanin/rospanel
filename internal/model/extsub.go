@@ -46,10 +46,88 @@ type ExtSubscription struct {
 	LastError   string      `json:"last_error,omitempty"`
 	ServerCount int         `json:"server_count"`
 	CreatedAt   int64       `json:"created_at"`
-	// RelayLane is the lane the servers are relayed through (LaneVLESS or
-	// LaneReality) on server RelayServerID; empty hands them out as they are.
-	RelayLane     string `json:"relay_lane"`
-	RelayServerID int64  `json:"relay_server_id"`
+	// Relays are the lanes of our servers the servers are relayed through (migration
+	// 0135): each is one more entry per server in a user's subscription. None hands
+	// them out as they are.
+	Relays []ExtRelayVia `json:"relays"`
+	// Routing is how relayed traffic leaves the relay server (migration 0135); unused
+	// while the subscription is handed out as it is.
+	Routing ExtRouting `json:"routing"`
+}
+
+// ExtRouting is how a relayed subscription's traffic leaves the relay server: Rules
+// send what they match elsewhere, the rest goes to Rest, and the partner is dialled
+// through Dial. The zero value is all of it to the partner, dialled directly.
+//
+// A target is ExtToPartner, "direct", "block", "warp", "opera" or the id of one of
+// the relay server's egress lanes (a cascade lane included). One that cannot be built
+// there (WARP with no account, a lane with no upstream) behaves as it does in the
+// server's own routing: direct, or dropped under its StrictEgress.
+type ExtRouting struct {
+	Rules []ExtRule `json:"rules"`
+	Rest  string    `json:"rest,omitempty"` // "" = ExtToPartner
+	// Dial is what the relay server reaches the partner through: "" directly, "warp",
+	// "opera" (TCP only) or a lane id.
+	Dial string `json:"dial,omitempty"`
+}
+
+// ExtRule sends the traffic matching Domains or IPs (the forms the server's routing
+// takes: domain, geosite:, geoip:, CIDR, iplist:) to Target.
+type ExtRule struct {
+	Domains []string `json:"domains"`
+	IPs     []string `json:"ips"`
+	Target  string   `json:"target"`
+}
+
+// ExtToPartner is the target that is the external server itself.
+const ExtToPartner = "partner"
+
+// Bounds on what an operator writes into a subscription's routing.
+const (
+	ExtRulesMax       = 32
+	ExtRuleEntriesMax = 500
+)
+
+// RestTarget is where traffic no rule matched goes.
+func (r ExtRouting) RestTarget() string {
+	if r.Rest == "" {
+		return ExtToPartner
+	}
+	return r.Rest
+}
+
+// IsZero reports whether the routing is the default one.
+func (r ExtRouting) IsZero() bool {
+	return len(r.Rules) == 0 && r.RestTarget() == ExtToPartner && r.Dial == ""
+}
+
+// Targets lists every target the routing names, Dial included.
+func (r ExtRouting) Targets() []string {
+	out := []string{r.RestTarget()}
+	for _, x := range r.Rules {
+		out = append(out, x.Target)
+	}
+	if r.Dial != "" {
+		out = append(out, r.Dial)
+	}
+	return out
+}
+
+// ExtRelayVia is one lane of one of our servers a subscription is relayed through.
+type ExtRelayVia struct {
+	ServerID int64  `json:"server_id"`
+	Lane     string `json:"lane"` // LaneVLESS or LaneReality
+}
+
+// RelayLanesOn lists the lanes relays puts on server serverID.
+func RelayLanesOn(relays []ExtRelayVia, serverID int64) []string {
+	var out []string
+	for _, v := range relays {
+		if v.ServerID == serverID {
+			out = append(out, v.Lane)
+		}
+	}
+	return out
 }
 
 // RelayLanes are the lanes a subscription can be relayed through: the built-in VLESS
@@ -90,10 +168,44 @@ type ExtServer struct {
 	Link     string `json:"-"`
 	Enabled  bool   `json:"enabled"`
 	SeenAt   int64  `json:"seen_at"`
-	// Relayed through, copied from the server's subscription (ExtSubscription.RelayLane).
-	RelayLane     string `json:"-"`
-	RelayServerID int64  `json:"-"`
+	// SourceName is the name the source gives; Name is what users see — the operator's
+	// own (migration 0136) when one is set, else the same.
+	SourceName string `json:"source_name"`
+	CustomName string `json:"custom_name"`
+	// Relayed through, and how, copied from the server's subscription.
+	Relays  []ExtRelayVia `json:"-"`
+	Routing ExtRouting    `json:"-"`
 }
+
+// Relayed reports whether the server is relayed rather than handed out as it is.
+func (e ExtServer) Relayed() bool { return len(e.Relays) > 0 }
+
+// ExtWireGuard is the protocol of a partner's WireGuard server. Its config is one
+// device: it is never handed to users, and only one of our servers dials it.
+const ExtWireGuard = "wireguard"
+
+// RelayVias is the lanes the server is relayed through, as they are put to use: a
+// WireGuard server rides only the first of our servers its subscription names — two of
+// ours dialling one config would take its peer from each other.
+func (e ExtServer) RelayVias() []ExtRelayVia {
+	if e.Protocol != ExtWireGuard || len(e.Relays) == 0 {
+		return e.Relays
+	}
+	first := e.Relays[0].ServerID
+	for _, v := range e.Relays {
+		first = min(first, v.ServerID)
+	}
+	var out []ExtRelayVia
+	for _, v := range e.Relays {
+		if v.ServerID == first {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// ExtServerNameMax bounds an operator's name for an external server.
+const ExtServerNameMax = 64
 
 // ExtRoute is the VLESS route an external server is reached by through a relay: the
 // 7th and 8th bytes of the user's UUID, which Xray leaves out when it checks the UUID
@@ -106,7 +218,7 @@ func ExtRoute(id int64) (uint16, bool) {
 		return 0, false
 	case id < 0x4000:
 		return uint16(id), true
-	case id+0x1000 <= 0xFFFF:
+	case id+0x1000 < 0xFFF0: // above that: the server's own exits (ExitRoute)
 		return uint16(id + 0x1000), true
 	}
 	return 0, false

@@ -17,7 +17,10 @@ func relayServer(lane string, granted bool) Server {
 		access.Tokens[model.ExtToken(5)] = true
 	}
 	ext := model.ExtServer{ID: 5, Name: "Partner NL", Protocol: "vless", Host: "9.9.9.9", Port: 443,
-		Link: "vless://secret@9.9.9.9:443?security=tls#Partner NL", Enabled: true, RelayLane: lane}
+		Link: "vless://secret@9.9.9.9:443?security=tls#Partner NL", Enabled: true}
+	if lane != "" {
+		ext.Relays = []model.ExtRelayVia{{ServerID: 0, Lane: lane}}
+	}
 	return Server{Set: testSet("panel.example.com"), Access: access, External: []model.ExtServer{ext}, Relays: []model.ExtServer{ext}}
 }
 
@@ -83,5 +86,64 @@ func TestRelayedServerNeedsAllOfIt(t *testing.T) {
 	direct.Relays = nil
 	if links := strings.Join(ShareLinks(relayUser, direct), "\n"); !strings.Contains(links, "secret@") {
 		t.Errorf("a direct server is no longer handed out:\n%s", links)
+	}
+}
+
+// Relayed through both lanes here, the server is two entries, each named after the
+// partner's server and our lane; a WireGuard config is never handed out as it is, and
+// rides only the first of our servers its subscription names.
+func TestRelayedThroughSeveralLanes(t *testing.T) {
+	srv := relayServer(model.LaneVLESS, true)
+	srv.Relays[0].Relays = []model.ExtRelayVia{{ServerID: 0, Lane: model.LaneVLESS}, {ServerID: 0, Lane: model.LaneReality}}
+	var names []string
+	for _, l := range ShareLinks(relayUser, srv) {
+		if strings.Contains(l, "6bbd16cd-dfc1-0005") {
+			u, _ := url.Parse(l)
+			names = append(names, u.Fragment)
+		}
+	}
+	if len(names) != 2 || names[0] == names[1] || !strings.HasPrefix(names[0], "Partner NL · ") {
+		t.Fatalf("relayed entries %q", names)
+	}
+
+	wg := model.ExtServer{ID: 6, Name: "WG DE", Protocol: model.ExtWireGuard, Host: "de.example", Port: 51820,
+		Link: "wireguard://secret@de.example:51820?publickey=x#WG DE", Enabled: true}
+	direct := relayServer("", true)
+	direct.Access.Tokens[model.ExtToken(6)] = true
+	direct.External = append(direct.External, wg)
+	if links := strings.Join(ShareLinks(relayUser, direct), "\n"); strings.Contains(links, "wireguard://") {
+		t.Fatalf("a WireGuard config was handed out:\n%s", links)
+	}
+	wg.Relays = []model.ExtRelayVia{{ServerID: 3, Lane: model.LaneVLESS}, {ServerID: 2, Lane: model.LaneReality}, {ServerID: 2, Lane: model.LaneVLESS}}
+	if v := wg.RelayVias(); len(v) != 2 || v[0].ServerID != 2 || v[1].ServerID != 2 {
+		t.Fatalf("WireGuard rides %+v, want server 2 alone", v)
+	}
+}
+
+// The server's WARP as a connection: an entry per lane picked, named as set or after
+// the way out, only while WARP runs here and the user may have it.
+func TestExitConfigEntries(t *testing.T) {
+	srv := relayServer("", true)
+	srv.Set.WarpEnabled, srv.Set.WarpPrivateKey = true, "k"
+	srv.Set.ExitConfigs = []model.ExitConfig{{Kind: model.ExitWARP, Lanes: []string{model.LaneVLESS, model.LaneReality}, Name: "Через WARP"}}
+	srv.Access.Tokens[model.BuiltinToken(0, model.ExitWARP)] = true
+	var names []string
+	for _, e := range srv.exitEntries(relayUser) {
+		names = append(names, e.name)
+		if !strings.Contains(e.user.UUID, "-fff1-") {
+			t.Fatalf("entry UUID %s lacks the WARP route", e.user.UUID)
+		}
+	}
+	if len(names) != 2 || names[0] != "Через WARP · TCP-TLS" || names[1] != "Через WARP · REALITY" {
+		t.Fatalf("entries %q", names)
+	}
+	delete(srv.Access.Tokens, model.BuiltinToken(0, model.ExitWARP))
+	if got := srv.exitEntries(relayUser); len(got) != 0 {
+		t.Fatalf("not granted, yet %+v", got)
+	}
+	srv.Access.Tokens[model.BuiltinToken(0, model.ExitWARP)] = true
+	srv.Set.WarpPrivateKey = ""
+	if got := srv.exitEntries(relayUser); len(got) != 0 {
+		t.Fatalf("WARP not built here, yet %+v", got)
 	}
 }

@@ -11,12 +11,13 @@ import {
   listNodes,
   type NodeView,
   setExternalEnabled,
-  setExternalRelay,
   setExternalServerEnabled,
+  setExternalServerName,
   setExternalServersEnabled,
   syncExternal,
   updateExternalSource,
 } from "./api";
+import { ExternalDeliveryDialog } from "./ExternalDelivery";
 import { useAction, useShowMore } from "./hooks";
 import i18n, { locale } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
@@ -36,7 +37,6 @@ import {
   IconRestart,
   Modal,
   Section,
-  Select,
   ShowMore,
   Switch,
   Textarea,
@@ -70,6 +70,7 @@ export function ExternalServers() {
   const [nodes, setNodes] = useState<NodeView[]>([]);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<ExtSubscription | null>(null);
+  const [delivering, setDelivering] = useState<ExtSubscription | null>(null);
   const { busy, run, isBusy } = useAction();
   const { confirm, confirmNode } = useConfirm();
 
@@ -163,13 +164,8 @@ export function ExternalServers() {
                     await load();
                   })
                 }
-                onRelay={(lane, serverId) =>
-                  run(async () => {
-                    await setExternalRelay(s.id, lane, serverId);
-                    notifySuccess(t("external.deliverySaved"));
-                    await load();
-                  })
-                }
+                onDelivery={() => setDelivering(s)}
+                onRenamed={() => void load()}
                 onToggle={(id, v) =>
                   run(async () => {
                     await setExternalServerEnabled(id, v);
@@ -187,6 +183,19 @@ export function ExternalServers() {
           </div>
         )}
       </Section>
+
+      {delivering && (
+        <ExternalDeliveryDialog
+          sub={delivering}
+          servers={byServer.get(delivering.id) ?? []}
+          nodes={nodes}
+          onClose={() => setDelivering(null)}
+          onSaved={() => {
+            setDelivering(null);
+            void load();
+          }}
+        />
+      )}
 
       {editing && (
         <EditExternalDialog
@@ -212,13 +221,6 @@ export function ExternalServers() {
   );
 }
 
-// laneName is how a relay lane reads in the delivery choice.
-const laneName = (lane: string) => (lane === "reality" ? "REALITY" : "TCP-TLS");
-
-// relayValue packs a delivery choice into one select value: "" is direct, otherwise
-// "<server id>:<lane>".
-const relayValue = (lane: string, serverId: number) => (lane ? `${serverId}:${lane}` : "");
-
 // ExtSubCard is one subscription, drawn like a server card on the same page: its state
 // and name in the header with the actions as icons, then where its servers go and the
 // servers themselves.
@@ -232,9 +234,10 @@ function ExtSubCard({
   onEdit,
   onRemove,
   onEnabled,
-  onRelay,
+  onDelivery,
   onToggle,
   onToggleAll,
+  onRenamed,
 }: {
   sub: ExtSubscription;
   servers: ExtServer[];
@@ -245,9 +248,10 @@ function ExtSubCard({
   onEdit: () => void;
   onRemove: () => void;
   onEnabled: (enabled: boolean) => void;
-  onRelay: (lane: string, serverId: number) => void;
+  onDelivery: () => void;
   onToggle: (id: number, enabled: boolean) => void;
   onToggleAll: (enabled: boolean) => void;
+  onRenamed: () => void;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -255,27 +259,18 @@ function ExtSubCard({
   const kind = sourceKind(sub.source);
   const dot = !sub.enabled ? "bg-gray-400" : sub.last_error ? "bg-warning" : "bg-success";
 
-  // The delivery choice: direct, or a lane that runs on one of our servers. A relay
-  // whose server or lane has gone stays listed, so the select still says what is set.
-  const options = [{ value: "", label: t("external.direct") }];
-  for (const n of nodes) {
-    if (n.vless_enabled) {
-      options.push({ value: relayValue("vless", n.id), label: t("external.via", { server: serverName(n), lane: laneName("vless") }) });
-    }
-    if (n.reality_enabled && n.reality_public_key) {
-      options.push({ value: relayValue("reality", n.id), label: t("external.via", { server: serverName(n), lane: laneName("reality") }) });
-    }
-  }
-  const current = relayValue(sub.relay_lane, sub.relay_server_id);
-  if (current && !options.some((o) => o.value === current)) {
-    options.push({ value: current, label: t("external.viaGone") });
-  }
-  const pick = (v: string) => {
-    if (v === current) return;
-    if (!v) return onRelay("", 0);
-    const [id, lane] = v.split(":");
-    onRelay(lane, Number(id));
-  };
+  // Where the servers go, in one line: as they are, or through how many lanes of ours.
+  const relays = sub.relays ?? [];
+  const relayServer = relays.length ? nodes.find((n) => n.id === relays[0].server_id) : undefined;
+  const delivery =
+    relays.length === 0
+      ? t("external.direct")
+      : relays.length === 1
+        ? t("external.via", {
+            server: relayServer ? serverName(relayServer) : `#${relays[0].server_id}`,
+            lane: relays[0].lane === "reality" ? "REALITY" : "TCP-TLS",
+          })
+        : t("extRoute.viaCount", { n: relays.length });
 
   return (
     <section className={cn("rounded-xl border border-brand-600/10 bg-white", !sub.enabled && "opacity-55")}>
@@ -291,9 +286,9 @@ function ExtSubCard({
           </Badge>
         )}
         <span className="ms-auto flex shrink-0 items-center gap-1">
-          <div className="w-52" title={t("external.delivery")}>
-            <Select size="sm" value={current} onChange={pick} data={options} disabled={busy} className="w-full" />
-          </div>
+          <Button size="xs" variant="light" color="gray" title={t("external.delivery")} disabled={busy} onClick={onDelivery}>
+            <span className="max-w-52 truncate">{delivery}</span>
+          </Button>
           <IconButton title={t("external.sync")} disabled={busy} onClick={onSync}>
             <IconRestart size={16} className={syncing ? "animate-spin" : undefined} />
           </IconButton>
@@ -349,7 +344,7 @@ function ExtSubCard({
         </span>
         {sub.last_error && <span className="basis-full text-xs text-warning">{sub.last_error}</span>}
       </div>
-      {open && <ServerList sub={sub} servers={servers} busy={busy} onToggle={onToggle} />}
+      {open && <ServerList sub={sub} servers={servers} busy={busy} onToggle={onToggle} onRenamed={onRenamed} />}
     </section>
   );
 }
@@ -361,14 +356,29 @@ function ServerList({
   servers,
   busy,
   onToggle,
+  onRenamed,
 }: {
   sub: ExtSubscription;
   servers: ExtServer[];
   busy: boolean;
   onToggle: (id: number, enabled: boolean) => void;
+  onRenamed: () => void;
 }) {
   const { t } = useTranslation();
   const rows = useShowMore(servers, { first: 10, step: 20, resetKey: servers });
+  const [renaming, setRenaming] = useState<ExtServer | null>(null);
+  const [name, setName] = useState("");
+  const { busy: saving, run } = useAction();
+  const saveName = () => {
+    if (!renaming) return;
+    const id = renaming.id;
+    run(async () => {
+      await setExternalServerName(id, name.trim());
+      setRenaming(null);
+      notifySuccess(t("external.renamed"));
+      onRenamed();
+    }).catch((e) => notifyError(errMessage(e)));
+  };
   if (servers.length === 0) {
     return <p className="border-t border-brand-600/10 px-3.5 py-2.5 text-sm text-ink-muted">{t("external.noServers")}</p>;
   }
@@ -379,6 +389,16 @@ function ServerList({
           <li key={x.id} className="flex items-center gap-3 px-3.5 py-2 text-sm">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
               <span className="truncate text-ink">{x.name}</span>
+              <IconButton
+                title={t("external.rename")}
+                disabled={busy}
+                onClick={() => {
+                  setName(x.custom_name ?? "");
+                  setRenaming(x);
+                }}
+              >
+                <IconPencil size={13} />
+              </IconButton>
               <Badge color="gray" size="xs">
                 {x.protocol}
               </Badge>
@@ -391,6 +411,32 @@ function ServerList({
         ))}
       </ul>
       <ShowMore rest={rows.rest} onClick={rows.showMore} className="px-3.5 pb-2" />
+      <Modal
+        open={!!renaming}
+        onClose={() => setRenaming(null)}
+        title={t("external.renameTitle")}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="light" color="gray" onClick={() => setRenaming(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={saveName} loading={saving}>
+              {t("common.save")}
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-2">
+          <TextInput
+            label={t("external.renameLabel")}
+            value={name}
+            onChange={setName}
+            placeholder={renaming?.source_name ?? ""}
+            autoFocus
+          />
+          <p className="text-xs text-ink-muted">{t("external.renameHint", { name: renaming?.source_name ?? "" })}</p>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -492,7 +538,9 @@ function EditExternalDialog({
       <div className="flex flex-col gap-4">
         <TextInput label={t("external.name")} value={name} onChange={setName} placeholder={t("external.namePlaceholder")} />
         <Textarea label={t("external.source")} value={source} onChange={setSource} rows={4} />
-        <IdentityFields source={source} value={identity} onChange={setIdentity} />
+        {/* Only a source the panel fetches is asked who is calling: a pasted list or
+            WireGuard configs are read in place. */}
+        {sourceKind(source) === "url" && <IdentityFields source={source} value={identity} onChange={setIdentity} />}
         <div className="flex justify-end gap-2">
           <Button variant="light" color="gray" onClick={onClose} disabled={busy}>
             {t("common.cancel")}
@@ -532,9 +580,11 @@ function AddExternalDialog({ onClose, onAdded }: { onClose: () => void; onAdded:
           value={source}
           onChange={setSource}
           rows={5}
-          placeholder={"https://provider.example/sub/…\nhapp://crypt5/…\nvless://…"}
+          placeholder={"https://provider.example/sub/…\nhapp://crypt5/…\nvless://…\n[Interface] … (WireGuard .conf)"}
         />
-        <IdentityFields source={source} value={identity} onChange={setIdentity} />
+        {/* Only a source the panel fetches is asked who is calling: a pasted list or
+            WireGuard configs are read in place. */}
+        {sourceKind(source) === "url" && <IdentityFields source={source} value={identity} onChange={setIdentity} />}
         <div className="flex justify-end gap-2">
           <Button variant="light" color="gray" onClick={onClose} disabled={busy}>
             {t("common.cancel")}

@@ -245,7 +245,7 @@ func (rt *Router) subServers(local *model.Settings, userID int64, clientIP strin
 		// A relayed one rides the server it is relayed through, if that one is here.
 		for i := range ordered {
 			for _, e := range ext {
-				if e.RelayLane != "" && e.RelayServerID == ordered[i].Set.ServerID {
+				if len(model.RelayLanesOn(e.RelayVias(), ordered[i].Set.ServerID)) > 0 {
 					ordered[i].Relays = append(ordered[i].Relays, e)
 				}
 			}
@@ -479,8 +479,10 @@ func (rt *Router) panelMux() http.Handler {
 	canServersManage("POST /api/external/{id}/sync", withID(rt.syncExternal))
 	canServersManage("POST /api/external/{id}/enabled", withID(rt.setExternalEnabled))
 	canServersManage("POST /api/external/{id}/relay", withID(rt.setExternalRelay))
+	canServersManage("POST /api/external/{id}/routing", withID(rt.setExternalRouting))
 	canServersManage("POST /api/external/{id}/servers", withID(rt.setExternalServersEnabled))
 	canServersManage("POST /api/external/servers/{id}/enabled", withID(rt.setExternalServerEnabled))
+	canServersManage("POST /api/external/servers/{id}/name", withID(rt.setExternalServerName))
 	canSecurityView("GET /api/settings/abuse", rt.getAbuseSettings)
 	canSecurityManage("POST /api/settings/abuse", rt.saveAbuseSettings)
 	canSecurityManage("POST /api/settings/abuse/refresh", rt.refreshAbuse)
@@ -622,6 +624,8 @@ func (rt *Router) panelMux() http.Handler {
 	canServersManage("POST /api/nodes", rt.createNode)
 	canServersManage("PATCH /api/nodes/{id}", withID(rt.updateNode))
 	canRoutingManage("POST /api/nodes/{id}/routing", withID(rt.setNodeRouting))
+	// A server's WARP and Opera as connections of their own (0 = the master).
+	canRoutingManage("POST /api/nodes/{id}/exits", withID(rt.setExitConfigs))
 	canRoutingManage("POST /api/nodes/{id}/dns", withID(rt.setNodeDNS))
 	// System proxy, per server: {id} 0 is the master, anything else a node.
 	canRoutingManage("POST /api/nodes/{id}/proxy", withID(rt.setServerProxy))

@@ -23,17 +23,95 @@ import (
 // Each relayed server is one outbound built from its link and one rule: that route on
 // that lane, for the users its groups grant it, goes out through it. A user it is not
 // granted to who sets the route anyway matches nothing and leaves the ordinary way.
-// The rule sits after the block rules and before every egress lane, so a relayed
-// connection goes to the partner whole, bar what the operator blocks for everyone.
+// The rules sit after the block rules and before every egress lane, so a relayed
+// connection goes to the partner whole, bar what the operator blocks for everyone —
+// unless the subscription's own routing (model.ExtRouting) sends part of it elsewhere:
+// each of its rules is one more rule on the same route and users, ahead of the one that
+// takes the rest, and the partner itself may be dialled through WARP, Opera or a lane.
 //
 // Who is granted changes with the users, and the list is in the rule; the running
 // rules are replaced through the API when only that changed (see relayRulesChanged).
 
 // Relay is one external server this server carries traffic on to.
 type Relay struct {
-	ExtID int64
-	Lane  string // model.LaneVLESS or model.LaneReality
-	Link  string
+	ExtID   int64
+	Lanes   []string // model.LaneVLESS and/or model.LaneReality
+	Link    string
+	Routing model.ExtRouting
+}
+
+// relayPlan is one relayed server as its rules need it: which connections are its
+// (the route on the lane, for its users), its outbound and its routing.
+type relayPlan struct {
+	// tag names the plan's rules after the relay prefix: the external server's id, or
+	// "exit-<kind>" for one of the server's own ways out handed out as a connection.
+	tag     string
+	extID   int64
+	inbound []string
+	route   string
+	users   []string
+	outTag  string
+	routing model.ExtRouting
+}
+
+// relayTargets is every target the relays' routing names, so the lanes, WARP and
+// Opera they send traffic to are built even when nothing else routes to them.
+func relayTargets(relays []Relay) map[string]bool {
+	out := map[string]bool{}
+	for _, r := range relays {
+		for _, t := range r.Routing.Targets() {
+			out[t] = true
+		}
+	}
+	return out
+}
+
+// relayDialer is the outbound the relay server dials a partner through, "" for
+// directly: the first member of WARP or of a lane (dialerProxy takes an outbound, not
+// a balancer), or Opera's — which is HTTP and carries no UDP, so a partner reached over
+// UDP is dialled directly instead.
+func relayDialer(dial, protocol string, warpActive, operaOn bool, active map[string]bool) string {
+	switch dial {
+	case "":
+		return ""
+	case "warp":
+		if warpActive {
+			return warpMemberTag(0)
+		}
+	case "opera":
+		if operaOn && !udpProtocol(protocol) {
+			return "opera"
+		}
+	case model.ExtToPartner, "direct", "block":
+	default:
+		if active[dial] {
+			return laneTagPrefix(dial) + "0"
+		}
+	}
+	return ""
+}
+
+// udpProtocol reports whether an outbound protocol rides UDP.
+func udpProtocol(protocol string) bool {
+	return protocol == "hysteria2" || protocol == "hysteria" || protocol == "wireguard"
+}
+
+// withDialer sets an outbound's streamSettings.sockopt.dialerProxy.
+func withDialer(stream any, tag string) any {
+	if tag == "" {
+		return stream
+	}
+	ss, _ := stream.(map[string]any)
+	if ss == nil {
+		ss = map[string]any{}
+	}
+	sock, _ := ss["sockopt"].(map[string]any)
+	if sock == nil {
+		sock = map[string]any{}
+	}
+	sock["dialerProxy"] = tag
+	ss["sockopt"] = sock
+	return ss
 }
 
 // relayRulePrefix starts the tags of the relay rules: their users may change in the
@@ -46,35 +124,41 @@ const relayNobody = "~"
 
 func relayOutboundTag(extID int64) string { return fmt.Sprintf("ext-%d", extID) }
 
-// relayRouting builds the outbounds and rules for opts.Relays. vless and reality are
-// the clients of the two lanes as generated, so a user off a lane is off its relays.
-func relayRouting(opts Options, vless, reality []VLESSClient) ([]Outbound, []RouteRule) {
+// relayRouting builds the outbounds and the plans of opts.Relays' rules. vless and
+// reality are the clients of the two lanes as generated, so a user off a lane is off
+// its relays. dialer picks what a partner is dialled through (relayDialer).
+func relayRouting(opts Options, vless, reality []VLESSClient, dialer func(dial, protocol string) string) ([]Outbound, []relayPlan) {
 	relays := slices.Clone(opts.Relays)
 	slices.SortFunc(relays, func(a, b Relay) int { return int(a.ExtID - b.ExtID) })
 	var outs []Outbound
-	var rules []RouteRule
+	var plans []relayPlan
 	for _, r := range relays {
 		route, ok := model.ExtRoute(r.ExtID)
 		if !ok {
 			continue
 		}
-		var tag string
+		var tags []string
 		var clients []VLESSClient
-		switch r.Lane {
-		case model.LaneVLESS:
-			tag, clients = TagVLESS, vless
-		case model.LaneReality:
-			tag, clients = TagReality, reality
-		default:
+		for _, lane := range r.Lanes {
+			switch lane {
+			case model.LaneVLESS:
+				tags, clients = append(tags, TagVLESS), append(clients, vless...)
+			case model.LaneReality:
+				tags, clients = append(tags, TagReality), append(clients, reality...)
+			}
+		}
+		if len(tags) == 0 {
 			continue
 		}
+		slices.Sort(tags)
 		outTag := relayOutboundTag(r.ExtID)
 		o, ok := linkOutbound(r.Link, outTag, opts.LegacyUDPHop)
 		if !ok {
 			continue // a link the panel read but cannot express is left out, not guessed at
 		}
 		protocol, _ := o["protocol"].(string)
-		outs = append(outs, Outbound{Tag: outTag, Protocol: protocol, Settings: o["settings"], StreamSettings: o["streamSettings"]})
+		outs = append(outs, Outbound{Tag: outTag, Protocol: protocol, Settings: o["settings"],
+			StreamSettings: withDialer(o["streamSettings"], dialer(r.Routing.Dial, protocol))})
 
 		var users []string
 		for _, c := range clients {
@@ -88,22 +172,86 @@ func relayRouting(opts Options, vless, reality []VLESSClient) ([]Outbound, []Rou
 			if own, ok := model.UUIDRoute(c.ID); !ok || own == route {
 				continue
 			}
-			users = append(users, c.Email)
+			if !slices.Contains(users, c.Email) {
+				users = append(users, c.Email)
+			}
 		}
 		if len(users) == 0 {
 			users = []string{relayNobody}
 		}
 		slices.Sort(users)
-		rules = append(rules, RouteRule{
-			Type:        "field",
-			InboundTag:  []string{tag},
-			VlessRoute:  strconv.Itoa(int(route)),
-			User:        users,
-			OutboundTag: outTag,
-			RuleTag:     relayRulePrefix + strconv.FormatInt(r.ExtID, 10),
+		plans = append(plans, relayPlan{
+			tag: strconv.FormatInt(r.ExtID, 10), extID: r.ExtID, inbound: tags, route: strconv.Itoa(int(route)),
+			users: users, outTag: outTag, routing: r.Routing,
 		})
 	}
-	return outs, rules
+	return outs, plans
+}
+
+// relayTarget is where one target of a relay's routing sends traffic: an outbound or
+// a balancer. A target this config cannot build goes the way the server's own routing
+// sends it (direct, or dropped under its StrictEgress).
+type relayTarget func(target, partner string) (outbound, balancer string)
+
+// relayRules compiles the plans: per relayed server its rules in order, domain and IP
+// rules apart (a rule naming both would need both to match), and last the rule that
+// takes the rest. Every rule carries the route and the users, and a tag of its own
+// with the relay prefix, so a change of users alone is still applied live.
+//
+// IP rules and the rest: Xray resolves a name and matches IP rules again only when no
+// rule matched the name (IPIfNonMatch), and a rest rule with no condition always does.
+// So when the routing has IP rules, the rest takes every IP rather than everything: a
+// connection by name matches nothing at first, is resolved, and meets the IP rules
+// before the rest. One whose name does not resolve here then takes this server's own
+// routing, as any unmatched connection does.
+//
+// Opera carries no UDP: a rule sent there takes TCP only, its UDP going on to the next
+// rule, and a rest sent there drops UDP rather than let it leave from here.
+func relayRules(plans []relayPlan, target relayTarget, expand func([]string, bool) []string) []RouteRule {
+	var rules []RouteRule
+	for _, p := range plans {
+		base := func(tag string) RouteRule {
+			return RouteRule{
+				Type: "field", InboundTag: p.inbound, VlessRoute: p.route, User: p.users,
+				RuleTag: relayRulePrefix + p.tag + tag,
+			}
+		}
+		aim := func(r *RouteRule, t string) {
+			r.OutboundTag, r.BalancerTag = target(t, p.outTag)
+			if r.BalancerTag == operaBalancerTag {
+				r.Network = "tcp"
+			}
+		}
+		hasIP := false
+		for i, x := range p.routing.Rules {
+			if d := normDomains(expand(x.Domains, true)); len(d) > 0 {
+				r := base(fmt.Sprintf("-%dd", i))
+				r.Domain = d
+				aim(&r, x.Target)
+				rules = append(rules, r)
+			}
+			if ips := trimList(expand(x.IPs, false)); len(ips) > 0 {
+				r := base(fmt.Sprintf("-%di", i))
+				r.IP = ips
+				aim(&r, x.Target)
+				rules = append(rules, r)
+				hasIP = true
+			}
+		}
+		rest := base("")
+		if hasIP {
+			rest.IP = []string{"0.0.0.0/0", "::/0"}
+		}
+		aim(&rest, p.routing.RestTarget())
+		rules = append(rules, rest)
+		if rest.Network == "tcp" {
+			udp := base("-udp")
+			udp.Network, udp.OutboundTag = "udp", "block"
+			udp.IP = rest.IP
+			rules = append(rules, udp)
+		}
+	}
+	return rules
 }
 
 // isRelayRule reports whether a rule tag is a relay rule's.
@@ -312,4 +460,55 @@ func (s *Supervisor) SyncRelayRules(apiAddr string, cfg *Config) error {
 		return nil
 	}
 	return s.replaceOwnRulesLocked(apiAddr, next)
+}
+
+// exitPlans are the server's own ways out handed to users as connections
+// (model.ExitConfig): each a plan whose every connection goes to that way out. One whose
+// way out this config does not build (WARP with no account, Opera off) has no rule:
+// its connections take the ordinary routing, and the subscription does not offer it.
+func exitPlans(opts Options, exits []model.ExitConfig, vless, reality []VLESSClient, built map[string]bool) []relayPlan {
+	var plans []relayPlan
+	for _, kind := range model.ExitKinds {
+		c, ok := model.ExitFor(exits, kind)
+		route, routed := model.ExitRoute(kind)
+		if !ok || !routed || !built[kind] {
+			continue
+		}
+		var tags []string
+		var clients []VLESSClient
+		for _, lane := range c.Lanes {
+			switch lane {
+			case model.LaneVLESS:
+				tags, clients = append(tags, TagVLESS), append(clients, vless...)
+			case model.LaneReality:
+				tags, clients = append(tags, TagReality), append(clients, reality...)
+			}
+		}
+		if len(tags) == 0 {
+			continue
+		}
+		slices.Sort(tags)
+		var users []string
+		for _, cl := range clients {
+			id, ok := model.UserIDOfEmail(cl.Email)
+			if !ok || !model.AccessOf(opts.Access, id).AllowsBuiltin(opts.ServerID, kind) {
+				continue
+			}
+			if own, ok := model.UUIDRoute(cl.ID); !ok || own == route {
+				continue
+			}
+			if !slices.Contains(users, cl.Email) {
+				users = append(users, cl.Email)
+			}
+		}
+		if len(users) == 0 {
+			users = []string{relayNobody}
+		}
+		slices.Sort(users)
+		plans = append(plans, relayPlan{
+			tag: "exit-" + kind, inbound: tags, route: strconv.Itoa(int(route)), users: users,
+			routing: model.ExtRouting{Rest: kind},
+		})
+	}
+	return plans
 }

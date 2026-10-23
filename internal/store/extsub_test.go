@@ -2,6 +2,7 @@ package store
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -126,17 +127,56 @@ func TestExtRelayIsReadWithItsServers(t *testing.T) {
 	if _, _, _, err := st.ReplaceExtServers(id, []model.ExtServer{extServer(id, "a", "A")}, 100); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetExtSubscriptionRelay(id, model.LaneReality, 7); err != nil {
+	want := []model.ExtRelayVia{{ServerID: 0, Lane: model.LaneVLESS}, {ServerID: 7, Lane: model.LaneReality}}
+	if err := st.SetExtSubscriptionRelays(id, want); err != nil {
 		t.Fatal(err)
 	}
 	sub, err := st.ExtSubscription(id)
-	if err != nil || sub.RelayLane != model.LaneReality || sub.RelayServerID != 7 {
+	if err != nil || !slices.Equal(sub.Relays, want) {
 		t.Fatalf("subscription %+v %v", sub, err)
 	}
 	for _, read := range []func() ([]model.ExtServer, error){st.ExtServers, st.EnabledExtServers} {
 		servers, err := read()
-		if err != nil || len(servers) != 1 || servers[0].RelayLane != model.LaneReality || servers[0].RelayServerID != 7 {
+		if err != nil || len(servers) != 1 || !slices.Equal(servers[0].Relays, want) {
 			t.Fatalf("servers %+v %v", servers, err)
 		}
+	}
+	// Deleting the subscription takes its relays with it.
+	if err := st.DeleteExtSubscription(id); err != nil {
+		t.Fatal(err)
+	}
+	if left, _ := st.extRelays(); len(left[id]) != 0 {
+		t.Fatalf("relays left: %+v", left)
+	}
+}
+
+// The operator's name for a server is what it reads as, and a re-read of the source
+// keeps it; clearing it puts the source's back.
+func TestExtServerCustomName(t *testing.T) {
+	t.Parallel()
+	st := extStore(t)
+	id, err := st.CreateExtSubscription("partner", "https://example.com/sub", model.ExtIdentity{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := st.ReplaceExtServers(id, []model.ExtServer{extServer(id, "a", "From source")}, 100); err != nil {
+		t.Fatal(err)
+	}
+	servers, _ := st.ExtServers()
+	if ok, err := st.SetExtServerName(servers[0].ID, "Germany"); err != nil || !ok {
+		t.Fatalf("rename: %v %v", ok, err)
+	}
+	if _, _, _, err := st.ReplaceExtServers(id, []model.ExtServer{extServer(id, "a", "Renamed upstream")}, 200); err != nil {
+		t.Fatal(err)
+	}
+	servers, _ = st.ExtServers()
+	if s := servers[0]; s.Name != "Germany" || s.CustomName != "Germany" || s.SourceName != "Renamed upstream" {
+		t.Fatalf("after re-read: %+v", s)
+	}
+	if _, err := st.SetExtServerName(servers[0].ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if servers, _ = st.ExtServers(); servers[0].Name != "Renamed upstream" {
+		t.Fatalf("cleared: %+v", servers[0])
 	}
 }

@@ -27,8 +27,8 @@ type Server struct {
 	// ordering, otherwise the first server that did. Nothing about the carrier
 	// reaches the output: an external server renders from its own fields alone.
 	External []model.ExtServer
-	// Relays are the external servers relayed through this server (RelayServerID is
-	// its ServerID): handed out as entries of one of its lanes (see relayEntries).
+	// Relays are the external servers relayed through this server (one of their relays
+	// names its ServerID): handed out as entries of its lanes (see relayEntries).
 	Relays []model.ExtServer
 	// Hidden are the protocols a response rule leaves out for the client that asked
 	// (Overrides.Apply): built-in lanes by key, the custom inbounds as model.SubProtoCustom.
@@ -71,8 +71,13 @@ func (s Server) externalEndpoints() []extsub.Endpoint {
 	var out []extsub.Endpoint
 	for _, e := range s.External {
 		// A relayed one never goes out as it is, whatever happens to its relay.
-		if e.Enabled && e.RelayLane == "" && s.allowsExt(e.ID) {
-			out = append(out, extsub.Endpoint{Protocol: e.Protocol, Host: e.Host, Port: e.Port, Name: e.Name, Link: e.Link})
+		// A WireGuard config is one device: it is dialled by our server, never handed out.
+		if e.Enabled && !e.Relayed() && e.Protocol != model.ExtWireGuard && s.allowsExt(e.ID) {
+			link := e.Link
+			if e.CustomName != "" {
+				link = extsub.WithName(link, e.CustomName) // the operator renamed it
+			}
+			out = append(out, extsub.Endpoint{Protocol: e.Protocol, Host: e.Host, Port: e.Port, Name: e.Name, Link: link})
 		}
 	}
 	return out
