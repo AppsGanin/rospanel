@@ -125,7 +125,9 @@ func (m *Manager) SweepNodeAlerts() {
 		st := m.sys.Read()
 		local = &st
 	}
-	m.sweepAlerts(nodes, local, time.Now())
+	now := time.Now()
+	m.sweepAlerts(nodes, local, now)
+	m.sweepAlertRules(nodes, local, now)
 }
 
 func (m *Manager) sweepAlerts(nodes []model.Node, local *sysstat.Stats, now time.Time) {

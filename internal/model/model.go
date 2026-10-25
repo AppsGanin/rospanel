@@ -710,6 +710,9 @@ const (
 	WebhookIncidentUpdated  = "incident.updated"
 	WebhookIncidentResolved = "incident.resolved"
 	WebhookIncidentDeleted  = "incident.deleted"
+	// An alert rule started (alert.fired) or cleared (alert.resolved) on a server.
+	WebhookAlertFired    = "alert.fired"
+	WebhookAlertResolved = "alert.resolved"
 )
 
 // WebhookEventCatalog is the stable key list the settings UI iterates over (display
@@ -764,6 +767,8 @@ var WebhookEventCatalog = []string{
 	WebhookIncidentUpdated,
 	WebhookIncidentResolved,
 	WebhookIncidentDeleted,
+	WebhookAlertFired,
+	WebhookAlertResolved,
 }
 
 // ValidWebhookEvent reports whether k is a known webhook event key.
@@ -1493,6 +1498,9 @@ const (
 	// AdminEventMonthly is the summary of the month before, sent on the 1st: revenue,
 	// users, traffic, uptime, incidents.
 	AdminEventMonthly int64 = 1 << 14
+	// AdminEventAlerts carries the operator's own alert rules (model.AlertRule):
+	// a figure crossed the line they set, and the all-clear.
+	AdminEventAlerts int64 = 1 << 15
 )
 
 // AdminEventCatalog is the stable key→flag mapping the settings API/UI iterate
@@ -1516,6 +1524,7 @@ var AdminEventCatalog = []struct {
 	{"plugins", AdminEventPlugins},
 	{"reach", AdminEventReach},
 	{"monthly", AdminEventMonthly},
+	{"alerts", AdminEventAlerts},
 }
 
 // ReachSettings configure the check of every server from other countries through

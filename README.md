@@ -846,6 +846,11 @@ be restored by someone who has the file but not the authenticator.
 the server's card or on a schedule. A country that fails two rounds in a row sends the admins a
 Telegram notice, and so does its return.
 
+**Alert rules** (*Servers → Alerts*): a threshold on a server's CPU, memory, disk, network speed or
+users online — for every server or one, held for as long as you set. A rule that fires sends the
+admins a Telegram notice and the `alert.fired` webhook; the all-clear follows with the peak and how long it
+lasted. The history is kept 30 days.
+
 **Updates** in one command: the panel verifies SHA256, runs the binary dry, takes a backup and
 only then replaces itself, keeping the previous version next to it. **Auto-update** on a
 schedule (*Settings → General*): the panel installs a new release by itself and sends the

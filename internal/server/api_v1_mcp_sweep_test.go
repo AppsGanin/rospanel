@@ -331,6 +331,16 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 	})
 	call("post_webhooks_by_id_test", map[string]any{"id": hookID})
 
+	alertRule := newID("post_alerts", call("post_alerts", map[string]any{
+		"body": map[string]any{"name": "sweep cpu", "enabled": true, "metric": "cpu_percent",
+			"op": "gt", "threshold": 90, "for_secs": 600, "node_id": -1},
+	}))
+	call("post_alerts_by_id", map[string]any{
+		"id": alertRule,
+		"body": map[string]any{"name": "sweep cpu", "enabled": false, "metric": "cpu_percent",
+			"op": "gt", "threshold": 95, "for_secs": 300, "node_id": model.LocalNodeID},
+	})
+
 	inbound := newID("post_servers_by_id_inbounds", call("post_servers_by_id_inbounds", map[string]any{
 		"id": model.LocalNodeID,
 		"body": map[string]any{
@@ -404,6 +414,7 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 
 	// Deletions last, so everything above had something to work on.
 	call("delete_webhooks_by_id", map[string]any{"id": hookID})
+	call("delete_alerts_by_id", map[string]any{"id": alertRule})
 	call("delete_inbounds_by_id", map[string]any{"id": inbound})
 	call("delete_groups_by_id", map[string]any{"id": group})
 	call("delete_billing_plans_by_id", map[string]any{"id": target})

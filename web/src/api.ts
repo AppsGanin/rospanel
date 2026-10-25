@@ -2879,6 +2879,53 @@ export const getNodeReach = (id: number) => api<ReachReport>(`api/nodes/${id}/re
 export const checkNodeReach = (id: number) =>
   api<ReachReport>(`api/nodes/${id}/reach`, { method: 'POST' })
 
+// Alert rules: a server value past a threshold for a set time tells the admins in
+// Telegram and by webhook (alert.fired / alert.resolved).
+export interface AlertMetric {
+  key: string
+  unit: string // "%", "Mbit/s" or "users"
+}
+
+export interface AlertRuleInput {
+  name: string
+  enabled: boolean
+  metric: string
+  op: 'gt' | 'lt'
+  threshold: number
+  for_secs: number
+  node_id: number // -1 = every server, 0 = the master
+}
+
+export interface AlertRule extends AlertRuleInput {
+  id: number
+  firing: number // alerts open right now
+}
+
+export interface AlertEvent {
+  id: number
+  rule_id: number
+  rule_name: string
+  node_id: number
+  node_name: string
+  metric: string
+  op: 'gt' | 'lt'
+  threshold: number
+  value: number
+  peak: number
+  fired_at: number
+  resolved_at: number // 0 = still firing
+}
+
+export const getAlerts = () => api<{ rules: AlertRule[]; metrics: AlertMetric[] }>('api/alerts')
+export const createAlert = (r: AlertRuleInput) =>
+  api<AlertRule>('api/alerts', { method: 'POST', body: JSON.stringify(r) })
+export const updateAlert = (id: number, r: AlertRuleInput) =>
+  api<AlertRule>(`api/alerts/${id}`, { method: 'PUT', body: JSON.stringify(r) })
+export const deleteAlert = (id: number) =>
+  api<{ ok: boolean }>(`api/alerts/${id}`, { method: 'DELETE' })
+export const getAlertEvents = (before = 0, limit = 50) =>
+  api<{ events: AlertEvent[] }>(`api/alerts/events?limit=${limit}${before ? `&before=${before}` : ''}`)
+
 // SystemProxy is one server's forward proxy: SOCKS5 and/or HTTP listeners for
 // traffic that is NOT a VPN client (a scraper, a bot, another panel chaining its
 // egress here). No user credential opens them and no access group gates them — they

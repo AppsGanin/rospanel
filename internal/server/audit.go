@@ -250,6 +250,9 @@ var auditActions = map[string]auditRoute{
 	"POST /api/update":           act(model.AuditUpdated),
 	"POST /api/update/auto":      set("autoUpdate"),
 	"POST /api/reach":            set("reach"),
+	"POST /api/alerts":           set("alertAdded"),
+	"PUT /api/alerts/{id}":       set("alertChanged"),
+	"DELETE /api/alerts/{id}":    set("alertDeleted"),
 	"POST /api/nodes/{id}/reach": skip, // measures, changes nothing
 	"POST /api/xray/restart":     act(model.AuditXrayRestarted),
 	"POST /api/panel/restart":    act(model.AuditPanelRestarted),

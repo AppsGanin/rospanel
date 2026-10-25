@@ -568,6 +568,12 @@ enabled node automatically, and each server can be edited independently.
 | `POST` | `/v1/nodes/{id}/reach` | Check a server from other countries now (takes up to a minute). |
 | `GET` | `/v1/reach` | Countries, probes per country, monitor interval and threshold of that check. |
 | `POST` | `/v1/reach` | Set them; `token` (Globalping) omitted keeps the stored one, `""` clears it. |
+| `GET` | `/v1/alerts` | Alert rules; `firing` counts the alerts open now. |
+| `GET` | `/v1/alerts/metrics` | Metrics a rule can watch, with units. |
+| `GET` | `/v1/alerts/events` | Firing history, newest first (`limit`, `before` = id to continue below); `resolved_at` 0 = still firing. |
+| `POST` | `/v1/alerts` | Add a rule: `name`, `metric`, `op` (`gt` / `lt`), `threshold`, `for_secs` (how long the condition holds before it fires), `node_id` (-1 every server, 0 the master), `enabled`. |
+| `POST` | `/v1/alerts/{id}` | Replace a rule's settings. |
+| `DELETE` | `/v1/alerts/{id}` | Delete a rule; its history stays. |
 | `GET` | `/v1/nodes/{id}/logs` | A node's recent log lines. |
 
 **Register a node** — body `{ "name": "NL #1", "host": "nl1.example.com" }`. The
@@ -1312,6 +1318,8 @@ body is never read).
 | `node.up` | the server is back; `data.down_seconds` |
 | `xray.down` | Xray stopped on a server (`data.node_id` 0 is the master); `data.reason` on the master |
 | `xray.up` | Xray is back; `data.down_seconds` |
+| `alert.fired` | an alert rule fired on a server; `data.node_id`, `name`, `host`, `rule_id`, `rule_name`, `metric`, `op`, `threshold`, `value`, `fired_at` |
+| `alert.resolved` | it cleared; the same fields plus `peak`, `resolved_at`, `duration_seconds` |
 | `incident.created` | an incident or maintenance window was posted; `data` is the incident (`id`, `kind`, `title`, `body`, `node_ids`, `servers` — the named servers' names, comma-separated, `""` for the whole service — `starts_at`, `ends_at`, `resolved_at`, `phase`, `updates`, `status_url`) |
 | `incident.updated` | it was edited, a step of its course was posted (`data.update`: `stage`, `body`, `created_at`) or one was taken back (no `data.update`; `data.updates` is the course as it now is) |
 | `incident.resolved` | it was resolved, or maintenance was marked finished; a window that simply closes at `ends_at` sends nothing |
