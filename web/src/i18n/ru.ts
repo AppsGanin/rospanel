@@ -1303,6 +1303,7 @@ const ru = {
       apiAutoUpdate: "API · автообновление",
       apiReach: "API · проверка из других стран",
       reach: "Проверка из других стран",
+      nodeExits: "Сервер · WARP/Opera как конфиги (убрано)",
       apiPaymentProvider: "API · платёжный провайдер",
       apiRegApproved: "API · заявка одобрена",
       apiSystemProxy: "API · системный прокси",

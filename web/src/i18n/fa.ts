@@ -1305,6 +1305,7 @@ const fa: Dict = {
       apiAutoUpdate: "API · به‌روزرسانی خودکار",
       apiReach: "API · بررسی از کشورهای دیگر",
       reach: "بررسی از کشورهای دیگر",
+      nodeExits: "سرور · WARP/Opera به‌عنوان پیکربندی (حذف‌شده)",
       apiPaymentProvider: "API · درگاه پرداخت",
       apiRegApproved: "API · ثبت‌نام تأیید شد",
       apiSystemProxy: "API · پراکسی سیستم",
