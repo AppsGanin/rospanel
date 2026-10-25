@@ -81,6 +81,20 @@ function fmtPerms(v: string): string {
   return v ? v.split(",").map(permLabel).join(", ") : "—";
 }
 
+// A detail value is usually a string or a number, but a settings row can carry a list or
+// an object (the relays or exits of an external subscription): String() of those is
+// "[object Object]", and of an empty list a blank. Lists of plain values read as a
+// comma list, anything nested as compact JSON, an empty one as a dash.
+function fmtValue(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (Array.isArray(v)) {
+    if (v.length === 0) return "—";
+    return v.map((x) => (x !== null && typeof x === "object" ? JSON.stringify(x) : String(x))).join(", ");
+  }
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
 function fmtDetails(d: AdminAudit["details"]): string {
   if (!d || typeof d !== "object") return "";
   const from = typeof d.from === "string" ? d.from : undefined;
@@ -99,7 +113,7 @@ function fmtDetails(d: AdminAudit["details"]): string {
   }
   return Object.entries(d)
     .map(([k, v]) => {
-      const s = String(v);
+      const s = fmtValue(v);
       if (k === "perms") return fmtPerms(s);
       if (k === "role" || k === "from" || k === "to") return `${k}: ${fmtRole(s)}`;
       return `${k}: ${s}`;
@@ -177,7 +191,11 @@ function AuditRow({
 const SECTION_PREFIX = "audit.sec.";
 
 function auditTarget(target: string): string {
-  return target.startsWith(SECTION_PREFIX) ? td(target) : target;
+  if (!target.startsWith(SECTION_PREFIX)) return target;
+  // A section the dictionaries no longer name (a feature taken out, a build older than
+  // the row) would show its raw key; the bare name still tells what was changed.
+  const label = td(target);
+  return label === target ? target.slice(SECTION_PREFIX.length) : label;
 }
 
 export function AdminAuditPanel() {

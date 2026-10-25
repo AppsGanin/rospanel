@@ -1305,6 +1305,7 @@ const zh: Dict = {
       apiAutoUpdate: "API · 自动更新",
       apiReach: "API · 跨国检查",
       reach: "跨国检查",
+      nodeExits: "服务器 · WARP/Opera 配置（已移除）",
       apiPaymentProvider: "API · 支付服务商",
       apiRegApproved: "API · 注册已批准",
       apiSystemProxy: "API · 系统代理",

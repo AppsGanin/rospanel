@@ -1305,6 +1305,7 @@ const en: Dict = {
       apiAutoUpdate: "API · auto-update",
       apiReach: "API · check from other countries",
       reach: "Check from other countries",
+      nodeExits: "Server · WARP/Opera as configs (removed)",
       apiPaymentProvider: "API · payment provider",
       apiRegApproved: "API · signup approved",
       apiSystemProxy: "API · system proxy",

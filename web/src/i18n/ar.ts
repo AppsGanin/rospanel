@@ -1266,6 +1266,7 @@ const ar: Dict = {
       apiAutoUpdate: "API · التحديث التلقائي",
       apiReach: "API · الفحص من دول أخرى",
       reach: "الفحص من دول أخرى",
+      nodeExits: "الخادم · WARP/Opera كإعدادات (أُزيل)",
       apiPaymentProvider: "API · مزوّد الدفع",
       apiRegApproved: "API · تم قبول طلب التسجيل",
       apiSystemProxy: "API · وكيل النظام",
