@@ -90,6 +90,7 @@ const ADMIN_EVENTS: { key: string; label: string; desc?: string }[] = [
   { key: "update", label: "tg.evUpdateLabel", desc: "tg.evUpdateDesc" },
   { key: "plugins", label: "tg.evPluginsLabel", desc: "tg.evPluginsDesc" },
   { key: "reach", label: "tg.evReachLabel", desc: "tg.evReachDesc" },
+  { key: "alerts", label: "tg.evAlertsLabel", desc: "tg.evAlertsDesc" },
   { key: "monthly", label: "tg.evMonthlyLabel", desc: "tg.evMonthlyDesc" },
 ];
 

@@ -331,6 +331,12 @@ func (rt *Router) apiMux() http.Handler {
 	id("POST /v1/nodes/{id}/reach", rt.apiCheckNodeReach)
 	hf("GET /v1/reach", rt.apiGetReach)
 	nodeAudit("POST /v1/reach", "apiReach", rt.apiSetReach)
+	hf("GET /v1/alerts", rt.apiListAlerts)
+	hf("GET /v1/alerts/metrics", rt.apiAlertMetrics)
+	hf("GET /v1/alerts/events", rt.apiAlertEvents)
+	nodeAudit("POST /v1/alerts", "apiAlertAdded", rt.apiCreateAlert)
+	nodeAudit("POST /v1/alerts/{id}", "apiAlertChanged", idFn(rt.apiUpdateAlert))
+	nodeAudit("DELETE /v1/alerts/{id}", "apiAlertDeleted", idFn(rt.apiDeleteAlert))
 	id("GET /v1/nodes/{id}/logs", rt.apiNodeLogs)
 
 	// Custom inbounds. Every mutation opens, changes or closes a public listener on a

@@ -481,6 +481,9 @@ type Manager struct {
 	nodeTraffic nodeTrafficCache
 	nodeAlerts  map[int64]*nodeAlertState
 
+	// alerts is the operator's alert rules' state (manager_alerts.go).
+	alerts alertEngine
+
 	// reach is the reachability monitor's state (manager_reach.go); reachAPI points it
 	// at another Globalping endpoint ("" = the real one), for tests.
 	reach    reachState

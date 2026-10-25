@@ -21,6 +21,7 @@ import { reloadOnVersion } from "./update";
 import { useCan } from "./role";
 import { AddNodeDialog, InstallCommandModal } from "./AddNodeDialog";
 import { NodeCard } from "./NodeCard";
+import { AlertsDialog } from "./AlertsPanel";
 import { ReachSettingsDialog } from "./ReachPanel";
 import { agentSkew, cmpVersion, serverName } from "./NodeStatus";
 
@@ -37,6 +38,7 @@ export function NodesPanel() {
   const [geo, setGeo] = useState<GeoCategories>({ geosite: [], geoip: [], iplist: [] });
   const [adding, setAdding] = useState(false);
   const [reachSettings, setReachSettings] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
   // The check from other countries is off while its settings list no countries.
   const [reachOn, setReachOn] = useState(false);
   const [installCmd, setInstallCmd] = useState<string | null>(null);
@@ -194,6 +196,11 @@ export function NodesPanel() {
             {t("reach.button")}
           </Button>
         )}
+        {canServers && (
+          <Button size="sm" variant="outline" color="gray" onClick={() => setAlertsOpen(true)}>
+            {t("alerts.button")}
+          </Button>
+        )}
         {canUpdate && remoteCount > 0 && behind.length > 0 && (
           <Button size="sm" variant="outline" color="gray" onClick={() => updateNodes()}>
             {t("nodes.updateAll")}
@@ -290,6 +297,7 @@ export function NodesPanel() {
           onSaved={(c) => setReachOn(c.countries.length > 0)}
         />
       )}
+      {alertsOpen && <AlertsDialog nodes={nodes} onClose={() => setAlertsOpen(false)} />}
       {installCmd && (
         <InstallCommandModal command={installCmd} onClose={() => setInstallCmd(null)} />
       )}

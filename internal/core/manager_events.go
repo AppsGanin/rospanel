@@ -91,6 +91,7 @@ func (m *Manager) PurgeOldEvents() {
 	if n > 0 {
 		logInfo("audit: old events purged", "count", n, "older_than_days", model.UserEventRetentionDays)
 	}
+	m.PurgeOldAlertEvents()
 }
 
 // PurgeOldOrders drops cancelled orders past the retention window. Paid orders are the
