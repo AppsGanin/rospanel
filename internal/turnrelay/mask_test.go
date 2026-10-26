@@ -149,10 +149,7 @@ func TestFreeTurnClientsThroughTheRelay(t *testing.T) {
 	target, received := recordingEcho(t)
 	r := New()
 	t.Cleanup(r.Close)
-	port := freeUDPPort(t)
-	if err := r.Sync([]Spec{{Port: port, Target: target, MaskKey: keyHex}}); err != nil {
-		t.Fatal(err)
-	}
+	port := syncOnFreePorts(t, r, Spec{Target: target, MaskKey: keyHex})[0]
 
 	codecs := map[string]func() (refCodec, error){
 		"rtpopus":  func() (refCodec, error) { return rtpopus.NewConn(key, false) },
@@ -190,10 +187,7 @@ func TestFreeTurnWrongKeyIsRefused(t *testing.T) {
 	other, _ := newMaskKey(t)
 	r := New()
 	t.Cleanup(r.Close)
-	port := freeUDPPort(t)
-	if err := r.Sync([]Spec{{Port: port, Target: echoUDP(t), MaskKey: keyHex}}); err != nil {
-		t.Fatal(err)
-	}
+	port := syncOnFreePorts(t, r, Spec{Target: echoUDP(t), MaskKey: keyHex})[0]
 	codec, err := rtpopus3.NewConn(other, false)
 	if err != nil {
 		t.Fatal(err)
@@ -205,10 +199,7 @@ func TestFreeTurnWrongKeyIsRefused(t *testing.T) {
 	// Without a key at all, masked clients are not served.
 	r2 := New()
 	t.Cleanup(r2.Close)
-	port2 := freeUDPPort(t)
-	if err := r2.Sync([]Spec{{Port: port2, Target: echoUDP(t)}}); err != nil {
-		t.Fatal(err)
-	}
+	port2 := syncOnFreePorts(t, r2, Spec{Target: echoUDP(t)})[0]
 	codec2, _ := rtpopus3.NewConn(other, false)
 	if _, err := dialFreeTurn(t, port2, codec2, 1); err == nil {
 		t.Fatal("a masked client was served by a relay with no key")
@@ -222,10 +213,7 @@ func TestFreeTurnStreamModeIsRefused(t *testing.T) {
 	target, received := recordingEcho(t)
 	r := New()
 	t.Cleanup(r.Close)
-	port := freeUDPPort(t)
-	if err := r.Sync([]Spec{{Port: port, Target: target, MaskKey: keyHex}}); err != nil {
-		t.Fatal(err)
-	}
+	port := syncOnFreePorts(t, r, Spec{Target: target, MaskKey: keyHex})[0]
 	codec, _ := rtpopus3.NewConn(key, false)
 	conn, err := dialFreeTurn(t, port, codec, 2)
 	if err != nil {
