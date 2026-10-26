@@ -3,9 +3,12 @@ package turnrelay
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -44,6 +47,35 @@ func freeUDPPort(t *testing.T) int {
 	return pc.LocalAddr().(*net.UDPAddr).Port
 }
 
+// syncOnFreePorts starts r on specs, each on a free port, and returns the ports. A port
+// found free can be taken by another socket before the relay binds it (on any address:
+// the relay listens on all of them), so a bind refused as in use is tried again on
+// other ports.
+func syncOnFreePorts(t *testing.T, r *Relay, specs ...Spec) []int {
+	t.Helper()
+	for range 20 {
+		var ports []int
+		for len(ports) < len(specs) {
+			if p := freeUDPPort(t); !slices.Contains(ports, p) {
+				ports = append(ports, p)
+			}
+		}
+		list := slices.Clone(specs)
+		for i := range list {
+			list[i].Port = ports[i]
+		}
+		err := r.Sync(list)
+		if err == nil {
+			return ports
+		}
+		if !errors.Is(err, syscall.EADDRINUSE) {
+			t.Fatal(err)
+		}
+	}
+	t.Fatal("no free ports for the relay after 20 tries")
+	return nil
+}
+
 // dial connects the way vk-turn-proxy's client does (client/main.go, dtlsFunc): the
 // same suite, extended master secret and connection-id options. A relay that drifts
 // from them fails here the way it would fail against the real client.
@@ -77,29 +109,44 @@ func dial(t *testing.T, port int) *dtls.Conn {
 	return conn
 }
 
+// roundTrip sends payload and waits for it to come back. UDP may drop a datagram on a
+// loaded machine, as WireGuard expects, so it is sent again every second until it
+// returns or 5 s pass; an echo of an earlier copy is skipped.
 func roundTrip(t *testing.T, conn *dtls.Conn, payload []byte) {
 	t.Helper()
-	if _, err := conn.Write(payload); err != nil {
-		t.Fatal(err)
-	}
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	deadline := time.Now().Add(5 * time.Second)
 	buf := make([]byte, 2048)
-	n, err := conn.Read(buf)
-	if err != nil {
-		t.Fatalf("read back: %v", err)
+	var got []byte
+	for time.Now().Before(deadline) {
+		if _, err := conn.Write(payload); err != nil {
+			t.Fatal(err)
+		}
+		wait := time.Now().Add(time.Second)
+		if wait.After(deadline) {
+			wait = deadline
+		}
+		_ = conn.SetReadDeadline(wait)
+		for {
+			n, err := conn.Read(buf)
+			if err != nil {
+				break // nothing within the second: send again
+			}
+			if bytes.Equal(buf[:n], payload) {
+				return
+			}
+			got = append(got[:0], buf[:n]...)
+		}
 	}
-	if !bytes.Equal(buf[:n], payload) {
-		t.Fatalf("got %q, want %q", buf[:n], payload)
+	if got != nil {
+		t.Fatalf("got %q, want %q", got, payload)
 	}
+	t.Fatalf("read back: nothing within 5 s")
 }
 
 func TestRelayCarriesPacketsBothWays(t *testing.T) {
 	r := New()
 	t.Cleanup(r.Close)
-	port := freeUDPPort(t)
-	if err := r.Sync([]Spec{{Port: port, Target: echoUDP(t)}}); err != nil {
-		t.Fatal(err)
-	}
+	port := syncOnFreePorts(t, r, Spec{Target: echoUDP(t)})[0]
 	conn := dial(t, port)
 	// A WireGuard handshake initiation is 148 bytes; a full packet at MTU 1280 is the
 	// largest a client sends. Both must arrive whole.
@@ -116,10 +163,8 @@ func TestSyncKeepsRunningRelaysAndStopsDroppedOnes(t *testing.T) {
 	r := New()
 	t.Cleanup(r.Close)
 	target := echoUDP(t)
-	a, b := freeUDPPort(t), freeUDPPort(t)
-	if err := r.Sync([]Spec{{Port: a, Target: target}, {Port: b, Target: target}}); err != nil {
-		t.Fatal(err)
-	}
+	ports := syncOnFreePorts(t, r, Spec{Target: target}, Spec{Target: target})
+	a, b := ports[0], ports[1]
 	conn := dial(t, a)
 	roundTrip(t, conn, []byte("before"))
 
@@ -150,8 +195,15 @@ func TestSyncReportsATakenPortAndStartsTheRest(t *testing.T) {
 	r := New()
 	t.Cleanup(r.Close)
 	target := echoUDP(t)
-	free := freeUDPPort(t)
-	err = r.Sync([]Spec{{Port: taken, Target: target}, {Port: free, Target: target}})
+	// The free port can be taken before the relay binds it (see syncOnFreePorts).
+	var free int
+	for range 20 {
+		free = freeUDPPort(t)
+		err = r.Sync([]Spec{{Port: taken, Target: target}, {Port: free, Target: target}})
+		if !slices.Contains(r.Failed(), free) {
+			break
+		}
+	}
 	if err == nil || !strings.Contains(err.Error(), strconv.Itoa(taken)) {
 		t.Fatalf("err = %v, want one naming udp/%d", err, taken)
 	}
