@@ -1854,6 +1854,8 @@ const en: Dict = {
       "A name that changes as the user spends traffic ({left}, {used}, {days}) is a new server name to the client on every subscription update, which resets the server they had picked. {server} is stable.",
     static:
       "The name goes into a config file and is filled in once, when the file is downloaded.",
+    name: "The provider's server",
+    proto: "Your lane: TCP-TLS or REALITY",
     server: "The server's name (replaces the automatic “server · lane” prefix)",
     user: "The account name",
     used: "Traffic spent",
@@ -3079,6 +3081,9 @@ const en: Dict = {
 
 
   extRoute: {
+    entryName: "Name in subscriptions",
+    entryNameHint: "What users see the entry as. Empty is the provider's server name.",
+    varServer: "Your server the entry goes through",
     title: "Delivery",
     modeDirect: "Directly",
     modeVia: "Through our servers",
@@ -4280,6 +4285,7 @@ const en: Dict = {
     hint: "Other providers' servers for your users. Access groups decide who gets them.",
     delivery: "Delivery",
     direct: "Direct",
+    notDelivered: "Not handed out",
     via: "Via {{server}} · {{lane}}",
     viaGone: "Via a server that no longer exists",
     deliverySaved: "Delivery changed",

@@ -3543,6 +3543,9 @@ export interface ExtRouting {
   rules: ExtRule[]
   rest?: string
   dial?: string
+  // How a relayed entry is named: the name variables plus {name} and {proto}; empty is
+  // the provider's server name alone.
+  name?: string
 }
 
 // ExtIdentity is what the panel presents to a subscription that requires a device.

@@ -14,7 +14,7 @@ export const NAME_VARS = [
   "{days}",
 ] as const;
 
-type NameVar = (typeof NAME_VARS)[number];
+type NameVar = (typeof NAME_VARS)[number] | "{name}" | "{proto}";
 
 // STATIC_NAME_VARS is what a name may carry when it goes into a file the user keeps —
 // an AmneziaWG config, a WireGuard config behind a TURN relay. That name is written
@@ -31,9 +31,12 @@ const CHURNING: readonly NameVar[] = ["{used}", "{left}", "{days}"];
 export function NameVarsHint({
   onInsert,
   vars = NAME_VARS,
+  titles,
 }: {
   onInsert: (v: string) => void;
   vars?: readonly NameVar[];
+  // titles overrides what a variable means where it is offered.
+  titles?: Partial<Record<NameVar, string>>;
 }) {
   const { t } = useTranslation();
   return (
@@ -45,7 +48,7 @@ export function NameVarsHint({
             key={v}
             type="button"
             onClick={() => onInsert(v)}
-            title={t(`nameVars.${v.slice(1, -1)}` as "nameVars.server")}
+            title={titles?.[v] ?? t(`nameVars.${v.slice(1, -1)}` as "nameVars.server")}
             className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono text-[11px] text-ink-muted transition hover:border-brand-400 hover:text-ink"
           >
             {v}

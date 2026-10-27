@@ -12,9 +12,22 @@ import {
   setExternalRelay,
 } from "./api";
 import { useAction } from "./hooks";
+import { NAME_VARS, NameVarsHint } from "./namevars";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { serverName } from "./NodeStatus";
-import { Button, cn, IconButton, IconCheck, IconPlus, IconTrash, Modal, SegmentedControl, Select, TagsInput } from "./ui";
+import {
+  Button,
+  cn,
+  IconButton,
+  IconCheck,
+  IconPlus,
+  IconTrash,
+  Modal,
+  SegmentedControl,
+  Select,
+  TagsInput,
+  TextInput,
+} from "./ui";
 
 // Where an external subscription goes: handed out as it is, or through our servers.
 // Through them, the operator picks the servers (only one when the subscription has
@@ -25,6 +38,10 @@ import { Button, cn, IconButton, IconCheck, IconPlus, IconTrash, Modal, Segmente
 
 const LANES = ["vless", "reality"] as const;
 type Lane = (typeof LANES)[number];
+
+// The variables a relayed entry's name takes: the provider's server and our lane first,
+// then those of any connection name (model.ExtNameVarName, ExtNameVarProto).
+const EXT_NAME_VARS = ["{name}", "{proto}", ...NAME_VARS] as const;
 
 export const relayLaneLabel = (lane: string) => (lane === "reality" ? "REALITY" : "TCP-TLS");
 
@@ -82,6 +99,7 @@ export function ExternalDeliveryDialog({
   const patchRule = (i: number, d: Partial<ExtRule>) => setRules(rules.map((x, j) => (j === i ? { ...x, ...d } : x)));
   const [rest, setRest] = useState(sub.routing?.rest || "partner");
   const [dial, setDial] = useState(sub.routing?.dial || "");
+  const [entryName, setEntryName] = useState(sub.routing?.name ?? "");
 
   const chosenIds = [...new Set(relays.map((v) => v.server_id))];
   const chosen = chosenIds.map((id) => nodes.find((n) => n.id === id)).filter((n): n is NodeView => !!n);
@@ -144,6 +162,7 @@ export function ExternalDeliveryDialog({
         rules: rules.filter((r) => r.domains.length + r.ips.length > 0),
         rest: rest === "partner" ? "" : rest,
         dial,
+        name: entryName.trim(),
       };
       await setExternalRelay(sub.id, list, list.length > 0 ? routing : undefined);
       notifySuccess(t("external.deliverySaved"));
@@ -331,6 +350,16 @@ export function ExternalDeliveryDialog({
                       );
                     })}
                   </div>
+                </section>
+
+                <section className="flex flex-col gap-2">
+                  <Heading n={4} title={t("extRoute.entryName")} hint={t("extRoute.entryNameHint")} />
+                  <TextInput value={entryName} onChange={setEntryName} placeholder="{name}" />
+                  <NameVarsHint
+                    vars={EXT_NAME_VARS}
+                    titles={{ "{server}": t("extRoute.varServer") }}
+                    onInsert={(v) => setEntryName((entryName + " " + v).trim())}
+                  />
                 </section>
               </>
             )}

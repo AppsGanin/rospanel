@@ -2,6 +2,7 @@ package sub
 
 import (
 	"net/url"
+	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -64,19 +65,43 @@ func (s Server) relayEntry(e model.ExtServer, lane string, u model.User) (relayE
 		}
 		ru := u
 		ru.UUID = id
-		name := e.Name
-		if len(e.RelayVias()) > 1 {
-			// Through more than one lane of ours: the lane's own label (with this
-			// server's in a multi-server subscription) tells the entries apart, in every
-			// format alike.
-			proto := model.ProtoVLESS
-			if lane == model.LaneReality {
-				proto = model.ProtoReality
-			}
-			name += " · " + s.Set.ProtoLabel(proto)
-		}
-		return relayEntry{name: name, lane: lane, user: ru}, true
+		// Formats that need unique names number the repeats (uniqueLabel).
+		return relayEntry{name: s.relayName(e, lane, u), lane: lane, user: ru}, true
 	}
+}
+
+// Placeholders for {name} and {proto} while the rest of a template renders.
+const (
+	extHoldName  = "\uE000"
+	extHoldProto = "\uE001"
+)
+
+// relayName is what a relayed entry is called: the provider's server alone, or the
+// subscription's name template (model.ExtRouting.Name) rendered for this user, this
+// server of ours and this lane.
+func (s Server) relayName(e model.ExtServer, lane string, u model.User) string {
+	tmpl := e.Routing.Name
+	if tmpl == "" {
+		return e.Name
+	}
+	server := s.Set.NodeLabel
+	if server == "" {
+		server = s.Set.MasterLabel
+	}
+	proto := "TCP-TLS"
+	if lane == model.LaneReality {
+		proto = "REALITY"
+	}
+	// One pass over the template: {name} and {proto} stand in as private-use runes
+	// while the connection-name variables render, so neither a provider's name nor a
+	// user's has its own text read as a variable.
+	held := strings.NewReplacer(model.ExtNameVarName, extHoldName, model.ExtNameVarProto, extHoldProto).Replace(tmpl)
+	name := model.RenderName(held, model.NameVars{Server: server, User: &u, Loc: s.Set.Location()})
+	name = strings.NewReplacer(extHoldName, e.Name, extHoldProto, proto).Replace(name)
+	if name = strings.Join(strings.Fields(name), " "); name == "" {
+		return e.Name
+	}
+	return name
 }
 
 // link is the entry as a share link: the lane's link for the routed UUID, named after

@@ -151,3 +151,28 @@ func TestDeleteNodeDropsItsRelays(t *testing.T) {
 		t.Fatalf("relays after the node went: %+v", sub.Relays)
 	}
 }
+
+// A relayed subscription's name template is trimmed and kept with its routing; one too
+// long or on more than one line is refused.
+func TestExtRelayNameTemplate(t *testing.T) {
+	t.Parallel()
+	m := nodeTestManager(t)
+	n := servingNode(t, m, "n1", "nl1.example.com")
+	id, err := m.store.CreateExtSubscription("partner", "vless://x@1.2.3.4:443#a", model.ExtIdentity{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	via := []model.ExtRelayVia{{ServerID: n.ID, Lane: model.LaneVLESS}}
+	for _, bad := range []string{strings.Repeat("x", model.ExtServerNameMax+1), "{name}\n{proto}"} {
+		if _, err := m.SetExtSubscriptionRelays(id, via, &model.ExtRouting{Name: bad}); err == nil {
+			t.Errorf("name %q accepted", bad)
+		}
+	}
+	sub, err := m.SetExtSubscriptionRelays(id, via, &model.ExtRouting{Name: "  {name} · {proto} "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub.Routing.Name != "{name} · {proto}" {
+		t.Fatalf("stored %q", sub.Routing.Name)
+	}
+}

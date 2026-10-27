@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/xray"
@@ -192,7 +193,10 @@ func (m *Manager) cleanExtRouting(sub *model.ExtSubscription, r model.ExtRouting
 	if len(r.Rules) > model.ExtRulesMax {
 		return r, invalidCode("err.extRulesMax", "не больше {{max}} правил", map[string]any{"max": model.ExtRulesMax})
 	}
-	out := model.ExtRouting{Rules: []model.ExtRule{}, Rest: strings.TrimSpace(r.Rest), Dial: strings.TrimSpace(r.Dial)}
+	out := model.ExtRouting{Rules: []model.ExtRule{}, Rest: strings.TrimSpace(r.Rest), Dial: strings.TrimSpace(r.Dial), Name: strings.TrimSpace(r.Name)}
+	if utf8.RuneCountInString(out.Name) > model.ExtServerNameMax || strings.ContainsAny(out.Name, "\r\n\t") {
+		return r, invalidCode("err.extServerName", "название — одна строка, не длиннее {{max}} символов", map[string]any{"max": model.ExtServerNameMax})
+	}
 	for _, x := range r.Rules {
 		rule := model.ExtRule{Domains: cleanEntries(x.Domains), IPs: cleanEntries(x.IPs), Target: strings.TrimSpace(x.Target)}
 		if len(rule.Domains)+len(rule.IPs) == 0 {

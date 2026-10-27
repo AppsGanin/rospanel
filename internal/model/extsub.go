@@ -69,7 +69,17 @@ type ExtRouting struct {
 	// Dial is what the relay server reaches the partner through: "" directly, "warp",
 	// "opera" (TCP only) or a lane id.
 	Dial string `json:"dial,omitempty"`
+	// Name is how a relayed entry is named in subscriptions: the connection-name
+	// variables (NameVarList) plus ExtNameVarName and ExtNameVarProto. "" is the
+	// provider's server name alone.
+	Name string `json:"name,omitempty"`
 }
+
+// The variables a relayed entry's name takes beyond the connection-name ones.
+const (
+	ExtNameVarName  = "{name}"  // the provider's server, as named in the panel
+	ExtNameVarProto = "{proto}" // our lane it rides: TCP-TLS or REALITY
+)
 
 // ExtRule sends the traffic matching Domains or IPs (the forms the server's routing
 // takes: domain, geosite:, geoip:, CIDR, iplist:) to Target.
@@ -98,7 +108,7 @@ func (r ExtRouting) RestTarget() string {
 
 // IsZero reports whether the routing is the default one.
 func (r ExtRouting) IsZero() bool {
-	return len(r.Rules) == 0 && r.RestTarget() == ExtToPartner && r.Dial == ""
+	return len(r.Rules) == 0 && r.RestTarget() == ExtToPartner && r.Dial == "" && r.Name == ""
 }
 
 // Targets lists every target the routing names, Dial included.

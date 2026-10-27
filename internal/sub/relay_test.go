@@ -89,8 +89,8 @@ func TestRelayedServerNeedsAllOfIt(t *testing.T) {
 	}
 }
 
-// Relayed through both lanes here, the server is two entries, each named after the
-// partner's server and our lane; a WireGuard config is never handed out as it is, and
+// Relayed through both lanes here, the server is two entries, both named after the
+// partner's server alone; a WireGuard config is never handed out as it is, and
 // rides only the first of our servers its subscription names.
 func TestRelayedThroughSeveralLanes(t *testing.T) {
 	srv := relayServer(model.LaneVLESS, true)
@@ -102,7 +102,7 @@ func TestRelayedThroughSeveralLanes(t *testing.T) {
 			names = append(names, u.Fragment)
 		}
 	}
-	if len(names) != 2 || names[0] == names[1] || !strings.HasPrefix(names[0], "Partner NL · ") {
+	if len(names) != 2 || names[0] != "Partner NL" || names[1] != "Partner NL" {
 		t.Fatalf("relayed entries %q", names)
 	}
 
@@ -117,5 +117,33 @@ func TestRelayedThroughSeveralLanes(t *testing.T) {
 	wg.Relays = []model.ExtRelayVia{{ServerID: 3, Lane: model.LaneVLESS}, {ServerID: 2, Lane: model.LaneReality}, {ServerID: 2, Lane: model.LaneVLESS}}
 	if v := wg.RelayVias(); len(v) != 2 || v[0].ServerID != 2 || v[1].ServerID != 2 {
 		t.Fatalf("WireGuard rides %+v, want server 2 alone", v)
+	}
+}
+
+// A name template names the relayed entry: the provider's server, our server, our lane
+// and the user's own values; a provider's or a user's name holding a variable stays as
+// written.
+func TestRelayedEntryNameTemplate(t *testing.T) {
+	srv := relayServer(model.LaneReality, true)
+	srv.Set.MasterLabel = "Main"
+	srv.Relays[0].Routing.Name = "{name}  · {server} · {proto} · {user}"
+	if got := srv.relayName(srv.Relays[0], model.LaneReality, relayUser); got != "Partner NL · Main · REALITY · u" {
+		t.Fatalf("named %q", got)
+	}
+	e := srv.Relays[0]
+	e.Name = "P {user}"
+	e.Routing.Name = "{name} {proto}"
+	if got := srv.relayName(e, model.LaneVLESS, relayUser); got != "P {user} TCP-TLS" {
+		t.Fatalf("named %q", got)
+	}
+	u := relayUser
+	u.Name = "{proto}"
+	e.Routing.Name = "{user} {name}"
+	if got := srv.relayName(e, model.LaneVLESS, u); got != "{proto} P {user}" {
+		t.Fatalf("a user named {proto}: named %q", got)
+	}
+	e.Routing.Name = ""
+	if got := srv.relayName(e, model.LaneVLESS, relayUser); got != "P {user}" {
+		t.Fatalf("no template: named %q", got)
 	}
 }
