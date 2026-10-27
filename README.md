@@ -550,7 +550,7 @@ your own. The source is a link, a `happ://crypt…` link or a pasted list; a lin
 hour, every server switches on and off on its own, and who gets them is decided by the same
 **access groups** as your own lanes. A subscription can be **relayed through your servers**
 — any of them, each over the lanes you tick: users connect to your VLESS TCP-TLS or REALITY lane
-(one config per server and lane for every partner server), the server carries the traffic on to
+(one config per server and lane for every partner server, named by a template with `{name}`, `{proto}`, `{server}` and the other name variables), the server carries the traffic on to
 the partner, and speed caps, quotas, device limits and cut-off work as on your own lanes. A relayed
 subscription has **its own routing**: rules send part of the traffic elsewhere (`geoip:ru` directly
 from your server, a site through WARP or a lane), the rest goes to the partner, and your server can

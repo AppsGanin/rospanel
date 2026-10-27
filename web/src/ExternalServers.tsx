@@ -79,8 +79,12 @@ export function ExternalServers() {
       .then((r) => {
         setSubs(r.subscriptions ?? []);
         setServers(r.servers ?? []);
+        return r;
       })
-      .catch((e) => notifyError(errMessage(e)));
+      .catch((e) => {
+        notifyError(errMessage(e));
+        return null;
+      });
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
@@ -211,9 +215,14 @@ export function ExternalServers() {
       {adding && (
         <AddExternalDialog
           onClose={() => setAdding(false)}
-          onAdded={() => {
+          onAdded={async (sub) => {
             setAdding(false);
-            load();
+            // WireGuard servers reach users only through a server of ours, and a new
+            // subscription has none: pick it now rather than leave them handed to no one.
+            const r = await load();
+            if (r?.servers?.some((x) => x.sub_id === sub.id && x.protocol === "wireguard")) {
+              setDelivering(r.subscriptions?.find((x) => x.id === sub.id) ?? sub);
+            }
           }}
         />
       )}
@@ -260,11 +269,16 @@ function ExtSubCard({
   const dot = !sub.enabled ? "bg-gray-400" : sub.last_error ? "bg-warning" : "bg-success";
 
   // Where the servers go, in one line: as they are, or through how many lanes of ours.
+  // WireGuard servers are never handed out as they are, so with no server of ours
+  // chosen a WireGuard-only subscription reaches no one.
   const relays = sub.relays ?? [];
+  const undelivered = relays.length === 0 && servers.length > 0 && servers.every((x) => x.protocol === "wireguard");
   const relayServer = relays.length ? nodes.find((n) => n.id === relays[0].server_id) : undefined;
   const delivery =
-    relays.length === 0
-      ? t("external.direct")
+    undelivered
+      ? t("external.notDelivered")
+      : relays.length === 0
+        ? t("external.direct")
       : relays.length === 1
         ? t("external.via", {
             server: relayServer ? serverName(relayServer) : `#${relays[0].server_id}`,
@@ -286,7 +300,14 @@ function ExtSubCard({
           </Badge>
         )}
         <span className="ms-auto flex shrink-0 items-center gap-1">
-          <Button size="xs" variant="light" color="gray" title={t("external.delivery")} disabled={busy} onClick={onDelivery}>
+          <Button
+            size="xs"
+            variant="light"
+            color={undelivered ? "orange" : "gray"}
+            title={t("external.delivery")}
+            disabled={busy}
+            onClick={onDelivery}
+          >
             <span className="max-w-52 truncate">{delivery}</span>
           </Button>
           <IconButton title={t("external.sync")} disabled={busy} onClick={onSync}>
@@ -556,7 +577,7 @@ function EditExternalDialog({
 
 // AddExternalDialog takes a source of any of the accepted shapes; the answer says
 // how many servers it holds, so a wrong paste shows as zero right here.
-function AddExternalDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+function AddExternalDialog({ onClose, onAdded }: { onClose: () => void; onAdded: (sub: ExtSubscription) => void }) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const [source, setSource] = useState("");
@@ -567,7 +588,7 @@ function AddExternalDialog({ onClose, onAdded }: { onClose: () => void; onAdded:
     run(async () => {
       const r = await createExternal(name.trim(), source.trim(), identity);
       notifySuccess(t("external.added", { name: r.subscription.name, total: r.report.total }));
-      onAdded();
+      onAdded(r.subscription);
     });
 
   return (

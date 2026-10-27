@@ -1854,6 +1854,8 @@ const zh: Dict = {
       "随流量消耗而变化的名称（{left}、{used}、{days}）在每次订阅更新时对客户端来说都是一个新服务器，会重置用户已选的服务器。{server} 保持不变。",
     static:
       "名称写入配置文件，在下载文件时填充一次。",
+    name: "服务商的服务器",
+    proto: "你的协议：TCP-TLS 或 REALITY",
     server: "服务器名称（替换自动生成的“服务器 · 连接”前缀）",
     user: "账户名称",
     used: "已用流量",
@@ -3073,6 +3075,9 @@ const zh: Dict = {
 
 
   extRoute: {
+    entryName: "订阅中的名称",
+    entryNameHint: "用户看到的条目名称。留空即服务商服务器名称。",
+    varServer: "条目所经过的你的服务器",
     title: "分发",
     modeDirect: "直接",
     modeVia: "经我们的服务器",
@@ -4252,6 +4257,7 @@ const zh: Dict = {
     hint: "为您的用户提供其他服务商的服务器。由访问组决定谁能获得。",
     delivery: "分发方式",
     direct: "直连",
+    notDelivered: "未分发",
     via: "经由 {{server}} · {{lane}}",
     viaGone: "经由已不存在的服务器",
     deliverySaved: "分发方式已更改",
