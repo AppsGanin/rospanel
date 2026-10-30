@@ -868,9 +868,17 @@ func (m *Manager) Connections(id int64) ([]model.Connection, error) {
 		return conns, err
 	}
 	banned := m.bannedAddresses()
+	var via []string
+	viaKnown := false
 	for i := range conns {
 		conns[i].ApproxSeconds = conns[i].Count * accThrottle
 		conns[i].Banned = banned[conns[i].IP]
+		if conns[i].Tunnel = model.IsTunnelIP(conns[i].IP); conns[i].Tunnel {
+			if !viaKnown {
+				via, viaKnown = m.tunnelVia(id), true
+			}
+			conns[i].TunnelVia = via
+		}
 	}
 	return conns, nil
 }
@@ -986,4 +994,22 @@ func (m *Manager) noteTermsStarted(started []store.TermStart) {
 		ids = append(ids, t.UserID)
 	}
 	m.emitUsersWebhook(model.WebhookUserTermStarted, ids, nil)
+}
+
+// tunnelVia is the WireGuard protocols a user may use on any server, for naming a tunnel
+// address on their device list. Nothing when it cannot be told.
+func (m *Manager) tunnelVia(userID int64) []string {
+	access, err := m.store.UserAccess(userID)
+	if err != nil {
+		return nil
+	}
+	all, err := m.store.AllInbounds()
+	if err != nil {
+		return nil
+	}
+	var list []model.Inbound
+	for _, in := range all {
+		list = append(list, in...)
+	}
+	return model.TunnelVia(list, access)
 }

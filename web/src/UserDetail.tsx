@@ -512,7 +512,10 @@ export function UserDetail({
     }
   }
 
-  const activeConnCount = user ? conns.filter((c) => isOnline(c.last_seen)).length : 0
+  // A tunnel address (WireGuard) is listed but is no device: the counts leave it out, as the
+  // server's device count does.
+  const deviceConns = conns.filter((c) => !c.tunnel)
+  const activeConnCount = user ? deviceConns.filter((c) => isOnline(c.last_seen)).length : 0
   // Devices are the longest list in the card (the server hands over up to 20 IPs) and
   // sit between two sections the operator scrolls to, so only the most recent few are
   // open by default. Keyed on the user so reopening the card for someone else starts
@@ -754,11 +757,11 @@ export function UserDetail({
                   ? t('userDetail.activeOfLimit', {
                       active: activeConnCount,
                       limit: user.device_limit,
-                      total: conns.length,
+                      total: deviceConns.length,
                     })
                   : t('userDetail.activeTotal', {
                       active: activeConnCount,
-                      total: conns.length,
+                      total: deviceConns.length,
                     })}
               </span>
             }
@@ -793,6 +796,11 @@ export function UserDetail({
                       >
                         {c.ip}
                       </Mono>
+                      {c.tunnel && (
+                        <span className="shrink-0 text-[11px] text-ink-muted">
+                          {c.tunnel_via?.length ? c.tunnel_via.join(' · ') : t('userDetail.tunnelConn')}
+                        </span>
+                      )}
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
                       <Mono

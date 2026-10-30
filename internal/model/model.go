@@ -882,6 +882,13 @@ type Connection struct {
 	ApproxSeconds int64 `json:"approx_seconds"`
 	// Banned is whether the address is dropped at the firewall right now, by any ban.
 	Banned bool `json:"banned"`
+	// Tunnel marks the tunnel address of a WireGuard inbound: where the user's traffic
+	// came through, not a machine's address, so it is no device (see TunnelIPLike).
+	Tunnel bool `json:"tunnel,omitempty"`
+	// TunnelVia names the WireGuard protocols the user may use that such an address
+	// can come from ("WG", "TURN-VK"), for the row's label. The address is the same
+	// for all of them, so which one it was is not known — only which are possible.
+	TunnelVia []string `json:"tunnel_via,omitempty"`
 }
 
 // UptimeDay is one server's liveness on one day: how many samples were taken and

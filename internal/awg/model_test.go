@@ -2,7 +2,9 @@ package awg
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -122,5 +124,15 @@ func TestTunnelDNSSkipsWhatTheTunnelCannotReach(t *testing.T) {
 		if got := TunnelDNS(&model.Settings{XrayDNS: c.xray}); got != c.want {
 			t.Errorf("TunnelDNS(%q) = %q, want %q", c.xray, got, c.want)
 		}
+	}
+}
+
+// The store leaves tunnel addresses out of its device counts by a LIKE pattern; it has to
+// match exactly the subnet the tunnels use.
+func TestTunnelIPLikeMatchesTheSubnet(t *testing.T) {
+	prefix := strings.TrimSuffix(model.TunnelIPLike, "%")
+	a := Subnet.Addr().As4()
+	if Subnet.Bits() != 16 || prefix != fmt.Sprintf("%d.%d.", a[0], a[1]) {
+		t.Fatalf("TunnelIPLike %q does not describe %s", model.TunnelIPLike, Subnet)
 	}
 }

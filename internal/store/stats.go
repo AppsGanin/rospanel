@@ -562,7 +562,7 @@ func (s *Store) ActiveDeviceCounts(since int64) (map[int64]int, error) {
 	rows, err := s.db.Query(
 		`SELECT user_id, COUNT(DISTINCT ip)
 		 FROM connections INDEXED BY idx_connections_last_seen
-		 WHERE last_seen > ? GROUP BY user_id`, since)
+		 WHERE last_seen > ? AND ip NOT LIKE '`+model.TunnelIPLike+`' GROUP BY user_id`, since)
 	if err != nil {
 		return nil, err
 	}

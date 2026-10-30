@@ -548,8 +548,12 @@ func (s *Store) ActiveDeviceCountsOf(ids []int64, since int64) (map[int64]int, e
 	return out, rows.Err()
 }
 
+// notTunnelIP leaves out the tunnel addresses WireGuard inbounds record (see
+// model.TunnelIPLike): a device count is of real addresses.
+const notTunnelIP = ` AND ip NOT LIKE '` + model.TunnelIPLike + `'`
+
 const activeDeviceCountsOfSQL = `SELECT user_id, COUNT(DISTINCT ip) FROM connections
-	WHERE user_id IN (SELECT value FROM json_each(?)) AND last_seen > ?
+	WHERE user_id IN (SELECT value FROM json_each(?)) AND last_seen > ?` + notTunnelIP + `
 	GROUP BY user_id`
 
 // UserIDs returns the set of existing user ids.
@@ -618,14 +622,16 @@ func (s *Store) CountUsers(now int64) (UserCounts, error) {
 		            AND (u.data_limit = 0 OR u.used_up + u.used_down < u.data_limit)
 		            AND (u.device_limit = 0
 		                 OR NOT (SELECT ip_counts FROM device_count)
-		                 OR COALESCE(d.n, 0) <= u.device_limit
+		                 OR COALESCE(d.dev, 0) <= u.device_limit
 		                 OR u.device_over_since = 0
 		                 OR u.device_over_since > ?)
 		           THEN 1 ELSE 0 END), 0),
 		       COALESCE(SUM(CASE WHEN COALESCE(d.n, 0) > 0 THEN 1 ELSE 0 END), 0)
 		FROM users u
 		LEFT JOIN (
-		    SELECT user_id, COUNT(DISTINCT ip) AS n
+		    -- n: any address seen (online); dev: the real ones (devices).
+		    SELECT user_id, COUNT(DISTINCT ip) AS n,
+		           COUNT(DISTINCT CASE WHEN ip LIKE '`+model.TunnelIPLike+`' THEN NULL ELSE ip END) AS dev
 		    FROM connections INDEXED BY idx_connections_last_seen
 		    WHERE last_seen > ? GROUP BY user_id
 		) d ON d.user_id = u.id`,
@@ -822,7 +828,8 @@ const withinDeviceLimitExpr = `(u.device_limit = 0 OR NOT (SELECT ip_counts FROM
 		       -- has run to clear their stamp yet: an out-of-date stamp must never be
 		       -- able to hold someone out.
 		       OR (SELECT COUNT(DISTINCT c.ip) FROM connections c
-		           WHERE c.user_id = u.id AND c.last_seen > ?) <= u.device_limit
+		           WHERE c.user_id = u.id AND c.last_seen > ?
+		             AND c.ip NOT LIKE '` + model.TunnelIPLike + `') <= u.device_limit
 		       -- Over, but not for long enough yet. See DeviceLimitGrace: an address
 		       -- left behind by a network change or a carrier's address rotation leaves
 		       -- the window before this expires, so it never costs anyone a cut.
@@ -1753,7 +1760,7 @@ func (s *Store) activeDeviceCounts(users []model.User, since int64) (map[int64]i
 	}
 	var n int
 	if err := s.db.QueryRow(
-		`SELECT COUNT(DISTINCT ip) FROM connections WHERE user_id = ? AND last_seen > ?`,
+		`SELECT COUNT(DISTINCT ip) FROM connections WHERE user_id = ? AND last_seen > ?`+notTunnelIP,
 		users[0].ID, since).Scan(&n); err != nil {
 		return nil, err
 	}
