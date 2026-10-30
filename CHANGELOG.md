@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.11.1](https://github.com/AppsGanin/rospanel/compare/v5.11.0...v5.11.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **xray:** skip an inbound of a protocol this build does not know ([3f65969](https://github.com/AppsGanin/rospanel/commit/3f65969f47e9a113dcacf4257475b7cff71ae2cd))
+
 ## [5.11.0](https://github.com/AppsGanin/rospanel/compare/v5.10.0...v5.11.0) (2026-10-27)
 
 
