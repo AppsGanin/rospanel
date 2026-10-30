@@ -388,6 +388,14 @@ func CanonicalProtocol(p string) string {
 // InboundProtocols lists the offered protocols, in UI order.
 var InboundProtocols = []string{InbVLESS, InbTrojan, InbHysteria, InbShadowsocks, InbTurnVK, InbWireGuard}
 
+// KnownInboundProtocol reports whether this build can generate a protocol: true for
+// every entry of InboundProtocols.
+//
+// It matters because the database can hold a row this build does not know — written by a
+// newer panel, then read by an older one after a rollback or a downgraded update. A
+// generator has to skip such a row rather than emit a config Xray will refuse whole.
+func KnownInboundProtocol(p string) bool { return contains(InboundProtocols, p) }
+
 // IsWireGuard reports whether a protocol is one of the two WireGuard inbounds — behind
 // a TURN relay or on a port of its own. Both are Xray's "wireguard" inbound with the
 // users' tunnel identities as peers; they differ in who holds the public port.

@@ -6,6 +6,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/extsub"
 	"hash/fnv"
+	"log/slog"
 	"net"
 	"strings"
 
@@ -236,6 +237,16 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	// malformed one can only ever be an extra listener that fails to bind — it can't
 	// displace :443 or the REALITY lane.
 	for _, in := range opts.Custom {
+		// A row this build cannot generate — one written by a newer panel and read
+		// after a downgrade, say. Skipped, not passed on: an inbound Xray cannot
+		// build makes it refuse the WHOLE config, so one unknown row would take every
+		// lane on the server down with it. Losing this inbound alone is the smaller
+		// cost, and the log says which and why.
+		if !model.KnownInboundProtocol(in.Protocol) {
+			slog.Error("xray: skipping an inbound of a protocol this build does not know",
+				"tag", in.Tag(), "protocol", in.Protocol, "name", in.Name, "port", in.Port)
+			continue
+		}
 		inbounds = append(inbounds, customInbound(in, set, users, sniff, sharedCert, minTLS, opts))
 	}
 
