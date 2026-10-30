@@ -128,3 +128,33 @@ func TestPlanUserChangesTakesWireGuardPeers(t *testing.T) {
 		t.Error("a shared email must not be managed live")
 	}
 }
+
+// A plain WireGuard inbound is Xray's own listener on the public port, all interfaces,
+// at WireGuard's own MTU, with the same peers as a TURN lane's.
+func TestWireGuardDirectInboundShape(t *testing.T) {
+	wg := model.Inbound{ID: 22, Enabled: true, Name: "WG", Protocol: model.InbWireGuard, Port: 51820,
+		Opts: model.InboundOpts{WGPrivateKey: testWGKey(9), WGPublicKey: testWGKey(10)}}
+	wg.Normalize()
+	users := []model.User{{ID: 1, UUID: "u-1", WGPrivateKey: testWGKey(1), AWGSlot: 2}}
+	cfg, err := Generate(baseSettings(), users, Options{PanelDest: "127.0.0.1:8080", Custom: []model.Inbound{wg}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := findInbound(cfg, wg.Tag())
+	if got == nil {
+		t.Fatal("wireguard inbound missing")
+	}
+	if got.Listen == "127.0.0.1" || got.Port != 51820 || got.Protocol != "wireguard" || got.StreamSettings != nil {
+		t.Errorf("inbound = %s %q:%d stream=%v", got.Protocol, got.Listen, got.Port, got.StreamSettings)
+	}
+	s, ok := got.Settings.(WireGuardInboundSettings)
+	if !ok || s.MTU != WireGuardMTU || s.SecretKey != wg.Opts.WGPrivateKey || len(s.Peers) != 1 || s.Peers[0].Email != "u1" {
+		t.Errorf("settings = %+v", got.Settings)
+	}
+	if tags := EnabledInboundTags(baseSettings(), []model.Inbound{wg}); slices.Contains(tags, wg.Tag()) {
+		t.Errorf("rmu targets include the wireguard inbound: %v", tags)
+	}
+	if w := WireGuardInbounds(cfg); len(w) != 1 || w[0].Tag != wg.Tag() {
+		t.Errorf("WireGuardInbounds = %+v", w)
+	}
+}

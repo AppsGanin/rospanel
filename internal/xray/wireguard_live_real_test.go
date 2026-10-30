@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/awg"
+	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/turnrelay"
 	"github.com/AppsGanin/rospanel/internal/turnrelay/freeturnref/rtpopus"
 	"github.com/AppsGanin/rospanel/internal/turnrelay/freeturnref/rtpopus3"
@@ -430,4 +431,76 @@ func wireGuardClient(t *testing.T, bin, dir, email, priv string, slot int, serve
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 	proxy, _ := url.Parse(fmt.Sprintf("socks5://127.0.0.1:%d", socks))
 	return &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{Proxy: http.ProxyURL(proxy), DisableKeepAlives: true}}
+}
+
+// TestPlainWireGuardAgainstRealXray runs a plain WireGuard inbound, as Generate builds it,
+// in a real Xray with a stock WireGuard client dialling its public port directly — no
+// relay in between — and shows the user's traffic getting through at WireGuard's own
+// MTU. Set RP_XRAY_BIN to an Xray binary to run it.
+func TestPlainWireGuardAgainstRealXray(t *testing.T) {
+	bin := os.Getenv("RP_XRAY_BIN")
+	if bin == "" {
+		t.Skip("RP_XRAY_BIN is not set")
+	}
+	dir := t.TempDir()
+	wgPort := freePort(t, "udp")
+	targetIP := nonLoopbackIPv4(t)
+	target := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	})}
+	ln, err := net.Listen("tcp", net.JoinHostPort(targetIP, "0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = target.Serve(ln) }()
+	t.Cleanup(func() { _ = target.Close() })
+	targetURL := "http://" + ln.Addr().String() + "/"
+
+	serverPriv, serverPub, err := awg.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	userPriv, _, err := awg.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := model.Inbound{ID: 31, Enabled: true, Name: "WG", Protocol: model.InbWireGuard, Port: wgPort,
+		Opts: model.InboundOpts{WGPrivateKey: serverPriv, WGPublicKey: serverPub}}
+	in.Normalize()
+	users := []model.User{{ID: 1, UUID: "u-1", WGPrivateKey: userPriv, AWGSlot: awg.FirstSlot}}
+	gen, err := Generate(baseSettings(), users, Options{PanelDest: "127.0.0.1:8080", Custom: []model.Inbound{in}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wg := findInbound(gen, in.Tag())
+	if wg == nil {
+		t.Fatal("generated config has no wireguard inbound")
+	}
+	cfg := map[string]any{
+		"log":      map[string]any{"loglevel": "warning"},
+		"inbounds": []any{wg},
+		"outbounds": []any{
+			map[string]any{"tag": "direct", "protocol": "freedom", "settings": map[string]any{
+				"finalRules": []any{map[string]any{"action": "allow", "ip": []string{targetIP + "/32"}}}}},
+		},
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sup := NewSupervisor(bin, filepath.Join(dir, "config.json"), dir)
+	t.Cleanup(sup.Stop)
+	if err := sup.ApplyRaw(data); err != nil {
+		t.Fatalf("start xray: %v", err)
+	}
+	client := wireGuardClient(t, bin, dir, "u1", userPriv, awg.FirstSlot, serverPub, fmt.Sprintf("127.0.0.1:%d", wgPort))
+	waitLong(t, "a plain WireGuard client to get through", func() bool {
+		resp, err := client.Get(targetURL)
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return string(b) == "ok"
+	})
 }

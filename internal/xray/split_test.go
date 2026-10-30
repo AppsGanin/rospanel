@@ -35,6 +35,8 @@ func splitFixture() (*model.Settings, []model.Inbound) {
 			in.Opts = model.InboundOpts{Method: model.SS2022AES128, ShadowKey: "AAAAAAAAAAAAAAAAAAAAAA=="}
 		case model.InbTurnVK:
 			in.Opts = model.InboundOpts{WGPrivateKey: testWGKey(0), WGPublicKey: testWGKey(1), WGLocalPort: 20000 + i}
+		case model.InbWireGuard:
+			in.Opts = model.InboundOpts{WGPrivateKey: testWGKey(0), WGPublicKey: testWGKey(1)}
 		}
 		in.Normalize()
 		custom = append(custom, in)

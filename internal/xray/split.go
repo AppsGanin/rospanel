@@ -121,7 +121,7 @@ func slotOf(in Inbound, custom map[string]*model.Inbound) (nodeapi.UserSlot, boo
 			s = nodeapi.UserSlot{Kind: "trojan"}
 		case model.InbHysteria:
 			s = nodeapi.UserSlot{Kind: "hysteria"}
-		case model.InbTurnVK:
+		case model.InbTurnVK, model.InbWireGuard:
 			s = nodeapi.UserSlot{Kind: "wireguard"}
 		case model.InbShadowsocks:
 			locked, err := json.Marshal(ShadowsocksClient{

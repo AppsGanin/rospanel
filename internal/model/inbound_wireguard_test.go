@@ -150,3 +150,69 @@ func TestTurnVKOldNameIsAccepted(t *testing.T) {
 		t.Fatal("an unrelated protocol was renamed")
 	}
 }
+
+func wgDirectInbound() Inbound {
+	return Inbound{
+		ID: 11, Enabled: true, Name: "WG", Protocol: InbWireGuard, Port: 51999,
+		Opts: InboundOpts{Transport: TrWireGuard, Security: SecNone, WGPrivateKey: wgKey('a'), WGPublicKey: wgKey('b')},
+	}
+}
+
+// A plain WireGuard inbound owns its transport and security, drops the relay's fields
+// and everything another protocol owns, and validates on the two keys alone.
+func TestWireGuardDirectNormalizeAndValidate(t *testing.T) {
+	in := wgDirectInbound()
+	in.Opts.Transport, in.Opts.Security, in.Opts.SNI, in.Opts.Path = "ws", "tls", "x.example", "/p"
+	in.Opts.WGLocalPort, in.Opts.TurnLink, in.Opts.TurnMaskKey = 20001, "https://vk.com/call/join/a", strings.Repeat("ab", 32)
+	in.Normalize()
+	o := in.Opts
+	if o.Transport != TrWireGuard || o.Security != SecNone {
+		t.Errorf("transport/security = %s/%s", o.Transport, o.Security)
+	}
+	if o.SNI != "" || o.Path != "" || o.WGLocalPort != 0 || o.TurnLink != "" || o.TurnMaskKey != "" {
+		t.Errorf("foreign or relay fields survived: %+v", o)
+	}
+	if in.NeedsWireGuardKey() || in.NeedsTurnMaskKey() {
+		t.Errorf("a keyed plain inbound asks for a key (wg %v, mask %v)", in.NeedsWireGuardKey(), in.NeedsTurnMaskKey())
+	}
+	if err := in.Validate(); err != nil {
+		t.Errorf("a normalized inbound does not validate: %v", err)
+	}
+	if ProtoOf(in.Protocol) != "udp" || in.UnsupportedFormats() != nil || !IsWireGuard(in.Protocol) {
+		t.Errorf("udp %v, formats %v", ProtoOf(in.Protocol), in.UnsupportedFormats())
+	}
+
+	keyless := wgDirectInbound()
+	keyless.Opts.WGPrivateKey = ""
+	keyless.Normalize()
+	if !keyless.NeedsWireGuardKey() {
+		t.Error("a keyless inbound does not ask for a key")
+	}
+	if code := fieldCode(keyless.Validate()); code != "err.wgKeyBad" {
+		t.Errorf("keyless: code %q", code)
+	}
+	if !contains(InboundProtocols, InbWireGuard) || len(InboundTransports(InbWireGuard)) != 1 {
+		t.Error("the catalog does not offer plain WireGuard")
+	}
+}
+
+// The plain inbound holds one UDP port, its own — no loopback second.
+func TestWireGuardDirectPortsInTheSet(t *testing.T) {
+	wg := wgDirectInbound()
+	hy := Inbound{ID: 12, Enabled: true, Name: "hy", Protocol: InbHysteria, Port: wg.Port,
+		Opts: InboundOpts{Transport: TrHysteria, Security: SecTLS}}
+	if code := fieldCode(ValidateInboundSet([]Inbound{wg, hy}, NewReservedPorts(), nil)); code != "err.portTakenByInbound" {
+		t.Errorf("a UDP inbound on its port: code %q", code)
+	}
+	tcp := Inbound{ID: 13, Enabled: true, Name: "tcp", Protocol: InbVLESS, Port: wg.Port,
+		Opts: InboundOpts{Transport: TrWS, Security: SecTLS, Path: "/p"}}
+	if err := ValidateInboundSet([]Inbound{wg, tcp}, NewReservedPorts(), nil); err != nil {
+		t.Errorf("TCP on the same number is no collision: %v", err)
+	}
+	// Port 0 as the "loopback port" must not be taken for a held port.
+	reserved := NewReservedPorts()
+	reserved.HoldUDP(0, "nothing")
+	if err := ValidateInboundSet([]Inbound{wg}, reserved, nil); err != nil {
+		t.Errorf("a plain inbound claimed a loopback port: %v", err)
+	}
+}

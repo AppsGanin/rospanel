@@ -284,7 +284,7 @@ func (m *Manager) UpdateInbound(ctx context.Context, in model.Inbound) (*Inbound
 	}
 	// And the WireGuard identity and loopback port: a new key would strand every
 	// imported config, and a new port would move the relay's target for nothing.
-	if in.Protocol == model.InbTurnVK && cur.Protocol == model.InbTurnVK {
+	if model.IsWireGuard(in.Protocol) && in.Protocol == cur.Protocol {
 		in.Opts.WGPrivateKey = cur.Opts.WGPrivateKey
 		in.Opts.WGPublicKey = cur.Opts.WGPublicKey
 		in.Opts.WGLocalPort = cur.Opts.WGLocalPort

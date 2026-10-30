@@ -41,6 +41,7 @@ type View struct {
 	// that builds its own ?start=r_<code> link.
 	RefCode string     `json:"ref_code,omitempty"`
 	AWG     []ViewAWG  `json:"awg"`
+	WG      []ViewAWG  `json:"wg"`
 	Turn    []ViewTurn `json:"turn"`
 	// Telegram is one Telegram proxy per server the user may use: Link (tg://) adds it
 	// in one tap, WebLink is the same as an https://t.me address.
@@ -152,7 +153,7 @@ func PageView(u model.User, local *model.Settings, servers []Server, billing Bil
 		ExpireAt: u.ExpireAt, HoldSeconds: u.HoldSeconds,
 		Texts:  ViewTexts{Used: d.Used, Limit: d.Limit, Expire: d.Expire, Reset: d.ResetText, LastSeen: d.LastSeen},
 		SubURL: d.SubURL, ShowConfigs: d.ShowConfigs, Maintenance: local.MaintenanceMode,
-		Apps: []ViewApp{}, Links: []ViewLink{}, AWG: []ViewAWG{}, Turn: []ViewTurn{}, Telegram: []ViewTelegram{}, Blocks: []ViewBlock{},
+		Apps: []ViewApp{}, Links: []ViewLink{}, AWG: []ViewAWG{}, WG: []ViewAWG{}, Turn: []ViewTurn{}, Telegram: []ViewTelegram{}, Blocks: []ViewBlock{},
 		Brand:   ViewBrand{Name: d.BrandName, Accent: d.Brand, Text: d.Ink, Muted: d.Muted, Bg: d.Bg, Surface: d.Surface},
 		Devices: devices,
 	}
@@ -172,6 +173,9 @@ func PageView(u model.User, local *model.Settings, servers []Server, billing Bil
 	}
 	for _, a := range d.AWG {
 		v.AWG = append(v.AWG, ViewAWG{Name: a.Label, ConfURL: a.ConfURL, QRURL: a.QRURL})
+	}
+	for _, a := range d.WG {
+		v.WG = append(v.WG, ViewAWG{Name: a.Label, ConfURL: a.ConfURL, QRURL: a.QRURL})
 	}
 	for _, c := range d.Telegram {
 		v.Telegram = append(v.Telegram, ViewTelegram{Name: c.Label, Link: string(c.Link), WebLink: c.WebLink, QRURL: c.QRURL})

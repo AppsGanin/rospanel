@@ -1212,14 +1212,15 @@ func (rt *Router) subUnavailable(w http.ResponseWriter, userID int64, err error)
 	w.WriteHeader(http.StatusServiceUnavailable)
 }
 
-// serveTurnWG hands out one user's WireGuard config for one WireGuard inbound behind a
-// TURN relay — "<id>.conf", id being the inbound. No QR: a phone takes this lane from an
-// app's import link, and the file is for setting a client up by hand. The inbound must be
+// serveTurnWG hands out one user's WireGuard config for one WireGuard inbound — "<id>.conf",
+// id being the inbound; a plain WireGuard inbound also has "<id>.png", the same text in a
+// QR. A TURN lane has no QR: a phone takes it from an app's import link, and the file is
+// for setting a client up by hand. The inbound must be
 // on a server of this user's subscription and the user allowed on it; anything else is
 // the decoy.
 func (rt *Router) serveTurnWG(w http.ResponseWriter, r *http.Request, u *model.User, set *model.Settings, rest string) {
 	name, ext, ok := strings.Cut(rest, ".")
-	if !ok || ext != "conf" {
+	if !ok || (ext != "conf" && ext != "png") {
 		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
@@ -1237,7 +1238,10 @@ func (rt *Router) serveTurnWG(w http.ResponseWriter, r *http.Request, u *model.U
 	var in *model.Inbound
 	for i := range servers {
 		for j := range servers[i].Custom {
-			if c := &servers[i].Custom[j]; c.ID == id && c.Protocol == model.InbTurnVK {
+			// The QR is for the plain lane alone: a TURN lane is set up from an app's
+			// import link, and a QR of its file would point a phone at a local port.
+			if c := &servers[i].Custom[j]; c.ID == id && (c.Protocol == model.InbWireGuard ||
+				(c.Protocol == model.InbTurnVK && ext == "conf")) {
 				srv, in = &servers[i], c
 			}
 		}
