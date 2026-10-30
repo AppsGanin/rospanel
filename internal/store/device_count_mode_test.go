@@ -241,3 +241,59 @@ func TestOneUserReadCountsTheSameDevicesAsTheList(t *testing.T) {
 		}
 	}
 }
+
+// A WireGuard inbound records the peer's tunnel address, which is not a machine's: it
+// shows the user online but is no device, every way the devices are counted — beside a
+// real address it must not turn one device into two.
+func TestTunnelAddressIsNotADevice(t *testing.T) {
+	t.Parallel()
+	st := dcStore(t)
+	now := time.Now().Unix()
+	mixed := dcUser(t, st, "mixed",
+		ConnectionHit{IP: "178.176.163.245", SeenAt: now},
+		ConnectionHit{IP: "10.66.0.2", SeenAt: now},
+	)
+	tunnelOnly := dcUser(t, st, "tunnel", ConnectionHit{IP: "10.66.0.3", SeenAt: now})
+	if err := st.SetUserLimits(mixed.ID, 0, 0, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	listed, err := st.ListUsers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inList := map[int64]int{}
+	for _, u := range listed {
+		inList[u.ID] = u.ActiveDevices
+	}
+	for _, c := range []struct {
+		u    model.User
+		want int
+	}{{mixed, 1}, {tunnelOnly, 0}} {
+		one, err := st.GetUser(c.u.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if one.ActiveDevices != c.want || inList[c.u.ID] != c.want {
+			t.Errorf("%s: one read %d, list %d — want %d", c.u.Name, one.ActiveDevices, inList[c.u.ID], c.want)
+		}
+	}
+	if m, _ := st.GetUser(mixed.ID); m.Status != model.StatusActive {
+		t.Errorf("a user with one real address and a tunnel one is %q under a limit of 1", m.Status)
+	}
+	counts, err := st.ActiveDeviceCounts(now - model.DeviceOnlineWindow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts[mixed.ID] != 1 || counts[tunnelOnly.ID] != 0 {
+		t.Errorf("ActiveDeviceCounts = %v", counts)
+	}
+	// Online is about anyone being there, a tunnel address included.
+	c, err := st.CountUsers(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Online != 2 {
+		t.Errorf("online = %d, want 2 (the tunnel-only user is online too)", c.Online)
+	}
+}

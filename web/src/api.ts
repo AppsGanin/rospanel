@@ -90,6 +90,11 @@ export interface Connection {
   approx_seconds: number
   // dropped at the firewall right now, by any ban
   banned: boolean
+  // the tunnel address of a WireGuard inbound: shows the account is on, but it is not a
+  // machine's address, so it is no device
+  tunnel?: boolean
+  // the WireGuard protocols this address can come from ("WG", "TURN-VK")
+  tunnel_via?: string[]
   // whether the caller may ban it: an admin, and an address a ban may touch
   can_ban?: boolean
 }
