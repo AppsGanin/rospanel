@@ -3,6 +3,7 @@ package xray
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/AppsGanin/rospanel/internal/awg"
@@ -156,5 +157,43 @@ func TestWireGuardDirectInboundShape(t *testing.T) {
 	}
 	if w := WireGuardInbounds(cfg); len(w) != 1 || w[0].Tag != wg.Tag() {
 		t.Errorf("WireGuardInbounds = %+v", w)
+	}
+}
+
+// A stored inbound of a protocol this build does not know — written by a newer panel and
+// read after a downgrade — is skipped with a log line, not passed to Xray: one inbound it
+// cannot build makes it refuse the whole config, which took every lane down on a live
+// server when a release predating the "wg" inbound was installed over one that had it.
+func TestUnknownInboundProtocolIsSkipped(t *testing.T) {
+	unknown := model.Inbound{ID: 77, Enabled: true, Name: "From the future", Protocol: "quantum", Port: 9001}
+	unknown.Opts.Transport, unknown.Opts.Security = "quantum", "none"
+	known := model.Inbound{ID: 78, Enabled: true, Name: "WG", Protocol: model.InbWireGuard, Port: 51820,
+		Opts: model.InboundOpts{WGPrivateKey: testWGKey(9), WGPublicKey: testWGKey(10)}}
+	known.Normalize()
+	users := []model.User{{ID: 1, UUID: "u-1", WGPrivateKey: testWGKey(1), AWGSlot: 2}}
+
+	if model.KnownInboundProtocol("quantum") || !model.KnownInboundProtocol(model.InbWireGuard) {
+		t.Fatal("KnownInboundProtocol disagrees with the catalog")
+	}
+	cfg, err := Generate(baseSettings(), users, Options{PanelDest: "127.0.0.1:8080", Custom: []model.Inbound{unknown, known}}, nil)
+	if err != nil {
+		t.Fatalf("one unknown inbound failed the whole config: %v", err)
+	}
+	if findInbound(cfg, unknown.Tag()) != nil {
+		t.Error("the unknown inbound reached the config")
+	}
+	if findInbound(cfg, known.Tag()) == nil {
+		t.Error("the known inbound beside it was dropped too")
+	}
+	// Nothing in the emitted config carries the name Xray choked on: a streamSettings
+	// whose network is the row's protocol slug ("unknown transport protocol: wireguard"
+	// is how an unrecognised protocol used to reach Xray, from the default branch of the
+	// settings switch).
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), `"network":"quantum"`) {
+		t.Error("the unknown protocol leaked into a streamSettings network")
 	}
 }
