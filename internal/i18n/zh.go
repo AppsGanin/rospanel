@@ -109,6 +109,8 @@ var zh = map[string]string{
 	"sub.awgTitle":       "AmneziaWG",
 	"sub.awgHint":        "适用于 AmneziaVPN 和 AmneziaWG 应用：扫描二维码或下载文件并导入应用。",
 	"sub.awgDownload":    "下载配置",
+	"sub.wgTitle":        "WireGuard",
+	"sub.wgHint":         "适用于任何 WireGuard 应用：扫描二维码或下载文件并导入应用。",
 	"sub.turnTitle":      "TURN-VK",
 	"sub.tgProxyTitle":   "Telegram 代理",
 	"sub.tgProxyHint":    "Telegram 无需 VPN 即可通过代理连接：点击“添加到 Telegram”或扫描二维码。",

@@ -152,3 +152,163 @@ func TestTurnWireGuardEndpointsAndPageCard(t *testing.T) {
 		t.Errorf("user view lacks the WireGuard link: %+v", uv.Links)
 	}
 }
+
+// A plain WireGuard inbound made through the manager gets its key from the panel and no
+// loopback port, keeps the private key off every view, reaches the user as a card on the
+// subscription page with a QR and a file pointed at the server itself — and is in no
+// other format of the subscription.
+func TestPlainWireGuardEndpointsAndPageCard(t *testing.T) {
+	h, mgr, st := nodeAPITestServer(t)
+	u, err := mgr.CreateUser(t.Context(), "plainwg", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur, _ := st.GetSettings()
+	if err := st.SetTLSMode(cur.TLSMode, "vpn.example.com", "vpn.example.com", cur.ACMEEmail); err != nil {
+		t.Fatal(err)
+	}
+	set, _ := st.GetSettings()
+
+	pc, err := net.ListenPacket("udp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := pc.LocalAddr().(*net.UDPAddr).Port
+	pc.Close()
+	view, err := mgr.CreateInbound(t.Context(), model.Inbound{
+		ServerID: model.LocalNodeID, Enabled: true, Name: "Plain WG", Protocol: model.InbWireGuard, Port: port,
+		// What a hostile or sloppy API client might add: none of it may survive.
+		Opts: model.InboundOpts{TurnLink: "https://vk.com/call/join/x", WGLocalPort: 20001},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if view.Opts.WGPrivateKey != "" || view.Opts.TurnMaskKey != "" {
+		t.Error("the view carries the inbound's private or masking key")
+	}
+	if view.Opts.WGPublicKey == "" || view.Opts.WGLocalPort != 0 || view.Opts.TurnLink != "" || view.Opts.CDNHost != "" {
+		t.Fatalf("generated or leftover material: %+v", view.Opts)
+	}
+	stored, _ := st.GetInbound(view.ID)
+	if stored.Opts.WGPrivateKey == "" || stored.Opts.TurnMaskKey != "" {
+		t.Fatal("the private key was not stored, or a masking key was")
+	}
+	// An edit keeps the identity.
+	edit := *stored
+	edit.Opts = model.InboundOpts{}
+	edited, err := mgr.UpdateInbound(t.Context(), edit)
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if edited.Opts.WGPublicKey != view.Opts.WGPublicKey {
+		t.Error("an edit changed the server key, stranding every imported config")
+	}
+
+	get := func(path, ua string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("User-Agent", ua)
+		if strings.HasPrefix(ua, "Mozilla") {
+			req.Header.Set("Accept", "text/html,application/xhtml+xml")
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	base := "/sub/" + u.SubToken
+	id := strconv.FormatInt(view.ID, 10)
+
+	page := get(base, "Mozilla/5.0").Body.String()
+	for _, want := range []string{"/wg/" + id + ".conf", "/wg/" + id + ".png", "wireguard.com/install"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	for _, not := range []string{"vkturnproxy://", "freeturn://", "wingsv://"} {
+		if strings.Contains(page, not) {
+			t.Errorf("page offers a TURN app link %q for a plain lane", not)
+		}
+	}
+
+	conf := get(base+"/wg/"+id+".conf", "curl/8")
+	body := conf.Body.String()
+	if conf.Code != http.StatusOK {
+		t.Fatalf("config: %d %s", conf.Code, body)
+	}
+	for _, want := range []string{"[Interface]", "MTU = 1420", "PublicKey = " + view.Opts.WGPublicKey,
+		"Endpoint = vpn.example.com:" + strconv.Itoa(port)} {
+		if !strings.Contains(body, want) {
+			t.Errorf("config lacks %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "127.0.0.1:9000") || strings.Contains(body, "cdn.example.com") {
+		t.Errorf("config points somewhere other than the server:\n%s", body)
+	}
+	if cd := conf.Header().Get("Content-Disposition"); !strings.Contains(cd, ".conf") || conf.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("headers: %q / %q", cd, conf.Header().Get("Cache-Control"))
+	}
+	if png := get(base+"/wg/"+id+".png", "curl/8"); png.Code != http.StatusOK || png.Header().Get("Content-Type") != "image/png" {
+		t.Errorf("QR: %d %s", png.Code, png.Header().Get("Content-Type"))
+	}
+	// Not an inbound, not a number, not a file: the decoy.
+	for _, path := range []string{"/wg/999.conf", "/wg/x.conf", "/wg/" + id + ".txt"} {
+		if rec := get(base+path, "curl/8"); strings.Contains(rec.Body.String(), "[Interface]") || rec.Header().Get("Content-Type") == "image/png" {
+			t.Errorf("%s served a config", path)
+		}
+	}
+	// Somebody else's token gets nothing of this user's config.
+	if rec := get("/sub/not-a-token/wg/"+id+".conf", "curl/8"); strings.Contains(rec.Body.String(), "[Interface]") {
+		t.Error("an unknown token got a config")
+	}
+
+	// In no format of the subscription: not as a link, a Clash proxy, a sing-box outbound
+	// or an Xray JSON one.
+	for _, q := range []struct{ path, ua string }{
+		{base, "Happ/1.0"}, {base + "?format=clash", "clash.meta"}, {base + "?format=singbox", "sing-box"},
+		{base + "?format=xray-json", "Happ/1.0"},
+	} {
+		rec := get(q.path, q.ua)
+		if strings.Contains(rec.Body.String(), "Plain WG") || strings.Contains(rec.Body.String(), strconv.Itoa(port)) {
+			t.Errorf("%s carries the plain WireGuard inbound:\n%.600s", q.path, rec.Body.String())
+		}
+	}
+
+	fresh, _ := st.GetUser(u.ID)
+	custom, _ := st.EnabledInbounds(model.LocalNodeID)
+	uv := makeUserView(*fresh, set, "", custom, nil, model.UnrestrictedAccess())
+	found := false
+	for _, l := range uv.Links {
+		if l.Name == "Plain WG" && strings.HasSuffix(l.URL, "/wg/"+id+".conf") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("user view lacks the WireGuard link: %+v", uv.Links)
+	}
+	closed := makeUserView(*fresh, set, "", custom, nil, model.Access{Tokens: map[string]bool{}})
+	for _, l := range closed.Links {
+		if l.Name == "Plain WG" {
+			t.Errorf("a user the inbound is closed to sees it: %+v", l)
+		}
+	}
+
+	// And over HTTP: a member of a group that limits access to the built-in VLESS lane
+	// gets neither the file, the QR nor the card.
+	g, err := mgr.CreateGroup("novpn", []string{model.BuiltinToken(model.LocalNodeID, model.LaneVLESS)}, 0)
+	if err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if !g.LimitsAccess {
+		t.Skip("a group with a grant does not limit access in this build")
+	}
+	if err := mgr.SetUserGroups(u.ID, []int64{g.ID}); err != nil {
+		t.Fatalf("membership: %v", err)
+	}
+	for _, path := range []string{base + "/wg/" + id + ".conf", base + "/wg/" + id + ".png"} {
+		if rec := get(path, "curl/8"); strings.Contains(rec.Body.String(), "[Interface]") || rec.Header().Get("Content-Type") == "image/png" {
+			t.Errorf("%s served to a user the inbound is closed to", path)
+		}
+	}
+	if page := get(base, "Mozilla/5.0").Body.String(); strings.Contains(page, "/wg/"+id+".conf") {
+		t.Error("the page offers a closed inbound")
+	}
+}

@@ -120,7 +120,7 @@ func makeUserView(u model.User, set *model.Settings, userBotUsername string, cus
 		if !access.AllowsInbound(in.ID) {
 			continue
 		}
-		if in.Protocol == model.InbTurnVK {
+		if model.IsWireGuard(in.Protocol) {
 			// No share-link form either: the config file, as for AmneziaWG below.
 			v.Links = append(v.Links, namedLink{link.CustomLabelFor(in, u, set), sub.TurnConfURL(set, u.SubToken, in.ID)})
 			continue

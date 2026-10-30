@@ -374,6 +374,29 @@ func TurnClientConf(u model.User, s *model.Settings, in model.Inbound) string {
 	}.Render()
 }
 
+// WireGuardClientConf is the WireGuard config of one user for one plain WireGuard
+// inbound: the tunnel pointed at the server's own address and the inbound's port, for any
+// stock WireGuard client. "" for a user with no tunnel identity yet.
+func WireGuardClientConf(u model.User, s *model.Settings, in model.Inbound) string {
+	addr, ok := awg.ClientAddr(u.AWGSlot)
+	if !ok || u.WGPrivateKey == "" || in.Opts.WGPublicKey == "" || in.Protocol != model.InbWireGuard {
+		return ""
+	}
+	host, port := in.ClientEndpoint(s.Host)
+	return awg.ClientConfig{
+		PrivateKey:      u.WGPrivateKey,
+		Address:         addr,
+		DNS:             awg.TunnelDNS(s),
+		MTU:             WireGuardMTU,
+		ServerPublicKey: in.Opts.WGPublicKey,
+		Endpoint:        net.JoinHostPort(host, strconv.Itoa(port)),
+	}.Render()
+}
+
+// WireGuardMTU is the tunnel MTU of a plain WireGuard inbound's client: WireGuard's own
+// default, matching the server end (xray.WireGuardMTU).
+const WireGuardMTU = 1420
+
 // TurnMTU is the tunnel MTU on the client end of a TURN lane: vk-turn-proxy and Free
 // Turn Proxy both ask for 1280, their DTLS, mask and TURN framing riding inside the
 // path MTU as well.

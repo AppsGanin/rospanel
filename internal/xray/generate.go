@@ -594,7 +594,8 @@ const (
 	TagMTProto  = "mtproto-in"
 )
 
-// ProtoWireGuard is Xray's name for the protocol of a TURN-VK inbound.
+// ProtoWireGuard is Xray's name for the protocol of a WireGuard inbound, TURN-VK's and
+// the plain one alike.
 const ProtoWireGuard = "wireguard"
 
 // innerLaneListen is where an inner lane's inbound listens: its inner address, or, where
@@ -801,6 +802,15 @@ func customInbound(in model.Inbound, set *model.Settings, users []model.User,
 			MTU:       WireGuardTURNMTU,
 			Peers:     customWireGuardPeers(allowed),
 		}
+	case model.InbWireGuard:
+		// Plain WireGuard: Xray itself holds the public UDP port.
+		out.Protocol = ProtoWireGuard
+		out.Settings = WireGuardInboundSettings{
+			SecretKey: in.Opts.WGPrivateKey,
+			Address:   []string{awg.ServerAddr.String()},
+			MTU:       WireGuardMTU,
+			Peers:     customWireGuardPeers(allowed),
+		}
 	}
 	out.StreamSettings = customStream(in, set, cert, minTLS)
 	return out
@@ -823,8 +833,8 @@ func customStream(in model.Inbound, set *model.Settings, cert []Certificate, min
 	// carries no streamSettings at all — the tcp+udp choice lives in its settings
 	// (see ShadowsocksInboundSettings.Network). A streamSettings with network
 	// "shadowsocks" would be a transport Xray doesn't know.
-	if in.Protocol == model.InbShadowsocks || in.Protocol == model.InbTurnVK {
-		return nil // WireGuard is plain UDP to Xray; the relay in front does the DTLS
+	if in.Protocol == model.InbShadowsocks || model.IsWireGuard(in.Protocol) {
+		return nil // WireGuard is plain UDP to Xray; a relay in front, if any, does the DTLS
 	}
 	o := in.Opts
 	st := &StreamSettings{Network: o.Transport}
@@ -1009,6 +1019,10 @@ func customShadowsocksClients(in model.Inbound, users []model.User) []Shadowsock
 // 1280: its DTLS and the TURN channel framing ride inside the path MTU as well.
 const WireGuardTURNMTU = 1280
 
+// WireGuardMTU is the tunnel MTU of a plain WireGuard inbound, on both ends: WireGuard's
+// own default, which fits a 1500-byte path over IPv6 with nothing wrapped around it.
+const WireGuardMTU = 1420
+
 // customWireGuardPeers builds a WireGuard inbound's peers from the users' tunnel
 // identities — the same key and address they have on AmneziaWG. A user without one is
 // left out: core claims identities for everyone allowed on the inbound before it
@@ -1143,7 +1157,7 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 		case model.InbHysteria:
 			// Same as the built-in lane above: rebuilt, not live-updated.
 			continue
-		case model.InbTurnVK:
+		case model.InbTurnVK, model.InbWireGuard:
 			// The CLI refuses this inbound type as it does Hysteria2; its users go
 			// through Supervisor.SyncWireGuard (see WireGuardInbounds).
 			continue
@@ -1209,7 +1223,7 @@ func EnabledInboundTags(set *model.Settings, custom []model.Inbound) []string {
 		tags = append(tags, TagMTProto)
 	}
 	for _, c := range custom {
-		if c.Protocol == model.InbHysteria || c.Protocol == model.InbTurnVK {
+		if c.Protocol == model.InbHysteria || model.IsWireGuard(c.Protocol) {
 			continue // SyncHysteria's and SyncWireGuard's (see above)
 		}
 		tags = append(tags, c.Tag())

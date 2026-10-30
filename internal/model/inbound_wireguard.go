@@ -43,16 +43,27 @@ func ValidTurnLink(link string) bool {
 	return turnLinkHosts[strings.ToLower(u.Hostname())]
 }
 
+// The other WireGuard inbound, InbWireGuard, is the same Xray inbound without any of
+// that: it listens on its public Port itself, so a stock WireGuard client reaches it
+// directly (Endpoint = host:Port) and there is no relay, mask, call link or loopback
+// port. The users' tunnel identities and everything downstream are shared.
+
 // normalizeWireGuard is Normalize for a WireGuard inbound: the transport and security
 // are fixed, and every field that belongs to another protocol is dropped.
 func (in *Inbound) normalizeWireGuard() {
 	o := &in.Opts
-	o.Transport = TrTURN
 	o.Security = SecNone
-	o.TurnLink = strings.TrimSpace(o.TurnLink)
 	o.WGPrivateKey = strings.TrimSpace(o.WGPrivateKey)
 	o.WGPublicKey = strings.TrimSpace(o.WGPublicKey)
-	o.TurnMaskKey = strings.ToLower(strings.TrimSpace(o.TurnMaskKey))
+	if in.Protocol == InbWireGuard {
+		o.Transport = TrWireGuard
+		// Nothing of the relay's: the public port is Xray's own.
+		o.WGLocalPort, o.TurnLink, o.TurnMaskKey = 0, "", ""
+	} else {
+		o.Transport = TrTURN
+		o.TurnLink = strings.TrimSpace(o.TurnLink)
+		o.TurnMaskKey = strings.ToLower(strings.TrimSpace(o.TurnMaskKey))
+	}
 	o.SNI, o.FP, o.Path, o.Host, o.Mode, o.ServiceName, o.Flow = "", "", "", "", "", "", ""
 	o.RealityDest, o.RealityPrivateKey, o.RealityPublicKey, o.RealityShortID = "", "", "", ""
 	o.RealityMaxTimeDiff = 0
@@ -70,7 +81,7 @@ func (o *InboundOpts) clearWireGuard() {
 
 // NeedsWireGuardKey reports whether a WireGuard inbound still needs its server key.
 func (in *Inbound) NeedsWireGuardKey() bool {
-	return in.Protocol == InbTurnVK && !validWGKey(in.Opts.WGPrivateKey)
+	return IsWireGuard(in.Protocol) && !validWGKey(in.Opts.WGPrivateKey)
 }
 
 // TurnMaskProfile is the Free Turn Proxy wire profile the panel hands its clients: the
@@ -92,7 +103,13 @@ func validMaskKey(s string) bool {
 // validateWireGuard is Validate for a WireGuard inbound.
 func (in *Inbound) validateWireGuard() error {
 	o := in.Opts
-	if !validWGKey(o.WGPrivateKey) || !validWGKey(o.WGPublicKey) || !validMaskKey(o.TurnMaskKey) {
+	if !validWGKey(o.WGPrivateKey) || !validWGKey(o.WGPublicKey) {
+		return fieldErr("err.wgKeyBad", "ключ WireGuard подключения отсутствует или повреждён")
+	}
+	if in.Protocol == InbWireGuard {
+		return nil
+	}
+	if !validMaskKey(o.TurnMaskKey) {
 		return fieldErr("err.wgKeyBad", "ключ WireGuard подключения отсутствует или повреждён")
 	}
 	if o.WGLocalPort < 1 || o.WGLocalPort > 65535 || o.WGLocalPort == in.Port {

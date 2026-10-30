@@ -475,7 +475,7 @@ that signs people in by their subscription link finds them with `?sub_token=`.
 `GET /v1/users/{id}/subscription` has everything the subscription page shows — status,
 `blocks` (what plugins add to the page: `{type: text|markdown|notice|button, text, label, url}`),
 traffic, term, `sub_url`, one-tap imports per app (`apps`), every config (`links`), the Clash
-download (`clash_url`), the Telegram proxy per server (`telegram`: `{name, link, web_link, qr_url}` —
+download (`clash_url`), the plain WireGuard configs (`wg`: `{name, conf_url, qr_url}`, as `awg`), the Telegram proxy per server (`telegram`: `{name, link, web_link, qr_url}` —
 `link` is the `tg://proxy` that adds it in one tap), devices, the payment block (`billing`), the operator's colours
 (`brand`), `terms_url` / `privacy_url` (the operator's documents, while they have text — `GET /v1/legal`
 has the text itself) and `tg_link` — the user bot's link that binds the account to the Telegram it is
@@ -646,7 +646,7 @@ target machine** (`xray -test` + a port-bind probe) before it's saved.
 | `DELETE` | `/v1/inbounds/{id}` | Delete a custom inbound. |
 
 **Create / update** — the body mirrors the panel's inbound editor: `name`, `protocol`
-(`vless` / `trojan` / `hysteria2` / `shadowsocks` / `turn-vk`), `transport` (`tcp` / `ws` / `xhttp` /
+(`vless` / `trojan` / `hysteria2` / `shadowsocks` / `turn-vk` / `wg`), `transport` (`tcp` / `ws` / `xhttp` /
 `grpc` / `httpupgrade`), `port`, `security` (`none` / `tls` / `reality`) with the matching
 keys (REALITY dest & keys, fingerprint, path/host, Hysteria2 hop range), plus optional
 advanced blocks (XHTTP `extra`, TCP HTTP masquerade, `sockopt`, extra TLS keys). The
@@ -661,6 +661,11 @@ and the Free Turn Proxy masking key (never returned) are generated. It is in no
 subscription format — users import it into an app from the subscription page
 (`vkturnproxy://`, `freeturn://`, `wingsv://`) or download `<sub>/wg/<inbound id>.conf` from the
 subscription page.
+`wg` is plain WireGuard: Xray's own WireGuard inbound on the public UDP `port`, reached directly by
+any stock WireGuard client. The server key is generated (`wg_public_key` in the response); transport
+and security are fixed, and `turn_link` does not apply. Users are peers by the tunnel identity they
+have for AmneziaWG. It is in no subscription format either — users download `<sub>/wg/<inbound id>.conf`
+(or `.png`, the same text as a QR) from the subscription page.
 `enc_mode` turns on VLESS Encryption on a `vless` inbound — `native`, `xorpub` or `random` (how
 the handshake looks on the wire), empty for off; the keys are generated (`encryption`, the
 clients' half, is in the response). With it `tcp` may go with `security: none`.

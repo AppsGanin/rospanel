@@ -51,6 +51,7 @@ const PROTOCOL_LABELS: Record<string, string> = {
   hysteria2: "Hysteria2",
   shadowsocks: "Shadowsocks",
   "turn-vk": "TURN-VK",
+  wg: "WireGuard",
 };
 
 const TRANSPORT_LABELS: Record<string, string> = {
@@ -344,7 +345,8 @@ function InboundRow({
   const [open, setOpen] = useState(false);
   const o = v.opts;
   const isSS = v.protocol === "shadowsocks";
-  const isWG = v.protocol === "turn-vk";
+  const isTurn = v.protocol === "turn-vk";
+  const isWG = isTurn || v.protocol === "wg";
   // Shadowsocks-2022 is encrypted by its own AEAD, so "no TLS" would misread as
   // insecure, and its transport slug just repeats the protocol. Show the method
   // instead — dropping the "2022-blake3-" prefix every method shares.
@@ -425,9 +427,11 @@ function InboundRow({
           <Row label={t("conn.port")} value={String(v.port)} />
           {isWG ? (
             <>
-              <Row label={t("inb.wgLocalPort")} value={`127.0.0.1:${o.wg_local_port ?? ""}`} />
+              {isTurn && (
+                <Row label={t("inb.wgLocalPort")} value={`127.0.0.1:${o.wg_local_port ?? ""}`} />
+              )}
               <LongRow label={t("inb.wgPublicKey")} value={o.wg_public_key ?? ""} />
-              {o.turn_link && <LongRow label={t("inb.turnLink")} value={o.turn_link} />}
+              {isTurn && o.turn_link && <LongRow label={t("inb.turnLink")} value={o.turn_link} />}
             </>
           ) : isSS ? (
             <Row label={t("inb.ssMethod")} value={o.method ?? ""} />
@@ -889,7 +893,7 @@ function InboundForm({
       security: first?.securities[0] ?? "tls",
       // vk-turn-proxy's own default port, so the command users copy from its README
       // matches a fresh inbound.
-      port: p === "turn-vk" && !v.port ? 56000 : v.port,
+      port: p === "turn-vk" && !v.port ? 56000 : p === "wg" && !v.port ? 51820 : v.port,
     });
   };
   const pickTransport = (t: string) => {
@@ -903,7 +907,8 @@ function InboundForm({
 
   const isHysteria = v.protocol === "hysteria2";
   const isShadowsocks = v.protocol === "shadowsocks";
-  const isWireGuard = v.protocol === "turn-vk";
+  const isTurn = v.protocol === "turn-vk";
+  const isWireGuard = isTurn || v.protocol === "wg";
   // These protocols own their transport and security, so the editor shows neither
   // control for them — the difference from every other protocol is just this flag.
   const fixedTransport = isHysteria || isShadowsocks || isWireGuard;
@@ -981,7 +986,13 @@ function InboundForm({
         </div>
       )}
 
-      {isWireGuard && (
+      {v.protocol === "wg" && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-ink-muted">{t("inb.wgDirectHint")}</p>
+        </div>
+      )}
+
+      {isTurn && (
         <div className="flex flex-col gap-2">
           <p className="text-xs text-ink-muted">{t("inb.wgHint")}</p>
           <TextInput

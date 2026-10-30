@@ -322,6 +322,16 @@ client on computers), and `wingsv://` for [WINGS V](https://github.com/WINGS-N/W
 mask and connects unmasked — and, under *Manual setup*, the relay address, the call link and a
 plain WireGuard config pointed at a TURN client.
 
+**WireGuard** — plain WireGuard among the custom inbounds, with no relay and no masking: Xray
+listens on the public UDP port itself (51820 by default) and the client connects straight to it, so
+any WireGuard app works. Created under *Connections → custom inbounds* (protocol *WireGuard*); the
+panel mints the server key. A peer is the same key and tunnel address the user already has for
+AmneziaWG and TURN-VK, so nothing new is handed out; access groups, routing, traffic accounting,
+online status and the device limit work as for every other inbound, and users are added and removed
+live. The subscription page carries the config as a file and a QR; the protocol is in no
+subscription format (Clash, sing-box, links). The port must be open for UDP. DPI recognises plain
+WireGuard easily — use AmneziaWG on censored networks.
+
 #### 👤 Users
 
 Traffic and time limits with auto-disable and quota auto-reset (day/week/month/year). A disabled

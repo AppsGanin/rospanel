@@ -155,6 +155,9 @@ type pageText struct {
 	AWGHint        string
 	AWGDownload    string
 	AWGSite        string // where the Amnezia apps are downloaded, in the page's language
+	WGTitle        string
+	WGHint         string
+	WGSite         string
 	TurnTitle      string
 	TurnHint       string
 	TurnPeer       string
@@ -268,6 +271,9 @@ func text(lang i18n.Lang) pageText {
 		AWGHint:        t("sub.awgHint"),
 		AWGDownload:    t("sub.awgDownload"),
 		AWGSite:        amneziaSite(lang),
+		WGTitle:        t("sub.wgTitle"),
+		WGHint:         t("sub.wgHint"),
+		WGSite:         wireGuardSite,
 		TurnTitle:      t("sub.turnTitle"),
 		TurnHint:       t("sub.turnHint"),
 		TurnPeer:       t("sub.turnPeer"),
@@ -327,6 +333,9 @@ func amneziaSite(lang i18n.Lang) string {
 	}
 	return "https://amnezia.org/downloads"
 }
+
+// wireGuardSite is where the stock WireGuard apps are downloaded.
+const wireGuardSite = "https://www.wireguard.com/install/"
 
 // turnCard is one WireGuard inbound behind a TURN relay: what the user's TURN client
 // needs (the relay's address and the call link), and the WireGuard config it carries.
@@ -401,6 +410,9 @@ type pageData struct {
 	// AWG lists one card per server whose AmneziaWG lane the user may use: the
 	// config file to import and its QR.
 	AWG []awgCard
+	// WG lists one card per plain WireGuard inbound the user may use: the config file to
+	// import and its QR.
+	WG []awgCard
 	// Turn lists one card per WireGuard inbound behind a TURN relay the user may use.
 	Turn []turnCard
 	// Telegram lists one card per server whose Telegram proxy the user may use.
@@ -666,6 +678,7 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 	var protoLinks, extLinks []protoLink
 	var awgCards []awgCard
 	var turnCards []turnCard
+	var wgCards []awgCard
 	var tgCards []tgProxyCard
 	for _, srv := range servers {
 		s := srv.Set
@@ -706,6 +719,14 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 		}
 		for _, in := range srv.Custom {
 			if !srv.allowsInbound(in.ID) {
+				continue
+			}
+			if in.Protocol == model.InbWireGuard {
+				wgCards = append(wgCards, awgCard{
+					Label:   link.CustomLabelFor(in, u, s),
+					ConfURL: TurnConfURL(local, u.SubToken, in.ID),
+					QRURL:   fmt.Sprintf("%s/wg/%d.png", subURL, in.ID),
+				})
 				continue
 			}
 			if in.Protocol == model.InbTurnVK {
@@ -784,6 +805,7 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 		SubURL:      subURL,
 		Links:       protoLinks,
 		AWG:         awgCards,
+		WG:          wgCards,
 		Turn:        turnCards,
 		Telegram:    tgCards,
 		DeepLinks:   DeepLinks(subURL, lang, local.SubHappCrypt),

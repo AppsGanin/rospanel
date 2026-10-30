@@ -30,7 +30,7 @@ const (
 func wireGuardInboundIDs(custom []model.Inbound) []int64 {
 	var out []int64
 	for _, in := range custom {
-		if in.Protocol == model.InbTurnVK {
+		if model.IsWireGuard(in.Protocol) {
 			out = append(out, in.ID)
 		}
 	}
@@ -184,11 +184,12 @@ func (m *Manager) ClaimTunnelIdentity(u *model.User) error { return m.claimAWG([
 func (m *Manager) StopTurn() { m.turn.Close() }
 
 // WireGuardClientConfig is the WireGuard config a user imports for one WireGuard
-// inbound: the tunnel pointed at the local end of their TURN client, which carries it to
-// the relay. Fails when the user cannot be a peer of it; a file the inbound will not
-// accept is worse than none.
+// inbound: behind a TURN relay, the tunnel pointed at the local end of their TURN client,
+// which carries it to the relay; on a plain one, the tunnel pointed at the server. Fails
+// when the user cannot be a peer of it; a file the inbound will not accept is worse than
+// none.
 func (m *Manager) WireGuardClientConfig(u *model.User, s *model.Settings, in *model.Inbound) (string, error) {
-	if in.Protocol != model.InbTurnVK || in.Opts.WGPublicKey == "" {
+	if !model.IsWireGuard(in.Protocol) || in.Opts.WGPublicKey == "" {
 		return "", fmt.Errorf("wireguard: inbound %d is not a wireguard inbound", in.ID)
 	}
 	if err := m.claimAWG([]*model.User{u}); err != nil {
@@ -200,5 +201,12 @@ func (m *Manager) WireGuardClientConfig(u *model.User, s *model.Settings, in *mo
 	if u.WGPrivateKey == "" {
 		return "", fmt.Errorf("wireguard: stored key for user %d is unreadable", u.ID)
 	}
-	return sub.TurnClientConf(*u, s, *in), nil
+	conf := sub.TurnClientConf(*u, s, *in)
+	if in.Protocol == model.InbWireGuard {
+		conf = sub.WireGuardClientConf(*u, s, *in)
+	}
+	if conf == "" {
+		return "", fmt.Errorf("wireguard: no config for user %d on inbound %d", u.ID, in.ID)
+	}
+	return conf, nil
 }

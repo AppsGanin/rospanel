@@ -1313,6 +1313,28 @@
         </div>
         {{end}}
 
+        {{if .WG}}
+        <div class="card">
+          <details class="fold">
+          <summary><span>{{.L.WGTitle}} <span class="fold-count">· {{len .WG}}</span></span></summary>
+          <div class="app-row" style="margin: 0 0 10px">
+            <p class="muted" style="margin: 0">{{.L.WGHint}}</p>
+            <a class="icon-btn" href="{{.L.WGSite}}" target="_blank" rel="noopener noreferrer"
+               title="{{.L.AppLink}}" aria-label="{{.L.AppLink}} — {{.L.WGTitle}}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 7.6v.2" /></svg>
+            </a>
+          </div>
+          {{range .WG}}
+          <details>
+            <summary>{{.Label}}</summary>
+            <div class="qr"><img src="{{.QRURL}}" alt="QR" loading="lazy" /></div>
+            <a class="btn alt" href="{{.ConfURL}}" download>{{$.L.AWGDownload}} · {{.Label}}</a>
+          </details>
+          {{end}}
+          </details>
+        </div>
+        {{end}}
+
         {{if .Turn}}
         <div class="card">
           <details class="fold">

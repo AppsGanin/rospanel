@@ -109,6 +109,8 @@ var fa = map[string]string{
 	"sub.awgTitle":       "AmneziaWG",
 	"sub.awgHint":        "برای برنامه‌های AmneziaVPN و AmneziaWG: کد QR را اسکن کنید یا فایل را دانلود و در برنامه وارد کنید.",
 	"sub.awgDownload":    "دانلود پیکربندی",
+	"sub.wgTitle":        "WireGuard",
+	"sub.wgHint":         "برای هر برنامه WireGuard: کد QR را اسکن کنید یا فایل را دانلود و در برنامه وارد کنید.",
 	"sub.turnTitle":      "TURN-VK",
 	"sub.tgProxyTitle":   "پروکسی Telegram",
 	"sub.tgProxyHint":    "Telegram بدون VPN از طریق پروکسی وصل می‌شود: «افزودن به Telegram» را بزنید یا QR را اسکن کنید.",

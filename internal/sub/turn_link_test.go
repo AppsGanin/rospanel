@@ -265,3 +265,33 @@ func TestWingsVImportLink(t *testing.T) {
 		t.Errorf("link without an identity: %q", l)
 	}
 }
+
+// A plain WireGuard inbound's file points at the server itself, with WireGuard's own MTU
+// and no TURN-client endpoint.
+func TestWireGuardClientConf(t *testing.T) {
+	priv, _, _ := awg.GenerateKey()
+	_, serverPub, _ := awg.GenerateKey()
+	u := model.User{ID: 4, WGPrivateKey: priv, AWGSlot: 5}
+	s := &model.Settings{Host: "vpn.example.com", XrayDNS: "9.9.9.9"}
+	in := model.Inbound{ID: 3, Name: "WG", Protocol: model.InbWireGuard, Port: 51820,
+		Opts: model.InboundOpts{WGPublicKey: serverPub}}
+	conf := WireGuardClientConf(u, s, in)
+	for _, want := range []string{
+		"PrivateKey = " + priv, "Address = 10.66.0.5/32", "DNS = 9.9.9.9", "MTU = 1420",
+		"PublicKey = " + serverPub, "AllowedIPs = 0.0.0.0/0, ::/0", "Endpoint = vpn.example.com:51820",
+	} {
+		if !strings.Contains(conf, want) {
+			t.Errorf("config lacks %q:\n%s", want, conf)
+		}
+	}
+	if strings.Contains(conf, "Jc =") {
+		t.Errorf("a plain WireGuard file carries obfuscation parameters:\n%s", conf)
+	}
+	in.Protocol = model.InbTurnVK
+	if WireGuardClientConf(u, s, in) != "" {
+		t.Error("a TURN inbound got a direct config")
+	}
+	if WireGuardClientConf(model.User{}, s, model.Inbound{Protocol: model.InbWireGuard, Opts: in.Opts}) != "" {
+		t.Error("a user with no identity got a config")
+	}
+}

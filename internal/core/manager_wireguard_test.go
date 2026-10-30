@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -126,4 +127,46 @@ func itoa(n int) string {
 		b = append([]byte{byte('0' + n%10)}, b...)
 	}
 	return string(b)
+}
+
+// A plain WireGuard inbound claims tunnel identities like a TURN one, runs no relay and
+// takes no loopback port, and its client config points at the server itself.
+func TestPlainWireGuardInbound(t *testing.T) {
+	t.Parallel()
+	m := bulkTestManager(t)
+	a := mkUser(t, m, "a", 0)
+	users, err := m.store.WorkingCredentials(1)
+	if err != nil || len(users) != 1 {
+		t.Fatalf("users: %v %v", users, err)
+	}
+	wg := model.Inbound{ID: 6, Protocol: model.InbWireGuard, Enabled: true, Port: 51820, Name: "WG"}
+	wg.Opts = model.InboundOpts{}
+	if err := m.prepareInbound(&wg); err != nil {
+		t.Fatal(err)
+	}
+	if wg.Opts.WGPublicKey == "" || wg.Opts.WGPrivateKey == "" || wg.Opts.TurnMaskKey != "" {
+		t.Errorf("keys: %+v", wg.Opts)
+	}
+	if err := m.assignWGLocalPort(&wg, 0); err != nil || wg.Opts.WGLocalPort != 0 {
+		t.Errorf("a plain inbound was given a loopback port: %d %v", wg.Opts.WGLocalPort, err)
+	}
+	if specs := turnRelaySpecs([]model.Inbound{wg}); len(specs) != 0 {
+		t.Errorf("a plain inbound got a relay: %+v", specs)
+	}
+	out, claimed, ok := m.claimWireGuard(users, []model.Inbound{wg}, nil)
+	if !ok || !claimed || out[0].WGPrivateKey == "" || out[0].AWGSlot == 0 {
+		t.Fatalf("claim: claimed=%v ok=%v %+v", claimed, ok, out[0])
+	}
+
+	u, err := m.store.GetUser(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf, err := m.WireGuardClientConfig(u, &model.Settings{Host: "vpn.example.com"}, &wg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(conf, "Endpoint = vpn.example.com:51820") || !strings.Contains(conf, "PublicKey = "+wg.Opts.WGPublicKey) {
+		t.Errorf("config:\n%s", conf)
+	}
 }
