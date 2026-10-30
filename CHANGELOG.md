@@ -1,5 +1,18 @@
 # Changelog
 
+## [5.11.0](https://github.com/AppsGanin/rospanel/compare/v5.10.0...v5.11.0) (2026-10-27)
+
+
+### Features
+
+* **alerts:** rules on a server's figures, told to the admin chats and webhooks ([e23d980](https://github.com/AppsGanin/rospanel/commit/e23d9802a261f869d430e1a4d773e042e6bed1f8))
+* **external:** name relayed entries by a template, flag undelivered WireGuard ([06a046a](https://github.com/AppsGanin/rospanel/commit/06a046a25a3fdecee4d85224eaf93253b06c0859))
+
+
+### Bug Fixes
+
+* **audit:** label a retired settings section and show nested values in the journal ([434709c](https://github.com/AppsGanin/rospanel/commit/434709cb0b680c6fd50fc3d4baa6d549e6bb2dfc))
+
 ## [5.10.0](https://github.com/AppsGanin/rospanel/compare/v5.9.0...v5.10.0) (2026-10-23)
 
 
