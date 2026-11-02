@@ -3,6 +3,8 @@
 # build output
 /rospanel
 /dist/
+# Go build cache, when a tool points GOCACHE here instead of ~/Library/Caches
+/.cache/
 
 # runtime data (db, certs, generated xray config)
 /data/
