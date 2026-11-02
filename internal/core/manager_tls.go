@@ -118,7 +118,7 @@ func (m *Manager) SetACMETarget(target, email, provider, eabKID, eabHMAC string)
 	logInfo("tls: certificate issued", "target", target)
 	// The REALITY lane follows the server's own name: the old one in its donor list
 	// becomes the new one, and a server still in its first-run wizard takes it outright.
-	if dest := realityDestAfterRename(cur.RealityDest, cur.OwnName(), set.OwnName(), !cur.SetupDone, PickRealityDonor); dest != cur.RealityDest {
+	if dest := realityDestAfterRename(cur.RealityDest, cur.OwnName(), set.OwnName(), !cur.SetupDone, set.RealityShared(), PickRealityDonor); dest != cur.RealityDest {
 		if err := m.store.SetRealityPorts(set.RealityPort, dest); err != nil {
 			logErr("tls: could not move the REALITY donor to the new name", "err", err)
 		}

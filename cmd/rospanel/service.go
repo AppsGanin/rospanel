@@ -197,15 +197,23 @@ func runServer(dataDir string) {
 	// The TCP-TLS lane's public port belongs to the front, which answers plain HTTP the
 	// way the decoy's claimed Caddy would and hands everything else to Xray on loopback
 	// (see tlsfront). Taken before the first reconcile starts Xray, which then no longer
-	// listens there.
+	// listens there. The same front carries a REALITY lane put on that port (see
+	// manager_reality_front.go): the manager tells it which names are REALITY's.
 	frontVLESS := wantFront(st, set)
+	var front *tlsfront.Front
 	if frontVLESS {
-		tlsfront.New(xray.VLESSInnerAddr).Ensure(set.VLESSPort)
+		front = tlsfront.New(xray.VLESSInnerAddr)
+		front.Ensure(set.VLESSPort)
 		sup.SetPublicPort(xray.TagVLESS, set.VLESSPort)
 	}
 	mgr := core.New(st, sup, xray.Options{PanelDest: panelDest(adminAddr), FrontVLESS: frontVLESS},
 		core.TLSPaths{CertPath: certPath, KeyPath: keyPath, ACMEDir: acmeDir},
 		filepath.Join(dataDir, "opera"))
+	if front != nil {
+		mgr.SetFront(front)
+	} else if set.RealityShared() {
+		log.Printf("REALITY: порт %d общий с TLS-полосой, но фронт не поднят — REALITY будет недоступен (см. ROSPANEL_TLS_FRONT)", set.VLESSPort)
+	}
 	sup.SetOnAccess(mgr.RecordLocalAccess) // track online status + connection IPs
 	mgr.StartSysstat(dataDir)              // host metrics for the dashboard
 	// Blocklists for abuse detection. Cached copies load synchronously (fast, local),
@@ -733,6 +741,18 @@ func tlsLoop(mgr *core.Manager) func(context.Context) {
 	}
 }
 
+// firstRunReality is what a fresh install's REALITY lane starts as: the TCP-TLS lane's
+// port, shared with the decoy through the front (tlsfront), and a donor drawn here
+// rather than the schema's shared pair. pick is core.PickRealityDonor in production —
+// it checks the donor from this network.
+func firstRunReality(set *model.Settings, pick func() string) (port int, donor string) {
+	port = set.VLESSPort
+	if port == 0 {
+		port = 443
+	}
+	return port, pick()
+}
+
 // bootstrapPanel ensures a secret panel path and at least one admin exist. On
 // first run it generates both and prints the credentials + panel URL once.
 func bootstrapPanel(st *store.Store) (string, error) {
@@ -756,14 +776,14 @@ func bootstrapPanel(st *store.Store) (string, error) {
 		if err := st.SetDecoyTemplate(decoy.RandomTemplate()); err != nil {
 			return "", err
 		}
-		// The REALITY donor and port likewise: max.ru on 8443 on every install is the
-		// same one-query signature. A server with a domain names itself instead: a
-		// known site's name sent to an address that is not that site's is what DPI drops.
-		donor := set.OwnName()
-		if donor == "" {
-			donor = core.PickRealityDonor()
-		}
-		if err := st.SetRealityPorts(core.PickRealityPort(), donor); err != nil {
+		// The REALITY lane starts on the TCP-TLS lane's port — 443 — and masks as a
+		// donor drawn for this server: max.ru on 8443 on every install is the same
+		// one-query signature, and 443 is the port a client is least likely to find
+		// blocked. Its own name cannot be the mask there (the decoy serves that name
+		// on the same port, see model.RealityShareConflict); a lane moved to a port of
+		// its own may name the server instead.
+		port, donor := firstRunReality(set, core.PickRealityDonor)
+		if err := st.SetRealityPorts(port, donor); err != nil {
 			return "", err
 		}
 	}

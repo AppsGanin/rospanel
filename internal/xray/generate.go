@@ -128,6 +128,13 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	if opts.PanelDest == "" {
 		return nil, fmt.Errorf("panel fallback dest not configured")
 	}
+	// A REALITY lane sharing the TCP-TLS lane's port masks as a donor: the server's own
+	// name on that port is the decoy's, and the front would send a REALITY client naming
+	// it to the decoy. The editor refuses this too; a config that reached here anyway
+	// must not come up pretending to work.
+	if c := set.RealityShareConflict(); c != "" {
+		return nil, fmt.Errorf("REALITY on the shared port %d cannot mask as the server's own name %q — its SNI list needs a donor", set.VLESSPort, c)
+	}
 
 	// A disabled protocol keeps its inbound but gets an empty client list, so the
 	// listener stays up while nobody can authenticate against it. The per-user access
@@ -737,11 +744,15 @@ func InnerClientsRaw(data []byte, tag string) ([]VLESSClient, string) {
 // XHTTP rather than gRPC: gRPC+REALITY is the most fingerprinted of the current
 // combinations, and with a REALITY config present XHTTP's default mode resolves to
 // stream-one — one HTTP request per connection, the smallest surface it offers.
+//
+// On a shared 443 it listens behind the front instead, on the inner address and taking
+// a PROXY header, the way the TCP-TLS lane does (see reality_share.go).
 func realityInbound(set *model.Settings, clients []VLESSClient, sniff *Sniffing) Inbound {
-	return Inbound{
+	listen, port := realityListen(set)
+	in := Inbound{
 		Tag:      TagReality,
-		Listen:   "0.0.0.0",
-		Port:     set.RealityPort,
+		Listen:   listen,
+		Port:     port,
 		Protocol: "vless",
 		Settings: VLESSInboundSettings{Clients: clients, Decryption: "none"},
 		StreamSettings: &StreamSettings{
@@ -760,6 +771,10 @@ func realityInbound(set *model.Settings, clients []VLESSClient, sniff *Sniffing)
 		},
 		Sniffing: sniff,
 	}
+	if set.RealityShared() {
+		in.StreamSettings.Sockopt = acceptProxy
+	}
+	return in
 }
 
 // customInbound builds one operator-defined inbound. Which of the stream fields are

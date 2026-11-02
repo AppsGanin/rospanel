@@ -733,6 +733,7 @@ const ar: Dict = {
     proxyUserCharset: "لا يمكن أن يحتوي اسم دخول الوكيل على مسافة أو نقطتين",
     realityDestRequired: "حدّد نطاق تمويه واحدًا على الأقل لـ REALITY",
     realityPortRange: "منفذ REALITY خارج النطاق 1–65535",
+    realityOwnNameOn443: "{{name}} هو اسم هذا الخادم نفسه — على المنفذ 443 يبقى للطُعم: اترك نطاق تمويه في قائمة SNI الخاصة بـ REALITY على هذا المنفذ",
     requestNotFound: "لم يُعثر على الطلب",
     retryOnlyFinished: "لا يمكن إعادة محاولة إلا رسالة جماعية منتهية",
     serverNotFound: "لم يُعثر على الخادم",
@@ -3570,6 +3571,8 @@ const ar: Dict = {
     sniPlaceholder: "max.ru — اكتب واضغط Enter…",
     antiReplay: "مكافحة إعادة الإرسال",
     antiReplayHint: "نافذة ±60 ث ضد فاحص يعيد إرسال المصافحة. قد تقطع العملاء الذين ساعتهم غير مضبوطة.",
+    realityPortHint:
+      "المنفذ 443 يتشاركه مع الطُعم: الخدمة الأمامية تفرز الاتصالات بحسب SNI في ClientHello. عندها يتخفّى REALITY بنطاق تمويه لا باسم الخادم نفسه.",
     xhttpPath: "مسار XHTTP",
     regenKeys: "إعادة توليد المفاتيح",
     keysWillRegen: "ستُعاد توليد المفاتيح ✓",

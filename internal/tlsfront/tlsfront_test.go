@@ -103,7 +103,7 @@ func TestPlainHTTPGetsTheGoAnswer(t *testing.T) {
 func TestTLSGoesToXrayWithTheClientAddress(t *testing.T) {
 	target, headers := backend(t)
 	_, addr := startFront(t, target)
-	for _, first := range []string{"\x16\x03\x01\x02\x00rest-of-hello", "\x00\x01garbage"} {
+	for _, first := range []string{string(clientHello("example.com")), "\x00\x01garbage"} {
 		c, err := net.Dial("tcp", addr)
 		if err != nil {
 			t.Fatal(err)

@@ -9,5 +9,6 @@ const (
 	NaiveInnerAddr   = "127.0.0.1:18444"
 	MieruInnerAddr   = "127.0.0.1:18445"
 	AnyTLSInnerAddr  = "127.0.0.1:18446"
+	RealityInnerAddr = "127.0.0.1:18449" // 18447 is the decoy's HTTP/3
 	MTProtoInnerAddr = "127.0.0.1:18448"
 )

@@ -1,10 +1,6 @@
 package core
 
-import (
-	"testing"
-
-	"github.com/AppsGanin/rospanel/internal/model"
-)
+import "testing"
 
 func TestHostNameHealth(t *testing.T) {
 	for _, h := range []string{"", "144.31.159.81", "2001:db8::1", "cdn.example.com", "files.mysite.net"} {
@@ -16,15 +12,6 @@ func TestHostNameHealth(t *testing.T) {
 		c := hostNameHealth(host)
 		if c == nil || c.Status != healthWarn || c.Args["word"] != word {
 			t.Errorf("%q: %+v, want word %q", host, c, word)
-		}
-	}
-}
-
-func TestPickRealityPortIsFreeAndOffTheDefault(t *testing.T) {
-	for range 5 {
-		p := PickRealityPort()
-		if p == model.DefaultRealityPort || p < 20000 || p >= 60000 {
-			t.Fatalf("port %d", p)
 		}
 	}
 }

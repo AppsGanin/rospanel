@@ -744,6 +744,7 @@ const en: Dict = {
     proxyUserCharset: "the proxy login cannot contain a space or a colon",
     realityDestRequired: "give at least one REALITY masquerade domain",
     realityPortRange: "the REALITY port is outside 1–65535",
+    realityOwnNameOn443: "{{name}} is this server's own name — on 443 it stays the decoy's: leave a donor in the REALITY SNI list for this port",
     requestNotFound: "request not found",
     retryOnlyFinished: "only a finished broadcast can be retried",
     serverNotFound: "server not found",
@@ -3676,6 +3677,8 @@ const en: Dict = {
     antiReplay: "Anti-replay",
     antiReplayHint:
       "A ±60 s window against a prober replaying the handshake. May cut off clients with a skewed clock.",
+    realityPortHint:
+      "443 shares the port with the decoy: the front tells connections apart by the SNI in the ClientHello. REALITY then masquerades as a donor, not as the server's own name.",
     xhttpPath: "XHTTP path",
     regenKeys: "Regenerate the keys",
     keysWillRegen: "Keys will be regenerated ✓",

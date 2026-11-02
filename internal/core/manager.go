@@ -172,6 +172,9 @@ type Manager struct {
 	// frontVLESS puts the master's TCP-TLS lane behind the panel's front (see tlsfront
 	// and xray.Options.FrontVLESS). Never a node's: their agents do that themselves.
 	frontVLESS bool
+	// front is that front, when this process runs one: it is told which donor names
+	// belong to the REALITY lane on a shared 443 (see shareFront). Nil otherwise.
+	front realitySharer
 
 	// statsMu runs one local stats read-and-flush at a time; quota is what TickStats
 	// watches between flushes (see manager_stats.go). statsSource replaces the Xray
@@ -1189,6 +1192,7 @@ func (m *Manager) reconcileLocked() error {
 		return err
 	}
 	m.appliedBridges.Store(bridgesKey(opts.Bridges))
+	m.shareFront(set, cfg)
 	m.setApplied(users, seq)
 	logInfo("reconcile: config applied", "users", len(users))
 	m.syncTurnLocked(opts.Custom)

@@ -742,6 +742,7 @@ const ru = {
     proxyUserCharset: "логин прокси не может содержать пробел или двоеточие",
     realityDestRequired: "укажи хотя бы один домен маскировки REALITY",
     realityPortRange: "порт REALITY вне диапазона 1–65535",
+    realityOwnNameOn443: "{{name}} — свой домен: на 443 он остаётся за decoy — для REALITY на этом порту оставь в списке SNI донора",
     requestNotFound: "заявка не найдена",
     retryOnlyFinished: "повторить можно только завершённую рассылку",
     serverNotFound: "сервер не найден",
@@ -3672,6 +3673,8 @@ const ru = {
     antiReplay: "Анти-replay",
     antiReplayHint:
       "Окно ±60 с против повтора рукопожатия зондом. Может резать клиентов со сбитыми часами.",
+    realityPortHint:
+      "443 — делить порт с decoy: фронт разводит подключения по SNI в ClientHello. Тогда маскировкой REALITY должен быть донор, а не свой домен.",
     xhttpPath: "Путь XHTTP",
     regenKeys: "Перегенерировать ключи",
     keysWillRegen: "Ключи будут перегенерированы ✓",

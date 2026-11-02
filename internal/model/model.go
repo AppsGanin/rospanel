@@ -1962,11 +1962,44 @@ func (s *Settings) OwnName() string {
 	return ""
 }
 
+// RealityShared reports that the REALITY lane is served on the TCP-TLS lane's port —
+// 443, shared by the front through the name in the ClientHello (see tlsfront). The
+// operator asks for it by setting the REALITY port to that one; the lane is then moved
+// behind the front, and share links still name the port they always did.
+func (s *Settings) RealityShared() bool {
+	return s.VLESSPort > 0 && s.RealityPort == s.VLESSPort
+}
+
+// RealityShareConflict names the entry in the REALITY SNI list a shared port cannot
+// serve, and "" when there is none: the server's own name belongs to the decoy on that
+// port, so a REALITY client naming it never reaches REALITY. A lane with a port of its
+// own can borrow its own name — there it is the point.
+func (s *Settings) RealityShareConflict() string {
+	if !s.RealityShared() {
+		return ""
+	}
+	own := s.OwnName()
+	if own == "" {
+		return ""
+	}
+	for _, n := range s.RealityServerNames() {
+		if strings.EqualFold(n, own) {
+			return n
+		}
+	}
+	return ""
+}
+
 // RealityTarget is where the REALITY inbound sends what is not a client. For the
 // server's own domain that is its own :443 — the decoy, with the server's real
 // certificate — dialed on loopback, with no DNS and no trip out; for a donor, the donor.
+// A shared 443 always masks as a donor: its own name belongs to the TLS listener there,
+// so a REALITY client naming it never reaches this inbound at all.
 func (s *Settings) RealityTarget() string {
 	sni := s.RealitySNI()
+	if s.RealityShared() {
+		return sni + ":443"
+	}
 	if own := s.OwnName(); own != "" && strings.EqualFold(sni, own) && s.VLESSPort > 0 {
 		return net.JoinHostPort("127.0.0.1", strconv.Itoa(s.VLESSPort))
 	}
@@ -2383,9 +2416,10 @@ func (s *Settings) BotLang() string {
 	return "ru"
 }
 
-// DefaultRealityDest and DefaultRealityPort are the schema's REALITY donor and port.
-// A fresh install draws its own instead (RealityDonors, core.PickRealityPort): one
-// pair on every install is a signature.
+// DefaultRealityDest and DefaultRealityPort are the schema's REALITY donor and port —
+// what an install that never got its own pair carries. A fresh install draws a donor
+// (RealityDonors) and starts the lane on the TCP-TLS lane's port, 443 (see
+// cmd/rospanel.firstRunReality): one pair on every install is a signature.
 const (
 	DefaultRealityDest = "max.ru"
 	DefaultRealityPort = 8443
