@@ -1354,7 +1354,8 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 			writeAPIManagerErr(w, err)
 			return
 		}
-		writeAPIData(w, http.StatusCreated, map[string]any{"order": order, "message": msg})
+		writeAPIData(w, http.StatusCreated, map[string]any{"order": order, "message": msg,
+			"image_url": rt.apiManualImageURL(req.UserID)})
 		return
 	}
 	order, err := rt.mgr.StartPurchase(r.Context(), lang, req.UserID, p, req.Provider, rt.apiReturnURL(req.ReturnURL, req.UserID))
@@ -1382,6 +1383,21 @@ func (rt *Router) apiExternalOrder(w http.ResponseWriter, r *http.Request, order
 		}
 	}
 	writeAPIData(w, http.StatusCreated, map[string]any{"order": order})
+}
+
+// apiManualImageURL is the manual payment picture's address as an external caller can
+// hand it to a payer. The picture lives on the user's own subscription page, so it
+// exists only while that page is reachable; "" when none is uploaded.
+func (rt *Router) apiManualImageURL(userID int64) string {
+	set, err := rt.mgr.Settings()
+	if err != nil || !set.BillingManualEnabled || !set.SubPageReachable() {
+		return ""
+	}
+	u, err := rt.mgr.Store().GetUser(userID)
+	if err != nil {
+		return ""
+	}
+	return rt.manualPayImageURL(*u, set)
 }
 
 // apiReturnURL is where a hosted payment sends the payer back: the caller's own, or
@@ -1421,7 +1437,8 @@ func (rt *Router) apiCreateTopup(w http.ResponseWriter, r *http.Request, req api
 			writeAPIManagerErr(w, err)
 			return
 		}
-		writeAPIData(w, http.StatusCreated, map[string]any{"order": order, "message": msg})
+		writeAPIData(w, http.StatusCreated, map[string]any{"order": order, "message": msg,
+			"image_url": rt.apiManualImageURL(req.UserID)})
 		return
 	}
 	order, err := rt.mgr.StartTopup(r.Context(), lang, req.UserID, req.AmountRub, req.Provider, rt.apiReturnURL(req.ReturnURL, req.UserID))

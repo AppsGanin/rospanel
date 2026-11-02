@@ -132,7 +132,7 @@ var fa = map[string]string{
 	"sub.renew":            "تمدید",
 	"sub.cancelSub":        "لغو اشتراک",
 	"sub.changePlanNote":   "تغییر طرح فقط پس از لغو طرح فعلی ممکن است. با لغو، به طرح رایگان منتقل می‌شوید.",
-	"sub.manualNote":       "پس از پرداخت، مدیر پرداخت را تأیید می‌کند.",
+	"sub.manualImage":      "مشخصات پرداخت",
 	"sub.payMethod":        "روش پرداخت",
 	"sub.payTitle":         "پرداخت",
 	"sub.payProcessing":    "پرداخت در حال پردازش است… پس از تأیید، همه‌چیز خودکار اعمال می‌شود.",

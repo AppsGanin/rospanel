@@ -132,7 +132,7 @@ var zh = map[string]string{
 	"sub.renew":            "续订",
 	"sub.cancelSub":        "取消订阅",
 	"sub.changePlanNote":   "需先取消当前套餐才能更换。取消后将转为免费套餐。",
-	"sub.manualNote":       "付款后，管理员将确认您的支付。",
+	"sub.manualImage":      "收款信息",
 	"sub.payMethod":        "支付方式",
 	"sub.payTitle":         "支付",
 	"sub.payProcessing":    "支付处理中…确认后将自动生效。",

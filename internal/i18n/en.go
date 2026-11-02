@@ -134,7 +134,7 @@ var en = map[string]string{
 	"sub.renew":            "Renew",
 	"sub.cancelSub":        "Cancel the subscription",
 	"sub.changePlanNote":   "You can switch plans only after cancelling the current one. Cancelling moves you to the free plan.",
-	"sub.manualNote":       "Once you've paid, an administrator will confirm the payment.",
+	"sub.manualImage":      "Payment details",
 	"sub.payMethod":        "Payment method",
 	"sub.payTitle":         "Payment",
 	"sub.payProcessing":    "The payment is being processed… Everything applies automatically once it is confirmed.",

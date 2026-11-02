@@ -134,6 +134,34 @@ func (m *Manager) ManualPaymentLabel(lang i18n.Lang) string {
 	return i18n.T(lang, "pay.manualMethod")
 }
 
+// ManualPayImage is the picture the operator put beside the manual instructions — a
+// QR code, a screenshot of their requisites — or nil when there is none. The bytes
+// themselves go to the user bot, which uploads them to Telegram; everything else
+// (the panel preview, the subscription page, the /v1 order response) only ever holds
+// a URL, and the server reads the row again when that URL is fetched.
+func (m *Manager) ManualPayImage() ([]byte, error) {
+	return m.store.ManualPayImage()
+}
+
+// ManualPayImageVersion is the content hash of that picture ("" = none). The URLs
+// carry it as ?v=, so a replaced image is never served from a cache.
+func (m *Manager) ManualPayImageVersion() (string, error) {
+	return m.store.ManualPayImageVersion()
+}
+
+// SetManualPayImage validates and stores the picture, returning its new version.
+func (m *Manager) SetManualPayImage(b []byte) (string, error) {
+	if err := payments.CheckManualPayImage(b); err != nil {
+		return "", err
+	}
+	return m.store.SetManualPayImage(b)
+}
+
+// DeleteManualPayImage removes the picture; there being none is not an error.
+func (m *Manager) DeleteManualPayImage() error {
+	return m.store.DeleteManualPayImage()
+}
+
 // PaymentProviders returns every provider in the registry paired with its saved
 // setup (a provider the operator never configured comes back with an empty config).
 func (m *Manager) PaymentProviders() ([]payments.Descriptor, map[string]model.PaymentProvider, error) {

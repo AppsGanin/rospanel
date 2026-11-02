@@ -132,7 +132,7 @@ var ar = map[string]string{
 	"sub.renew":            "تجديد",
 	"sub.cancelSub":        "إلغاء الاشتراك",
 	"sub.changePlanNote":   "لا يمكن تغيير الباقة إلا بعد إلغاء الباقة الحالية. عند الإلغاء تنتقل إلى الباقة المجانية.",
-	"sub.manualNote":       "بعد الدفع سيؤكد المسؤول العملية.",
+	"sub.manualImage":      "بيانات الدفع",
 	"sub.payMethod":        "طريقة الدفع",
 	"sub.payTitle":         "الدفع",
 	"sub.payProcessing":    "جارٍ معالجة الدفع… سيُطبَّق كل شيء تلقائيًا بعد التأكيد.",

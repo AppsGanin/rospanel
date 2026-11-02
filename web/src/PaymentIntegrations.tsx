@@ -1,8 +1,10 @@
+import { useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { type PaymentProvider } from "./api";
+import { manualImageURL, type PaymentProvider } from "./api";
 import i18n, { td } from "./i18n";
 import {
   ReadOnly,
+  Button,
   CenterLoader,
   cn,
   Code,
@@ -178,18 +180,35 @@ function ManualCard({
   enabled,
   label,
   note,
+  image,
+  imageVersion,
+  imageBusy,
   onEnabled,
   onLabel,
   onNote,
+  onImage,
+  onImageRemove,
 }: {
   enabled: boolean;
   label: string;
   note: string;
+  image: boolean;
+  imageVersion: string;
+  imageBusy: boolean;
   onEnabled: (v: boolean) => void;
   onLabel: (v: string) => void;
   onNote: (v: string) => void;
+  onImage: (file: File) => void;
+  onImageRemove: () => void;
 }) {
   const { t } = useTranslation();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const pick = () => fileRef.current?.click();
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) onImage(file);
+  };
   return (
     <SettingRow
       label={
@@ -223,6 +242,56 @@ function ManualCard({
             placeholder={t("bill.manualPlaceholder")}
             rows={4}
           />
+          {/* The picture goes below the words, where the payer sees it: a QR code or
+              a screenshot saves the operator from retyping their requisites. */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              {image && (
+                <a
+                  href={manualImageURL(imageVersion)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={t("bill.manualImage")}
+                >
+                  <img
+                    src={manualImageURL(imageVersion)}
+                    alt=""
+                    className="h-20 w-20 rounded border border-gray-300 bg-white object-contain p-0.5"
+                  />
+                </a>
+              )}
+              <Button
+                size="xs"
+                variant="light"
+                color="gray"
+                loading={imageBusy}
+                onClick={pick}
+              >
+                {image ? t("bill.manualImageReplace") : t("bill.manualImageUpload")}
+              </Button>
+              {image && (
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  color="red"
+                  loading={imageBusy}
+                  onClick={onImageRemove}
+                >
+                  {t("common.delete")}
+                </Button>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg"
+                className="hidden"
+                onChange={onFile}
+              />
+            </div>
+            <span className="text-xs text-ink-muted">
+              {t("bill.manualImageHint")}
+            </span>
+          </div>
         </div>
       )}
     </SettingRow>
@@ -242,9 +311,14 @@ export function PaymentIntegrations({
   manual,
   label,
   note,
+  image,
+  imageVersion,
+  imageBusy,
   onManual,
   onLabel,
   onNote,
+  onImage,
+  onImageRemove,
   manualReadOnly,
   showProviders,
 }: {
@@ -255,9 +329,14 @@ export function PaymentIntegrations({
   manual: boolean;
   label: string;
   note: string;
+  image: boolean;
+  imageVersion: string;
+  imageBusy: boolean;
   onManual: (v: boolean) => void;
   onLabel: (v: string) => void;
   onNote: (v: string) => void;
+  onImage: (file: File) => void;
+  onImageRemove: () => void;
   // The manual method is a tariff setting (billing.manage); the providers and their
   // keys are payments.manage — a role may hold either without the other.
   manualReadOnly: boolean;
@@ -272,9 +351,14 @@ export function PaymentIntegrations({
           enabled={manual}
           label={label}
           note={note}
+          image={image}
+          imageVersion={imageVersion}
+          imageBusy={imageBusy}
           onEnabled={onManual}
           onLabel={onLabel}
           onNote={onNote}
+          onImage={onImage}
+          onImageRemove={onImageRemove}
         />
       </ReadOnly>
       {!showProviders ? null : err ? (

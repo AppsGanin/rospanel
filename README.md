@@ -608,8 +608,8 @@ converted at your rate). The client pays in the
 bot or on the subscription page, and the plan **activates itself**. A webhook confirms it
 (signature verified), polling covers the case where the webhook never arrives; processing is
 idempotent and the amount is checked against the order. **Manual payment** is a method of its
-own beside them: switched on in *Payments → Payment acceptance*, it shows your own details and
-an admin confirms the transfer.
+own beside them: switched on in *Payments → Payment acceptance*, it shows your own details — text
+plus your picture, a QR code or a screenshot of the requisites — and an admin confirms the transfer.
 
 - **Flexible plans** — a plan may sell extra devices (a price per device per period, up to a
   limit): chosen with the plan, kept and paid for at renewal, added mid-term for the days left.

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import {
+  deleteManualImage,
   deleteTariffPlan,
   getBilling,
   getPayments,
@@ -9,6 +10,7 @@ import {
   saveBilling,
   savePaymentProvider,
   saveTariffPlan,
+  uploadManualImage,
   type BillingInfo,
   type Group,
   type PaymentProvider,
@@ -67,6 +69,8 @@ function toCfg(d: BillingInfo, plans: TariffPlan[]): BillingInfo {
     payment_note: d.payment_note ?? "",
     manual: !!d.manual,
     manual_label: d.manual_label ?? "",
+    manual_image: !!d.manual_image,
+    manual_image_version: d.manual_image_version ?? "",
     wallet: !!d.wallet,
     topup_min: d.topup_min || 100,
     topup_max: d.topup_max || 15_000,
@@ -112,7 +116,7 @@ export function BillingPanel() {
   const [providers, setProviders] = useState<PaymentProvider[] | null>(null);
   const [payDrafts, setPayDrafts] = useState<Record<string, ProviderDraft>>({});
   const [payErr, setPayErr] = useState("");
-  const { busy, run } = useAction();
+  const { busy, isBusy, run } = useAction();
   const { confirm, confirmNode } = useConfirm();
 
   // seedProviders replaces the server view and resets all drafts to match it.
@@ -334,6 +338,31 @@ export function BillingPanel() {
     }).catch((e) => notifyError(errMessage(e)));
   };
 
+  // The manual method's picture uploads on its own rather than with the bottom
+  // SaveBar — a file input cannot sit in a pending edit — and the answer carries the
+  // new version, which is what the preview URL needs to fetch the replacement. Both
+  // views move together so the page never reads as having unsaved changes.
+  const applyImage = (r: { manual_image: boolean; manual_image_version: string }) => {
+    setCfg((c) => (c ? { ...c, ...r } : c));
+    setSaved((s) => (s ? { ...s, ...r } : s));
+  };
+  const uploadImage = (file: File) =>
+    run(
+      async () => {
+        applyImage(await uploadManualImage(file));
+        notifySuccess(t("bill.manualImageSaved"));
+      },
+      { key: "manualImage" },
+    );
+  const removeImage = () =>
+    run(
+      async () => {
+        applyImage(await deleteManualImage());
+        notifySuccess(t("bill.manualImageRemoved"));
+      },
+      { key: "manualImage" },
+    );
+
   const removePlan = async (p: TariffPlan) => {
     const ok = await confirm({
       title: t("bill.deleteTitle"),
@@ -384,9 +413,14 @@ export function BillingPanel() {
           manual={cfg.manual}
           label={cfg.manual_label}
           note={cfg.payment_note}
+          image={cfg.manual_image}
+          imageVersion={cfg.manual_image_version}
+          imageBusy={isBusy("manualImage")}
           onManual={(v) => setCfg({ ...cfg, manual: v })}
           onLabel={(v) => setCfg({ ...cfg, manual_label: v })}
           onNote={(v) => setCfg({ ...cfg, payment_note: v })}
+          onImage={uploadImage}
+          onImageRemove={removeImage}
         />
         <ReadOnly when={!canManage}>
         <Panel

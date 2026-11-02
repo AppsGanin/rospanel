@@ -150,6 +150,8 @@ var auditActions = map[string]auditRoute{
 	"POST /api/broadcasts/{id}/cancel":  act(model.AuditBroadcastChanged),
 	"POST /api/broadcasts/{id}/retry":   act(model.AuditBroadcastChanged),
 	"POST /api/billing":                 set("billing"),
+	"POST /api/billing/manual-image":    set("billing"),
+	"DELETE /api/billing/manual-image":  set("billing"),
 	"POST /api/payments":                set("payments"),
 
 	// Tariff plans keep their own actions: they are objects with a lifecycle, not a

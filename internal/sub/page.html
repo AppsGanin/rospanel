@@ -939,6 +939,20 @@
         line-height: 1.55;
         color: var(--ink);
       }
+      /* The operator's own picture for manual payment — a QR code or their
+         requisites. Capped so a full-screen screenshot cannot push the page's
+         buttons off a phone. */
+      .payimg {
+        display: block;
+        max-width: min(100%, 320px);
+        max-height: 320px;
+        margin: 10px auto 0;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+        object-fit: contain;
+        justify-self: center;
+      }
       .paywatch {
         display: flex;
         align-items: center;
@@ -1513,13 +1527,6 @@
           </p>
           {{end}}
           <button class="linkbtn" onclick="cancelSub(this)">{{.L.CancelSub}}</button>
-          {{else if .Billing.ManualOnly}}
-          <p class="muted" style="margin: 12px 0 0">
-            {{.L.ManualNote}}
-          </p>
-          {{end}}
-          {{if and .Billing.ManualOnly .Billing.Note}}
-          <p class="muted" style="margin: 8px 0 0; white-space: pre-line">{{.Billing.Note}}</p>
           {{end}}
         </div>
 
@@ -1802,6 +1809,7 @@
           </button>
         </div>
         <p id="msgmodal-body" class="msgbody" dir="auto"></p>
+        <img id="msgmodal-img" class="payimg" alt="{{.L.ManualImage}}" hidden />
       </div>
     </div>
     {{end}}
@@ -2305,11 +2313,21 @@
         {{range $i, $p := .Billing.Providers}}{{if $i}}, {{end}}"{{$p.Key}}"{{end}}
       ];
       var PAY_PLAN = 0;
-      function showPayMsg(text, title) {
+      function showPayMsg(text, title, image) {
         haptic(title === {{.L.Error}} ? "error" : "success");
         var body = document.getElementById("msgmodal-body");
         var head = document.getElementById("msgmodal-title");
         var modal = document.getElementById("msgmodal");
+        var pic = document.getElementById("msgmodal-img");
+        if (pic) {
+          if (image) {
+            pic.src = image;
+            pic.hidden = false;
+          } else {
+            pic.hidden = true;
+            pic.removeAttribute("src");
+          }
+        }
         if (body && modal) {
           body.textContent = text;
           if (head) head.textContent = title || {{.L.PayTitle}};
@@ -2500,7 +2518,7 @@
               openExternal(res.body.pay_url);
               watchPayments();
             } else if (res.ok && res.body.manual) {
-              showPayMsg(res.body.message || {{.L.OrderCreated}}, {{.L.OrderTitle}});
+              showPayMsg(res.body.message || {{.L.OrderCreated}}, {{.L.OrderTitle}}, res.body.image);
             } else {
               showPayMsg(res.body.error || {{.L.PayFailed}}, {{.L.Error}});
             }
@@ -2589,6 +2607,7 @@
               showPayMsg(
                 res.body.message || {{.L.OrderCreated}},
                 {{.L.OrderTitle}},
+                res.body.image,
               );
             } else {
               reset();
