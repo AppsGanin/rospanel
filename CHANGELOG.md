@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.12.0](https://github.com/AppsGanin/rospanel/compare/v5.11.1...v5.12.0) (2026-11-02)
+
+
+### Features
+
+* **servers:** copy routing and connections from another server ([f6a2afa](https://github.com/AppsGanin/rospanel/commit/f6a2afabaf6177bdb3eeb5636d927c2544cd9432))
+
 ## [5.11.1](https://github.com/AppsGanin/rospanel/compare/v5.11.0...v5.11.1) (2026-10-30)
 
 
