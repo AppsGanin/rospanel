@@ -636,6 +636,7 @@ func (rt *Router) panelMux() http.Handler {
 	canServersView("GET /api/inbounds/catalog", rt.inboundCatalog)
 	canServersView("GET /api/servers/{id}/inbounds", withID(rt.serverInbounds))
 	canServersManage("POST /api/servers/{id}/inbounds", withID(rt.createServerInbound))
+	canServersManage("POST /api/servers/{id}/inbounds/copy", withID(rt.copyServerInbounds))
 	canServersManage("POST /api/inbounds/{id}", withID(rt.updateInbound))
 	canServersManage("DELETE /api/inbounds/{id}", withID(rt.deleteInbound))
 	canServersManage("POST /api/inbounds/{id}/regen-reality", withID(rt.regenInboundReality))

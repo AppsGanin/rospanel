@@ -82,6 +82,7 @@ export function NodeCard({
   panelVersion,
   reachOn,
   servers,
+  peers,
   onChanged,
   onRegen,
   onUpdate,
@@ -94,6 +95,8 @@ export function NodeCard({
   reachOn: boolean;
   // Every server, for a cascade lane's exits (CascadeServer).
   servers?: CascadeServer[];
+  // Every server as listed, to copy another one's routing from.
+  peers?: NodeView[];
   onChanged: () => void;
   onRegen: (command: string) => void;
   // Asks this node to update; the list confirms it and follows the progress. Absent
@@ -444,6 +447,7 @@ export function NodeCard({
             decoys={decoys}
             geo={geo}
             servers={servers}
+            peers={peers}
             onClose={() => setEditingRouting(false)}
             onRefresh={onChanged}
           />
@@ -453,6 +457,7 @@ export function NodeCard({
             decoys={decoys}
             geo={geo}
             servers={servers}
+            peers={peers}
             onClose={() => setEditingRouting(false)}
             onRefresh={onChanged}
           />

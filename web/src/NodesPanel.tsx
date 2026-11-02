@@ -236,6 +236,7 @@ export function NodesPanel() {
           geo={geo}
           panelVersion={panelVersion}
           reachOn={reachOn}
+          peers={nodes}
           servers={nodes.map((s) => ({
             id: s.id,
             name: s.name,

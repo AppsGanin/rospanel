@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   getNodeGeo,
@@ -17,7 +17,8 @@ import {
   type LaneSource,
 } from "./RoutingEditor";
 import { useCan } from "./role";
-import { Button, cn } from "./ui";
+import { Badge, Button, cn, IconCheck, IconCopy, Modal, Section, SettingRow } from "./ui";
+import { serverName, statusDot } from "./NodeStatus";
 
 // The tabs of a server's settings that belong to routing (routing.*); every other
 // tab is the server itself (servers.*).
@@ -209,6 +210,15 @@ export function useServerRouting(init: {
         opera: operaEnabled,
         country: operaCountry,
       }),
+    // load replaces the draft only, leaving the baseline: the editor turns dirty and
+    // Cancel brings the saved state back (copying another server's routing).
+    load: (c: RoutingConfig, w: boolean, o: boolean, cc: string) => {
+      setCfg(c);
+      setLaneSrc(laneSources(c.lanes));
+      setWarpEnabled(w);
+      setOperaEnabled(o);
+      setOperaCountry(cc || "EU");
+    },
     // reset re-seeds every field AND the baseline (used by the master dialog after its
     // async load, so a freshly-loaded editor is not "dirty").
     reset: (c: RoutingConfig, w: boolean, o: boolean, cc: string) => {
@@ -220,6 +230,306 @@ export function useServerRouting(init: {
       setBase({ cfg: c, warp: w, opera: o, country: cc || "EU" });
     },
   };
+}
+
+// copiedRouting is another server's routing as this server would run it: a cascade
+// exit pointing at this very server is dropped (a server cannot leave through
+// itself), and a cascade lane left with no exit goes with it. dropped names those.
+export function copiedRouting(
+  src: NodeView,
+  self: number,
+): { cfg: RoutingConfig; dropped: string[] } {
+  const c = hydrateRouting(src.routing);
+  const dropped: string[] = [];
+  const lanes = c.lanes.flatMap((l) => {
+    if (!l.via?.length) return [l];
+    const via = l.via.filter((e) => e.server !== self);
+    if (via.length === 0) {
+      dropped.push(l.name || l.id);
+      return [];
+    }
+    return [{ ...l, via }];
+  });
+  return { cfg: hydrateRouting({ ...c, lanes }), dropped };
+}
+
+// CopyRoutingFrom opens a dialog to pick another server, see what its routing
+// holds, and load it into the editor. Nothing is saved: the tab turns dirty, Save
+// applies, Cancel undoes.
+export function CopyRoutingFrom({
+  self,
+  peers,
+  busy,
+  onCopy,
+}: {
+  self: number;
+  peers: NodeView[];
+  // A save in flight: a draft loaded now would be marked saved by its commit.
+  busy?: boolean;
+  onCopy: (cfg: RoutingConfig, warp: boolean, opera: boolean, country: string) => void;
+}) {
+  const { t } = useTranslation();
+  const others = peers.filter((p) => p.id !== self);
+  const [open, setOpen] = useState(false);
+  const [from, setFrom] = useState<number | null>(null);
+  if (others.length === 0) return null;
+  const src = others.find((p) => p.id === from);
+  const preview = src ? copiedRouting(src, self) : null;
+  const close = () => {
+    setOpen(false);
+    setFrom(null);
+  };
+  const copy = () => {
+    if (!src || !preview) return;
+    onCopy(preview.cfg, src.warp_enabled, src.opera_enabled, src.opera_country);
+    notifySuccess(t("nodes.routingCopied", { name: serverName(src) }));
+    close();
+  };
+  const c = preview?.cfg;
+  return (
+    <>
+      <Section flush>
+        <SettingRow
+          label={t("nodes.copyRoutingFrom")}
+          hint={t("nodes.copyRoutingHint")}
+          control={
+            <Button
+              size="sm"
+              variant="outline"
+              color="gray"
+              onClick={() => setOpen(true)}
+              disabled={busy}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <IconCopy size={14} />
+                {t("nodes.copyRoutingOpen")}
+              </span>
+            </Button>
+          }
+        />
+      </Section>
+      <Modal
+        open={open}
+        onClose={close}
+        size="lg"
+        title={t("nodes.copyRoutingTitle")}
+        subtitle={t("nodes.copyRoutingHint")}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="light" color="gray" onClick={close}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={copy} disabled={!preview}>
+              {t("nodes.copyRoutingApply")}
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-semibold text-ink-muted">
+              {t("nodes.copyRoutingSource")}
+            </span>
+            <ServerPicker
+              servers={others}
+              value={from}
+              onChange={setFrom}
+              badges={(p) => {
+                const lanes = copiedRouting(p, self).cfg.lanes.length;
+                return (
+                  <>
+                    <Badge size="xs" color={p.warp_enabled ? "green" : "gray"}>WARP</Badge>
+                    <Badge size="xs" color={p.opera_enabled ? "green" : "gray"}>Opera</Badge>
+                    <Badge size="xs" color={lanes ? "brand" : "gray"}>
+                      {t("nodes.copyLanes", { count: lanes })}
+                    </Badge>
+                  </>
+                );
+              }}
+            />
+          </div>
+
+          {src && c && preview ? (
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-semibold text-ink-muted">
+                {t("nodes.copyRoutingWhat")}
+              </span>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <RuleTile
+                  label={t("route.blocks")}
+                  domains={c.block_domains.length}
+                  ips={c.block_ips.length}
+                  flags={[
+                    c.block_ads && t("nodes.copyAds"),
+                    c.block_bittorrent && "BitTorrent",
+                  ]}
+                />
+                <RuleTile
+                  label={t("route.direct")}
+                  domains={c.direct_domains.length}
+                  ips={c.direct_ips.length}
+                />
+                <RuleTile
+                  label="WARP"
+                  state={src.warp_enabled}
+                  domains={c.warp_domains.length}
+                  ips={c.warp_ips.length}
+                />
+                <RuleTile
+                  label="Opera VPN"
+                  state={src.opera_enabled}
+                  extra={src.opera_enabled ? src.opera_country || "EU" : undefined}
+                  domains={c.opera_domains.length}
+                  ips={c.opera_ips.length}
+                />
+              </div>
+              <div className="rounded-xl border border-gray-200 px-3 py-2.5">
+                <div className="mb-1.5 text-xs text-ink-muted">{t("route.lanes")}</div>
+                {c.lanes.length ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {c.lanes.map((l) => (
+                      <span
+                        key={l.id}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs",
+                          l.enabled ? "border-gray-200 text-ink" : "border-dashed border-gray-300 text-ink-muted",
+                        )}
+                      >
+                        <span className={cn("h-1.5 w-1.5 rounded-full", l.enabled ? "bg-success" : "bg-gray-300")} />
+                        {l.name || l.id}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-[13px] text-ink-muted">—</span>
+                )}
+              </div>
+              {preview.dropped.length > 0 && (
+                <p className="warning-tint rounded-lg px-3 py-2 text-xs text-warning">
+                  {t("nodes.copyRoutingDropped", { names: preview.dropped.join(", ") })}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="rounded-xl border border-dashed border-gray-200 px-3 py-6 text-center text-xs text-ink-muted">
+              {t("nodes.copyRoutingPick")}
+            </p>
+          )}
+        </div>
+      </Modal>
+    </>
+  );
+}
+
+// ServerPicker is the server choice of the copy dialogs: one card per server with
+// its status dot, name, address and whatever badges the caller shows.
+export function ServerPicker({
+  servers,
+  value,
+  onChange,
+  badges,
+}: {
+  servers: NodeView[];
+  value: number | null;
+  onChange: (id: number) => void;
+  badges?: (s: NodeView) => ReactNode;
+}) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2" role="radiogroup">
+      {servers.map((p) => {
+        const on = p.id === value;
+        return (
+          <button
+            key={p.id}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(p.id)}
+            className={cn(
+              "flex min-w-0 items-start gap-3 rounded-xl border px-3 py-2.5 text-start transition",
+              "outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40",
+              on
+                ? "border-accent accent-tint"
+                : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50",
+            )}
+          >
+            <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", statusDot(p))} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-semibold text-ink">
+                {serverName(p)}
+              </span>
+              <span className="block truncate text-xs text-ink-muted" dir="ltr">
+                {p.host || "—"}
+              </span>
+              {badges && <span className="mt-1.5 flex flex-wrap gap-1">{badges(p)}</span>}
+            </span>
+            <span
+              className={cn(
+                "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition",
+                on ? "border-brand-600 bg-brand-600 text-onbrand" : "border-gray-300 bg-white",
+              )}
+            >
+              {on && <IconCheck size={11} />}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// RuleTile is one rule group in the copy preview: its switch (when it has one), and
+// how many domain and IP rules it carries.
+function RuleTile({
+  label,
+  domains,
+  ips,
+  state,
+  extra,
+  flags,
+}: {
+  label: string;
+  domains: number;
+  ips: number;
+  state?: boolean;
+  extra?: string;
+  flags?: (string | false)[];
+}) {
+  const { t } = useTranslation();
+  const off = state === false;
+  const shown = (flags ?? []).filter(Boolean) as string[];
+  return (
+    <div className={cn("flex flex-col gap-2 rounded-xl border border-gray-200 px-3 py-2.5", off && "bg-gray-50")}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-xs font-semibold text-ink">{label}</span>
+        {state !== undefined && (
+          <Badge size="xs" color={state ? "green" : "gray"}>
+            {state ? (extra ?? t("nodes.on")) : t("conn.off")}
+          </Badge>
+        )}
+      </div>
+      <div className={cn("flex gap-4", off && "opacity-60")}>
+        <Count n={domains} label={t("route.domains")} />
+        <Count n={ips} label="IP" />
+      </div>
+      {shown.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {shown.map((f) => (
+            <Badge key={f} size="xs" color="red">{f}</Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Count({ n, label }: { n: number; label: string }) {
+  return (
+    <span className="flex flex-col">
+      <span className={cn("font-mono text-lg leading-none tabular-nums", n ? "text-ink" : "text-ink-muted")}>{n}</span>
+      <span className="mt-1 text-[11px] text-ink-muted">{label}</span>
+    </span>
+  );
 }
 
 // NodeGeoCard is the node's Geo tab — the same GeoSection as the master (geo file

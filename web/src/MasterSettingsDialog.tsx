@@ -43,7 +43,13 @@ import {
 import {
   ReadOnly, CenterLoader, Drawer, Section, Select, SettingRow, TextInput } from "./ui";
 import { PlacementFields, placementOf } from "./PlacementFields";
-import { DialogTabs, TabSaveBar, useServerRouting, useServerTabs } from "./ServerDialogParts";
+import {
+  CopyRoutingFrom,
+  DialogTabs,
+  TabSaveBar,
+  useServerRouting,
+  useServerTabs,
+} from "./ServerDialogParts";
 import { useCan } from "./role";
 import { SystemProxyEditor, systemProxyIssue } from "./SystemProxyEditor";
 
@@ -57,6 +63,7 @@ export function MasterSettingsDialog({
   decoys,
   geo,
   servers,
+  peers,
   onClose,
   onRefresh,
 }: {
@@ -64,6 +71,7 @@ export function MasterSettingsDialog({
   decoys: string[];
   geo: GeoCategories;
   servers?: CascadeServer[];
+  peers?: NodeView[];
   onClose: () => void;
   onRefresh: () => void;
 }) {
@@ -373,7 +381,7 @@ export function MasterSettingsDialog({
             <ConnectionsEditor load={getConnections} save={applyConnections} reset={resetConnections} restartsPanel />
           )}
 
-          {shown === "inbounds" && <InboundsEditor serverId={0} restartsPanel />}
+          {shown === "inbounds" && <InboundsEditor serverId={0} restartsPanel peers={peers} />}
 
           {shown === "routing" && (
             <div className="flex flex-col gap-3.5">
@@ -399,6 +407,9 @@ export function MasterSettingsDialog({
                 applying={applying}
                 cascadeServers={servers?.filter((x) => x.id !== node.id)}
               />
+              {routingManage && peers && (
+                <CopyRoutingFrom self={node.id} peers={peers} busy={applying} onCopy={r.load} />
+              )}
               <TabSaveBar
                 onSave={saveRoutingTab}
                 onReset={r.revert}

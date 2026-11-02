@@ -3420,6 +3420,21 @@ export const createInbound = (serverId: number, v: InboundInput) =>
     body: JSON.stringify(v),
   })
 
+// InboundCopyFailure is one inbound a copy skipped, with the server's coded reason.
+export interface InboundCopyFailure {
+  name: string
+  error: string
+  code?: string
+  args?: Record<string, unknown>
+}
+
+// copyInbounds recreates inbounds `ids` of server `from` on server `to`, applied once.
+export const copyInbounds = (to: number, from: number, ids: number[]) =>
+  api<{ created: Inbound[]; failed: InboundCopyFailure[] }>(
+    `api/servers/${to}/inbounds/copy`,
+    { method: 'POST', body: JSON.stringify({ from, ids }) },
+  )
+
 export const updateInbound = (id: number, v: InboundInput) =>
   api<Inbound>(`api/inbounds/${id}`, { method: 'POST', body: JSON.stringify(v) })
 
