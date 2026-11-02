@@ -174,11 +174,11 @@ func stampHTML(body []byte, mark string) []byte {
 // ServeHTTP answers like a static file server: known paths are served with full
 // validators, unknown ones get the template's not-found behaviour, and methods a
 // file server doesn't implement get a 405.
+//
+// It never carries Alt-Svc: see the package's h3.go for why advertising HTTP/3 here
+// would lock a browser out of the panel.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", ServerName)
-	if v := altSvc.Load(); v != nil {
-		w.Header().Set("Alt-Svc", *v)
-	}
 
 	// A maintenance decoy is down for everything, method included. The config it
 	// imitates (nginx `return 503` for the whole server) answers every request the
