@@ -72,6 +72,10 @@ type oaOrderResp struct {
 	Order   *model.PaymentOrder `json:"order"`
 	PayURL  string              `json:"pay_url,omitempty"` // hosted provider URL (when a provider is set)
 	Message string              `json:"message,omitempty"` // manual-payment instructions (no provider)
+	// ImageURL is the operator's picture for manual payment — a QR code, their
+	// requisites — served from the payer's subscription page. Empty when none is
+	// uploaded or that page is not reachable.
+	ImageURL string `json:"image_url,omitempty"`
 }
 
 // oaProviderResp is one enabled payment method returned by GET /v1/billing/providers.

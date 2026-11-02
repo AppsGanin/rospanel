@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -10,11 +11,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/AppsGanin/rospanel/internal/actor"
 	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/payments"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sub"
 )
@@ -1332,6 +1335,10 @@ func (s *UserService) startProviderPayment(ctx context.Context, client *Client, 
 		})
 }
 
+// maxPhotoCaption is Telegram's limit for a photo's caption; a longer instruction
+// text cannot ride a picture.
+const maxPhotoCaption = 1024
+
 func (s *UserService) manualPayment(ctx context.Context, client *Client, chatID, msgID int64, u model.User, planID int64, periods int) {
 	lang := s.lang(chatID)
 	_, msg, err := s.panel.RequestPlanPayment(ctx, lang, u.ID, planID, periods)
@@ -1343,11 +1350,23 @@ func (s *UserService) manualPayment(ctx context.Context, client *Client, chatID,
 			})
 		return
 	}
-	s.edit(ctx, client, chatID, msgID, esc(msg),
-		[][]InlineButton{
-			{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}},
-			{{Text: i18n.T(lang, "user.btnMenu"), CallbackData: "vu:menu"}},
-		})
+	rows := [][]InlineButton{
+		{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}},
+		{{Text: i18n.T(lang, "user.btnMenu"), CallbackData: "vu:menu"}},
+	}
+	// The operator's own picture goes with the instructions, as a photo: a QR code is
+	// what a payer scans, and a requisites screenshot saves retyping an account
+	// number. Editing the screen into text is the fallback — no picture, or an
+	// instruction longer than a caption may be.
+	if img, ierr := s.panel.ManualPayImage(); ierr == nil && len(img) > 0 {
+		caption := esc(msg)
+		if utf8.RuneCountInString(caption) <= maxPhotoCaption {
+			if _, perr := client.UploadPhoto(ctx, chatID, payments.ManualPayImageFilename(img), caption, rows, bytes.NewReader(img)); perr == nil {
+				return
+			}
+		}
+	}
+	s.edit(ctx, client, chatID, msgID, esc(msg), rows)
 }
 
 // UserDeepLink builds a t.me link that binds an existing panel user via a

@@ -104,16 +104,59 @@ func TestPageBillingManual(t *testing.T) {
 	s := string(html)
 	for _, want := range []string{
 		"buyPlan( 5 , this)", // pay button present even without a provider
-		"администратор подтвердит платёж", // manual note
-		`id="msgmodal"`, // instructions modal
-		"Переведите на карту 0000", // configured manual note
+		`id="msgmodal"`,      // instructions modal
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("manual page missing %q", want)
 		}
 	}
+	// The details belong to the order, not to the card: with manual payment the only
+	// method, the page is the plan and its button, and the modal carries the rest.
+	for _, unwanted := range []string{"администратор подтвердит платёж", "Переведите на карту 0000"} {
+		if strings.Contains(s, unwanted) {
+			t.Errorf("the page shows %q before an order exists", unwanted)
+		}
+	}
 	if strings.Contains(s, `id="paymodal"`) {
 		t.Error("no provider modal expected in manual mode")
+	}
+}
+
+// The picture of the operator's requisites belongs to the INSTRUCTIONS, not to the
+// plan card: the card carries the note alone, and the empty <img> in the order dialog
+// is where the response's address lands — with alt text for a payer who cannot see it.
+func TestPageBillingManualPicture(t *testing.T) {
+	t.Parallel()
+	u := model.User{Name: "Ann", SubToken: "tok123"}
+	set := &model.Settings{Host: "vpn.example.com"}
+	billing := Billing{
+		Show:       true,
+		Manual:     true,
+		ManualOnly: true,
+		Providers:  []BillingPay{{Key: ManualPayKey, Label: "Вручную"}},
+		PayPath:    "https://vpn.example.com/sub/tok123/pay",
+		Plans:      []BillingPlan{{ID: 5, Name: "Месяц", Label: "199 ₽ / 30 дн."}},
+		Note:       "Переведите на карту 0000",
+	}
+	html, err := Page(u, set, One(set), billing, Devices{}, Access{}, true, i18n.RU)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	s := string(html)
+	for _, want := range []string{
+		`id="msgmodal-img"`,          // the order dialog has a place for it
+		`alt="Реквизиты для оплаты"`, // readable where it cannot be shown
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("manual page missing %q", want)
+		}
+	}
+	// Nothing loads up front: neither the picture nor the details are the card's —
+	// the dialog takes both from the order response.
+	for _, unwanted := range []string{"/payimg", "Переведите на карту 0000"} {
+		if strings.Contains(s, unwanted) {
+			t.Errorf("the page shows %q before an order exists", unwanted)
+		}
 	}
 }
 

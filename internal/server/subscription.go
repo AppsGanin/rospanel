@@ -23,6 +23,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/payments"
 	"github.com/AppsGanin/rospanel/internal/plugin"
 	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/telegram"
@@ -335,6 +336,22 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			rt.serveThemeFile(w, r, name)
 			return
 		}
+		// The operator's picture for manual payment, under the user's own token like
+		// the page that shows it. The URL carries the content hash, so a replaced
+		// picture is a different address and this one can be cached for long.
+		if leaf == "payimg" && set.BillingManualEnabled {
+			b, err := rt.mgr.ManualPayImage()
+			if err != nil || len(b) == 0 {
+				rt.currentDecoy().ServeHTTP(w, r)
+				return
+			}
+			h := w.Header()
+			h.Set("Content-Type", payments.ManualPayImageContentType(b))
+			h.Set("X-Content-Type-Options", "nosniff")
+			h.Set("Cache-Control", "private, max-age=86400")
+			_, _ = w.Write(b)
+			return
+		}
 		rt.currentDecoy().ServeHTTP(w, r)
 	}
 }
@@ -536,7 +553,8 @@ func (rt *Router) handleSubPay(w http.ResponseWriter, r *http.Request, u model.U
 			writeSubErr(w, err, lang)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"manual": true, "message": msg})
+		writeJSON(w, http.StatusOK, map[string]any{"manual": true, "message": msg,
+			"image": rt.manualPayImageURL(u, set)})
 		return
 	}
 	order, err := rt.mgr.StartPurchase(subActorCtx(r, u), lang, u.ID, p, req.Provider, sub.URL(set, u.SubToken))
@@ -583,6 +601,17 @@ func (rt *Router) handleSubOrder(w http.ResponseWriter, r *http.Request, u model
 		"plan_name": order.PlanName,
 		"amount":    order.AmountRub,
 	})
+}
+
+// manualPayImageURL is the operator's picture for manual payment, addressed on the
+// user's own subscription page — "" when none is uploaded. The version comes from the
+// content hash, so the address changes with the picture and the browser may cache it.
+func (rt *Router) manualPayImageURL(u model.User, set *model.Settings) string {
+	v, err := rt.mgr.ManualPayImageVersion()
+	if err != nil || v == "" {
+		return ""
+	}
+	return sub.URL(set, u.SubToken) + "/payimg?v=" + v
 }
 
 // buildBilling assembles the optional "renew / pay" block for the subscription
@@ -1486,7 +1515,8 @@ func (rt *Router) handleSubWallet(w http.ResponseWriter, r *http.Request, action
 				writeSubErr(w, err, lang)
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"manual": true, "message": msg})
+			writeJSON(w, http.StatusOK, map[string]any{"manual": true, "message": msg,
+				"image": rt.manualPayImageURL(u, set)})
 			return
 		}
 		order, err := rt.mgr.StartTopup(ctx, lang, u.ID, req.Amount, req.Provider, sub.URL(set, u.SubToken))

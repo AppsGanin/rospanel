@@ -2280,6 +2280,10 @@ export interface BillingInfo {
   // on and off like one, with a pay-button label of its own ("" = the default).
   manual: boolean
   manual_label: string
+  // The manual method's picture (a QR code, the operator's requisites): whether one
+  // is uploaded, and the content hash its URL carries (see manualImageURL).
+  manual_image: boolean
+  manual_image_version: string
   // The wallet and the referral programme.
   wallet: boolean
   topup_min: number
@@ -2306,6 +2310,26 @@ export interface PeriodOffer {
 
 
 export const getBilling = () => api<BillingInfo>('api/billing')
+
+// The manual payment method's picture. Uploaded on its own rather than through the
+// page's SaveBar: a file input cannot carry a pending edit, and the server answers
+// with the new version, which the preview URL needs to fetch the replacement.
+export const manualImageURL = (version: string) =>
+  `api/billing/manual-image?v=${encodeURIComponent(version)}`
+
+export const uploadManualImage = (file: File) => {
+  const fd = new FormData()
+  fd.append('image', file)
+  return apiForm<{ manual_image: boolean; manual_image_version: string }>(
+    'api/billing/manual-image',
+    fd,
+  )
+}
+
+export const deleteManualImage = () =>
+  api<{ manual_image: boolean; manual_image_version: string }>('api/billing/manual-image', {
+    method: 'DELETE',
+  })
 
 // A payment provider's settings form is described by the server (internal/payments
 // registry), so adding a provider needs no frontend change — the form renders from

@@ -579,6 +579,11 @@ func (rt *Router) panelMux() http.Handler {
 	// (POST below) and the payment provider keys need permissions of their own.
 	canPlansView("GET /api/billing", rt.getBilling)
 	canBillingManage("POST /api/billing", rt.saveBilling)
+	// The manual payment method's picture: upload, replace, remove. Viewing it is the
+	// same permission as viewing the billing settings, since it is one of them.
+	canPlansView("GET /api/billing/manual-image", rt.getManualPayImage)
+	canBillingManage("POST /api/billing/manual-image", rt.uploadManualPayImage)
+	canBillingManage("DELETE /api/billing/manual-image", rt.deleteManualPayImage)
 	canBillingManage("POST /api/billing/plans", rt.saveTariffPlan)
 	canBillingManage("DELETE /api/billing/plans/{id}", withID(rt.deleteTariffPlan))
 	canBillingManage("POST /api/billing/plans/{id}/migrate", withID(rt.migratePlanUsers))

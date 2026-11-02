@@ -133,7 +133,7 @@ type pageText struct {
 	ChangeConfirm  string
 	AddTitle       string
 	AddBtn         string
-	ManualNote     string
+	ManualImage    string // alt text of the operator's picture, "" when there is none to show
 	ScanQR         string
 	CopyLink       string
 	AccessTitle    string
@@ -249,7 +249,7 @@ func text(lang i18n.Lang) pageText {
 		ChangeConfirm:  t("sub.changeConfirm"),
 		AddTitle:       t("sub.addTitle"),
 		AddBtn:         t("sub.addBtn"),
-		ManualNote:     t("sub.manualNote"),
+		ManualImage:    t("sub.manualImage"),
 		ScanQR:         t("sub.scanQR"),
 		CopyLink:       t("sub.copyLink"),
 		AccessTitle:    t("sub.accessTitle"),
@@ -473,9 +473,10 @@ type Billing struct {
 	// payment, when the operator has it on, is one of them under ManualPayKey.
 	Providers []BillingPay `json:"providers"`
 	Manual    bool         `json:"manual"` // manual payment is offered
-	// ManualOnly is manual payment with nothing else beside it: only then does the
-	// page carry the operator's details and say that an admin confirms the transfer.
-	// With a provider on the list too, both arrive with the order the user opens.
+	// ManualOnly is manual payment with nothing else beside it. The page itself says
+	// nothing about it — the details and the picture arrive with the order the user
+	// opens — but a client rendering this block from the JSON can tell the two states
+	// apart. With a provider on the list, both are just methods to choose from.
 	ManualOnly bool   `json:"manual_only"`
 	Note       string `json:"note"` // the operator's own manual-payment instructions
 	PayPath    string `json:"-"`    // POST target that starts a payment (<SubURL>/pay)

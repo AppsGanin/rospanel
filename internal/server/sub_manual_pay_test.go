@@ -80,10 +80,15 @@ func TestManualPaymentIsOfferedOnlyWhenItIsOn(t *testing.T) {
 		t.Fatal(err)
 	}
 	page = fetchSubHTML(h, u.SubToken)
-	for _, want := range []string{`onclick="buyPlan(`, sub.ManualPayKey, set.BillingPaymentNote} {
+	for _, want := range []string{`onclick="buyPlan(`, `"` + sub.ManualPayKey + `"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page lacks %q once manual payment is on", want)
 		}
+	}
+	// The page carries no instructions of its own: they arrive with the order the
+	// button opens, so a second method on the list cannot leave them lying around.
+	if strings.Contains(page, set.BillingPaymentNote) {
+		t.Error("the page shows the manual details before an order exists")
 	}
 	rec := postPay(h, u.SubToken, plan.ID, sub.ManualPayKey)
 	if rec.Code != http.StatusOK {
