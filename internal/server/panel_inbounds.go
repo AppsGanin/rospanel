@@ -1,10 +1,12 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/auth"
+	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
@@ -190,6 +192,55 @@ func (rt *Router) createServerInbound(w http.ResponseWriter, r *http.Request, se
 		return
 	}
 	writeJSON(w, http.StatusCreated, v)
+}
+
+// copyInboundsReq names the source server and which of its inbounds to recreate.
+type copyInboundsReq struct {
+	From int64   `json:"from"`
+	IDs  []int64 `json:"ids"`
+}
+
+// copyFailure is one inbound a copy skipped, with the reason in the same coded shape
+// an error answer has, so the panel words it in the admin's language.
+type copyFailure struct {
+	Name  string         `json:"name"`
+	Error string         `json:"error"`
+	Code  string         `json:"code,omitempty"`
+	Args  map[string]any `json:"args,omitempty"`
+}
+
+// copyServerInbounds recreates another server's inbounds on this one and applies the
+// result once (see core.CopyInbounds).
+func (rt *Router) copyServerInbounds(w http.ResponseWriter, r *http.Request, serverID int64) {
+	var req copyInboundsReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	created, failed, err := rt.mgr.CopyInbounds(r.Context(), req.From, serverID, req.IDs)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	out := struct {
+		Created []core.InboundView `json:"created"`
+		Failed  []copyFailure      `json:"failed"`
+	}{Created: created, Failed: []copyFailure{}}
+	if out.Created == nil {
+		out.Created = []core.InboundView{}
+	}
+	for _, f := range failed {
+		cf := copyFailure{Name: f.Name, Error: f.Err.Error()}
+		var ve *core.ValidationError
+		var fe *model.FieldError
+		switch {
+		case errors.As(f.Err, &ve):
+			cf.Code, cf.Args = ve.Code, ve.Args
+		case errors.As(f.Err, &fe):
+			cf.Code, cf.Args = fe.Code, fe.Args
+		}
+		out.Failed = append(out.Failed, cf)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // updateInbound edits one custom inbound. The server it belongs to is taken from

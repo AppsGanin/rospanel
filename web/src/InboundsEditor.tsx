@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  ApiError,
+  copyInbounds,
   createInbound,
   deleteInbound,
   getInboundCatalog,
@@ -15,19 +17,25 @@ import {
   type TLSExtraForm,
   type XHTTPExtraForm,
   type XmuxForm,
+  type NodeView,
 } from "./api";
+import { useCan } from "./role";
+import { ServerPicker } from "./ServerDialogParts";
 import { ApplyingModal, useXrayApply } from "./apply";
 import { useAction } from "./hooks";
 import { NameVarsHint, STATIC_NAME_VARS } from "./namevars";
 import i18n from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
+  Badge,
   Button,
   CenterLoader,
   cn,
   Code,
   IconButton,
+  IconCheck,
   IconChevron,
+  IconCopy,
   IconPencil,
   IconPlus,
   IconRestart,
@@ -168,6 +176,11 @@ function num(v: string): number {
   return Number(v.replace(/\D/g, "")) || 0;
 }
 
+// netOf is the transport-layer network an inbound binds (Go's model.ProtoOf): the
+// same port number on TCP and on UDP are two different ports.
+const netOf = (protocol: string) =>
+  protocol === "hysteria2" || protocol === "turn-vk" ? "udp" : "tcp";
+
 // InboundsEditor is the per-server list of custom inbounds: the operator-defined
 // listeners that sit beside the three built-in lanes. serverId is 0 for the master
 // and the node id otherwise — an inbound belongs to exactly one machine.
@@ -178,9 +191,12 @@ function num(v: string): number {
 export function InboundsEditor({
   serverId,
   restartsPanel,
+  peers,
 }: {
   serverId: number;
   restartsPanel: boolean;
+  // Every server, to copy another one's connections from.
+  peers?: NodeView[];
 }) {
   const { t } = useTranslation();
   const [list, setList] = useState<Inbound[] | null>(null);
@@ -238,6 +254,30 @@ export function InboundsEditor({
   const regen = (v: Inbound) =>
     write(() => regenInboundReality(v.id));
 
+  // copyFrom recreates the picked inbounds here in one request: the server applies the
+  // batch once, so the master reloads Xray once however many were picked. One that
+  // cannot go in (a name or port taken) is reported by name; the rest still do.
+  const copyFrom = async (from: number, picked: Inbound[], done: () => void) => {
+    const task = async () => {
+      const r = await copyInbounds(serverId, from, picked.map((v) => v.id));
+      const why = r.failed
+        .map((f) => `${f.name}: ${errMessage(new ApiError(f.error, f.code, f.args))}`)
+        .join("\n");
+      // Nothing created means nothing to apply: thrown as the server's answer, so the
+      // master's apply wait reports it instead of waiting out a reload that never
+      // comes. The dialog stays open to pick again.
+      if (r.created.length === 0) throw new ApiError(why);
+      notifySuccess(t("inb.copied", { count: r.created.length }));
+      if (why) notifyError(why);
+      done();
+    };
+    // The list is re-read once the apply has settled: on the master the reload starts
+    // after the answer, and a read inside the task could fall into it.
+    if (restartsPanel) await applyXray(task);
+    else await run(task);
+    await reload().catch(() => {});
+  };
+
   if (!list || !catalog) return <CenterLoader />;
 
   const full = list.length >= catalog.max;
@@ -278,6 +318,17 @@ export function InboundsEditor({
           onRegen={() => regen(v)}
         />
       ))}
+
+      {peers && (
+        <CopyInboundsFrom
+          self={serverId}
+          peers={peers}
+          here={list}
+          room={catalog.max - list.length}
+          busy={busy || applying}
+          onCopy={copyFrom}
+        />
+      )}
 
       <Modal
         open={!!editing}
@@ -322,6 +373,230 @@ export function InboundsEditor({
       </Modal>
       <ApplyingModal open={applying} />
     </div>
+  );
+}
+
+// CopyInboundsFrom is the last row of the tab: it opens a dialog to pick another
+// server and the connections to recreate here. Each copy gets its own keys (REALITY,
+// Shadowsocks, WireGuard) — they are facts about a machine — so links differ per
+// server. One whose name or port is already taken here cannot be picked.
+function CopyInboundsFrom({
+  self,
+  peers,
+  here,
+  room,
+  busy,
+  onCopy,
+}: {
+  self: number;
+  peers: NodeView[];
+  here: Inbound[];
+  room: number;
+  busy: boolean;
+  onCopy: (from: number, picked: Inbound[], done: () => void) => void;
+}) {
+  const { t } = useTranslation();
+  const canManage = useCan("servers.manage");
+  const others = peers.filter((p) => p.id !== self);
+  const [open, setOpen] = useState(false);
+  const [from, setFrom] = useState<number | null>(null);
+  const [src, setSrc] = useState<Inbound[] | null>(null);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+
+  // Why a source inbound cannot be copied here, or "" when it can.
+  const conflict = (v: Inbound): string => {
+    if (here.some((h) => h.name.trim().toLowerCase() === v.name.trim().toLowerCase()))
+      return t("inb.copyNameTaken");
+    if (
+      v.enabled &&
+      here.some((h) => h.enabled && h.port === v.port && netOf(h.protocol) === netOf(v.protocol))
+    )
+      return t("inb.copyPortTaken");
+    return "";
+  };
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refetch only when the source changes
+  useEffect(() => {
+    if (from === null) return;
+    let live = true;
+    setSrc(null);
+    listInbounds(from)
+      .then((l) => {
+        if (!live) return;
+        setSrc(l);
+        setPicked(new Set(l.filter((v) => !conflict(v)).map((v) => v.id)));
+      })
+      .catch((e) => {
+        if (live) {
+          notifyError(errMessage(e));
+          setSrc([]);
+        }
+      });
+    return () => {
+      live = false;
+    };
+  }, [from]);
+
+  if (others.length === 0 || !canManage) return null;
+
+  const close = () => {
+    setOpen(false);
+    setFrom(null);
+    setSrc(null);
+    setPicked(new Set());
+  };
+  const toggle = (id: number) =>
+    setPicked((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const eligible = (src ?? []).filter((v) => !conflict(v));
+  const chosen = eligible.filter((v) => picked.has(v.id));
+  const allOn = eligible.length > 0 && chosen.length === eligible.length;
+  const over = chosen.length > room;
+
+  return (
+    <>
+      <Section flush>
+        <SettingRow
+          label={t("inb.copyFrom")}
+          hint={t("inb.copyHint")}
+          control={
+            <Button
+              size="sm"
+              variant="outline"
+              color="gray"
+              onClick={() => setOpen(true)}
+              disabled={busy}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <IconCopy size={14} />
+                {t("nodes.copyRoutingOpen")}
+              </span>
+            </Button>
+          }
+        />
+      </Section>
+      <Modal
+        open={open}
+        onClose={close}
+        size="lg"
+        title={t("inb.copyTitle")}
+        subtitle={t("inb.copyKeys")}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            {over && (
+              <span className="me-auto text-xs text-warning">
+                {t("inb.copyNoRoom", { count: room })}
+              </span>
+            )}
+            <Button variant="light" color="gray" onClick={close}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              onClick={() => from !== null && onCopy(from, chosen, close)}
+              disabled={chosen.length === 0 || over}
+              loading={busy}
+            >
+              {t("inb.copyApply", { count: chosen.length })}
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-semibold text-ink-muted">
+              {t("nodes.copyRoutingSource")}
+            </span>
+            <ServerPicker servers={others} value={from} onChange={setFrom} />
+          </div>
+
+          {from === null ? (
+            <p className="rounded-xl border border-dashed border-gray-200 px-3 py-6 text-center text-xs text-ink-muted">
+              {t("inb.copyPick")}
+            </p>
+          ) : src === null ? (
+            <CenterLoader />
+          ) : src.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-gray-200 px-3 py-6 text-center text-xs text-ink-muted">
+              {t("inb.copyNone")}
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-ink-muted">
+                  {t("inb.copyWhich")}
+                </span>
+                {eligible.length > 0 && (
+                  <button
+                    type="button"
+                    className="text-xs font-semibold text-accent hover:underline"
+                    onClick={() =>
+                      setPicked(allOn ? new Set() : new Set(eligible.map((v) => v.id)))
+                    }
+                  >
+                    {allOn ? t("inb.copyNoneSel") : t("inb.copyAll")}
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {src.map((v) => {
+                  const why = conflict(v);
+                  const on = picked.has(v.id);
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={on}
+                      disabled={!!why}
+                      onClick={() => toggle(v.id)}
+                      className={cn(
+                        "flex min-w-0 items-center gap-3 rounded-xl border px-3 py-2 text-start transition",
+                        "outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40",
+                        why
+                          ? "cursor-not-allowed border-gray-200 bg-gray-50"
+                          : on
+                            ? "border-accent accent-tint"
+                            : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition",
+                          on && !why
+                            ? "border-brand-600 bg-brand-600 text-onbrand"
+                            : "border-gray-300 bg-white",
+                        )}
+                      >
+                        {on && !why && <IconCheck size={11} />}
+                      </span>
+                      <span className={cn("min-w-0 flex-1", why && "opacity-60")}>
+                        <span className="block truncate text-[13px] font-semibold text-ink">
+                          {v.name}
+                        </span>
+                        <span className="flex flex-wrap items-center gap-2 text-[11px] text-ink-muted">
+                          <Mono>{PROTOCOL_LABELS[v.protocol] ?? v.protocol}</Mono>
+                          {v.protocol !== "shadowsocks" && v.protocol !== "turn-vk" && v.protocol !== "wg" && (
+                            <Mono>{TRANSPORT_LABELS[v.opts.transport] ?? v.opts.transport}</Mono>
+                          )}
+                          {v.opts.security === "reality" && <Mono className="text-success">REALITY</Mono>}
+                          <Mono>{v.port}</Mono>
+                          {!v.enabled && <span>{t("conn.off")}</span>}
+                        </span>
+                      </span>
+                      {why && <Badge size="xs" color="orange">{why}</Badge>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+    </>
   );
 }
 

@@ -229,6 +229,7 @@ var auditActions = map[string]auditRoute{
 	// Custom inbounds. Each of these opens, changes or closes a public listener on a
 	// server, so all four are recorded.
 	"POST /api/servers/{id}/inbounds":       set("inboundAdded"),
+	"POST /api/servers/{id}/inbounds/copy":  set("inboundsCopied"),
 	"POST /api/inbounds/{id}":               set("inboundChanged"),
 	"DELETE /api/inbounds/{id}":             set("inboundDeleted"),
 	"POST /api/inbounds/{id}/regen-reality": set("inboundRegenReality"),

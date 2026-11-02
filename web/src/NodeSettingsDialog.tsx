@@ -30,6 +30,7 @@ import {
   NodeGeoCard,
   TabSaveBar,
   clampCoefficient,
+  CopyRoutingFrom,
   nodeDefaultRouting,
   useServerRouting,
   useServerTabs,
@@ -47,6 +48,7 @@ export function NodeSettingsDialog({
   decoys,
   geo,
   servers,
+  peers,
   onClose,
   onRefresh,
 }: {
@@ -54,6 +56,7 @@ export function NodeSettingsDialog({
   decoys: string[];
   geo: GeoCategories;
   servers?: CascadeServer[];
+  peers?: NodeView[];
   onClose: () => void;
   onRefresh: () => void;
 }) {
@@ -298,7 +301,7 @@ export function NodeSettingsDialog({
         />
       )}
 
-      {shown === "inbounds" && <InboundsEditor serverId={node.id} restartsPanel={false} />}
+      {shown === "inbounds" && <InboundsEditor serverId={node.id} restartsPanel={false} peers={peers} />}
 
       {shown === "routing" && (
         <div className="flex flex-col gap-3.5">
@@ -324,6 +327,9 @@ export function NodeSettingsDialog({
             cascadeServers={servers?.filter((x) => x.id !== node.id)}
             liveStatus={false}
           />
+          {routingManage && peers && (
+            <CopyRoutingFrom self={node.id} peers={peers} busy={saving} onCopy={r.load} />
+          )}
           <TabSaveBar onSave={saveRouting} onReset={r.revert} dirty={r.dirty} busy={saving} />
         </div>
       )}
