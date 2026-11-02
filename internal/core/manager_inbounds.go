@@ -141,7 +141,12 @@ func (m *Manager) effectiveSettings(serverID int64) (*model.Settings, error) {
 func reservedPorts(set *model.Settings) model.ReservedPorts {
 	r := model.NewReservedPorts()
 	r.HoldTCP(set.VLESSPort, "VLESS-Vision")
-	r.HoldTCP(set.RealityPort, "VLESS-XHTTP-REALITY")
+	if !set.RealityShared() {
+		// A lane sharing the TCP-TLS lane's port holds nothing of its own there: the
+		// name that port goes by is the decoy's, and an operator asked for 443 should
+		// hear about that one, not about REALITY.
+		r.HoldTCP(set.RealityPort, "VLESS-XHTTP-REALITY")
+	}
 	r.HoldUDP(set.HysteriaPort, "HYSTERIA-UDP")
 	r.Hold(xray.APIPort, "Xray internal API")
 	r.HoldTCP(xray.DecoyH3Port, "decoy for HTTP/3")
@@ -160,6 +165,9 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 	}
 	if p := xray.InnerPort(xray.MTProtoInnerAddr); p != 0 {
 		r.HoldTCP(p, "MTProto (internal)")
+	}
+	if p := xray.InnerPort(xray.RealityInnerAddr); p != 0 {
+		r.HoldTCP(p, "VLESS-XHTTP-REALITY behind the front")
 	}
 	if set.HopEnd > set.HysteriaPort {
 		// The built-in hop range is a UDP funnel onto the Hysteria port: anything

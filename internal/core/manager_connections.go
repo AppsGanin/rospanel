@@ -493,8 +493,11 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	if u.HysteriaPort != set.HysteriaPort && !portFree("udp", u.HysteriaPort) {
 		return invalidCode("err.udpPortTaken", "UDP-порт {{port}} уже занят — выберите другой", map[string]any{"port": u.HysteriaPort})
 	}
+	// The TCP-TLS lane's own port is not "taken" for REALITY — it is shared: the front
+	// carries both and routes by the name in the ClientHello (see realityListen).
+	shared := set.VLESSPort > 0 && u.RealityPort == set.VLESSPort
 	realityHeld := set.RealityEnabled && set.RealityPrivateKey != "" && set.RealityPort == u.RealityPort
-	if u.Protocols["reality"] && !realityHeld && !portFree("tcp", u.RealityPort) {
+	if u.Protocols["reality"] && !realityHeld && !shared && !portFree("tcp", u.RealityPort) {
 		return invalidCode("err.tcpPortTaken", "TCP-порт {{port}} уже занят — выберите другой", map[string]any{"port": u.RealityPort})
 	}
 	// REALITY donor SNIs: comma-separated, the first is primary (used in links).
@@ -511,6 +514,15 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 		return invalidCode("err.realityDestRequired", "укажи хотя бы один домен маскировки REALITY")
 	}
 	realityDest := strings.Join(dests, ",")
+	// On the shared port the server's own name belongs to the decoy, so a REALITY client
+	// naming it would never reach REALITY: the lane masks as a donor there.
+	eff := withConnPorts(*set, u, 0)
+	eff.RealityDest = realityDest
+	if c := eff.RealityShareConflict(); c != "" {
+		return invalidCode("err.realityOwnNameOn443",
+			"{{name}} — свой домен, на 443 он остаётся за decoy: для REALITY на этом порту оставь в списке SNI донора",
+			map[string]any{"name": c})
+	}
 	// Live TLS probe each donor only when REALITY is on and the set changed — a
 	// network check shouldn't slow unrelated saves.
 	if u.Protocols["reality"] && (realityDest != set.RealityDest || !set.RealityEnabled) {

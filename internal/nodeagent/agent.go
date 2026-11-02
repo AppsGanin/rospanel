@@ -1410,6 +1410,15 @@ func (a *Agent) applyUsers(st *nodeapi.NodeState) error {
 		a.sup.SetPublicPort(xray.TagVLESS, public)
 		a.frontPort.Store(int64(public))
 		a.syncFront()
+		// A REALITY lane the panel put on the shared port listens behind the front:
+		// its donor names are what tell the two listeners apart (see tlsfront).
+		if snis, behind := xray.RealityRouteRaw(data); behind {
+			a.front.Share(xray.RealityInnerAddr, snis)
+			a.sup.SetPublicPort(xray.TagReality, public)
+		} else {
+			a.front.Share("", nil)
+			a.sup.SetPublicPort(xray.TagReality, 0)
+		}
 	}
 	// Before the error return: the tunnel and the relays are up whatever Xray did.
 	a.syncHostFW(data, m, public)

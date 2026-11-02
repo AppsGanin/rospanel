@@ -744,6 +744,7 @@ const zh: Dict = {
     proxyUserCharset: "代理用户名不能包含空格或冒号",
     realityDestRequired: "请至少填写一个 REALITY 伪装域名",
     realityPortRange: "REALITY 端口超出 1–65535 范围",
+    realityOwnNameOn443: "{{name}} 是本服务器自己的域名——在 443 端口它属于诱饵站点：请在这个端口的 REALITY SNI 列表中保留一个伪装域名",
     requestNotFound: "未找到申请",
     retryOnlyFinished: "只有已结束的群发可以重试",
     serverNotFound: "未找到服务器",
@@ -3661,6 +3662,8 @@ const zh: Dict = {
     sniPlaceholder: "max.ru — 输入后按 Enter…",
     antiReplay: "防重放",
     antiReplayHint: "±60 秒窗口，防止探测器重放握手。可能会拒绝时钟偏差较大的客户端。",
+    realityPortHint:
+      "443 与诱饵站点共用端口：前置服务按 ClientHello 中的 SNI 分流。此时 REALITY 必须以伪装域名（而非本服务器域名）掩藏。",
     xhttpPath: "XHTTP 路径",
     regenKeys: "重新生成密钥",
     keysWillRegen: "将重新生成密钥 ✓",

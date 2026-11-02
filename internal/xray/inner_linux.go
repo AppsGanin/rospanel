@@ -8,5 +8,6 @@ const (
 	NaiveInnerAddr   = "@rospanel-naive"
 	MieruInnerAddr   = "@rospanel-mieru"
 	AnyTLSInnerAddr  = "@rospanel-anytls"
+	RealityInnerAddr = "@rospanel-reality"
 	MTProtoInnerAddr = "@rospanel-mtproto"
 )

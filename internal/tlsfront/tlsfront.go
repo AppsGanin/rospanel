@@ -11,6 +11,12 @@
 // its access log, the device limits, the decoy behind its fallback — still sees the
 // client's own address. Anything else Xray used to close silently it still closes the
 // same way, because it is still Xray that reads it.
+//
+// The same port can also carry REALITY, for an operator who wants that lane on 443
+// too: two TLS listeners cannot share a port, but they can be told apart by the name
+// in the ClientHello — a connection naming one of the REALITY donor names is handed to
+// the REALITY listener instead (Front.Share). Everything else, including a client that
+// sends no name at all, goes the way it always went.
 package tlsfront
 
 import (
@@ -32,9 +38,11 @@ const (
 	// long, and a shorter wait here would be one more thing a probe could tell apart.
 	firstBytesTimeout = 60 * time.Second
 	dialTimeout       = 5 * time.Second
-	// firstReadMax is how much of the first flight is read before deciding: a
-	// ClientHello, or a whole request line and headers.
-	firstReadMax     = 4096
+	// helloMax and helloTimeout bound the read that names the ClientHello's SNI: a
+	// real ClientHello arrives in one flight (a couple of kilobytes at most), so a
+	// client still not done after this long gets the connection decided without it.
+	helloMax         = 8192
+	helloTimeout     = 5 * time.Second
 	retryListenEvery = time.Second
 )
 
@@ -60,11 +68,45 @@ type Front struct {
 	port int
 	ln   net.Listener
 	stop chan struct{} // closed to end the current port's listener
+	// reality is the second listener this port carries, and the donor names that
+	// belong to it (see Share). Both empty until an operator puts REALITY on this port.
+	reality     string
+	realitySNIs map[string]struct{}
 }
 
 // New returns a front for Xray at target, an abstract unix socket ("@name") or a
 // loopback "host:port"; it listens nowhere until Ensure.
 func New(target string) *Front { return &Front{target: target} }
+
+// Share hands connections whose ClientHello names one of snis to the REALITY listener
+// at target — the second TLS listener this port carries, so REALITY can sit on 443 next
+// to the decoy. Names are matched case-insensitively, the way TLS compares them; an
+// empty target or no names stops the split, and every connection goes the way it always
+// went. Safe to call while connections are in flight, and on every settings change.
+func (f *Front) Share(target string, snis []string) {
+	set := make(map[string]struct{}, len(snis))
+	for _, s := range snis {
+		if s = strings.ToLower(strings.TrimSpace(s)); s != "" {
+			set[s] = struct{}{}
+		}
+	}
+	f.mu.Lock()
+	f.reality = target
+	f.realitySNIs = set
+	f.mu.Unlock()
+}
+
+// targetFor is where a connection naming sni goes.
+func (f *Front) targetFor(sni string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.reality != "" && sni != "" {
+		if _, ok := f.realitySNIs[strings.ToLower(sni)]; ok {
+			return f.reality
+		}
+	}
+	return f.target
+}
 
 // Ensure keeps the front on port, all addresses, IPv4 and IPv6 — as Xray listened; 0
 // stops it.
@@ -164,7 +206,7 @@ func (f *Front) handle(c net.Conn) {
 	// Whatever has arrived, at least a record header — the way crypto/tls reads it. Read
 	// to the byte, a request that came in one packet would be left half unread, and the
 	// close below would go out as a reset where Go's server sends a clean FIN.
-	buf := make([]byte, firstReadMax)
+	buf := make([]byte, helloMax)
 	n := 0
 	for n < 5 {
 		m, err := c.Read(buf[n:])
@@ -178,8 +220,27 @@ func (f *Front) handle(c net.Conn) {
 		_, _ = io.WriteString(c, badRequest)
 		return
 	}
+	// The server name decides which listener gets the connection. A whole ClientHello
+	// is a couple of packets at most; one that never finishes is read no further and
+	// goes to the TLS listener, as it would have before the split.
+	sni := ""
+	_ = c.SetReadDeadline(time.Now().Add(helloTimeout))
+	for {
+		var needMore bool
+		sni, needMore = clientHelloSNI(buf[:n])
+		if !needMore || n == len(buf) {
+			break
+		}
+		m, err := c.Read(buf[n:])
+		n += m
+		if err != nil {
+			break
+		}
+	}
 	_ = c.SetReadDeadline(time.Time{})
-	up, err := net.DialTimeout(targetNetwork(f.target), f.target, dialTimeout)
+	target := f.targetFor(sni)
+
+	up, err := net.DialTimeout(targetNetwork(target), target, dialTimeout)
 	if err != nil {
 		// Xray is not there (restarting, crashed): reset, the nearest a connection
 		// already accepted can come to the refusal a port nobody listens on gives.

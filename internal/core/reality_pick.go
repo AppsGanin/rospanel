@@ -4,10 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"math/big"
-	"net"
 	"net/netip"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -36,28 +34,6 @@ func PickRealityDonor() string {
 	return order[0]
 }
 
-// PickRealityPort draws a free TCP port for a fresh install's REALITY inbound, off
-// the ports anything well known sits on.
-func PickRealityPort() int {
-	for range 20 {
-		n, err := rand.Int(rand.Reader, big.NewInt(40000))
-		if err != nil {
-			break
-		}
-		p := 20000 + int(n.Int64())
-		if p == model.DefaultRealityPort {
-			continue
-		}
-		ln, err := net.Listen("tcp", ":"+strconv.Itoa(p))
-		if err != nil {
-			continue
-		}
-		_ = ln.Close()
-		return p
-	}
-	return model.DefaultRealityPort
-}
-
 func shuffled(in []string) []string {
 	out := append([]string(nil), in...)
 	for i := len(out) - 1; i > 0; i-- {
@@ -75,7 +51,14 @@ func shuffled(in []string) []string {
 // to newOwn ("" for a bare address). The old name in the list becomes the new one, or
 // drops out for an address; a list left empty takes pick(). A server still in its
 // first-run wizard takes its new name outright — no link carries the donor yet.
-func realityDestAfterRename(dest, oldOwn, newOwn string, fresh bool, pick func() string) string {
+//
+// A lane sharing the TCP-TLS lane's port keeps its donor list as it is: on that port
+// the server's own name is the decoy's, so it can neither be adopted nor left in the
+// list (see model.RealityShareConflict). shared is that: this lane is on that port.
+func realityDestAfterRename(dest, oldOwn, newOwn string, fresh, shared bool, pick func() string) string {
+	if shared {
+		return dest
+	}
 	if fresh && newOwn != "" {
 		return newOwn
 	}

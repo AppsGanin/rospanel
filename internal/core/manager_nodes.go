@@ -48,8 +48,13 @@ func (m *Manager) CreateNode(name, host string) (*model.Node, error) {
 	if err == nil {
 		m.claimNodeMTProtoDomain(n)
 		// A node with a domain names itself on its REALITY lane; one with an address
-		// follows the panel's donor.
-		if d := hostDomain(host); d != "" {
+		// follows the panel's donor — and so does one whose lane shares its TCP-TLS
+		// port, where its own name is the decoy's (see realityDestAfterRename).
+		shared := false
+		if set, serr := m.store.GetSettings(); serr == nil {
+			shared = nodeSettings(set, n).RealityShared()
+		}
+		if d := hostDomain(host); d != "" && !shared {
 			if err := m.store.SetNodeRealityDest(n.ID, d); err != nil {
 				return nil, err
 			}
@@ -114,8 +119,14 @@ func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
 		return err
 	}
 	// Its REALITY lane follows its own name; an empty list goes back to the panel's donor.
+	// A node serving REALITY on the TCP-TLS lane's port keeps its donor list instead:
+	// its own name is the decoy's there.
 	if prev != nil {
-		dest := realityDestAfterRename(prev.RealityDest, hostDomain(prev.Host), hostDomain(e.Host), false, func() string { return "" })
+		shared := false
+		if masterSet, err := m.store.GetSettings(); err == nil {
+			shared = nodeSettings(masterSet, prev).RealityShared()
+		}
+		dest := realityDestAfterRename(prev.RealityDest, hostDomain(prev.Host), hostDomain(e.Host), false, shared, func() string { return "" })
 		if dest != prev.RealityDest {
 			if err := m.store.SetNodeRealityDest(id, dest); err != nil {
 				return err
@@ -357,6 +368,17 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 	masterSet, err := m.store.GetSettings()
 	if err != nil {
 		return err
+	}
+	// A REALITY lane on this server's TCP-TLS port masks as a donor too: the server's
+	// own name on that port is the decoy's, so it cannot be in the SNI list.
+	effSet := withConnPorts(*nodeSettings(masterSet, n), u, awgPort)
+	if realityDest != "" {
+		effSet.RealityDest = realityDest
+	}
+	if c := effSet.RealityShareConflict(); c != "" {
+		return invalidCode("err.realityOwnNameOn443",
+			"{{name}} — свой домен, на 443 он остаётся за decoy: для REALITY на этом порту оставь в списке SNI донора",
+			map[string]any{"name": c})
 	}
 	curMieruPort, curMieruTransport := 0, model.MieruTCP
 	if n.Connections != nil {
