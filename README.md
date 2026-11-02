@@ -234,7 +234,8 @@ Encrypt / ZeroSSL) with auto-renewal; the certificate can also be issued **for a
 no domain and no DNS**.
 
 **What a scanner sees.** The decoy answers over HTTP/3 too: Hysteria2 serves the same site on UDP
-as on TCP, and the site advertises HTTP/3 the way Caddy does. A fresh install draws its own REALITY donor and puts the lane on 443 — the port a
+as on TCP. It does not advertise that with `Alt-Svc` — a browser that learned it would send the panel
+and `/sub/` requests over HTTP/3 too, where only the decoy answers. A fresh install draws its own REALITY donor and puts the lane on 443 — the port a
 client is least likely to find blocked. There the front carries both listeners: a
 ClientHello naming one of the REALITY donor SNIs goes to REALITY, everything else — the
 panel's own name, an address with no name — to the decoy, so the lane masks as a donor,

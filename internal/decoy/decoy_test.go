@@ -375,21 +375,15 @@ func TestDecoysLoadNothingExternal(t *testing.T) {
 	}
 }
 
-func TestAltSvcAdvertisedOnlyWhenSet(t *testing.T) {
+// A decoy response must never carry Alt-Svc. The header is scoped to the origin, so a
+// browser that loaded the front page would move the panel and /sub/ requests to
+// HTTP/3 — where only this decoy answers, and the panel would be unreachable for the
+// header's lifetime.
+func TestNoHTTP3Advertisement(t *testing.T) {
 	h := newTestHandler(t, "coming-soon")
-	t.Cleanup(func() { SetAltSvc(0) })
-	if v := get(h, "/").Header().Get("Alt-Svc"); v != "" {
-		t.Fatalf("Alt-Svc without HTTP/3: %q", v)
-	}
-	SetAltSvc(443)
-	if v := get(h, "/").Header().Get("Alt-Svc"); v != `h3=":443"; ma=2592000` {
-		t.Fatalf("Alt-Svc = %q", v)
-	}
-	if v := get(h, "/no-such-file.css").Header().Get("Alt-Svc"); v == "" {
-		t.Fatal("a 404 does not carry Alt-Svc; Caddy's does")
-	}
-	SetAltSvc(0)
-	if v := get(h, "/").Header().Get("Alt-Svc"); v != "" {
-		t.Fatalf("Alt-Svc after turning it off: %q", v)
+	for _, p := range []string{"/", "/no-such-file.css", "/app.js"} {
+		if v := get(h, p).Header().Get("Alt-Svc"); v != "" {
+			t.Fatalf("%s advertises HTTP/3: %q", p, v)
+		}
 	}
 }

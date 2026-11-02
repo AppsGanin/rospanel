@@ -1422,12 +1422,6 @@ func (a *Agent) applyUsers(st *nodeapi.NodeState) error {
 	}
 	// Before the error return: the tunnel and the relays are up whatever Xray did.
 	a.syncHostFW(data, m, public)
-	// HTTP/3 advertised where Hysteria2 shares the front's port, as Caddy would.
-	if m.HysteriaEnabled && public > 0 && m.HysteriaPort == public {
-		decoy.SetAltSvc(public)
-	} else {
-		decoy.SetAltSvc(0)
-	}
 	if err != nil {
 		return fmt.Errorf("apply xray config: %w", err)
 	}
