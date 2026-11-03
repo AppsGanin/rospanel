@@ -1137,6 +1137,10 @@ type Settings struct {
 	// v2RayTun) via the subscription's Announce header. Empty ⇒ no announcement.
 	// Clients only render the first 200 characters; the panel enforces that limit.
 	SubAnnounce string `json:"-"`
+	// SubMovedTo is an absolute URL template carrying {token}; every subscription
+	// response sends it as moved-permanently-to so clients update after a domain
+	// move. Empty means no move.
+	SubMovedTo string `json:"-"`
 	// SubPageURL is the operator's own subscription page: a browser opening a
 	// subscription link is redirected there, {token} replaced by the user's token.
 	// Empty ⇒ the panel's own page. Apps fetching the subscription never see it.

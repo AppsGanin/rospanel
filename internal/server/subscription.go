@@ -1132,6 +1132,9 @@ func setSubHeaders(w http.ResponseWriter, u model.User, set *model.Settings, sup
 	// Cyrillic — raw UTF-8 bytes survive Go but get mangled by a proxy in front. Every
 	// panel that ships this header base64s it unconditionally, and clients expect the
 	// "base64:" prefix.
+	if moved := strings.TrimSpace(set.SubMovedTo); moved != "" {
+		w.Header().Set("moved-permanently-to", strings.ReplaceAll(moved, model.SubPageToken, u.SubToken))
+	}
 	if a := strings.TrimSpace(set.SubAnnounce); a != "" {
 		w.Header().Set("Announce", "base64:"+base64.StdEncoding.EncodeToString([]byte(a)))
 	}

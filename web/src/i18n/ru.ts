@@ -1615,6 +1615,8 @@ const ru = {
     announcePlaceholder:
       "Например: сервер переезжает 3 августа, ссылка не меняется",
     announceHint: "Строка внутри VPN-клиента (Happ, v2RayTun). Пусто — объявления нет.",
+    movedTo: 'Перенос подписки',
+    movedToHint: 'Клиенты, читающие заголовок moved-permanently-to, получают этот адрес; {token} — токен пользователя. Пусто — переноса нет.',
     routing: "Маршрутизация",
     routingHint: "Авто-роутинг для клиентов. Готовые URL —",
     happRules: "Happ — URL правил",

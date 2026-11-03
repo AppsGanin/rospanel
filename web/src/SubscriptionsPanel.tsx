@@ -60,6 +60,7 @@ const EMPTY_SUB: SubSettings = {
   sub_self_rotate: 0,
   sub_page_enabled: true,
   sub_page_url: "",
+  sub_moved_to: "",
 };
 
 // Requiring an id is the default: a cap a client can dodge by staying silent is not
@@ -133,6 +134,7 @@ export function SubscriptionsPanel() {
           sub_self_rotate: d.sub_self_rotate ?? 0,
           sub_page_enabled: d.sub_page_enabled ?? true,
           sub_page_url: d.sub_page_url ?? "",
+          sub_moved_to: d.sub_moved_to ?? "",
         };
         load(init);
         loadHwid(d.hwid ?? EMPTY_HWID);
@@ -307,6 +309,19 @@ export function SubscriptionsPanel() {
             onChange={(v) => patch({ sub_announce: v })}
           />
         </SettingRow>
+        <SettingRow
+          label={t("subs.movedTo")}
+          hint={t("subs.movedToHint")}
+          wideField
+          field={
+            <TextInput
+              placeholder="https://new.example.com/sub/{token}"
+              value={s.sub_moved_to}
+              mono
+              onChange={(v) => patch({ sub_moved_to: v })}
+            />
+          }
+        />
         <SettingRow
           label={t("subs.pageURL")}
           hint={t("subs.pageURLHint")}

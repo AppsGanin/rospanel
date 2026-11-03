@@ -64,6 +64,7 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"sub_routing_mihomo":   set.SubRoutingMihomo,
 		"sub_update_interval":  set.SubUpdateInterval,
 		"sub_announce":         set.SubAnnounce,
+		"sub_moved_to":         set.SubMovedTo,
 		"sub_page_url":         set.SubPageURL,
 		"sub_show_configs":     set.SubShowConfigs,
 		"sub_show_clash":       set.SubShowClash,
@@ -448,6 +449,7 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		RoutingMihomo  string `json:"sub_routing_mihomo"`
 		UpdateInterval int    `json:"sub_update_interval"`
 		Announce       string `json:"sub_announce"`
+		MovedTo        string `json:"sub_moved_to"`
 		ShowConfigs    bool   `json:"sub_show_configs"`
 		ShowClash      bool   `json:"sub_show_clash"`
 		HappCrypt      bool   `json:"sub_happ_crypt"`
@@ -477,6 +479,13 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 	if req.UpdateInterval < 0 {
 		req.UpdateInterval = 0 // 0 = never
 	}
+	movedTo := strings.TrimSpace(req.MovedTo)
+	if movedTo != "" {
+		if strings.ContainsAny(movedTo, "\r\n") || !model.ValidSubPageURL(movedTo) {
+			writeErr(w, http.StatusBadRequest, "sub_moved_to: an absolute http(s) URL, optionally with {token}")
+			return
+		}
+	}
 	path := strings.TrimSpace(req.Path)
 	err = rt.mgr.SaveSubSettings(&model.Settings{
 		SubPath:            path,
@@ -489,6 +498,7 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		SubRoutingMihomo:   strings.TrimSpace(req.RoutingMihomo),
 		SubUpdateInterval:  req.UpdateInterval,
 		SubAnnounce:        req.Announce,
+		SubMovedTo:         movedTo,
 		SubShowConfigs:     req.ShowConfigs,
 		SubShowClash:       req.ShowClash,
 		SubHappCrypt:       req.HappCrypt,

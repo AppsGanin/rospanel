@@ -1104,6 +1104,9 @@ export interface SubSettings {
   // The operator's own subscription page: browsers opening a subscription link are
   // redirected there, {token} replaced by the user's token. Empty = the panel's page.
   sub_page_url: string
+  // New subscription address advertised as moved-permanently-to; {token} is the
+  // user's token. Empty = the panel has not moved.
+  sub_moved_to: string
 }
 
 // HWIDSettings gates device binding: which installs may fetch the subscription and

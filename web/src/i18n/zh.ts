@@ -1617,6 +1617,8 @@ const zh: Dict = {
     announcePlaceholder:
       "例如：服务器将于 8 月 3 日迁移，链接保持不变",
     announceHint: "显示在 VPN 客户端（Happ、v2RayTun）内的一行文字。留空则不显示公告。",
+    movedTo: '订阅迁移',
+    movedToHint: '读取 moved-permanently-to 头的客户端会收到此地址，{token} 是用户的令牌。留空表示未迁移。',
     routing: "路由",
     routingHint: "客户端自动路由。现成的 URL：",
     happRules: "Happ — 规则 URL",

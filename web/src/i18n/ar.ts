@@ -1577,6 +1577,8 @@ const ar: Dict = {
     announce: "إعلان داخل العميل",
     announcePlaceholder: "مثلًا: ينتقل الخادم في 3 أغسطس، ويبقى الرابط كما هو",
     announceHint: "سطر داخل عميل VPN (Happ، v2RayTun). فارغ: بلا إعلان.",
+    movedTo: 'نقل الاشتراك',
+    movedToHint: 'العملاء الذين يقرؤون ترويسة moved-permanently-to يتلقون هذا العنوان، و{token} رمز المستخدم. فارغ — لا نقل.',
     routing: "التوجيه",
     routingHint: "التوجيه التلقائي للعملاء. روابط جاهزة:",
     happRules: "Happ: رابط القواعد",

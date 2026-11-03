@@ -1617,6 +1617,8 @@ const en: Dict = {
     announcePlaceholder:
       "For example: the server moves on 3 August, the link stays the same",
     announceHint: "A line inside the VPN client (Happ, v2RayTun). Empty — no announcement.",
+    movedTo: 'Moved subscription',
+    movedToHint: "Clients that read the moved-permanently-to header receive this address; {token} is the user's token. Empty — no move.",
     routing: "Routing",
     routingHint: "Auto-routing for clients. Ready-made URLs —",
     happRules: "Happ — rules URL",

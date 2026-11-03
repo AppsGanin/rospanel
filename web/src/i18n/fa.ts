@@ -1617,6 +1617,8 @@ const fa: Dict = {
     announcePlaceholder:
       "مثلاً: سرور در 3 اوت منتقل می‌شود، لینک همان می‌ماند",
     announceHint: "یک خط داخل برنامه VPN (Happ، v2RayTun). خالی — بدون اعلان.",
+    movedTo: 'انتقال اشتراک',
+    movedToHint: 'کلاینت\u200cهایی که سرآیند moved-permanently-to را می\u200cخوانند این نشانی را می\u200cگیرند؛ {token} توکن کاربر است. خالی — انتقالی نیست.',
     routing: "مسیریابی",
     routingHint: "مسیریابی خودکار برای برنامه‌ها. URLهای آماده —",
     happRules: "Happ — URL قوانین",
