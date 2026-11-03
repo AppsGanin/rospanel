@@ -23,3 +23,7 @@ design_handoff_console_redesign
 # docs site (generated from READMEs by scripts/docs_prepare.py)
 /.site_src/
 /site/
+
+# python bytecode (scripts/docs_prepare.py)
+__pycache__/
+*.pyc
