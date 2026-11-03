@@ -88,6 +88,26 @@ stand lives in `/root/lt` on the test master and is removed between rounds.
   a "5k run" on a 50k database is not a 5k run.
 - 10 nodes at 50k need `-nodes 10` and their tokens; five tokens cannot emulate ten.
 
+## Throughput, not just a mix
+
+A mix says how the panel feels; it does not say where it gives up. For that second
+question, drive **one operation only** and raise it until the box stops keeping up —
+with a plain keep-alive client rather than `zzload`, whose own pacing becomes the
+limit long before the panel's: a 40-line Go client over `net/http`, `-c` workers and a
+list of subscription tokens was enough to find the 2026-11 ceiling.
+
+- Subscriptions: `<panel>/sub/<token>` over 1..256 tokens, 20 s per level, measuring
+  rps + p50/p95/p99 + errors with the panel's CPU sampled beside it. On the 2026-11
+  stand throughput was still rising at 16 clients and plateaued at ~900/s with the
+  panel at 17% of a core — a serialized wait inside the panel, not CPU, and two
+  orders of magnitude above a real 20k panel's subscription rate.
+- Creates: one level per rate (0.1, 0.25, 0.5, 1/s), nodes emulated, because every
+  create rebuilds state and pushes it to each node.
+
+Take the tokens from the database — `select sub_token from users where enabled=1 and
+(expire_at=0 or expire_at > strftime('%s','now')) limit 500` — an expired token answers
+with a page, and a number measured on those means nothing.
+
 ## What to report
 
 Always state: users, mix (subs/pages/cards/edits/creates/dashboards), nodes, window,
