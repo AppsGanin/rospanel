@@ -59,5 +59,4 @@ RosPanel **5.13.0**, Xray-core **26.10.21**. Панель работала в о
   нужно ~600–800 МБ, так что одной панели на 1 ГБ может хватить, но это не проверено.
 - **Точка между 20k и 50k не измерена:** там кончается RAM, а не ядро.
 
-Полный отчёт с условиями: [reports/Бенчмарк ёмкости 2026-11.md](https://github.com/AppsGanin/rospanel/blob/main/reports/%D0%91%D0%B5%D0%BD%D1%87%D0%BC%D0%B0%D1%80%D0%BA%20%D1%91%D0%BC%D0%BA%D0%BE%D1%81%D1%82%D0%B8%202026-11.md).
 Как повторить: [tools/bench/README.md](https://github.com/AppsGanin/rospanel/blob/main/tools/bench/README.md).

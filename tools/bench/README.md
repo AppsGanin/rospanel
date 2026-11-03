@@ -5,7 +5,7 @@ directory) and the end-to-end panel load test (a netns stand driven by `zzload`)
 They answer different questions and must not be mixed: the first is what the disk
 does, the second is what a user waits for.
 
-Results of the 2026-11-03 run: [reports/Бенчмарк ёмкости 2026-11.md](../../reports/Бенчмарк%20ёмкости%202026-11.md).
+Results of the 2026-11-03 run: [docs/benchmarks.md](../../docs/benchmarks.md).
 
 ## Write ceiling — `sqlitebench`
 
