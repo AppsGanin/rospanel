@@ -344,6 +344,16 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		r.URL.Path = rest
+		// The public Swagger UI on the docs site is same-origin with nothing: a
+		// browser there calls the operator's panel directly, and without CORS every
+		// "Try it out" dies on the preflight. Keys travel in the Authorization
+		// header, not a cookie, so a permissive origin does not create CSRF; the
+		// unguessable segment is still the thing an attacker would have to know.
+		apiCORS(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		rt.api.ServeHTTP(w, r)
 		return
 	}
@@ -566,4 +576,15 @@ func firstSegment(p string) (seg, rest string) {
 		return p[:i], p[i:]
 	}
 	return p, "/"
+}
+
+// apiCORS lets a browser on another origin call the external REST API. The key is
+// a bearer token in a header, not a cookie, so this does not expose a logged-in
+// session; and the API path itself is still an unguessable segment.
+func apiCORS(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("Access-Control-Allow-Origin", "*")
+	h.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+	h.Set("Access-Control-Allow-Headers", "authorization, content-type, x-api-key")
+	h.Set("Access-Control-Max-Age", "600")
 }
