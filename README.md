@@ -1014,7 +1014,7 @@ releases and publish the binary and the Docker image to GHCR.
 
 RosPanel is developed in spare time and distributed for free. If the panel turned out to be
 useful, the easiest way to support it is
-**[DonationAlerts](https://www.donationalerts.com/r/dmitryapp)** or
+**[DonationAlerts](https://dalink.to/dmitryapp)** or
 **[Boosty](https://boosty.to/githubapps)** (RU cards, one-off or recurring). Thank you! 🙏
 
 

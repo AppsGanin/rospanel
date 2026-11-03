@@ -751,7 +751,7 @@ release-please 依据它们发布版本，并将二进制和 Docker 镜像发布
 ## 💝 支持项目
 
 RosPanel 利用业余时间开发并免费发布。如果这个面板对你有帮助，最简单的支持方式是
-**[DonationAlerts](https://www.donationalerts.com/r/dmitryapp)** 或
+**[DonationAlerts](https://dalink.to/dmitryapp)** 或
 **[Boosty](https://boosty.to/githubapps)**（俄罗斯银行卡，一次性或定期）。谢谢！🙏
 
 

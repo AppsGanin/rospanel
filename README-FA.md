@@ -936,7 +936,7 @@ PRها و issueها خوش‌آمدند. commitها از
 ## 💝 حمایت از پروژه
 
 RosPanel در اوقات فراغت توسعه داده می‌شود و رایگان توزیع می‌شود. اگر پنل برایتان سودمند بوده، ساده‌ترین راه
-حمایت از آن **[DonationAlerts](https://www.donationalerts.com/r/dmitryapp)** یا
+حمایت از آن **[DonationAlerts](https://dalink.to/dmitryapp)** یا
 **[Boosty](https://boosty.to/githubapps)** است (کارت‌های روسی، یک‌باره یا دوره‌ای). سپاسگزاریم! 🙏
 
 

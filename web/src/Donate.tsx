@@ -11,7 +11,7 @@ import {
 
 const SECTIONS = [1, 2, 3] as const;
 
-const DONATIONALERTS_URL = "https://www.donationalerts.com/r/dmitryapp";
+const DONATIONALERTS_URL = "https://dalink.to/dmitryapp";
 const BOOSTY_URL = "https://boosty.to/githubapps";
 
 // Copyable donation details — all USDT, kept in sync with the README.

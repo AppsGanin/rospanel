@@ -908,7 +908,7 @@ loopback للوحة، `127.0.0.1:8080` افتراضيًا)، و`XRAY_BIN`، و`R
 ## 💝 ادعم المشروع
 
 يُطوَّر RosPanel في أوقات الفراغ ويُوزَّع مجانًا. إن وجدت اللوحة مفيدة، فأسهل طريقة لدعمها هي
-**[DonationAlerts](https://www.donationalerts.com/r/dmitryapp)** أو
+**[DonationAlerts](https://dalink.to/dmitryapp)** أو
 **[Boosty](https://boosty.to/githubapps)** (بطاقات روسية، لمرة واحدة أو بشكل دوري). شكرًا لك! 🙏
 
 
