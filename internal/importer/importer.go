@@ -1,8 +1,8 @@
 // Package importer reads the users out of another panel's data — a Marzban
-// database or API dump, a 3x-ui database — and turns them into candidates this
-// panel can create: the same UUIDs and passwords, so nobody has to re-add a
-// server in their app, plus the limits, expiry, traffic and notes that came with
-// them.
+// database or API dump, a Marzneshin or Rebecca database, a 3x-ui database — and
+// turns them into candidates this panel can create: the same UUIDs and passwords
+// where the source stores them, so nobody has to re-add a server in their app,
+// plus the limits, expiry, traffic and notes that came with them.
 //
 // It only reads. Deciding what to do with a candidate (skip a duplicate, rename,
 // tag) is the caller's; see core.ImportUsers.
@@ -17,7 +17,9 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
@@ -27,9 +29,11 @@ import (
 type Source string
 
 const (
-	SourceMarzban  Source = "marzban"  // Marzban's SQLite database, or a GET /api/users dump
-	SourceXUI      Source = "3x-ui"    // 3x-ui / x-ui: x-ui.db
-	SourceRosPanel Source = "rospanel" // this panel's own export (see Export)
+	SourceMarzban    Source = "marzban"    // Marzban's SQLite database, or a GET /api/users dump
+	SourceMarzneshin Source = "marzneshin" // Marzneshin's SQLite database (db.sqlite3)
+	SourceRebecca    Source = "rebecca"    // Rebecca's SQLite database, a Marzban-compatible schema
+	SourceXUI        Source = "3x-ui"      // 3x-ui / x-ui: x-ui.db
+	SourceRosPanel   Source = "rospanel"   // this panel's own export (see Export)
 )
 
 // Format and FormatVersion mark this panel's own export file. The marker is what
@@ -154,12 +158,30 @@ func parseSQLite(path string) (Source, []Candidate, error) {
 	switch {
 	case tables["proxies"] && tables["users"]:
 		users, err := parseMarzbanDB(db)
+		// Rebecca kept Marzban's users/proxies schema and added columns of its own.
+		// The same reader applies; only the name the operator sees differs.
+		if isRebeccaDB(db) {
+			return SourceRebecca, users, err
+		}
 		return SourceMarzban, users, err
+	case tables["users"] && tables["services"]:
+		users, err := parseMarzneshinDB(db)
+		return SourceMarzneshin, users, err
 	case tables["inbounds"] && tables["client_traffics"]:
 		users, err := parseXUIDB(db)
 		return SourceXUI, users, err
 	}
 	return "", nil, ErrUnknownFormat
+}
+
+// isRebeccaDB tells Rebecca's database from Marzban's, whose schema it inherited.
+// The two columns are Rebecca's own and have no counterpart in Marzban.
+func isRebeccaDB(db *sql.DB) bool {
+	cols, err := columnSet(db, "users")
+	if err != nil {
+		return false
+	}
+	return cols["credential_key"] || cols["subadress"]
 }
 
 func tableSet(db *sql.DB) (map[string]bool, error) {
@@ -338,6 +360,218 @@ func parseMarzbanDB(db *sql.DB) ([]Candidate, error) {
 		out = append(out, byID[id].candidate())
 	}
 	return out, nil
+}
+
+// ---- Marzneshin ------------------------------------------------------------
+
+// parseMarzneshinDB reads a Marzneshin SQLite database (db.sqlite3). Its schema is
+// not Marzban's: one `key` is the credential and the subscription token, expiry is
+// a datetime or a usage duration rather than one integer, and the proxies are built
+// per service instead of being stored on the user. A link built from the key keeps
+// working after the move, so a client refreshes into the new credentials on its
+// next subscription update.
+func parseMarzneshinDB(db *sql.DB) ([]Candidate, error) {
+	rows, err := db.Query(`SELECT * FROM users ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("importer: marzneshin users: %w", err)
+	}
+	defer rows.Close()
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	var out []Candidate
+	for rows.Next() {
+		vals := make([]any, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, err
+		}
+		m := make(map[string]any, len(cols))
+		for i, c := range cols {
+			m[c] = vals[i]
+		}
+		// A removed Marzneshin user keeps a row with no username; importing the
+		// tombstone would create a nameless account nobody can use.
+		if valueBool(m, "removed") {
+			continue
+		}
+		c := marzneshinCandidate(m)
+		if c.Name == "" {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// marzneshinCandidate turns one users row into a candidate. Columns are looked up
+// by name because Marzneshin's schema grew over time: an older database has no
+// expire_strategy, enabled or removed, and the same import must still work.
+func marzneshinCandidate(m map[string]any) Candidate {
+	key := valueString(m, "key")
+	c := Candidate{
+		Name:     valueString(m, "username"),
+		UsedDown: max(valueInt(m, "used_traffic"), 0),
+		Note:     valueString(m, "note"),
+		Enabled:  true,
+		SubToken: subToken(key),
+	}
+	if v := valueInt(m, "data_limit"); v > 0 {
+		c.DataLimit = v
+	}
+	switch valueString(m, "status") {
+	case "disabled", "inactive":
+		c.Enabled = false
+	case "": // newer schema: no status column, booleans instead
+		if _, ok := m["enabled"]; ok && !valueBool(m, "enabled") {
+			c.Enabled = false
+		}
+		if _, ok := m["activated"]; ok && !valueBool(m, "activated") {
+			c.Enabled = false
+		}
+		if valueBool(m, "removed") {
+			c.Enabled = false
+		}
+	}
+	switch valueString(m, "expire_strategy") {
+	case "start_on_first_use":
+		c.HoldSeconds = max(valueInt(m, "usage_duration"), valueInt(m, "on_hold_expire_duration"))
+	case "never":
+	default:
+		c.ExpireAt = valueTime(m, "expire")
+		if c.ExpireAt == 0 {
+			c.ExpireAt = valueTime(m, "expire_date")
+		}
+	}
+	if c.ExpireAt == 0 && c.HoldSeconds == 0 {
+		c.HoldSeconds = max(valueInt(m, "on_hold_expire_duration"), 0)
+	}
+	// Marzneshin's default auth mode derives the UUID and the password from the key
+	// with xxh128, so the key itself is neither. Only a plain-mode key — a canonical
+	// UUID — can be kept; otherwise the panel mints a UUID and keeps the key as the
+	// password. The key still rides along as the subscription token, so a client
+	// refreshes into the new credentials instead of losing the account.
+	if len(key) == 36 && strings.Count(key, "-") == 4 {
+		c.setCredentials(key, key)
+	} else {
+		c.setCredentials("", key)
+	}
+	return c
+}
+
+// valueString reads a column the database may store as text, bytes or a number.
+func valueString(m map[string]any, key string) string {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return ""
+	}
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	case []byte:
+		return strings.TrimSpace(string(t))
+	case int64:
+		return strconv.FormatInt(t, 10)
+	case float64:
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(t)
+	case time.Time:
+		return t.UTC().Format(time.RFC3339)
+	default:
+		return strings.TrimSpace(fmt.Sprint(t))
+	}
+}
+
+func valueInt(m map[string]any, key string) int64 {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return 0
+	}
+	switch t := v.(type) {
+	case int64:
+		return t
+	case float64:
+		return int64(t)
+	case bool:
+		if t {
+			return 1
+		}
+		return 0
+	case time.Time:
+		return t.Unix()
+	case []byte:
+		n, _ := strconv.ParseInt(strings.TrimSpace(string(t)), 10, 64)
+		return n
+	case string:
+		n, _ := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
+		return n
+	}
+	return 0
+}
+
+func valueBool(m map[string]any, key string) bool {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return false
+	}
+	switch t := v.(type) {
+	case bool:
+		return t
+	case int64:
+		return t != 0
+	case float64:
+		return t != 0
+	case []byte:
+		s := strings.ToLower(strings.TrimSpace(string(t)))
+		return s == "1" || s == "true" || s == "t"
+	case string:
+		s := strings.ToLower(strings.TrimSpace(t))
+		return s == "1" || s == "true" || s == "t"
+	}
+	return false
+}
+
+// valueTime reads a datetime column as unix seconds. Marzneshin stores UTC
+// datetimes without a zone, which SQLite hands back as text.
+func valueTime(m map[string]any, key string) int64 {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return 0
+	}
+	switch t := v.(type) {
+	case time.Time:
+		return t.Unix()
+	case int64:
+		return t
+	case float64:
+		return int64(t)
+	}
+	s := valueString(m, key)
+	if s == "" {
+		return 0
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return n
+	}
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02T15:04:05.999999999",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05",
+		"2006-01-02",
+	} {
+		if ts, err := time.ParseInLocation(layout, s, time.UTC); err == nil {
+			return ts.Unix()
+		}
+	}
+	return 0
 }
 
 func columnSet(db *sql.DB, table string) (map[string]bool, error) {

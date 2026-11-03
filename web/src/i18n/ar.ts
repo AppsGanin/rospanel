@@ -481,7 +481,7 @@ const ar: Dict = {
     dpiNoiseStr: "noise: السلسلة 256 حرفًا كحد أقصى",
     dpiNoiseBase64: "noise: قيمة base64 غير صالحة (حتى 1 ك.بايت)",
     dpiNoiseDelay: "noise: يجب أن يكون التأخير \"{{value}}\" رقمًا أو min-max ضمن {{lo}}–{{hi}}",
-    importUnknownFormat: "لا يبدو الملف قاعدة بيانات Marzban / 3x-ui أو تصدير JSON منها",
+    importUnknownFormat: "لا يبدو الملف قاعدة بيانات Marzban / Marzneshin / Rebecca / 3x-ui أو تصدير JSON منها",
     importNoFile: "اختر ملفًا",
     importNothingSelected: "لم يُحدَّد أي مستخدم",
     importTooMany: "يمكن استيراد {{max}} مستخدم كحد أقصى دفعة واحدة",

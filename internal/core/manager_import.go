@@ -49,7 +49,7 @@ func (m *Manager) ImportPreview(path string) (*ImportPreview, error) {
 	source, users, err := importer.Parse(path)
 	if err != nil {
 		if errors.Is(err, importer.ErrUnknownFormat) {
-			return nil, invalidCode("err.importUnknownFormat", "файл не похож на базу Marzban / 3x-ui или их JSON-выгрузку")
+			return nil, invalidCode("err.importUnknownFormat", "файл не похож на базу Marzban / Marzneshin / Rebecca / 3x-ui или их JSON-выгрузку")
 		}
 		return nil, err
 	}

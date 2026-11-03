@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func fixtureDB(t *testing.T, name string, stmts ...string) string {
@@ -66,6 +67,78 @@ func TestParseMarzbanDatabase(t *testing.T) {
 	// Reading must leave no trace next to the file: no journal, no WAL.
 	if entries, _ := os.ReadDir(filepath.Dir(path)); len(entries) != 1 {
 		t.Errorf("parsing wrote next to the database: %v", entries)
+	}
+}
+
+// Marzneshin's users table is not Marzban's: one `key` carries both the credential
+// and the subscription token, expiry is a datetime or a usage duration, and the
+// proxies are not stored per user. The key has to survive as the sub token even
+// though it is not a UUID, or the link a client already has goes dead.
+func TestParseMarzneshinDatabase(t *testing.T) {
+	const key = "6f1c2f0d4b8a4c3e9d7a5b1c2e3f4a5b"
+	path := fixtureDB(t, "db.sqlite3",
+		`CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, key TEXT, status TEXT,
+			used_traffic INTEGER, data_limit INTEGER, expire DATETIME, note TEXT,
+			on_hold_expire_duration INTEGER, usage_duration INTEGER, expire_strategy TEXT)`,
+		`CREATE TABLE services (id INTEGER PRIMARY KEY, name TEXT)`,
+		`INSERT INTO users VALUES
+			(1, 'alice', '`+key+`', 'active', 123, 10737418240, '2026-01-02 03:04:05', 'from tg', NULL, NULL, 'fixed_date'),
+			(2, 'bob', '`+key+`2', 'on_hold', 0, 0, NULL, '', 0, 86400, 'start_on_first_use'),
+			(3, 'carol', '`+key+`3', 'disabled', 0, NULL, NULL, '', NULL, NULL, 'never'),
+			(4, 'dave', '73ab3f5f-209b-4423-9fad-263e5baa37c4', 'active', 0, NULL, NULL, NULL, NULL, NULL, 'never')`,
+	)
+	src, users, err := Parse(path)
+	if err != nil || src != SourceMarzneshin {
+		t.Fatalf("parse: %v (%s)", err, src)
+	}
+	if len(users) != 4 {
+		t.Fatalf("want 4 users, got %d", len(users))
+	}
+	alice := users[0]
+	wantExpire := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC).Unix()
+	if alice.Name != "alice" || alice.UsedDown != 123 || alice.DataLimit != 10737418240 ||
+		alice.ExpireAt != wantExpire || !alice.Enabled || alice.Note != "from tg" ||
+		alice.SubToken != key || alice.Password != key || alice.UUID == "" ||
+		!reflect.DeepEqual(alice.Issues, []string{IssueUUIDGenerated}) {
+		t.Errorf("alice: %+v", alice)
+	}
+	bob := users[1]
+	if bob.HoldSeconds != 86400 || bob.ExpireAt != 0 || !bob.Enabled {
+		t.Errorf("bob: %+v", bob)
+	}
+	carol := users[2]
+	if carol.Enabled || carol.ExpireAt != 0 || carol.HoldSeconds != 0 {
+		t.Errorf("carol: %+v", carol)
+	}
+	dave := users[3]
+	if dave.UUID != "73ab3f5f-209b-4423-9fad-263e5baa37c4" || dave.Password != dave.UUID || len(dave.Issues) != 0 {
+		t.Errorf("dave (plain-mode key): %+v", dave)
+	}
+}
+
+// Rebecca kept Marzban's users/proxies schema, so the Marzban reader applies; the
+// source has to name Rebecca, or the operator sees a Marzban badge for a file that
+// is not one.
+func TestParseRebeccaDatabase(t *testing.T) {
+	path := fixtureDB(t, "rebecca.db",
+		`CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, credential_key TEXT, subadress TEXT,
+			status TEXT, used_traffic INTEGER, data_limit INTEGER, expire INTEGER, note TEXT,
+			on_hold_expire_duration INTEGER)`,
+		`CREATE TABLE proxies (id INTEGER PRIMARY KEY, user_id INTEGER, type TEXT, settings TEXT)`,
+		`INSERT INTO users VALUES
+			(1, 'erin', 'cred', '', 'active', 42, 1000, 1900000000, 'rebecca note', NULL)`,
+		`INSERT INTO proxies VALUES
+			(1, 1, 'VLESS', '{"id": "73ab3f5f-209b-4423-9fad-263e5baa37c4"}')`,
+	)
+	src, users, err := Parse(path)
+	if err != nil || src != SourceRebecca || len(users) != 1 {
+		t.Fatalf("parse: %v (%s, %d users)", err, src, len(users))
+	}
+	erin := users[0]
+	if erin.Name != "erin" || erin.UUID != "73ab3f5f-209b-4423-9fad-263e5baa37c4" ||
+		erin.UsedDown != 42 || erin.DataLimit != 1000 || erin.ExpireAt != 1900000000 ||
+		!erin.Enabled || erin.Note != "rebecca note" {
+		t.Errorf("erin: %+v", erin)
 	}
 }
 

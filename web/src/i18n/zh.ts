@@ -490,7 +490,7 @@ const zh: Dict = {
     dpiNoiseStr: "noise：字符串最多 256 个字符",
     dpiNoiseBase64: "noise：base64 无效（最多 1 KB）",
     dpiNoiseDelay: "noise：延迟“{{value}}”必须是数字或 {{lo}}–{{hi}} 范围内的 min-max",
-    importUnknownFormat: "该文件看起来不是 Marzban / 3x-ui 数据库或其 JSON 导出",
+    importUnknownFormat: "该文件看起来不是 Marzban / Marzneshin / Rebecca / 3x-ui 数据库或其 JSON 导出",
     importNoFile: "请选择文件",
     importNothingSelected: "未选择任何用户",
     importTooMany: "一次最多导入 {{max}} 个用户",

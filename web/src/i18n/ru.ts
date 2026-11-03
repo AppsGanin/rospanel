@@ -488,7 +488,7 @@ const ru = {
     dpiNoiseStr: "noise: строка не длиннее 256 символов",
     dpiNoiseBase64: "noise: некорректный base64 (до 1 КБ)",
     dpiNoiseDelay: "noise: задержка «{{value}}» — число или min-max в пределах {{lo}}–{{hi}}",
-    importUnknownFormat: "файл не похож на базу Marzban / 3x-ui или их JSON-выгрузку",
+    importUnknownFormat: "файл не похож на базу Marzban / Marzneshin / Rebecca / 3x-ui или их JSON-выгрузку",
     importNoFile: "выберите файл",
     importNothingSelected: "не выбрано ни одного пользователя",
     importTooMany: "за один раз можно импортировать до {{max}} пользователей",

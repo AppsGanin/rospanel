@@ -490,7 +490,7 @@ const en: Dict = {
     dpiNoiseStr: "noise: the string is at most 256 characters",
     dpiNoiseBase64: "noise: invalid base64 (up to 1 KB)",
     dpiNoiseDelay: "noise: delay \"{{value}}\" must be a number or min-max within {{lo}}–{{hi}}",
-    importUnknownFormat: "the file does not look like a Marzban / 3x-ui database or their JSON export",
+    importUnknownFormat: "the file does not look like a Marzban / Marzneshin / Rebecca / 3x-ui database or their JSON export",
     importNoFile: "choose a file",
     importNothingSelected: "no users selected",
     importTooMany: "up to {{max}} users can be imported at once",
@@ -1790,7 +1790,7 @@ const en: Dict = {
   },
 
   importUsers: {
-    buttonHint: "Import users: a Marzban or 3x-ui file, or this panel's export",
+    buttonHint: "Import users: a Marzban, Marzneshin, Rebecca or 3x-ui file, or this panel's export",
     exportHint: "Export users — download every one as this panel's own file: the same UUIDs, passwords, subscription links, limits, traffic, notes and tags. The import reads it back — that is how a user base moves to another install.",
     srcRosPanel: "RosPanel: this panel's export file (the up-arrow button next to Import)",
     title: "Import users from another panel",

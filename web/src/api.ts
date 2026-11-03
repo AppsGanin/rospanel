@@ -2165,7 +2165,7 @@ export interface ImportCandidate {
   name_taken: boolean
 }
 export interface ImportPreview {
-  source: 'marzban' | '3x-ui'
+  source: 'marzban' | 'marzneshin' | 'rebecca' | '3x-ui' | 'rospanel'
   users: ImportCandidate[]
 }
 export interface ImportResult {

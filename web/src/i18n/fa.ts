@@ -490,7 +490,7 @@ const fa: Dict = {
     dpiNoiseStr: "noise: رشته حداکثر 256 کاراکتر است",
     dpiNoiseBase64: "noise: base64 نامعتبر (حداکثر 1 کیلوبایت)",
     dpiNoiseDelay: "noise: تأخیر «{{value}}» باید یک عدد یا min-max در بازه {{lo}}–{{hi}} باشد",
-    importUnknownFormat: "فایل شبیه پایگاه داده Marzban / 3x-ui یا خروجی JSON آن‌ها نیست",
+    importUnknownFormat: "فایل شبیه پایگاه داده Marzban / Marzneshin / Rebecca / 3x-ui یا خروجی JSON آن‌ها نیست",
     importNoFile: "یک فایل انتخاب کنید",
     importNothingSelected: "هیچ کاربری انتخاب نشده است",
     importTooMany: "حداکثر {{max}} کاربر را می‌توان یک‌جا وارد کرد",
