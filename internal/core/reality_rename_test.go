@@ -101,3 +101,20 @@ func TestNodeOnTheSharedPortFollowsThePanelDonor(t *testing.T) {
 		t.Fatalf("renamed node donor %q, want the panel's", got.RealityDest)
 	}
 }
+
+// The twin of a drawn donor is the same site's other name: a bare name gets its www.
+// form, a www. name its bare form. Whether the certificate really covers it is checked
+// live, so this only says which name to try — never two different sites.
+func TestDonorCandidates(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct{ primary, twin string }{
+		{"hh.ru", "www.hh.ru"},
+		{"www.hh.ru", "hh.ru"},
+		{"www.hh.ru.", "hh.ru."}, // a trailing dot survives the rewrite, it is not ours to fix
+	} {
+		got := donorCandidates(c.primary)
+		if len(got) != 2 || got[0] != c.primary || got[1] != c.twin {
+			t.Errorf("%q: %v, want %q then %q", c.primary, got, c.primary, c.twin)
+		}
+	}
+}

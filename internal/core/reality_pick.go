@@ -34,6 +34,39 @@ func PickRealityDonor() string {
 	return order[0]
 }
 
+// PickRealityDonors is what a fresh install's REALITY lane accepts as its mask: the
+// drawn donor, and with it the same site's other name when that site's certificate
+// covers it ("hh.ru" and "www.hh.ru" are one site). A shared 443 hands every listed
+// name to REALITY, and REALITY relays a name it cannot authenticate to the ONE site in
+// reality_dest — so a second site's name would be answered with the first site's
+// certificate, which is a signature of its own. One site's names cost nothing.
+func PickRealityDonors() []string {
+	primary := PickRealityDonor()
+	out := []string{primary}
+	for _, name := range donorCandidates(primary)[1:] {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		err := validateRealityDest(ctx, name)
+		cancel()
+		if err == nil {
+			out = append(out, name)
+			continue
+		}
+		logWarn("reality: the donor's twin name is not covered by its certificate", "name", name, "err", err)
+	}
+	return out
+}
+
+// donorCandidates is the drawn name followed by the site's twin: the www. form of a
+// bare name, the bare form of a www. one. Whether the twin is really the same site is
+// decided by its certificate, not by its spelling — the caller checks it live.
+func donorCandidates(primary string) []string {
+	twin := "www." + primary
+	if strings.HasPrefix(primary, "www.") {
+		twin = strings.TrimPrefix(primary, "www.")
+	}
+	return []string{primary, twin}
+}
+
 func shuffled(in []string) []string {
 	out := append([]string(nil), in...)
 	for i := len(out) - 1; i > 0; i-- {

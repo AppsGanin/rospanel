@@ -745,12 +745,12 @@ func tlsLoop(mgr *core.Manager) func(context.Context) {
 // port, shared with the decoy through the front (tlsfront), and a donor drawn here
 // rather than the schema's shared pair. pick is core.PickRealityDonor in production —
 // it checks the donor from this network.
-func firstRunReality(set *model.Settings, pick func() string) (port int, donor string) {
+func firstRunReality(set *model.Settings, pick func() []string) (port int, donor string) {
 	port = set.VLESSPort
 	if port == 0 {
 		port = 443
 	}
-	return port, pick()
+	return port, strings.Join(pick(), ",")
 }
 
 // bootstrapPanel ensures a secret panel path and at least one admin exist. On
@@ -782,7 +782,7 @@ func bootstrapPanel(st *store.Store) (string, error) {
 		// blocked. Its own name cannot be the mask there (the decoy serves that name
 		// on the same port, see model.RealityShareConflict); a lane moved to a port of
 		// its own may name the server instead.
-		port, donor := firstRunReality(set, core.PickRealityDonor)
+		port, donor := firstRunReality(set, core.PickRealityDonors)
 		if err := st.SetRealityPorts(port, donor); err != nil {
 			return "", err
 		}

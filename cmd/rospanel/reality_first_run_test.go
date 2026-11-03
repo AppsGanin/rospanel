@@ -11,7 +11,7 @@ import (
 // is the port a client is least likely to find blocked. The lane's own name is not
 // available there — the decoy serves that name on the same port.
 func TestFirstRunReality(t *testing.T) {
-	drawn := func() string { return "hh.ru" }
+	drawn := func() []string { return []string{"hh.ru", "www.hh.ru"} }
 	for _, c := range []struct {
 		name string
 		set  model.Settings
@@ -24,8 +24,8 @@ func TestFirstRunReality(t *testing.T) {
 		if port != 443 {
 			t.Errorf("%s: port %d, want 443", c.name, port)
 		}
-		if donor != "hh.ru" {
-			t.Errorf("%s: donor %q, want the drawn one", c.name, donor)
+		if donor != "hh.ru,www.hh.ru" {
+			t.Errorf("%s: donor %q, want the drawn names", c.name, donor)
 		}
 	}
 }
