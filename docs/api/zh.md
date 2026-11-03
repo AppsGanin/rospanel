@@ -1054,6 +1054,29 @@ scrape_configs:
 它在磁盘上暂存，并在下次启动时应用，所以放在 API 上就会变成一个在下次重启时静默替换所有内容的
 请求。
 
+## 订阅响应头
+
+`GET /v1/users/{id}/subscription` 返回地址；客户端实际拉取的那份响应，携带了应用无需解析
+配置即可显示的内容：
+
+| 响应头 | 含义 |
+| --- | --- |
+| `Profile-Title` | 标题，`base64:` 前缀之后的 base64 |
+| `Profile-Update-Interval` | 两次刷新之间的小时数；面板设为“从不”时不下发 |
+| `Subscription-Userinfo` | `upload=…; download=…; total=…; expire=…`，字节数与 Unix 秒；`total=0` 表示不限，`expire=0` 表示不到期 |
+| `Profile-Web-Page-Url` | 用户的页面，存在时才下发 |
+| `support-url` | 运营者的支持或 Telegram 链接，设置后下发 |
+| `Announce` | 运营者的公告，带 `base64:` 前缀；Happ 和 v2RayTun 会把它显示为一行 |
+| `Moved-Permanently-To` | 这条订阅迁移到的地址，用户的 token 已填入 |
+
+`Moved-Permanently-To` 就是迁移域名：在 **设置 → 订阅** 中填一次地址，把 `{token}` 放在
+token 该在的位置（`https://new.example.com/sub/{token}`），此后每个读取该响应头的客户端都会
+从新地址刷新——用户不必重新导入链接。忽略该响应头的客户端仍可通过旧地址继续工作。当面板
+重新成为客户端应该访问的地址时，清空该字段。
+
+开启自动路由时，Happ 和 INCY 还会收到 `routing`（deeplink 本身，而不是它的 URL）和
+`routing-enable: 1`；Clash 和 Mihomo 则改为在 YAML 里收到规则。
+
 ## MCP（AI 助手）
 
 面板通过 Model Context Protocol 本身把此 API 提供给助手。无需在任何地方安装任何东西：一个接受

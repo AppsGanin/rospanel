@@ -200,6 +200,10 @@ def main() -> None:
                 text.replace('<div dir="rtl">', '<div dir="rtl" markdown="1">'),
                 encoding="utf-8",
             )
+
+    # The release history is already Markdown and is the same file the panel's
+    # "What's new" dialog embeds; publish it instead of keeping a second copy.
+    write_page(ROOT / "CHANGELOG.md", OUT / "changelog.md")
     for src in sorted((ROOT / "docs" / "api").glob("*.md")):
         name = "index.md" if src.name == "README.md" else src.name
         write_page(src, OUT / "api" / name, page_dir="api")

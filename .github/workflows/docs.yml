@@ -7,6 +7,7 @@ on:
     branches: [main]
     paths:
       - "README*.md"
+      - "CHANGELOG.md"
       - "docs/**"
       - "mkdocs.yml"
       - "scripts/docs_prepare.py"

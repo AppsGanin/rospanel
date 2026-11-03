@@ -89,5 +89,6 @@ nav:
   - API: api/index.md
   - API reference: api/reference.md
   - Benchmarks: benchmarks/index.md
+  - What's new: changelog.md
   - Plugins: plugins/index.md
   - Grafana: grafana/index.md
