@@ -14,7 +14,7 @@
 ![Platform](https://img.shields.io/badge/platform-Linux-555?logo=linux&logoColor=white)
 ![Deploy](https://img.shields.io/badge/deploy-single%20binary%20%7C%20Docker-2496ED?logo=docker&logoColor=white)
 
-[English](README.md) · [Русский](README-RU.md) · **简体中文** · [العربية](README-AR.md) · [فارسی](README-FA.md)
+[English](README.md) · [Русский](README-RU.md) · **简体中文** · [العربية](README-AR.md) · [فارسی](README-FA.md) · [文档](https://appsganin.github.io/rospanel/zh/)
 
 [简介](#简介) · [获取服务器](#️-获取服务器) · [快速开始](#-快速开始) · [功能](#-功能) · [CLI](#️-cli) · [架构](#-架构) · [免责声明](#️-免责声明) · [开发](#-开发) · [支持项目](#-支持项目)
 
@@ -193,13 +193,13 @@ rospanel node status                  # 本地状态
 
 一份配置、一套凭据：**VLESS-Vision**（TCP/443 + uTLS）、**VLESS-XHTTP-REALITY**
 （伪装成他人站点的 TLS）、**Hysteria2**（UDP + 端口跳跃）。此外，每台服务器还支持**自定义入站**：
-VLESS / Trojan / Hysteria2，可搭配任意传输方式（TCP、WebSocket、XHTTP、gRPC、HTTPUpgrade），拥有独立的端口、
+VLESS / Trojan / Hysteria2，可搭配任意传输方式（TCP、WebSocket、XHTTP、gRPC、HTTPUpgrade），以及 **Shadowsocks-2022**（raw TCP），拥有独立的端口、
 REALITY 密钥、跳跃范围以及**细粒度的传输参数调整**（XHTTP `extra`、HTTP 伪装、sockopt、额外的 TLS 字段）——
 可逐项填写，也可直接写原始 JSON；保存前会在目标机器上校验配置（`xray -test` + 端口绑定），
 客户端无法处理的组合会被自动排除在 Clash/sing-box 订阅之外。连接编辑器中的“**恢复出厂默认**”按钮可将协议、
 端口、指纹和反 DPI 设置还原为全新安装时的状态，并删除该服务器的自定义入站（REALITY/AmneziaWG 密钥以及
 REALITY 伪装目标和端口会保留；主服务器会先为配置创建快照）。面板隐藏在**秘密路径**之后；
-其他任何路径都返回伪装站点（11 种模板）。**探测检测**会识别扫描隐藏面板的 IP——即请求了大量伪装站点中不存在的路径的 IP——
+其他任何路径都返回伪装站点（12 种模板）。**探测检测**会识别扫描隐藏面板的 IP——即请求了大量伪装站点中不存在的路径的 IP——
 并记录下来供管理员查看；响应本身不会改变，因此扫描器看到的始终只是伪装站点，伪装不会暴露。
 还可以选择**在防火墙上丢弃该 IP**（nftables）和/或发送新扫描器的**每日摘要**——两者默认关闭，仅记录是安全的基线。
 TLS 开箱即用——**ACME**（Let's Encrypt / ZeroSSL）自动续期；证书也可以**为纯 IP 签发，无需域名和 DNS**。
@@ -282,7 +282,8 @@ N 天，密钥闲置期间不计时，从首次连接起开始计算（续期会
 到期用户可自动删除。每个用户都可以有一条管理员**备注**（来源、约定事项——仅在面板和 API 中可见，从不向客户展示）
 和若干**标签**（`vip`、`reseller-a`），列表可按标签筛选，搜索也会覆盖标签；名称旁还会显示 Xray 客户端 ID（`u12`），
 看到日志就能立刻对应到账户。**导入与导出**：用户页面可读取 **Marzban** 数据库或 `GET /api/users` 导出、
-**3x-ui** 的 `x-ui.db`，以及本面板**自己的导出文件**——并可一键生成该导出。导入的用户保留**相同的 UUID 和密码**、
+**Marzneshin**、**Rebecca**、**3x-ui** 的 `x-ui.db`，以及本面板**自己的导出文件**——并可一键生成该导出。导入的用户保留**相同的 UUID 和密码**
+（Marzneshin 除外：会重新生成 UUID，密钥作为订阅令牌保留，客户端会自动刷新）、
 限额、到期时间（包括从首次连接开始计算的期限——Marzban 的 `on_hold`、3x-ui 的“首次使用后开始”）、已用流量、
 备注和标签，因此没有人需要在应用中重新添加服务器；只要来源中有订阅令牌，令牌也会一并迁移（3x-ui 的 `subId`、
 Marzban 导出，以及本面板自己的导出总是包含），因此把域名迁移到新安装后，所有现有订阅链接依然可用。

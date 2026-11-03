@@ -14,7 +14,7 @@
 ![Platform](https://img.shields.io/badge/platform-Linux-555?logo=linux&logoColor=white)
 ![Deploy](https://img.shields.io/badge/deploy-single%20binary%20%7C%20Docker-2496ED?logo=docker&logoColor=white)
 
-**English** · [Русский](README-RU.md) · [简体中文](README-ZH.md) · [العربية](README-AR.md) · [فارسی](README-FA.md)
+**English** · [Русский](README-RU.md) · [简体中文](README-ZH.md) · [العربية](README-AR.md) · [فارسی](README-FA.md) · [Documentation](https://appsganin.github.io/rospanel/)
 
 [What it is](#what-it-is) · [Where to get a server](#️-where-to-get-a-server) · [Quick start](#-quick-start) · [Features](#-features) · [CLI](#️-cli) · [Architecture](#-architecture) · [Disclaimer](#️-disclaimer) · [Development](#-development) · [Support](#-support-the-project)
 
@@ -215,7 +215,7 @@ rospanel node status                  # local status
 One config, one set of credentials: **VLESS-Vision** (TCP/443 + uTLS), **VLESS-XHTTP-REALITY**
 (masquerading as someone else's TLS), **Hysteria2** (UDP + port hopping). On top of that —
 **custom inbounds** on every server: VLESS / Trojan / Hysteria2 over any transport (TCP,
-WebSocket, XHTTP, gRPC, HTTPUpgrade) with their own port, REALITY keys, hop range and
+WebSocket, XHTTP, gRPC, HTTPUpgrade) and **Shadowsocks-2022** (raw TCP) — with their own port, REALITY keys, hop range and
 **fine-grained transport tuning** (XHTTP `extra`, HTTP masquerading, sockopt, extra TLS
 fields) — as individual fields or raw JSON; the config is validated on the target machine
 itself (`xray -test` + port bind) before saving, and combinations a client can't handle are
@@ -224,7 +224,7 @@ the connections editor puts protocols, ports, fingerprints and anti-DPI back to 
 fresh install has and removes the server's custom inbounds (REALITY/AmneziaWG keys and the
 REALITY donor and port stay; the
 master snapshots its config first). The panel hides behind a **secret path**;
-any other path serves a decoy site (11 templates). **Probe detection** notices an IP that
+any other path serves a decoy site (12 templates). **Probe detection** notices an IP that
 scans for the hidden panel — one that requests many distinct paths the decoy doesn't have —
 and records it for the operator to review; the reply never changes, so a scanner still sees
 only the decoy and the masquerade holds. Optionally it also **drops the IP at the firewall**
@@ -350,12 +350,14 @@ list; expired users can be auto-deleted. Every user carries an operator's **note
 came from, what was agreed — panel and API only, never shown to the client) and **tags** (`vip`,
 `reseller-a`) that the list filters on and the search covers, along with the Xray client id
 (`u12`) shown next to the name so a log line maps to an account at a glance. **Import and
-export**: the users page reads a **Marzban** database or `GET /api/users` dump, a **3x-ui**
-`x-ui.db`, and this panel's **own export** — and writes that export with one button. Users arrive
-with the **same UUIDs and passwords**, limits, expiry (a term that starts on the first connection
+export**: the users page reads a **Marzban** database or `GET /api/users` dump, a **Marzneshin**
+database, a **Rebecca** database, a **3x-ui** `x-ui.db`, and this panel's **own export** — and
+writes that export with one button. Users arrive with the **same UUIDs and passwords** (for
+Marzneshin a fresh UUID is minted and the key moves as the subscription token, so the client
+refreshes into it), limits, expiry (a term that starts on the first connection
 too — Marzban's `on_hold`, 3x-ui's "start after first use"), used traffic, notes and tags, so nobody
 re-adds a server in their app; the subscription token comes across too where the source has one
-(3x-ui's `subId`, Marzban's dump, and always from this panel's own export), so moving a domain to
+(3x-ui's `subId`, Marzneshin's key, Marzban's dump, and always from this panel's own export), so moving a domain to
 a new install keeps every existing subscription link working. A user already here (same UUID) is
 skipped, so running the file twice doubles nobody, a token another user holds is replaced rather
 than refused, and an uploaded file is deleted the moment it has been read. Search and filters
