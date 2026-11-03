@@ -124,7 +124,7 @@ def memory() -> None:
     ax.text(1.06, 967, "RAM 961 МБ", color=RED, fontsize=9, ha="left", va="bottom")
 
     ax.annotate(
-        "50k + полный микс\nOOM до конца прогрева",
+        "50k + полный микс\nOOM в стенде (620 МБ)",
         xy=(1.0, 600),
         xytext=(0.30, 830),
         fontsize=9,
