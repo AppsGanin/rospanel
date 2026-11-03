@@ -46,9 +46,10 @@
   const isAPI = path.startsWith("api/") || path === "api/";
   const isGrafana = path.startsWith("grafana");
   const isPlugins = path.startsWith("plugins/");
-  let pluginName = isPlugins ? (path.split("/")[1] || "") : "";
-  if (pluginName === "index-ru") pluginName = "";
-  if (pluginName.endsWith("-ru")) pluginName = pluginName.slice(0, -3);
+  // Plugin pages are English at plugins/<name>/ and Russian at plugins/ru/<name>/,
+  // with the Russian index at plugins/ru/ — the same shape as the other sections.
+  const pluginSegs = isPlugins ? path.split("/").filter(Boolean).slice(1) : [];
+  const pluginName = pluginSegs[0] === "ru" ? pluginSegs[1] || "" : pluginSegs[0] || "";
   const page = isBenchmarks
     ? BENCH
     : isReference
@@ -64,8 +65,8 @@
   // Plugin pages only have English and Russian; the other languages fall back to
   // the English page rather than sending the reader to the home page.
   function pluginHref(lang) {
-    if (!pluginName) return lang === "ru" ? "plugins/index-ru/" : "plugins/";
-    return lang === "ru" ? "plugins/" + pluginName + "-ru/" : "plugins/" + pluginName + "/";
+    if (lang === "ru") return pluginName ? "plugins/ru/" + pluginName + "/" : "plugins/ru/";
+    return pluginName ? "plugins/" + pluginName + "/" : "plugins/";
   }
 
   function targetFor(lang) {
@@ -73,7 +74,7 @@
   }
 
   function currentLanguage() {
-    if (path.startsWith("plugins/") && path.includes("-ru")) return "ru";
+    if (path.startsWith("plugins/ru")) return "ru";
     const markers = {
       ru: ["benchmarks/ru", "api/ru", "grafana/ru", "ru/"],
       zh: ["benchmarks/zh", "api/zh", "grafana/zh", "zh/"],
@@ -108,7 +109,7 @@
         if (label === "Overview") a.setAttribute("href", BASE + HOME[lang]);
         if (label === "API") a.setAttribute("href", BASE + API[lang]);
         if (label === "Grafana") a.setAttribute("href", BASE + GRAFANA[lang]);
-        if (label === "Plugins") a.setAttribute("href", BASE + "plugins/index-ru/");
+        if (label === "Plugins") a.setAttribute("href", BASE + "plugins/ru/");
       });
     }
   }

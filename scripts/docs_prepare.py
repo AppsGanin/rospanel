@@ -66,13 +66,18 @@ def site_path(target: str) -> str | None:
         return "img/" + base[len("../img/") :] + tail
     if base == "docs/api.md":
         return "api.md" + tail
-    if base in ("docs/plugins/README.md", "docs/plugins/README-RU.md"):
-        name = "index.md" if base.endswith("README.md") else "index-ru.md"
-        return f"plugins/{name}{tail}"
+    if base == "docs/plugins/README.md":
+        return f"plugins/index.md{tail}"
+    if base == "docs/plugins/README-RU.md":
+        # The Russian index lives at `plugins/ru/`, like every other section's
+        # translation (`benchmarks/ru/`, `api/ru/`, `grafana/ru/`).
+        return f"plugins/ru.md{tail}"
     if base.startswith("docs/plugins/"):
         name = base[len("docs/plugins/") :]
         if name.endswith("-RU.md"):
-            name = name[: -len("-RU.md")] + "-ru.md"
+            # Russian plugin pages live under `plugins/ru/`, like the Russian index
+            # and every other section's translation — not `plugins/<name>-ru/`.
+            name = "ru/" + name[: -len("-RU.md")] + ".md"
         return "plugins/" + name + tail
     if base == "docs/grafana/README.md":
         return "grafana/index.md" + tail
@@ -108,8 +113,9 @@ def rewrite_links(text: str, page_dir: str) -> str:
         if target.startswith("#"):
             return f"](#{clean_anchor(target[1:])}){title}"
         # Sibling links in docs/plugins/ ("api.md", "tutorial.md") are relative to
-        # that folder in the repository, but the site path needs the prefix.
-        if page_dir == "plugins" and "/" not in target and target.endswith(".md"):
+        # that folder in the repository, but the site path needs the prefix — for the
+        # Russian pages too, which are written into the plugins/ru/ subdirectory.
+        if page_dir in ("plugins", "plugins/ru") and "/" not in target and target.endswith(".md"):
             target = "docs/plugins/" + target
         site = site_path(target)
         if site is None:
@@ -215,14 +221,16 @@ def main() -> None:
     for src in sorted(plugins.glob("*.md")):
         name = src.name
         if name == "README.md":
-            dst = OUT / "plugins" / "index.md"
+            dst, page_dir = OUT / "plugins" / "index.md", "plugins"
         elif name == "README-RU.md":
-            dst = OUT / "plugins" / "index-ru.md"
+            # The Russian index is the section's landing page (`plugins/ru/`), but the
+            # file itself sits in plugins/, so its links are relative to that folder.
+            dst, page_dir = OUT / "plugins" / "ru.md", "plugins"
         elif name.endswith("-RU.md"):
-            dst = OUT / "plugins" / (name[: -len("-RU.md")] + "-ru.md")
+            dst, page_dir = OUT / "plugins" / "ru" / (name[: -len("-RU.md")] + ".md"), "plugins/ru"
         else:
-            dst = OUT / "plugins" / name
-        write_page(src, dst, page_dir="plugins")
+            dst, page_dir = OUT / "plugins" / name, "plugins"
+        write_page(src, dst, page_dir=page_dir)
 
     for src in sorted((ROOT / "docs" / "grafana").glob("README*.md")):
         name = "index.md" if src.name == "README.md" else src.stem.removeprefix("README-") + ".md"
