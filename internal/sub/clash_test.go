@@ -68,6 +68,30 @@ func TestClashMatchRuleNamesTheGroup(t *testing.T) {
 	}
 }
 
+// More than one server must default to a url-test group: a blocked or slow lane then
+// stops being a dead server the user has to notice and replace by hand. MATCH still
+// targets one name, and the select group keeps every server so a user can pin one.
+func TestClashDefaultsToAutoGroup(t *testing.T) {
+	u := model.User{ID: 1, Name: "u", UUID: "uuid", Password: "pw"}
+	set := testSet("panel.example.com")
+	yaml := ClashYAMLMulti(u, One(set))
+	group := clashGroupName(u, set)
+	auto := group + " auto"
+
+	if !strings.Contains(yaml, fmt.Sprintf(`{name: %q, type: url-test,`, auto)) {
+		t.Fatalf("no url-test group %q:\n%s", auto, yaml)
+	}
+	if !strings.Contains(yaml, fmt.Sprintf(`{name: %q, type: select, proxies: [%q`, group, auto)) {
+		t.Fatalf("select group does not default to %q:\n%s", auto, yaml)
+	}
+	if !strings.Contains(yaml, fmt.Sprintf(`url: %q`, clashHealthURL)) {
+		t.Fatalf("url-test probes no URL:\n%s", yaml)
+	}
+	if strings.Contains(yaml, ", type: url-test, url: \"\",") {
+		t.Fatalf("url-test has an empty probe URL:\n%s", yaml)
+	}
+}
+
 // An emoji name has to survive every format the panel emits, not just the save.
 //
 // The name is embedded three different ways — a Go-quoted Clash scalar, a JSON

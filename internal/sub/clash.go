@@ -330,9 +330,24 @@ func clashYAML(u model.User, servers []Server, caps clashCaps) string {
 		b.WriteString("rules:\n  - \"MATCH,DIRECT\"\n")
 		return b.String()
 	}
-	fmt.Fprintf(&b,
-		"proxy-groups:\n  - {name: %q, type: select, proxies: [%s]}\n",
-		group, strings.Join(quoted, ", "))
+	// A url-test group is the default choice: one lane blocked or slow no longer means
+	// the client sits on a dead server until the user picks another by hand. The select
+	// group stays first in the profile so the user can still pin one server; its first
+	// member is the auto group, which makes auto the default without a second rule.
+	if len(proxies) > 1 {
+		auto := group + " auto"
+		members := append([]string{fmt.Sprintf("%q", auto)}, quoted...)
+		fmt.Fprintf(&b,
+			"proxy-groups:\n  - {name: %q, type: select, proxies: [%s]}\n",
+			group, strings.Join(members, ", "))
+		fmt.Fprintf(&b,
+			"  - {name: %q, type: url-test, url: %q, interval: 300, tolerance: 50, proxies: [%s]}\n",
+			auto, clashHealthURL, strings.Join(quoted, ", "))
+	} else {
+		fmt.Fprintf(&b,
+			"proxy-groups:\n  - {name: %q, type: select, proxies: [%s]}\n",
+			group, strings.Join(quoted, ", "))
+	}
 	b.WriteString("rules:\n")
 	if local.BlockQUIC {
 		// Drop untunneled browser QUIC (UDP/443) so it can't bypass the obfuscated
@@ -356,6 +371,10 @@ func clashYAML(u model.User, servers []Server, caps clashCaps) string {
 func clashGroupName(u model.User, set *model.Settings) string {
 	return strings.TrimSpace(strings.ReplaceAll(SubTitle(u, set), ",", " "))
 }
+
+// clashHealthURL is what a url-test group probes. It is the same address the sing-box
+// urltest outbound uses, so both profiles judge a lane by the same measure.
+const clashHealthURL = "https://www.gstatic.com/generate_204"
 
 // The two markers a mihomo template carries. Named constants because the operator's
 // template, the validator and the injector all have to agree on them character for
