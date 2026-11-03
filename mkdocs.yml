@@ -17,15 +17,15 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
@@ -56,6 +56,9 @@ extra:
       link: /rospanel/fa/
       lang: fa
 
+extra_css:
+  - css/panel.css
+
 markdown_extensions:
   - admonition
   - attr_list
@@ -85,7 +88,12 @@ nav:
   - العربية: ar.md
   - فارسی: fa.md
   - API: api.md
-  - Бенчмарки: benchmarks.md
+  - Benchmarks:
+      - English: benchmarks.md
+      - Русский: benchmarks-ru.md
+      - 简体中文: benchmarks-zh.md
+      - العربية: benchmarks-ar.md
+      - فارسی: benchmarks-fa.md
   - Plugins:
       - Overview: plugins/index.md
       - Manifest: plugins/manifest.md

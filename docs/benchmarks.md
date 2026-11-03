@@ -1,62 +1,61 @@
-# Ёмкость панели
+# Panel capacity
 
-Замер **2026-11-03** на тестовом мастере: **1 vCPU, 961 МБ RAM**, Ubuntu 24,
-RosPanel **5.13.0**, Xray-core **26.10.21**. Панель работала в отдельном netns с
-`MemoryMax=620M`, `MemorySwapMax=0`, `GOMEMLIMIT=300MiB`; боевая панель на хосте
-жила рядом и занимала свою память. Генератор нагрузки стоял на другой машине, чтобы
-не делить CPU с панелью.
+Measured on **2026-11-03** on the test master: **1 vCPU, 961 MB RAM**, Ubuntu 24,
+RosPanel **5.13.0**, Xray-core **26.10.21**. The panel ran in its own netns with
+`MemoryMax=620M`, `MemorySwapMax=0`, `GOMEMLIMIT=300MiB`; the live panel on the host
+kept running beside it. The load generator lived on another machine, so its CPU is
+not part of the panel's.
 
-## Задержки при 20 000 пользователей
+## Latency at 20,000 users
 
-Полный микс: 11 подписок/с, 1 страница пользователей/с, 1 карточка/с, 0,3 правки
-лимитов/с, 0,05 созданий/с, 2 дашборда. Окно 2 минуты после прогрева, 0 ошибок.
+Full mix: 11 subscriptions/s, 1 users page/s, 1 card/s, 0.3 limit edits/s, 0.05
+creates/s, 2 dashboards. Two-minute window after warmup, 0 errors.
 
-![Задержки при 20 000 пользователей](img/bench/latency-20k.svg)
+![Latency at 20,000 users](img/bench/latency-20k-en.svg)
 
-| Операция | p50 | p95 | p99 |
+| Operation | p50 | p95 | p99 |
 |---|---:|---:|---:|
-| Подписка | 26 мс | 447 мс | 535 мс |
-| Страница пользователей | 45 мс | 277 мс | 487 мс |
-| Карточка пользователя | 28 мс | 277 мс | 488 мс |
-| Правка лимитов | 29 мс | 223 мс | 228 мс |
-| Создание пользователя | 41 мс | 59 мс | 59 мс |
+| Subscription | 26 ms | 447 ms | 535 ms |
+| Users page | 45 ms | 277 ms | 487 ms |
+| User card | 28 ms | 277 ms | 488 ms |
+| Limit edits | 29 ms | 223 ms | 228 ms |
+| Creates | 41 ms | 59 ms | 59 ms |
 
-## Где кончается 1 ГБ
+## Where 1 GB ends
 
-![Память: панель и Xray](img/bench/memory.svg)
+![Memory: panel and Xray](img/bench/memory-en.svg)
 
-20k с полным миксом — это 336 МБ панели и 160 МБ Xray. 50k в режиме синхронизации
-нод — 346 + 247 МБ. Полный микс на 50k в **стенде** не поместился: панель убита OOM
-через ~15 секунд прогрева. Важно, что это стенд: рядом работала вторая, боевая
-панель, а тестовая была ограничена cgroup в 620 МБ. В продакшене панель одна и
-получает весь гигабайт — этот случай не измерен.
+20k with the full mix is 336 MB of panel and 160 MB of Xray. 50k in node-sync mode is
+346 + 247 MB. The full mix at 50k did not fit the **stand**: the panel was OOM-killed
+about 15 seconds into warmup. That is a stand result: the live panel shared the host
+and the test panel was capped at 620 MB. A production host runs one panel and gives it
+the whole gigabyte — that case was not measured.
 
-| Сценарий | p50 | p95 | Ошибки | RSS панели |
+| Scenario | p50 | p95 | Errors | Panel RSS |
 |---|---:|---:|---:|---:|
-| 50k, только ноды | 56 мс | 134 мс | 0 | 300–346 МБ |
-| 50k, подписки 14/с | 26 мс | 437 мс | 0 | — |
-| 50k, полный микс | — | — | OOM¹ | — |
+| 50k, nodes only | 56 ms | 134 ms | 0 | 300–346 MB |
+| 50k, 14 subs/s | 26 ms | 437 ms | 0 | — |
+| 50k, full mix | — | — | OOM¹ | — |
 
-¹ В стенде: cgroup 620 МБ и вторая панель на том же 1 ГБ. В продакшене одна панель
-получает весь гигабайт; этот случай не измерен.
+¹ In the stand: a 620 MB cgroup and a second panel on the same 1 GB. A production
+single panel gets the whole gigabyte; that case is not measured.
 
-## Потолок записи SQLite
+## SQLite write ceiling
 
-![Потолок записи SQLite](img/bench/write.svg)
+![SQLite write ceiling](img/bench/write-en.svg)
 
-Тот же диск, WAL, `synchronous=FULL`, одно соединение, строки по 256 байт:
-`fsync` 2 638/с, autocommit 1 381 запись/с, одна транзакция 63 386 строк/с,
-`NORMAL` 20 701 запись/с. Панель пишет пакетами, поэтому запись — не её
-ограничитель.
+Same disk, WAL, `synchronous=FULL`, one connection, 256-byte rows: `fsync` 2,638/s,
+autocommit 1,381 writes/s, one transaction 63,386 rows/s, `NORMAL` 20,701 writes/s.
+The panel batches its writes, so the disk is not its limit.
 
-## Что это значит
+## What it means
 
-- **1 vCPU не упирается в CPU на 20k:** средняя загрузка 20%, p95 56%, пики до 88%
-  дают сборка конфигов и создания, а не подписки.
-- **Упирается в память:** 1 ГБ хватает на ~20k с полным миксом и на 50k
-  подписчиков/синхронизацию нод.
-- **50k с админкой и созданиями** в стенде не влез в 620 МБ. По компонентам ему
-  нужно ~600–800 МБ, так что одной панели на 1 ГБ может хватить, но это не проверено.
-- **Точка между 20k и 50k не измерена:** там кончается RAM, а не ядро.
+- **1 vCPU is not CPU-bound at 20k:** average load 20%, p95 56%, spikes to 88% come
+  from config builds and creates, not subscriptions.
+- **Memory is the limit:** 1 GB holds ~20k with the full mix and 50k subscriptions or
+  node sync.
+- **50k with admin work and creates** did not fit the 620 MB stand. By component it
+  needs ~600–800 MB, so one panel on 1 GB may hold it, but that is not proven.
+- **The point between 20k and 50k is unmeasured:** it is where RAM runs out, not CPU.
 
-Как повторить: [tools/bench/README.md](https://github.com/AppsGanin/rospanel/blob/main/tools/bench/README.md).
+How to repeat: [tools/bench/README.md](https://github.com/AppsGanin/rospanel/blob/main/tools/bench/README.md).

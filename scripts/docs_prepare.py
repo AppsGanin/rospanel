@@ -166,7 +166,8 @@ def main() -> None:
                 encoding="utf-8",
             )
     write_page(ROOT / "docs" / "api.md", OUT / "api.md")
-    write_page(ROOT / "docs" / "benchmarks.md", OUT / "benchmarks.md")
+    for src in sorted((ROOT / "docs").glob("benchmarks*.md")):
+        write_page(src, OUT / src.name)
 
     plugins = ROOT / "docs" / "plugins"
     for src in sorted(plugins.glob("*.md")):
@@ -187,6 +188,10 @@ def main() -> None:
     img = ROOT / "docs" / "img"
     if img.is_dir():
         shutil.copytree(img, OUT / "img")
+
+    css = ROOT / "docs" / "css"
+    if css.is_dir():
+        shutil.copytree(css, OUT / "css")
 
     print(f"docs source: {OUT}")
 

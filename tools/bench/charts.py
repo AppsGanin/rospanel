@@ -3,6 +3,8 @@
 
 Charts are committed as SVG (for the docs site) and PNG (for the GitHub report);
 the numbers live in the JSON, so a rerun edits one file and regenerates both.
+Russian and English variants are produced; the other languages use the English
+charts, because a CJK/Arabic-capable font is not guaranteed in CI.
 """
 
 from __future__ import annotations
@@ -20,13 +22,13 @@ ROOT = Path(__file__).resolve().parents[2]
 DATA = json.loads((ROOT / "tools" / "bench" / "results-2026-11.json").read_text())
 OUT = ROOT / "docs" / "img" / "bench"
 
-INDIGO = "#4f46e5"
-LIGHT = "#a5b4fc"
+INDIGO = "#0d4cd3"
+LIGHT = "#6a98ff"
 GREEN = "#16a34a"
 AMBER = "#d97706"
 RED = "#dc2626"
-SLATE = "#475569"
-GRID = "#e2e8f0"
+SLATE = "#5b6b7e"
+GRID = "#dbe6f5"
 
 plt.rcParams.update(
     {
@@ -34,13 +36,78 @@ plt.rcParams.update(
         "font.size": 11,
         "figure.facecolor": "white",
         "axes.facecolor": "white",
-        "axes.edgecolor": "#cbd5e1",
+        "axes.edgecolor": "#c3d2e8",
         "axes.labelcolor": SLATE,
-        "text.color": "#0f172a",
+        "text.color": "#0a1b2e",
         "xtick.color": SLATE,
         "ytick.color": SLATE,
     }
 )
+
+TEXT = {
+    "ru": {
+        "latency_title": "Задержки при 20 000 пользователей",
+        "latency_sub": "полный микс: 11 подписок/с, 1 страница/с, 0,3 правки/с, 0,05 созданий/с · 0 ошибок",
+        "ms": "мс",
+        "ms_axis": "миллисекунды",
+        "memory_title": "Память — это и есть потолок 1 ГБ",
+        "memory_sub": "RSS процессов на тестовом мастере, МБ",
+        "panel": "панель",
+        "xray": "Xray",
+        "mb": "мегабайты",
+        "cgroup": "cgroup 620 МБ",
+        "ram": "RAM 961 МБ",
+        "oom": "50k + полный микс\nOOM в стенде (620 МБ)",
+        "total": "итого",
+        "write_title": "Потолок записи SQLite",
+        "write_sub": "тот же диск, WAL, synchronous=FULL, строки по 256 байт",
+        "per_sec": "операций в секунду (лог. шкала)",
+        "ops": {
+            "Подписка": "Подписка",
+            "Страница": "Страница",
+            "Карточка": "Карточка",
+            "Лимиты": "Лимиты",
+            "Создание": "Создание",
+            "20k, полный микс": "20k, полный микс",
+            "50k, только ноды": "50k, только ноды",
+            "fsync файла": "fsync файла",
+            "SQLite FULL": "SQLite FULL",
+            "SQLite NORMAL": "SQLite NORMAL",
+            "одна транзакция": "одна транзакция",
+        },
+    },
+    "en": {
+        "latency_title": "Latency at 20,000 users",
+        "latency_sub": "full mix: 11 subs/s, 1 page/s, 0.3 limit edits/s, 0.05 creates/s · 0 errors",
+        "ms": "ms",
+        "ms_axis": "milliseconds",
+        "memory_title": "Memory is the 1 GB ceiling",
+        "memory_sub": "process RSS on the test master, MB",
+        "panel": "panel",
+        "xray": "Xray",
+        "mb": "megabytes",
+        "cgroup": "cgroup 620 MB",
+        "ram": "RAM 961 MB",
+        "oom": "50k + full mix\nOOM in the stand (620 MB)",
+        "total": "total",
+        "write_title": "SQLite write ceiling",
+        "write_sub": "same disk, WAL, synchronous=FULL, 256-byte rows",
+        "per_sec": "operations per second (log scale)",
+        "ops": {
+            "Подписка": "Subscriptions",
+            "Страница": "Users page",
+            "Карточка": "User card",
+            "Лимиты": "Limit edits",
+            "Создание": "Creates",
+            "20k, полный микс": "20k, full mix",
+            "50k, только ноды": "50k, nodes only",
+            "fsync файла": "file fsync",
+            "SQLite FULL": "SQLite FULL",
+            "SQLite NORMAL": "SQLite NORMAL",
+            "одна транзакция": "one transaction",
+        },
+    },
+}
 
 
 def save(fig: plt.Figure, name: str) -> None:
@@ -52,20 +119,13 @@ def save(fig: plt.Figure, name: str) -> None:
 
 def title(ax: plt.Axes, main: str, sub: str) -> None:
     ax.set_title(main, loc="left", fontsize=15, fontweight="bold", pad=18)
-    ax.text(
-        0.0,
-        1.02,
-        sub,
-        transform=ax.transAxes,
-        fontsize=10,
-        color=SLATE,
-        va="bottom",
-    )
+    ax.text(0.0, 1.02, sub, transform=ax.transAxes, fontsize=10, color=SLATE, va="bottom")
 
 
-def latency() -> None:
+def latency(lang: str) -> None:
+    t = TEXT[lang]
     rows = DATA["latency_20k"]
-    labels = [r["label"] for r in rows]
+    labels = [t["ops"][r["label"]] for r in rows]
     p50 = [r["p50"] for r in rows]
     p95 = [r["p95"] for r in rows]
     y = range(len(rows))
@@ -80,7 +140,7 @@ def latency() -> None:
             ax.text(
                 value + 6,
                 bar.get_y() + bar.get_height() / 2,
-                f"{value:.0f} мс",
+                f"{value:.0f} {t['ms']}",
                 va="center",
                 fontsize=9,
                 color=SLATE,
@@ -88,43 +148,42 @@ def latency() -> None:
     ax.set_yticks(list(y))
     ax.set_yticklabels(labels)
     ax.invert_yaxis()
-    ax.set_xlim(0, 505)
-    ax.set_xlabel("миллисекунды")
+    ax.set_xlim(0, 515)
+    ax.set_xlabel(t["ms_axis"])
     ax.xaxis.grid(True, color=GRID, linewidth=0.9)
     ax.set_axisbelow(True)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     ax.legend(loc="lower right", frameon=False, ncols=2)
-    title(
-        ax,
-        "Задержки при 20 000 пользователей",
-        "полный микс: 11 подписок/с, 1 страница/с, 0,3 правки/с, 0,05 созданий/с · 0 ошибок",
-    )
-    save(fig, "latency-20k")
+    title(ax, t["latency_title"], t["latency_sub"])
+    save(fig, f"latency-20k-{lang}")
 
 
-def memory() -> None:
+def memory(lang: str) -> None:
+    t = TEXT[lang]
     rows = DATA["memory"]
-    labels = [r["label"] for r in rows]
     panel = [r["panel"] for r in rows]
     xray = [r["xray"] for r in rows]
     x = range(len(rows))
 
     fig, ax = plt.subplots(figsize=(8.6, 4.7))
     width = 0.46
-    ax.bar(x, panel, width, color=INDIGO, label="панель")
-    ax.bar(x, xray, width, bottom=panel, color=GREEN, label="Xray")
+    ax.bar(x, panel, width, color=INDIGO, label=t["panel"])
+    ax.bar(x, xray, width, bottom=panel, color=GREEN, label=t["xray"])
     for i, (p, r) in enumerate(zip(panel, xray, strict=True)):
-        ax.text(i, p / 2, f"{p} МБ", ha="center", va="center", color="white", fontsize=10, fontweight="bold")
-        ax.text(i, p + r / 2, f"{r} МБ", ha="center", va="center", color="white", fontsize=10, fontweight="bold")
+        ax.text(
+            i, p / 2, f"{p} {t['mb']}", ha="center", va="center", color="white", fontsize=10, fontweight="bold"
+        )
+        ax.text(
+            i, p + r / 2, f"{r} {t['mb']}", ha="center", va="center", color="white", fontsize=10, fontweight="bold"
+        )
 
     ax.axhline(620, color=AMBER, linestyle=(0, (4, 3)), linewidth=1.4)
-    ax.text(-0.48, 626, "cgroup 620 МБ", color=AMBER, fontsize=9, ha="left", va="bottom")
+    ax.text(-0.48, 626, t["cgroup"], color=AMBER, fontsize=9, ha="left", va="bottom")
     ax.axhline(961, color=RED, linestyle=(0, (4, 3)), linewidth=1.4)
-    ax.text(1.06, 967, "RAM 961 МБ", color=RED, fontsize=9, ha="left", va="bottom")
-
+    ax.text(1.06, 967, t["ram"], color=RED, fontsize=9, ha="left", va="bottom")
     ax.annotate(
-        "50k + полный микс\nOOM в стенде (620 МБ)",
+        t["oom"],
         xy=(1.0, 600),
         xytext=(0.30, 830),
         fontsize=9,
@@ -134,22 +193,25 @@ def memory() -> None:
     )
 
     ax.set_xticks(list(x))
-    ax.set_xticklabels([f"{r['label']}\nитого {r['panel'] + r['xray']} МБ" for r in rows])
+    ax.set_xticklabels(
+        [f"{t['ops'][r['label']]}\n{t['total']} {r['panel'] + r['xray']} {t['mb']}" for r in rows]
+    )
     ax.set_xlim(-0.5, 1.75)
     ax.set_ylim(0, 1030)
-    ax.set_ylabel("мегабайты")
+    ax.set_ylabel(t["mb"])
     ax.yaxis.grid(True, color=GRID, linewidth=0.9)
     ax.set_axisbelow(True)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14), frameon=False, ncols=2)
-    title(ax, "Память — это и есть потолок 1 ГБ", "RSS процессов на тестовом мастере, МБ")
-    save(fig, "memory")
+    title(ax, t["memory_title"], t["memory_sub"])
+    save(fig, f"memory-{lang}")
 
 
-def write_rate() -> None:
+def write_rate(lang: str) -> None:
+    t = TEXT[lang]
     rows = DATA["write"]
-    labels = [r["label"] for r in rows]
+    labels = [t["ops"][r["label"]] for r in rows]
     values = [r["value"] for r in rows]
     colors = ["#0ea5e9", INDIGO, AMBER, GREEN]
     x = range(len(rows))
@@ -168,23 +230,24 @@ def write_rate() -> None:
             va="bottom",
             fontsize=10,
             fontweight="bold",
-            color="#0f172a",
+            color="#0a1b2e",
         )
     ax.set_xticks(list(x))
     ax.set_xticklabels(labels)
-    ax.set_ylabel("операций в секунду (лог. шкала)")
+    ax.set_ylabel(t["per_sec"])
     ax.yaxis.grid(True, color=GRID, linewidth=0.9)
     ax.set_axisbelow(True)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
-    title(ax, "Потолок записи SQLite", "тот же диск, WAL, synchronous=FULL, строки по 256 байт")
-    save(fig, "write")
+    title(ax, t["write_title"], t["write_sub"])
+    save(fig, f"write-{lang}")
 
 
 def main() -> None:
-    latency()
-    memory()
-    write_rate()
+    for lang in ("ru", "en"):
+        latency(lang)
+        memory(lang)
+        write_rate(lang)
     print(f"charts: {OUT}")
 
 
