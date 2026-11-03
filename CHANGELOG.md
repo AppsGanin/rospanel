@@ -1,5 +1,21 @@
 # Changelog
 
+## [5.14.0](https://github.com/AppsGanin/rospanel/compare/v5.13.0...v5.14.0) (2026-11-03)
+
+
+### Features
+
+* **api:** answer CORS preflight for the docs Swagger UI ([f71d13c](https://github.com/AppsGanin/rospanel/commit/f71d13c732cbe4c538e9000a456ba164443dc347))
+* **importer:** read Marzneshin and Rebecca databases ([9dec98b](https://github.com/AppsGanin/rospanel/commit/9dec98b1bdb066505854cf6f243efe1588b5ce6b))
+* **import:** read a Remnawave API dump ([c449fe1](https://github.com/AppsGanin/rospanel/commit/c449fe1ed4af88b97c15ab2b6157f4f0f26f61ba))
+* **sub:** advertise a moved subscription address ([1ae9d6b](https://github.com/AppsGanin/rospanel/commit/1ae9d6b30d292782784a628b14cbc166c11e04fb))
+* **sub:** default to a url-test group in Clash ([9bebb36](https://github.com/AppsGanin/rospanel/commit/9bebb36f743d9d5d513bee5afb95f59224637289))
+
+
+### Bug Fixes
+
+* **xray:** ignore disabled REALITY settings during config generation ([0c6c475](https://github.com/AppsGanin/rospanel/commit/0c6c475a1bdc4e1af6bcf65bfcdba828fd1d421e))
+
 ## [5.13.0](https://github.com/AppsGanin/rospanel/compare/v5.12.0...v5.13.0) (2026-11-03)
 
 
