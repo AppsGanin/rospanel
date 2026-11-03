@@ -36,3 +36,12 @@ func (m *Manager) shareFront(set *model.Settings, cfg *xray.Config) {
 	m.front.Share(xray.RealityInnerAddr, snis)
 	m.sup.SetPublicPort(xray.TagReality, set.VLESSPort)
 }
+
+// realityOwnNameErr refuses a REALITY mask that is the server's own name while its port
+// is shared with the decoy: the decoy serves that name there, so a client naming it
+// never reaches the lane. The message names the offending entry and what to do instead.
+func realityOwnNameErr(name string) error {
+	return invalidCode("err.realityOwnNameOn443",
+		"{{name}} — свой домен, на 443 он остаётся за decoy: для REALITY на этом порту оставь в списке SNI донора",
+		map[string]any{"name": name})
+}

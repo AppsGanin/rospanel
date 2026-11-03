@@ -1,6 +1,7 @@
 package tlsfront
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -12,8 +13,13 @@ import (
 // clientHello builds a TLS record holding a whole ClientHello — the parts the front
 // reads, around a name: version, random, session id, ciphers, compression and the
 // server_name extension (absent when sni is empty, which is a client dialing an address).
-func clientHello(sni string) []byte {
+// extra holds raw extensions put before the name, for the tests that need the walk to
+// skip over something first.
+func clientHello(sni string, extra ...[]byte) []byte {
 	var exts []byte
+	for _, e := range extra {
+		exts = append(exts, e...)
+	}
 	if sni != "" {
 		name := []byte(sni)
 		entry := append([]byte{nameTypeHostName, byte(len(name) >> 8), byte(len(name))}, name...)
@@ -34,10 +40,12 @@ func clientHello(sni string) []byte {
 
 // fragmentHello splits a ClientHello over two handshake records, the way a message with
 // a big post-quantum key share arrives.
-func fragmentHello(t *testing.T, hello []byte) []byte {
-	t.Helper()
+func fragmentHello(hello []byte) []byte { return fragmentAt(hello, len(hello[5:])/2) }
+
+// fragmentAt splits a ClientHello's handshake message at cut bytes into it, including
+// the smallest cuts: a record may carry a handshake header in pieces.
+func fragmentAt(hello []byte, cut int) []byte {
 	hs := hello[5:]
-	cut := len(hs) / 2
 	var out []byte
 	for _, part := range [][]byte{hs[:cut], hs[cut:]} {
 		out = append(out, recordHandshake, 0x03, 0x01, byte(len(part)>>8), byte(len(part)))
@@ -65,7 +73,7 @@ func TestClientHelloSNI(t *testing.T) {
 // The message may arrive as several records; its name is still the name.
 func TestClientHelloSNIOverSeveralRecords(t *testing.T) {
 	hello := clientHello("max.ru")
-	got, needMore := clientHelloSNI(fragmentHello(t, hello))
+	got, needMore := clientHelloSNI(fragmentHello(hello))
 	if needMore || got != "max.ru" {
 		t.Fatalf("got %q needMore=%v, want max.ru", got, needMore)
 	}
@@ -202,5 +210,57 @@ func ensureFront(t *testing.T, f *Front) string {
 			t.Fatalf("the front never listened on %s: %v", addr, err)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// The ClientHello may arrive in more than one write; the front reads on instead of
+// falling back to the TLS listener on the strength of the first packet.
+func TestSplitClientHelloReachesReality(t *testing.T) {
+	tlsTarget, tlsHeaders := backend(t)
+	realityTarget, realityHeaders := backend(t)
+	addr := startSharedFront(t, tlsTarget, realityTarget, []string{"max.ru"})
+
+	hello := clientHello("max.ru")
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write(hello[:7]); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(150 * time.Millisecond) // the rest of the message in a second write
+	if _, err := conn.Write(hello[7:]); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-realityHeaders:
+	case <-time.After(3 * time.Second):
+		select {
+		case <-tlsHeaders:
+			t.Fatal("the split hello went to the TLS listener")
+		default:
+			t.Fatal("the split hello reached nobody")
+		}
+	}
+	// What the front read to decide must reach the listener whole.
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	echo := make([]byte, len(hello))
+	if _, err := io.ReadFull(conn, echo); err != nil || !bytes.Equal(echo, hello) {
+		t.Fatalf("echo %d bytes (%v), want the whole hello", len(echo), err)
+	}
+}
+
+// The name is not always the first extension, and the handshake may be cut anywhere.
+func TestClientHelloSNIRobustToLayout(t *testing.T) {
+	// An empty ALPN extension ahead of the name: the walk must skip it and read on.
+	withALPN := clientHello("max.ru", []byte{0x00, 0x10, 0x00, 0x00})
+	if got, needMore := clientHelloSNI(withALPN); needMore || got != "max.ru" {
+		t.Fatalf("name after another extension: %q needMore=%v", got, needMore)
+	}
+	for _, cut := range []int{1, 2, 3, 4, 10, 33, 40} {
+		if got, needMore := clientHelloSNI(fragmentAt(withALPN, cut)); needMore || got != "max.ru" {
+			t.Fatalf("cut at %d: %q needMore=%v", cut, got, needMore)
+		}
 	}
 }

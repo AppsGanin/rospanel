@@ -66,3 +66,46 @@ func TestResetNodeConnectionsRestoresTheFactoryState(t *testing.T) {
 		t.Fatalf("grants not swept: %+v", groups)
 	}
 }
+
+// A node that named itself before the panel moved its REALITY lane onto the TCP-TLS
+// port must be able to give its own name up: an empty donor means "follow the panel's",
+// and the very save that resolves the conflict must not be refused by it. Left as it
+// was, the node's editor answered "your own name cannot mask on 443" to every save,
+// including the one that would have cleared it.
+func TestNodeCanLeaveItsNameForTheSharedPort(t *testing.T) {
+	t.Parallel()
+	m := nodeTestManager(t)
+	n, err := m.CreateNode("edge", "nl.example.com")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// The panel's lane moves onto the TCP-TLS port; the node inherits that port.
+	if err := m.store.SetRealityPorts(443, "max.ru"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := m.store.GetNode(n.ID); got.RealityDest != "nl.example.com" {
+		t.Fatalf("node donor %q, want its own name before the save", got.RealityDest)
+	}
+	u := DefaultConnections()
+	u.RealityPort = 443
+	u.RealityDest = "" // follow the panel's donor from now on
+	if err := m.ApplyNodeConnections(n.ID, u); err != nil {
+		t.Fatalf("clearing the node's own donor was refused: %v", err)
+	}
+	if got, _ := m.store.GetNode(n.ID); got.RealityDest != "" {
+		t.Fatalf("node donor %q, want it cleared", got.RealityDest)
+	}
+	set, _ := m.store.GetSettings()
+	if got := nodeSettings(set, mustNode(t, m, n.ID)).RealitySNI(); got != "max.ru" {
+		t.Fatalf("node SNI %q, want the panel's donor", got)
+	}
+}
+
+func mustNode(t *testing.T, m *Manager, id int64) *model.Node {
+	t.Helper()
+	n, err := m.store.GetNode(id)
+	if err != nil || n == nil {
+		t.Fatalf("node %d: %v", id, err)
+	}
+	return n
+}
