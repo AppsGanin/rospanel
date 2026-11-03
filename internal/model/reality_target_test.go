@@ -1,6 +1,10 @@
 package model
 
-import "testing"
+import (
+	"net/netip"
+	"strings"
+	"testing"
+)
 
 // The server's own domain as the donor is reached on loopback; any other donor on its
 // own :443. A lane sharing the TCP-TLS lane's port never dials loopback: its own name
@@ -63,5 +67,28 @@ func TestRealityShareConflict(t *testing.T) {
 	ip := Settings{RealityDest: "max.ru", Host: "203.0.113.5", SNI: "203.0.113.5", VLESSPort: 443, RealityPort: 443}
 	if got := ip.RealityShareConflict(); got != "" {
 		t.Fatalf("an address has no name to conflict with: %q", got)
+	}
+}
+
+// Every entry of the donor list is what a draw needs: a name a TLS client can send as
+// SNI (a domain — an address has no SNI at all) and a distinct one, so the fleet really
+// spreads over the list instead of landing on a few names twice.
+func TestRealityDonorsAreDistinctNames(t *testing.T) {
+	t.Parallel()
+	if len(RealityDonors) < 8 {
+		t.Fatalf("the list came down to %d entries: a draw from a handful is a signature", len(RealityDonors))
+	}
+	seen := map[string]bool{}
+	for _, h := range RealityDonors {
+		if _, err := netip.ParseAddr(h); err == nil {
+			t.Errorf("%q is an address, and an address has no SNI", h)
+		}
+		if !strings.Contains(h, ".") || strings.HasPrefix(h, ".") || strings.HasSuffix(h, ".") {
+			t.Errorf("%q is not a dotted domain name", h)
+		}
+		if seen[h] {
+			t.Errorf("%q is listed twice", h)
+		}
+		seen[h] = true
 	}
 }

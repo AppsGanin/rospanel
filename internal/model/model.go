@@ -2425,11 +2425,25 @@ const (
 	DefaultRealityPort = 8443
 )
 
-// RealityDonors are the donors a fresh install draws from. Checked from a Dutch VPS
-// on 2026-10-14 with the panel's own donor check — TLS 1.3, h2, a certificate small
-// enough for REALITY — and reachable from abroad, which many Russian sites are not.
+// RealityDonors are the donors a fresh install draws from: popular Russian sites, so
+// the name a client's hello carries is one the network sees all day.
+//
+// Every entry passed the panel's own donor check — TLS 1.3, HTTP/2, a certificate small
+// enough for REALITY — from a Dutch server AND from a Moscow home connection, on
+// 2026-11-03. Both sides matter: a donor the server cannot reach leaves a probe with no
+// answer to relay, and one whose name is filtered in Russia is dropped by the same DPI
+// the mask exists for. Re-check a site from both sides before adding it — one that drops
+// TLS 1.3 or starts refusing foreign addresses takes its lane down with it.
 var RealityDonors = []string{
-	"max.ru", "hh.ru", "ria.ru", "avito.ru", "ozon.ru", "wildberries.ru", "rbc.ru", "mts.ru",
+	// portals and media
+	"yandex.ru", "ya.ru", "vk.com", "max.ru", "rbc.ru", "ria.ru", "kommersant.ru",
+	"rutube.ru", "kinopoisk.ru", "habr.com", "vc.ru", "mos.ru",
+	// marketplaces and shops
+	"ozon.ru", "wildberries.ru", "avito.ru", "auto.ru", "mvideo.ru", "citilink.ru",
+	"dns-shop.ru", "lamoda.ru", "detmir.ru", "vseinstrumenti.ru", "lemanapro.ru",
+	// work, money, maps, travel, telecom
+	"hh.ru", "superjob.ru", "rabota.ru", "sravni.ru", "banki.ru", "2gis.ru", "cian.ru",
+	"aeroflot.ru", "s7.ru", "mts.ru", "beeline.ru", "t2.ru",
 }
 
 // validateDirectStrategy is folded into ValidateLanes so both the master and a node
