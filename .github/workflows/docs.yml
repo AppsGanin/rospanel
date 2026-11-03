@@ -1,0 +1,51 @@
+name: docs
+
+# The site is generated from README*.md and docs/** — there is no second copy of
+# the text to update, so the workflow only has to rebuild when one of them moves.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "README*.md"
+      - "docs/**"
+      - "mkdocs.yml"
+      - "scripts/docs_prepare.py"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install MkDocs Material
+        run: pip install mkdocs-material==9.8.0
+      - name: Build the source tree from the READMEs
+        run: python3 scripts/docs_prepare.py
+      - name: Build the site
+        run: mkdocs build --strict
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
