@@ -32,6 +32,7 @@ const (
 	SourceMarzban    Source = "marzban"    // Marzban's SQLite database, or a GET /api/users dump
 	SourceMarzneshin Source = "marzneshin" // Marzneshin's SQLite database (db.sqlite3)
 	SourceRebecca    Source = "rebecca"    // Rebecca's SQLite database, a Marzban-compatible schema
+	SourceRemnawave  Source = "remnawave"  // Remnawave API dump (GET /api/users)
 	SourceXUI        Source = "3x-ui"      // 3x-ui / x-ui: x-ui.db
 	SourceRosPanel   Source = "rospanel"   // this panel's own export (see Export)
 )
@@ -121,6 +122,11 @@ func Parse(path string) (Source, []Candidate, error) {
 		// the only thing that tells the two apart.
 		if users, ok, err := parseRosPanel(raw); ok {
 			return SourceRosPanel, users, err
+		}
+		// Remnawave dumps have no "proxies" object, so this has to run before the
+		// Marzban reader, which would otherwise mint a fresh UUID for each row.
+		if users, ok, err := parseRemnawaveJSON(raw); ok {
+			return SourceRemnawave, users, err
 		}
 		users, err := parseMarzbanJSON(raw)
 		return SourceMarzban, users, err
@@ -658,6 +664,93 @@ func parseMarzbanJSON(raw []byte) ([]Candidate, error) {
 		return nil, ErrUnknownFormat
 	}
 	return out, nil
+}
+
+// ---- Remnawave -------------------------------------------------------------
+
+// remnaUser is one row of Remnawave's GET /api/users response. Its model keeps
+// the credentials per protocol (vlessUuid/trojanPassword), the traffic counter
+// under userTraffic, and expiry as an ISO timestamp rather than a unix integer.
+type remnaUser struct {
+	Username          string  `json:"username"`
+	Status            string  `json:"status"`
+	TrafficLimitBytes int64   `json:"trafficLimitBytes"`
+	ExpireAt          string  `json:"expireAt"`
+	Description       *string `json:"description"`
+	Tag               *string `json:"tag"`
+	HwidDeviceLimit   *int    `json:"hwidDeviceLimit"`
+	VlessUUID         string  `json:"vlessUuid"`
+	TrojanPassword    string  `json:"trojanPassword"`
+	SubscriptionURL   string  `json:"subscriptionUrl"`
+	UserTraffic       struct {
+		UsedTrafficBytes int64 `json:"usedTrafficBytes"`
+	} `json:"userTraffic"`
+}
+
+func (u remnaUser) candidate() Candidate {
+	c := Candidate{
+		Name:     strings.TrimSpace(u.Username),
+		UsedDown: max(u.UserTraffic.UsedTrafficBytes, 0),
+		Enabled:  !strings.EqualFold(u.Status, "disabled"),
+	}
+	if u.TrafficLimitBytes > 0 {
+		c.DataLimit = u.TrafficLimitBytes
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05.000Z"} {
+		if ts, err := time.Parse(layout, u.ExpireAt); err == nil {
+			c.ExpireAt = ts.Unix()
+			break
+		}
+	}
+	if u.Description != nil {
+		c.Note = strings.TrimSpace(*u.Description)
+	}
+	if u.Tag != nil && strings.TrimSpace(*u.Tag) != "" {
+		c.Tags = []string{strings.TrimSpace(*u.Tag)}
+	}
+	if u.HwidDeviceLimit != nil && *u.HwidDeviceLimit > 0 {
+		c.DeviceLimit = *u.HwidDeviceLimit
+	}
+	c.SubToken = subToken(lastPathSegment(u.SubscriptionURL))
+	c.setCredentials(u.VlessUUID, u.TrojanPassword)
+	return c
+}
+
+// parseRemnawaveJSON accepts a bare array or the {"users": [...]} wrapper the API
+// returns. ok is false for any other JSON, including Marzban's dump, so Parse can
+// fall through to the older readers.
+func parseRemnawaveJSON(raw []byte) ([]Candidate, bool, error) {
+	var list []remnaUser
+	trimmed := bytes.TrimLeft(raw, " \t\r\n\xef\xbb\xbf")
+	if len(trimmed) > 0 && trimmed[0] == '[' {
+		if err := json.Unmarshal(raw, &list); err != nil {
+			return nil, false, nil
+		}
+	} else {
+		var wrapped struct {
+			Users []remnaUser `json:"users"`
+		}
+		if err := json.Unmarshal(raw, &wrapped); err != nil || wrapped.Users == nil {
+			return nil, false, nil
+		}
+		list = wrapped.Users
+	}
+	recognised := false
+	out := make([]Candidate, 0, len(list))
+	for _, u := range list {
+		if strings.TrimSpace(u.Username) == "" {
+			continue
+		}
+		if u.VlessUUID == "" && u.SubscriptionURL == "" && u.TrojanPassword == "" {
+			continue
+		}
+		recognised = true
+		out = append(out, u.candidate())
+	}
+	if !recognised {
+		return nil, false, nil
+	}
+	return out, true, nil
 }
 
 // ---- 3x-ui -----------------------------------------------------------------

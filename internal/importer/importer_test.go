@@ -320,3 +320,28 @@ func TestParseMarzbanOnHold(t *testing.T) {
 		t.Fatalf("dump: %v %+v", err, users)
 	}
 }
+
+func TestParseRemnawaveJSONDump(t *testing.T) {
+	body := `{"users":[{"id":1,"shortUuid":"abc","username":"alice","status":"ACTIVE",
+		"trafficLimitBytes":10737418240,"trafficLimitStrategy":"MONTH",
+		"expireAt":"2026-06-01T00:00:00.000Z","description":"vip client","tag":"reseller",
+		"hwidDeviceLimit":2,"vlessUuid":"73ab3f5f-209b-4423-9fad-263e5baa37c4",
+		"trojanPassword":"tp","subscriptionUrl":"https://panel.example.com/sub/abc123",
+		"userTraffic":{"usedTrafficBytes":4242}}],"total":1}`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "remnawave.json")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	src, users, err := Parse(path)
+	if err != nil || src != SourceRemnawave || len(users) != 1 {
+		t.Fatalf("parse: %v %s %d", err, src, len(users))
+	}
+	u := users[0]
+	if u.Name != "alice" || u.UUID != "73ab3f5f-209b-4423-9fad-263e5baa37c4" ||
+		u.Password != "tp" || u.DataLimit != 10737418240 || u.UsedDown != 4242 ||
+		u.ExpireAt != 1780272000 || u.DeviceLimit != 2 || u.Note != "vip client" ||
+		u.SubToken != "abc123" || !u.Enabled || len(u.Tags) != 1 || u.Tags[0] != "reseller" {
+		t.Errorf("alice: %+v", u)
+	}
+}

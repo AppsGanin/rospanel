@@ -2160,12 +2160,15 @@ export interface ImportCandidate {
   enabled: boolean
   note: string
   issues: string[]
+  // The source's subscription token, when it has one; it is what keeps an
+  // already-issued subscription link working after the move.
+  sub_token?: string
   exists: boolean
   existing_id?: number
   name_taken: boolean
 }
 export interface ImportPreview {
-  source: 'marzban' | 'marzneshin' | 'rebecca' | '3x-ui' | 'rospanel'
+  source: 'marzban' | 'marzneshin' | 'rebecca' | 'remnawave' | '3x-ui' | 'rospanel'
   users: ImportCandidate[]
 }
 export interface ImportResult {

@@ -351,7 +351,7 @@ came from, what was agreed — panel and API only, never shown to the client) an
 `reseller-a`) that the list filters on and the search covers, along with the Xray client id
 (`u12`) shown next to the name so a log line maps to an account at a glance. **Import and
 export**: the users page reads a **Marzban** database or `GET /api/users` dump, a **Marzneshin**
-database, a **Rebecca** database, a **3x-ui** `x-ui.db`, and this panel's **own export** — and
+database, a **Rebecca** database, a **Remnawave** API dump, a **3x-ui** `x-ui.db`, and this panel's **own export** — and
 writes that export with one button. Users arrive with the **same UUIDs and passwords** (for
 Marzneshin a fresh UUID is minted and the key moves as the subscription token, so the client
 refreshes into it), limits, expiry (a term that starts on the first connection
