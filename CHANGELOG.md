@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.13.0](https://github.com/AppsGanin/rospanel/compare/v5.12.0...v5.13.0) (2026-11-03)
+
+
+### Features
+
+* **billing:** a picture for manual payment, shown with the instructions ([c370e5e](https://github.com/AppsGanin/rospanel/commit/c370e5ec2b11272f9875c8acec7fffdef12cf7f2))
+* **reality:** a fresh install accepts the donor's own twin name too ([f21af0c](https://github.com/AppsGanin/rospanel/commit/f21af0cfceb20bbf8f3fdaaf646c172896cf666b))
+* **reality:** draw a fresh install's donor from a wider pool of Russian sites ([44f8abd](https://github.com/AppsGanin/rospanel/commit/44f8abd19a07901571534c404c91fc9eea3ec22a))
+* **reality:** REALITY on 443, sharing the port with the decoy by SNI ([d54e5f9](https://github.com/AppsGanin/rospanel/commit/d54e5f98054c863f48300602b23bf3bb3bd7ea18))
+
+
+### Bug Fixes
+
+* **decoy:** stop advertising HTTP/3, it locked browsers out of the panel ([c3ca037](https://github.com/AppsGanin/rospanel/commit/c3ca037e7b24dd70684c5a5e9cab6c441b6ceef4))
+* **nodes:** move the front's REALITY route only when Xray took the config ([f90049b](https://github.com/AppsGanin/rospanel/commit/f90049b74c1559485c66c8b7f4262f50404e86aa))
+* **reality:** let a node leave its own name for the shared port ([7df42ee](https://github.com/AppsGanin/rospanel/commit/7df42ee5ee59a65ff507bf6f42712cd6fa944e59))
+
 ## [5.12.0](https://github.com/AppsGanin/rospanel/compare/v5.11.1...v5.12.0) (2026-11-02)
 
 
