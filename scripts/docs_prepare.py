@@ -142,6 +142,10 @@ def github_alerts(text: str) -> str:
 def write_page(src: Path, dst: Path, page_dir: str = "") -> None:
     text = src.read_text(encoding="utf-8")
     text = rewrite_links(text, page_dir)
+    # The READMEs open with a raw <div align="center">; without markdown="1"
+    # Python-Markdown treats everything under it as raw HTML and the page shows
+    # literal `# Heading` and `![badge](...)` instead of rendering them.
+    text = text.replace('<div align="center">', '<div align="center" markdown="1">')
     text = github_alerts(text)
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(text, encoding="utf-8")
