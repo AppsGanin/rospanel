@@ -1,5 +1,7 @@
 # Panel capacity
 
+
+
 Measured on **2026-11-03** on the test master: **1 vCPU, 961 MB RAM**, Ubuntu 24,
 RosPanel **5.13.0**, Xray-core **26.10.21**. The panel ran in its own netns with
 `MemoryMax=620M`, `MemorySwapMax=0`, `GOMEMLIMIT=300MiB`; the live panel on the host
@@ -11,7 +13,7 @@ not part of the panel's.
 Full mix: 11 subscriptions/s, 1 users page/s, 1 card/s, 0.3 limit edits/s, 0.05
 creates/s, 2 dashboards. Two-minute window after warmup, 0 errors.
 
-![Latency at 20,000 users](img/bench/latency-20k-en.svg)
+![Latency at 20,000 users](../img/bench/latency-20k-en.svg)
 
 | Operation | p50 | p95 | p99 |
 |---|---:|---:|---:|
@@ -23,7 +25,7 @@ creates/s, 2 dashboards. Two-minute window after warmup, 0 errors.
 
 ## Where 1 GB ends
 
-![Memory: panel and Xray](img/bench/memory-en.svg)
+![Memory: panel and Xray](../img/bench/memory-en.svg)
 
 20k with the full mix is 336 MB of panel and 160 MB of Xray. 50k in node-sync mode is
 346 + 247 MB. The full mix at 50k did not fit the **stand**: the panel was OOM-killed
@@ -42,7 +44,7 @@ single panel gets the whole gigabyte; that case is not measured.
 
 ## SQLite write ceiling
 
-![SQLite write ceiling](img/bench/write-en.svg)
+![SQLite write ceiling](../img/bench/write-en.svg)
 
 Same disk, WAL, `synchronous=FULL`, one connection, 256-byte rows: `fsync` 2,638/s,
 autocommit 1,381 writes/s, one transaction 63,386 rows/s, `NORMAL` 20,701 writes/s.

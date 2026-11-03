@@ -62,7 +62,7 @@ export function onEvent(e) {
    common errors explained, questions.
 
 Editor types are in `rospanel.d.ts`, which `plugin new` puts in the folder. Events and their
-fields are in [docs/api.md](../api.md#events), the API's routes in your panel's `/v1/docs`.
+fields are in [docs/api.md](../api/README.md#events), the API's routes in your panel's `/v1/docs`.
 
 ## The essentials
 

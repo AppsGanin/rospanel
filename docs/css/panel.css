@@ -29,6 +29,17 @@
   background-color: var(--md-primary-fg-color);
 }
 
+/* The panel logo is dark ink; on the blue header it reads better as a white mark. */
+.md-header__button.md-logo img,
+.md-nav__button.md-logo img {
+  filter: brightness(0) invert(1);
+}
+
+/* Same for the large logo inside a dark page: dark ink on a dark card vanishes. */
+[data-md-color-scheme="slate"] .md-typeset img[src$="logo.svg"] {
+  filter: brightness(0) invert(1);
+}
+
 .md-typeset h1,
 .md-typeset h2 {
   color: #0a1b2e;
@@ -47,7 +58,71 @@
   box-shadow: 0 1px 2px rgba(10, 27, 46, 0.06);
 }
 
-[data-md-color-scheme="slate"] .md-content__inner {
+body[data-md-color-scheme="slate"] .md-content__inner {
   background: #101b2e;
   box-shadow: none;
+}
+
+/* Material paints body with its own default; the panel's page is the pale blue. */
+body {
+  background-color: #eaf1fb;
+}
+
+/* The scheme attribute sits on <body> itself, so the selector must too. */
+body[data-md-color-scheme="slate"] {
+  background-color: #0b1220;
+}
+
+/* The sidebar headings sit on the page blue, not on a white strip. */
+body[data-md-color-scheme] .md-nav__title {
+  background-color: transparent;
+}
+
+/* Material uses a white glow to hide content scrolling under the sticky title;
+   on the panel's blue page it showed up as a white strip. */
+body[data-md-color-scheme="default"] .md-nav__title {
+  box-shadow: 0 0 8px 8px #eaf1fb;
+}
+
+body[data-md-color-scheme="slate"] .md-nav__title {
+  box-shadow: 0 0 8px 8px #0b1220;
+}
+
+/* Swagger's server picker: the reader types their own panel URL. */
+.swagger-server {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.swagger-server label {
+  font-weight: 600;
+}
+
+.swagger-server input {
+  flex: 1 1 18rem;
+  min-width: 14rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #c3d2e8;
+  border-radius: 8px;
+  font: inherit;
+}
+
+.swagger-server button {
+  padding: 0.45rem 0.9rem;
+  border: 0;
+  border-radius: 8px;
+  background: #0d4cd3;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.swagger-server__hint {
+  flex-basis: 100%;
+  color: #5b6b7e;
+  font-size: 0.85rem;
 }

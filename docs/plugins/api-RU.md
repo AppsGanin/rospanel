@@ -120,7 +120,7 @@ const page = panel.api("GET", "/v1/users?limit=500&offset=0").body.data;
 ```
 
 - **Маршруты.** Те же, что у внешнего `/v1` (см. `/v1/docs` в панели и
-  [docs/api.md](../api.md)), кроме `/v1/mcp`. Методы: `GET`, `POST`, `PUT`, `PATCH`,
+  [docs/api.md](../api/README.md)), кроме `/v1/mcp`. Методы: `GET`, `POST`, `PUT`, `PATCH`,
   `DELETE`.
 - **Права** — те, что плагин попросил в `permissions` и оператор одобрил. Нет права —
   `status: 403`.

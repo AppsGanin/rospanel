@@ -72,7 +72,7 @@ export function onEvent(e) {
 - **Permissions.** `users.view`; events of `payment.`, `plan.`, `balance.`, `referral.` and
   `promo.` also `billing.view`; `node.*` events need none.
 - **Format and fields.** `e.data` is what the panel's webhooks carry. The full list of events
-  and their fields is in "Events" of [docs/api.md](../api.md#events).
+  and their fields is in "Events" of [docs/api.md](../api/README.md#events).
 - **At-least-once delivery.** The same event may come twice. Use `e.id` or a unique key in
   your database, as in the [tutorial](tutorial.md).
 - **Retries on error.** If `onEvent` throws, the event comes again after 10 s, 30 s, 2 min

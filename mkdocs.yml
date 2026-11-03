@@ -59,6 +59,9 @@ extra:
 extra_css:
   - css/panel.css
 
+extra_javascript:
+  - js/lang-switch.js
+
 markdown_extensions:
   - admonition
   - attr_list
@@ -82,36 +85,9 @@ plugins:
         - ru
 
 nav:
-  - English: index.md
-  - Русский: ru.md
-  - 简体中文: zh.md
-  - العربية: ar.md
-  - فارسی: fa.md
-  - API: api.md
-  - Benchmarks:
-      - English: benchmarks.md
-      - Русский: benchmarks-ru.md
-      - 简体中文: benchmarks-zh.md
-      - العربية: benchmarks-ar.md
-      - فارسی: benchmarks-fa.md
-  - Plugins:
-      - Overview: plugins/index.md
-      - Manifest: plugins/manifest.md
-      - Extension points: plugins/exports.md
-      - API: plugins/api.md
-      - Editor: plugins/editor.md
-      - Testing: plugins/testing.md
-      - Publishing: plugins/publishing.md
-      - Tutorial: plugins/tutorial.md
-      - Troubleshooting: plugins/troubleshooting.md
-  - Плагины (RU):
-      - Обзор: plugins/index-ru.md
-      - Манифест: plugins/manifest-ru.md
-      - Точки расширения: plugins/exports-ru.md
-      - API: plugins/api-ru.md
-      - Редактор: plugins/editor-ru.md
-      - Тестирование: plugins/testing-ru.md
-      - Публикация: plugins/publishing-ru.md
-      - Учебник: plugins/tutorial-ru.md
-      - Ошибки: plugins/troubleshooting-ru.md
+  - Overview: index.md
+  - API: api/index.md
+  - API reference: api/reference.md
+  - Benchmarks: benchmarks/index.md
+  - Plugins: plugins/index.md
   - Grafana: grafana/index.md

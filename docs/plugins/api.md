@@ -117,7 +117,7 @@ const page = panel.api("GET", "/v1/users?limit=500&offset=0").body.data;
 ```
 
 - **Routes.** The same as the external `/v1` (see the panel's `/v1/docs` and
-  [docs/api.md](../api.md)), except `/v1/mcp`. Methods: `GET`, `POST`, `PUT`, `PATCH`,
+  [docs/api.md](../api/README.md)), except `/v1/mcp`. Methods: `GET`, `POST`, `PUT`, `PATCH`,
   `DELETE`.
 - **Permissions** — those the plugin asked for in `permissions` and the operator approved.
   Without one — `status: 403`.

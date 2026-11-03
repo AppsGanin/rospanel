@@ -61,7 +61,7 @@ export function onEvent(e) {
    плагина, разбор частых ошибок, вопросы.
 
 Типы для редактора — `rospanel.d.ts`, его кладёт в папку `plugin new`. События и их поля —
-в [docs/api.md](../api.md#events), маршруты API — в `/v1/docs` вашей панели.
+в [docs/api.md](../api/README.md#events), маршруты API — в `/v1/docs` вашей панели.
 
 ## Главное, что нужно помнить
 

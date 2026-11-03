@@ -732,7 +732,7 @@ one series per node; a ready **Grafana dashboard** for them is
 list generated from that OpenAPI document: paste `…/v1/mcp/<key>` into an assistant that takes
 a URL and there is nothing to install anywhere. The key's methods decide which tools
 the assistant gets: for a look-only assistant, tick "Read only". More in
-[docs/api.md](docs/api.md).
+[docs/api/](docs/api/).
 
 **Sign-up from an external system** — `POST /v1/signup` registers a client by their id in the
 external system (an e-mail, an account number) under the bot's rules: closed registration, the

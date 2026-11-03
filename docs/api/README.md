@@ -1,5 +1,8 @@
 # RosPanel REST API
 
+**Interactive reference:** [Swagger UI](reference.md) — every endpoint, rendered from the same OpenAPI document.
+
+
 The external REST API lets a surrounding system (a billing service, a Telegram
 shop, a provisioning script) manage the panel over HTTP with an API key. It calls
 the same internal logic the admin panel does, so the two never drift.

@@ -1,5 +1,7 @@
 # 面板容量
 
+
+
 **2026-11-03** 在测试主机上测得：**1 vCPU、961 MB 内存**、Ubuntu 24、RosPanel
 **5.13.0**、Xray-core **26.10.21**。面板运行在独立 netns 中，限制为
 `MemoryMax=620M`、`MemorySwapMax=0`、`GOMEMLIMIT=300MiB`；同一台主机上还运行着线上面板。
@@ -10,7 +12,7 @@
 完整混合负载：11 次订阅/秒、1 次用户页/秒、1 次用户卡/秒、0.3 次限额修改/秒、
 0.05 次创建/秒、2 个仪表盘。预热后统计 2 分钟，0 错误。
 
-![20 000 用户时的延迟](img/bench/latency-20k-en.svg)
+![20 000 用户时的延迟](../img/bench/latency-20k-en.svg)
 
 | 操作 | p50 | p95 | p99 |
 |---|---:|---:|---:|
@@ -22,7 +24,7 @@
 
 ## 1 GB 的边界
 
-![内存：面板与 Xray](img/bench/memory-en.svg)
+![内存：面板与 Xray](../img/bench/memory-en.svg)
 
 20k 完整混合负载占用 336 MB 面板内存和 160 MB Xray。50k 仅节点同步时为
 346 + 247 MB。50k 的完整混合负载在**测试环境**中放不下：面板在预热约 15 秒后被 OOM 杀死。
@@ -40,7 +42,7 @@
 
 ## SQLite 写入上限
 
-![SQLite 写入上限](img/bench/write-en.svg)
+![SQLite 写入上限](../img/bench/write-en.svg)
 
 同一块磁盘，WAL、`synchronous=FULL`、单连接、256 字节行：`fsync` 2 638/秒、
 自动提交 1 381 次写入/秒、单事务 63 386 行/秒、`NORMAL` 20 701 次写入/秒。

@@ -62,19 +62,32 @@ def site_path(target: str) -> str | None:
         return "img/" + base[len("docs/img/") :] + tail
     if base.startswith("img/"):
         return base + tail
+    if base.startswith("../img/"):
+        return "img/" + base[len("../img/") :] + tail
     if base == "docs/api.md":
         return "api.md" + tail
     if base in ("docs/plugins/README.md", "docs/plugins/README-RU.md"):
         name = "index.md" if base.endswith("README.md") else "index-ru.md"
         return f"plugins/{name}{tail}"
     if base.startswith("docs/plugins/"):
-        return "plugins/" + base[len("docs/plugins/") :] + tail
+        name = base[len("docs/plugins/") :]
+        if name.endswith("-RU.md"):
+            name = name[: -len("-RU.md")] + "-ru.md"
+        return "plugins/" + name + tail
     if base == "docs/grafana/README.md":
         return "grafana/index.md" + tail
     if base == "docs/grafana/rospanel.json":
         return "grafana/rospanel.json"
     if base in README_PAGES:
         return README_PAGES[base] + tail
+    if base in ("docs/api.md", "docs/api", "docs/api/"):
+        return "api/index.md" + tail
+    if base in ("docs/benchmarks.md", "docs/benchmarks", "docs/benchmarks/"):
+        return "benchmarks/index.md" + tail
+    if base == "reference.md":
+        return "api/reference.md" + tail
+    if base in ("../api.md", "../api/README.md"):
+        return "api/index.md" + tail
     if base in GITHUB_FILES:
         if base == "examples/plugins":
             return f"{GITHUB}/tree/main/{base}"
@@ -94,6 +107,10 @@ def rewrite_links(text: str, page_dir: str) -> str:
             return match.group(0)
         if target.startswith("#"):
             return f"](#{clean_anchor(target[1:])}){title}"
+        # Sibling links in docs/plugins/ ("api.md", "tutorial.md") are relative to
+        # that folder in the repository, but the site path needs the prefix.
+        if page_dir == "plugins" and "/" not in target and target.endswith(".md"):
+            target = "docs/plugins/" + target
         site = site_path(target)
         if site is None:
             return match.group(0)
@@ -139,6 +156,19 @@ def github_alerts(text: str) -> str:
     return "\n".join(out)
 
 
+def url_depth(dst: Path) -> int:
+    """How many directories deep the built page sits, for relative assets.
+
+    MkDocs turns `ru.md` into `/ru/`, `benchmarks.md` into `/benchmarks/` and
+    `plugins/api.md` into `/plugins/api/`; a raw `<img src="img/...">` is not
+    rewritten by MkDocs, so it has to be prefixed by hand or it 404s.
+    """
+    rel = dst.relative_to(OUT)
+    if dst.name == "index.md":
+        return len(rel.parent.parts)
+    return len(rel.parent.parts) + 1
+
+
 def write_page(src: Path, dst: Path, page_dir: str = "") -> None:
     text = src.read_text(encoding="utf-8")
     text = rewrite_links(text, page_dir)
@@ -147,6 +177,11 @@ def write_page(src: Path, dst: Path, page_dir: str = "") -> None:
     # literal `# Heading` and `![badge](...)` instead of rendering them.
     text = text.replace('<div align="center">', '<div align="center" markdown="1">')
     text = github_alerts(text)
+    prefix = "../" * url_depth(dst)
+    if prefix:
+        # Markdown image targets are rewritten by MkDocs itself; only raw HTML
+        # <img src> needs the prefix.
+        text = text.replace('src="img/', f'src="{prefix}img/')
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(text, encoding="utf-8")
 
@@ -165,9 +200,12 @@ def main() -> None:
                 text.replace('<div dir="rtl">', '<div dir="rtl" markdown="1">'),
                 encoding="utf-8",
             )
-    write_page(ROOT / "docs" / "api.md", OUT / "api.md")
-    for src in sorted((ROOT / "docs").glob("benchmarks*.md")):
-        write_page(src, OUT / src.name)
+    for src in sorted((ROOT / "docs" / "api").glob("*.md")):
+        name = "index.md" if src.name == "README.md" else src.name
+        write_page(src, OUT / "api" / name, page_dir="api")
+    for src in sorted((ROOT / "docs" / "benchmarks").glob("*.md")):
+        name = "index.md" if src.name == "README.md" else src.name
+        write_page(src, OUT / "benchmarks" / name, page_dir="benchmarks")
 
     plugins = ROOT / "docs" / "plugins"
     for src in sorted(plugins.glob("*.md")):
@@ -182,7 +220,9 @@ def main() -> None:
             dst = OUT / "plugins" / name
         write_page(src, dst, page_dir="plugins")
 
-    write_page(ROOT / "docs" / "grafana" / "README.md", OUT / "grafana" / "index.md", page_dir="grafana")
+    for src in sorted((ROOT / "docs" / "grafana").glob("README*.md")):
+        name = "index.md" if src.name == "README.md" else src.stem.removeprefix("README-") + ".md"
+        write_page(src, OUT / "grafana" / name, page_dir="grafana")
     shutil.copy2(ROOT / "docs" / "grafana" / "rospanel.json", OUT / "grafana" / "rospanel.json")
 
     img = ROOT / "docs" / "img"
@@ -192,6 +232,16 @@ def main() -> None:
     css = ROOT / "docs" / "css"
     if css.is_dir():
         shutil.copytree(css, OUT / "css")
+
+    js = ROOT / "docs" / "js"
+    if js.is_dir():
+        shutil.copytree(js, OUT / "js")
+
+    swagger = ROOT / "internal" / "server" / "swaggerui"
+    if swagger.is_dir():
+        shutil.copytree(swagger, OUT / "swaggerui")
+
+    shutil.copy2(ROOT / "docs" / "openapi.json", OUT / "openapi.json")
 
     print(f"docs source: {OUT}")
 

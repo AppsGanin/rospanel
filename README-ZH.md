@@ -532,7 +532,7 @@ Telegram 中的**管理员机器人**：用户管理、套餐、订阅 QR 码、
 现成的 **Grafana 仪表盘**见 [docs/grafana/rospanel.json](docs/grafana/rospanel.json)（Dashboards → New → Import）。
 **MCP 服务器**将同一套 API 提供给 AI 助手，工具列表由该 OpenAPI 文档生成：把 `…/v1/mcp/<key>` 粘贴到支持 URL 的助手中即可，
 无需在任何地方安装任何东西。密钥的方法决定助手能获得哪些工具：如果只想让助手查看，请勾选“只读”。详见
-[docs/api.md](docs/api.md)。
+[docs/api/](docs/api/)。
 
 **从外部系统注册**——`POST /v1/signup` 按客户在外部系统中的 ID（邮箱、账号）注册客户，遵循机器人的规则：
 关闭注册、邀请码、审核、频率限制、每个 ID 一个账户和一次试用。请为外部系统的密钥勾选此方法，而不是创建用户的方法。
