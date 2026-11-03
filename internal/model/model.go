@@ -1966,6 +1966,13 @@ func (s *Settings) OwnName() string {
 	return ""
 }
 
+// RealityOn reports that the REALITY inbound is actually generated: switched on and
+// with key material, without which Xray cannot authenticate a client. A disabled lane
+// keeps its port and donor list — they are the operator's settings, carried for when it
+// comes back — so everything that would fail or refuse on those leftovers has to ask
+// this, not RealityEnabled alone.
+func (s *Settings) RealityOn() bool { return s.RealityEnabled && s.RealityPrivateKey != "" }
+
 // RealityShared reports that the REALITY lane is served on the TCP-TLS lane's port —
 // 443, shared by the front through the name in the ClientHello (see tlsfront). The
 // operator asks for it by setting the REALITY port to that one; the lane is then moved

@@ -128,14 +128,6 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	if opts.PanelDest == "" {
 		return nil, fmt.Errorf("panel fallback dest not configured")
 	}
-	// A REALITY lane sharing the TCP-TLS lane's port masks as a donor: the server's own
-	// name on that port is the decoy's, and the front would send a REALITY client naming
-	// it to the decoy. The editor refuses this too; a config that reached here anyway
-	// must not come up pretending to work.
-	if c := set.RealityShareConflict(); c != "" {
-		return nil, fmt.Errorf("REALITY on the shared port %d cannot mask as the server's own name %q — its SNI list needs a donor", set.VLESSPort, c)
-	}
-
 	// A disabled protocol keeps its inbound but gets an empty client list, so the
 	// listener stays up while nobody can authenticate against it. The per-user access
 	// filter drops a user's credential from a lane they aren't allowed — so a hidden
@@ -234,9 +226,18 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	inbounds := []Inbound{apiInbound, vless, hysteria}
 
 	// VLESS + XHTTP + REALITY on its own port. Only emitted when enabled AND keys
-	// are present (REALITY can't authenticate without them). It borrows the TLS of
-	// RealityDest instead of our cert.
-	if set.RealityEnabled && set.RealityPrivateKey != "" {
+	// are present (REALITY can't authenticate without them, see RealityOn). It borrows
+	// the TLS of RealityDest instead of our cert.
+	if set.RealityOn() {
+		// A REALITY lane sharing the TCP-TLS lane's port masks as a donor: the server's
+		// own name on that port is the decoy's, and the front would send a REALITY client
+		// naming it to the decoy. The editor refuses this too; a config that reached here
+		// anyway must not come up pretending to work. Checked here, not up front: a
+		// disabled lane keeps its port and donor list, and those leftovers must not fail
+		// the config every other lane and custom inbound needs.
+		if c := set.RealityShareConflict(); c != "" {
+			return nil, fmt.Errorf("REALITY on the shared port %d cannot mask as the server's own name %q — its SNI list needs a donor", set.VLESSPort, c)
+		}
 		inbounds = append(inbounds, realityInbound(set, realityClients, sniff))
 	}
 

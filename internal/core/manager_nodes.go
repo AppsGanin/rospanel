@@ -207,7 +207,10 @@ func (m *Manager) SetNodeReality(id int64, dest string, regen bool) error {
 	if set, serr := m.store.GetSettings(); serr == nil {
 		probe := *n
 		probe.RealityDest = dest
-		if c := nodeSettings(set, &probe).RealityShareConflict(); c != "" {
+		eff := nodeSettings(set, &probe)
+		// Only while the lane is on. A disabled lane is not generated, so its leftovers
+		// must not refuse the save that clears them (see xray.Generate).
+		if c := eff.RealityShareConflict(); eff.RealityEnabled && c != "" {
 			return realityOwnNameErr(c)
 		}
 	}
@@ -250,9 +253,11 @@ func (m *Manager) SetMasterReality(dest string, regen bool) error {
 	}
 	// On the shared port the server's own name is the decoy's: the lane masks as a donor
 	// there, and a config that asked otherwise would never come up (see xray.Generate).
+	// Only while the lane is on — a disabled lane keeps its donor list without generating
+	// an inbound, and refusing this save would leave the leftovers uneditable.
 	eff := *set
 	eff.RealityDest = norm
-	if c := eff.RealityShareConflict(); c != "" {
+	if c := eff.RealityShareConflict(); eff.RealityEnabled && c != "" {
 		return realityOwnNameErr(c)
 	}
 	if set.RealityEnabled && norm != set.RealityDest {
@@ -391,10 +396,12 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 	// carries the node as the save leaves it — an empty donor clears the node's own and
 	// follows the panel's — or the save that resolves the conflict would be refused by
 	// it, and an operator who moved the panel onto the shared port could not get the
-	// node back in line.
+	// node back in line. Only while the lane is on: a disabled lane is not generated, so
+	// switching it off must stay possible whatever its leftover port and donor list.
 	probe := *n
 	probe.RealityDest = realityDest
-	if c := withConnPorts(*nodeSettings(masterSet, &probe), u, awgPort).RealityShareConflict(); c != "" {
+	eff := withConnPorts(*nodeSettings(masterSet, &probe), u, awgPort)
+	if c := eff.RealityShareConflict(); eff.RealityEnabled && c != "" {
 		return realityOwnNameErr(c)
 	}
 	curMieruPort, curMieruTransport := 0, model.MieruTCP

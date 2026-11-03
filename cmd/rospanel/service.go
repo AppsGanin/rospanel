@@ -211,7 +211,7 @@ func runServer(dataDir string) {
 		filepath.Join(dataDir, "opera"))
 	if front != nil {
 		mgr.SetFront(front)
-	} else if set.RealityShared() {
+	} else if set.RealityOn() && set.RealityShared() {
 		log.Printf("REALITY: порт %d общий с TLS-полосой, но фронт не поднят — REALITY будет недоступен (см. ROSPANEL_TLS_FRONT)", set.VLESSPort)
 	}
 	sup.SetOnAccess(mgr.RecordLocalAccess) // track online status + connection IPs

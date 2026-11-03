@@ -84,7 +84,8 @@ func TestMasterAcceptsRealityOnTheSharedPort(t *testing.T) {
 
 // The master refuses a mask that is its own name on the shared port: the decoy serves
 // that name there, so the REALITY client would never reach the lane. On a port of its
-// own the same list is exactly what the panel wants.
+// own the same list is exactly what the panel wants. A disabled lane is not generated,
+// so its leftovers are carried and switching it off stays possible.
 func TestMasterRefusesItsOwnNameOnTheSharedPort(t *testing.T) {
 	t.Parallel()
 	m := bulkTestManager(t)
@@ -94,11 +95,18 @@ func TestMasterRefusesItsOwnNameOnTheSharedPort(t *testing.T) {
 	u := DefaultConnections()
 	u.RealityPort = 443
 	u.RealityDest = "vpn.example.com"
-	u.Protocols["reality"] = false
+	u.Protocols["reality"] = true
 	if err := m.ApplyConnections(u); errCode(err) != "err.realityOwnNameOn443" {
 		t.Fatalf("own name on the shared port: %v (code %q)", err, errCode(err))
 	}
+	// Off, nothing is generated for the lane, so the same save lands: an operator must
+	// be able to switch REALITY off (see xray.Generate).
+	u.Protocols["reality"] = false
+	if err := m.ApplyConnections(u); err != nil {
+		t.Fatalf("own name on a disabled lane: %v (code %q)", err, errCode(err))
+	}
 	// The same mask is fine on a port of the lane's own.
+	u.Protocols["reality"] = true
 	u.RealityPort = 9443
 	if err := m.ApplyConnections(u); err != nil {
 		t.Fatalf("own name on its own port: %v", err)
@@ -106,7 +114,8 @@ func TestMasterRefusesItsOwnNameOnTheSharedPort(t *testing.T) {
 }
 
 // The quick donor edit on a server card goes through the same rule: on the shared port
-// the lane masks as a donor, never as the server's own name.
+// the lane masks as a donor, never as the server's own name — while it is on. Off, the
+// lane keeps whatever the editor stores, so the leftovers never lock the editor.
 func TestRealityDonorEditRefusesItsOwnNameOnTheSharedPort(t *testing.T) {
 	t.Parallel()
 	m := bulkTestManager(t)
@@ -116,24 +125,68 @@ func TestRealityDonorEditRefusesItsOwnNameOnTheSharedPort(t *testing.T) {
 	if err := m.store.SetRealityPorts(443, "max.ru"); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.store.SetProtocolEnabled("reality", false); err != nil { // no live donor probe
+	if err := m.store.SetProtocolEnabled("reality", true); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.SetMasterReality("vpn.example.com", false); errCode(err) != "err.realityOwnNameOn443" {
 		t.Fatalf("master donor edit: %v (code %q)", err, errCode(err))
 	}
+	// Off: no live donor probe, and the very same edit lands.
+	if err := m.store.SetProtocolEnabled("reality", false); err != nil {
+		t.Fatal(err)
+	}
 	if err := m.SetMasterReality("hh.ru", false); err != nil {
 		t.Fatalf("a donor on the shared port: %v", err)
+	}
+	if err := m.SetMasterReality("vpn.example.com", false); err != nil {
+		t.Fatalf("own name on a disabled lane: %v", err)
 	}
 
 	n, err := m.CreateNode("NL", "nl.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A node's REALITY is its own and off by default: the rule bites only once it is on.
+	if err := m.store.SetNodeProtocols(n.ID, false, false, true); err != nil {
+		t.Fatal(err)
+	}
 	if err := m.SetNodeReality(n.ID, "nl.example.com", false); errCode(err) != "err.realityOwnNameOn443" {
 		t.Fatalf("node donor edit: %v (code %q)", err, errCode(err))
 	}
+	if err := m.store.SetNodeProtocols(n.ID, false, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetNodeReality(n.ID, "nl.example.com", false); err != nil {
+		t.Fatalf("own name on a disabled node lane: %v", err)
+	}
 	if err := m.SetNodeReality(n.ID, "", false); err != nil {
 		t.Fatalf("clearing the node's donor: %v", err)
+	}
+}
+
+// Switching the lane back on is where the leftovers have to be checked again: the save
+// let them sit, so the on/off toggle is the last place that can refuse its own name on
+// the shared port — past it the config would fail generation instead.
+func TestEnablingRealityRefusesItsOwnNameOnTheSharedPort(t *testing.T) {
+	t.Parallel()
+	m := bulkTestManager(t)
+	if err := m.store.SetTLSMode(model.TLSModeACME, "vpn.example.com", "vpn.example.com", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.SetRealityPorts(443, "vpn.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.SetProtocolEnabled("reality", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetMasterProtocols(true, true, true); errCode(err) != "err.realityOwnNameOn443" {
+		t.Fatalf("enabling against its own name on the shared port: %v (code %q)", err, errCode(err))
+	}
+	// The same state with a donor comes up.
+	if err := m.store.SetRealityPorts(443, "hh.ru"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetMasterProtocols(true, true, true); err != nil {
+		t.Fatalf("enabling with a donor: %v", err)
 	}
 }
