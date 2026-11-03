@@ -584,6 +584,8 @@ type healthzResp struct {
 	XrayStartedAt int64  `json:"xray_started_at"`
 }
 
+//go:generate go run ../../tools/openapi -out ../../docs/openapi.json -server https://panel.example.com
+
 // OpenAPISpec is the generated API description, exported so the MCP server
 // (cmd/rospanel mcp) can build its tool list from the same source the Swagger page
 // renders. Generating the tools from the spec rather than from a hand-kept list is

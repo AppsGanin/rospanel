@@ -27,9 +27,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Regenerate the OpenAPI snapshot
+        run: go generate ./internal/server
       - name: Install MkDocs Material
         run: pip install mkdocs-material==9.8.0
       - name: Build the source tree from the READMEs
