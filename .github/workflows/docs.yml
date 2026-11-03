@@ -34,6 +34,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Stub the SPA embed for the generator
+        # server imports the embedded web/dist; the generator never reads it, but
+        # the package must compile. Building the real SPA here would double the job.
+        run: mkdir -p web/dist && printf '<!doctype html>\n' > web/dist/index.html
       - name: Regenerate the OpenAPI snapshot
         run: go generate ./internal/server
       - name: Install MkDocs Material
