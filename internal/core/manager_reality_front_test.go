@@ -60,3 +60,80 @@ func TestShareFrontWithoutAFront(t *testing.T) {
 	m := bulkTestManager(t)
 	m.shareFront(&model.Settings{VLESSPort: 443, RealityPort: 443}, &xray.Config{})
 }
+
+// Saving REALITY onto the TCP-TLS port through the master's own editor is a save like
+// any other: the port is the shared one, and the donor list goes with it.
+func TestMasterAcceptsRealityOnTheSharedPort(t *testing.T) {
+	t.Parallel()
+	m := bulkTestManager(t)
+	u := DefaultConnections()
+	u.RealityPort = 443
+	u.RealityDest = "max.ru"
+	u.Protocols["reality"] = false // the live donor probe stays out of the test
+	if err := m.ApplyConnections(u); err != nil {
+		t.Fatalf("saving REALITY on 443: %v", err)
+	}
+	set, err := m.store.GetSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set.RealityShared() || set.RealityDest != "max.ru" {
+		t.Fatalf("saved %d/%q, want REALITY on the TLS port with its donor", set.RealityPort, set.RealityDest)
+	}
+}
+
+// The master refuses a mask that is its own name on the shared port: the decoy serves
+// that name there, so the REALITY client would never reach the lane. On a port of its
+// own the same list is exactly what the panel wants.
+func TestMasterRefusesItsOwnNameOnTheSharedPort(t *testing.T) {
+	t.Parallel()
+	m := bulkTestManager(t)
+	if err := m.store.SetTLSMode(model.TLSModeACME, "vpn.example.com", "vpn.example.com", ""); err != nil {
+		t.Fatal(err)
+	}
+	u := DefaultConnections()
+	u.RealityPort = 443
+	u.RealityDest = "vpn.example.com"
+	u.Protocols["reality"] = false
+	if err := m.ApplyConnections(u); errCode(err) != "err.realityOwnNameOn443" {
+		t.Fatalf("own name on the shared port: %v (code %q)", err, errCode(err))
+	}
+	// The same mask is fine on a port of the lane's own.
+	u.RealityPort = 9443
+	if err := m.ApplyConnections(u); err != nil {
+		t.Fatalf("own name on its own port: %v", err)
+	}
+}
+
+// The quick donor edit on a server card goes through the same rule: on the shared port
+// the lane masks as a donor, never as the server's own name.
+func TestRealityDonorEditRefusesItsOwnNameOnTheSharedPort(t *testing.T) {
+	t.Parallel()
+	m := bulkTestManager(t)
+	if err := m.store.SetTLSMode(model.TLSModeACME, "vpn.example.com", "vpn.example.com", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.SetRealityPorts(443, "max.ru"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.SetProtocolEnabled("reality", false); err != nil { // no live donor probe
+		t.Fatal(err)
+	}
+	if err := m.SetMasterReality("vpn.example.com", false); errCode(err) != "err.realityOwnNameOn443" {
+		t.Fatalf("master donor edit: %v (code %q)", err, errCode(err))
+	}
+	if err := m.SetMasterReality("hh.ru", false); err != nil {
+		t.Fatalf("a donor on the shared port: %v", err)
+	}
+
+	n, err := m.CreateNode("NL", "nl.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetNodeReality(n.ID, "nl.example.com", false); errCode(err) != "err.realityOwnNameOn443" {
+		t.Fatalf("node donor edit: %v (code %q)", err, errCode(err))
+	}
+	if err := m.SetNodeReality(n.ID, "", false); err != nil {
+		t.Fatalf("clearing the node's donor: %v", err)
+	}
+}

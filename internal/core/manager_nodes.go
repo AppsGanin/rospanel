@@ -201,6 +201,16 @@ func (m *Manager) SetNodeReality(id int64, dest string, regen bool) error {
 		}
 		dest = norm
 	}
+	// The node's lane masks as a donor when its port is shared with its TLS lane: its
+	// own name there is the decoy's, so the save would leave it with a config that
+	// cannot come up.
+	if set, serr := m.store.GetSettings(); serr == nil {
+		probe := *n
+		probe.RealityDest = dest
+		if c := nodeSettings(set, &probe).RealityShareConflict(); c != "" {
+			return realityOwnNameErr(c)
+		}
+	}
 	if err := m.store.SetNodeRealityDest(id, dest); err != nil {
 		return err
 	}
@@ -237,6 +247,13 @@ func (m *Manager) SetMasterReality(dest string, regen bool) error {
 	norm, err := validateRealityDests(dest)
 	if err != nil {
 		return err
+	}
+	// On the shared port the server's own name is the decoy's: the lane masks as a donor
+	// there, and a config that asked otherwise would never come up (see xray.Generate).
+	eff := *set
+	eff.RealityDest = norm
+	if c := eff.RealityShareConflict(); c != "" {
+		return realityOwnNameErr(c)
 	}
 	if set.RealityEnabled && norm != set.RealityDest {
 		for _, d := range strings.Split(norm, ",") {
@@ -370,15 +387,15 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		return err
 	}
 	// A REALITY lane on this server's TCP-TLS port masks as a donor too: the server's
-	// own name on that port is the decoy's, so it cannot be in the SNI list.
-	effSet := withConnPorts(*nodeSettings(masterSet, n), u, awgPort)
-	if realityDest != "" {
-		effSet.RealityDest = realityDest
-	}
-	if c := effSet.RealityShareConflict(); c != "" {
-		return invalidCode("err.realityOwnNameOn443",
-			"{{name}} — свой домен, на 443 он остаётся за decoy: для REALITY на этом порту оставь в списке SNI донора",
-			map[string]any{"name": c})
+	// own name on that port is the decoy's, so it cannot be in the SNI list. The probe
+	// carries the node as the save leaves it — an empty donor clears the node's own and
+	// follows the panel's — or the save that resolves the conflict would be refused by
+	// it, and an operator who moved the panel onto the shared port could not get the
+	// node back in line.
+	probe := *n
+	probe.RealityDest = realityDest
+	if c := withConnPorts(*nodeSettings(masterSet, &probe), u, awgPort).RealityShareConflict(); c != "" {
+		return realityOwnNameErr(c)
 	}
 	curMieruPort, curMieruTransport := 0, model.MieruTCP
 	if n.Connections != nil {

@@ -519,9 +519,7 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	eff := withConnPorts(*set, u, 0)
 	eff.RealityDest = realityDest
 	if c := eff.RealityShareConflict(); c != "" {
-		return invalidCode("err.realityOwnNameOn443",
-			"{{name}} — свой домен, на 443 он остаётся за decoy: для REALITY на этом порту оставь в списке SNI донора",
-			map[string]any{"name": c})
+		return realityOwnNameErr(c)
 	}
 	// Live TLS probe each donor only when REALITY is on and the set changed — a
 	// network check shouldn't slow unrelated saves.
