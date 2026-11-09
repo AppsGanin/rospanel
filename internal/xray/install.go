@@ -24,7 +24,7 @@ import (
 // Why pinned: Xray 26.3.27 shipped a broken Hysteria2 server-side auth handshake
 // (26.6.x fixes it). A floating "latest" can silently regress, so we pin an exact
 // release and its checksums.
-const PinnedVersion = "v26.10.21"
+const PinnedVersion = "v26.11.9"
 
 // VersionMatchesPinned reports whether a reported Xray version is the pinned
 // release, tolerating a leading "v": PinnedVersion carries it, but `xray version`
@@ -66,10 +66,10 @@ func ReadsUDPHopMask(v string) bool {
 // truncated, or substituted binary before it is extracted and run as root. Update
 // these together with PinnedVersion.
 var pinnedSHA256 = map[string]string{
-	"Xray-linux-64.zip":        "0eec3ed4163c273d8c8bf821f7d219e257921cf584aa3fb970715e458e631978",
-	"Xray-linux-arm64-v8a.zip": "d1304946c486d98e6b886e9b931eaaaebb23835b30e217638037b7f2721d4e9c",
-	"Xray-macos-64.zip":        "8e5169b429e76ce5f550c8294db465bc259f30c158ba900aa40802b76ad2f66e",
-	"Xray-macos-arm64-v8a.zip": "926cc55fda2a8757dabe4f22dc98772f218ace025f101bd0b68aee232e59d5dc",
+	"Xray-linux-64.zip":        "b651f7e1d9966ee2c1b1ee1bf8b52c72771824d3065dce96bbc8bcc19ed95f82",
+	"Xray-linux-arm64-v8a.zip": "64ed6858982a7f5eb85d88b811089063bd4f17561f4c8f44e0f1dc8e6f6430be",
+	"Xray-macos-64.zip":        "488963e676e06f5e48547f9dd38116aaca8de4234959b4272ae8f284e658dfd0",
+	"Xray-macos-arm64-v8a.zip": "233f0c66681cd0726f81a6b2b6ed6a5710869e312047b522e46ed53035bebd26",
 }
 
 // releaseAsset returns the XTLS release zip name for the current platform.
