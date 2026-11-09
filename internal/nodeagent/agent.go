@@ -289,6 +289,8 @@ type Agent struct {
 	// naive answers NaiveProxy tunnels in front of the decoy (internal/naive); its
 	// users are naive-in's clients in the config last applied.
 	naive *naive.Server
+	// trusttunnel answers TrustTunnel the same way; its users are trusttunnel-in's.
+	trusttunnel *naive.Server
 
 	// mieru answers mieru on the port the panel gives (internal/mieru); its users are
 	// mieru-in's clients in the config last applied. mieruErr is why it does not listen.
@@ -561,6 +563,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		shaper:       shaper.New(),
 		awg:          awg.New(),
 		naive:        naive.New(xray.NaiveInnerAddr),
+		trusttunnel:  naive.NewTrustTunnel(xray.TrustTunnelInnerAddr),
 		mieru:        mieru.New(xray.MieruInnerAddr),
 		mtproto:      mtproto.New(xray.MTProtoInnerAddr),
 		turn:         turnrelay.New(),
@@ -1195,6 +1198,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		ConfigHash:   hash,
 		DeltaRev:     nodeapi.DeltaRev,
 		Naive:        true,
+		TrustTunnel:  true,
 		Mieru:        true,
 		AnyTLS:       a.anytls != nil,
 		MieruError:   a.mieruError(),
@@ -1607,7 +1611,7 @@ func (a *Agent) ensureDecoy(dest, template string) error {
 		}
 	})
 	srv := &http.Server{
-		// NaiveProxy tunnels arrive through the same fallback (internal/naive).
+		// NaiveProxy and TrustTunnel tunnels arrive through the same fallback (internal/naive).
 		Handler:           a.naiveHandler(decoyHandler),
 		Protocols:         protocols,
 		HTTP2:             naive.HTTP2Config(),

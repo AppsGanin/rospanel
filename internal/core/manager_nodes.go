@@ -466,6 +466,11 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 			return err
 		}
 	}
+	if on, ok := u.Protocols["trusttunnel"]; ok {
+		if err := m.store.SetNodeTrustTunnelEnabled(id, on); err != nil {
+			return err
+		}
+	}
 	if on, ok := u.Protocols["anytls"]; ok {
 		if err := m.store.SetNodeAnyTLSEnabled(id, on); err != nil {
 			return err
@@ -539,6 +544,7 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		MieruTransport:     mieruTransport,
 		MieruName:          connNames["mieru"],
 		AnyTLSName:         connNames["anytls"],
+		TrustTunnelName:    connNames["trusttunnel"],
 		MTProtoPort:        mtprotoPort,
 		MTProtoName:        nodeMTProtoName(n),
 	}

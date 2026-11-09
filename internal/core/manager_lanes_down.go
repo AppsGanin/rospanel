@@ -29,10 +29,10 @@ import (
 // laneHideAfter is how long a lane has to stay down before subscriptions drop it.
 const laneHideAfter = 2 * time.Minute
 
-// xrayLanes are the built-in lanes that need Xray: Naive, AnyTLS, mieru and MTProto
+// xrayLanes are the built-in lanes that need Xray: Naive, TrustTunnel, AnyTLS, mieru and MTProto
 // end in an Xray inbound too.
 var xrayLanes = []string{model.LaneVLESS, model.LaneReality, model.LaneHysteria,
-	model.LaneNaive, model.LaneAnyTLS, model.LaneMieru, model.LaneMTProto, model.SubProtoCustom}
+	model.LaneNaive, model.LaneTrustTunnel, model.LaneAnyTLS, model.LaneMieru, model.LaneMTProto, model.SubProtoCustom}
 
 // inboundDownKey is the key of one custom inbound in lanesDown.
 func inboundDownKey(id int64) string { return "inbound:" + strconv.FormatInt(id, 10) }

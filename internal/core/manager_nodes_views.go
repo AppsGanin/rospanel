@@ -318,6 +318,8 @@ func (m *Manager) NodeLinkSettings() ([]*model.Settings, error) {
 		ns.NaiveEnabled = ns.NaiveEnabled && !ns.TLSInsecure && n.ServesNaive
 		// AnyTLS likewise (link.AnyTLSOn wants a trusted certificate too).
 		ns.AnyTLSEnabled = ns.AnyTLSEnabled && !ns.TLSInsecure && n.ServesAnyTLS
+		// TrustTunnel likewise (link.TrustTunnelOn).
+		ns.TrustTunnelEnabled = ns.TrustTunnelEnabled && !ns.TLSInsecure && n.ServesTrustTunnel
 		// mieru needs the agent to answer it, a port, and its listener up (as last said).
 		m.nodeGeoMu.Lock()
 		mieruDown := m.nodeMieruErr[n.ID] != ""

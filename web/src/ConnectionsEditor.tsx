@@ -615,6 +615,7 @@ export function ConnectionsEditor({
 
                 {p.key === "naive" && <SettingRow hint={t("conn.naiveHint")} />}
                 {p.key === "anytls" && <SettingRow hint={t("conn.anytlsHint")} />}
+                {p.key === "trusttunnel" && <SettingRow hint={t("conn.trusttunnelHint")} />}
 
                 {p.key === "mieru" &&
                   (on ? (

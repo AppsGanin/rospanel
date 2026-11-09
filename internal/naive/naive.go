@@ -21,6 +21,11 @@
 // Credentials are the user's existing ones: the login is the Xray email (u<id>) and the
 // password the VLESS UUID, so there is nothing new to store and regenerating a user's
 // keys rotates this lane with the others.
+//
+// The same server, built with NewTrustTunnel, answers TrustTunnel (tt.go): AdGuard's
+// protocol is the same HTTP/2 CONNECT with Basic credentials, plus pseudo-hosts for a
+// health check and for UDP. It hands its tunnels to an inbound of its own and takes its
+// own login, so the two lanes stay apart behind one decoy.
 package naive
 
 import (
@@ -30,6 +35,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/vlessin"
 )
 
@@ -52,6 +58,10 @@ type cred struct {
 type Server struct {
 	inner atomic.Pointer[string] // naive-in's loopback address
 
+	// tt makes this the TrustTunnel lane (NewTrustTunnel): its login, its pseudo-hosts,
+	// no NaiveProxy padding.
+	tt bool
+
 	users atomic.Pointer[map[string]cred] // password (UUID) → user
 
 	mu          sync.Mutex
@@ -66,6 +76,14 @@ type Server struct {
 func New(inner string) *Server {
 	s := &Server{streams: map[*stream]struct{}{}, perUser: map[string]int{}, userStreams: map[string]int{}}
 	s.inner.Store(&inner)
+	return s
+}
+
+// NewTrustTunnel is New for the TrustTunnel lane (tt.go): it hands its tunnels to the
+// trusttunnel-in inbound at inner and accepts the login model.TrustTunnelLogin.
+func NewTrustTunnel(inner string) *Server {
+	s := New(inner)
+	s.tt = true
 	return s
 }
 
@@ -134,10 +152,18 @@ func (s *Server) auth(r *http.Request) (cred, bool) {
 		return cred{}, false
 	}
 	u, ok := (*m)[pass]
-	if !ok || u.Email != login {
+	if !ok || login != s.login(u.Email) {
 		return cred{}, false
 	}
 	return u, true
+}
+
+// login is the login the lane expects for the Xray email.
+func (s *Server) login(email string) string {
+	if s.tt {
+		return model.TrustTunnelLogin(email)
+	}
+	return email
 }
 
 // basicAuth parses a "Basic <base64(login:pass)>" credential.

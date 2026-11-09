@@ -88,6 +88,8 @@ type SyncRequest struct {
 	// Naive ⇒ this agent answers NaiveProxy tunnels behind its decoy (internal/naive).
 	// An older agent does not, and the panel hands out no NaiveProxy link for it.
 	Naive bool `json:"naive,omitempty"`
+	// TrustTunnel is Naive for TrustTunnel (internal/naive, tt.go).
+	TrustTunnel bool `json:"trusttunnel,omitempty"`
 	// Mieru ⇒ this agent answers mieru on the port the panel gives it (MieruState),
 	// and MieruError is why its listener is not up, when it is not.
 	Mieru bool `json:"mieru,omitempty"`

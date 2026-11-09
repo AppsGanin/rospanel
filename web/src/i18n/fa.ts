@@ -3687,6 +3687,7 @@ const fa: Dict = {
     mtprotoHint: "پروکسی Telegram با fake TLS روی پورت TCP جداگانه، با سکرت جدا برای هر کاربر. لینک در صفحهٔ اشتراک است.",
     enableMtproto: "برای تعیین پورت، MTProto را روشن کنید.",
     anytlsHint: "AnyTLS روی پورت VLESS-TCP-TLS: همان گواهی و سایت پوششی، UUID کاربر به‌عنوان رمز. لینک وقتی داده می‌شود که گواهی سرور معتبر باشد.",
+    trusttunnelHint: "TrustTunnel روی پورت VLESS-TCP-TLS با HTTP/2، نام کاربری tt-u<id> و UUID کاربر. دامنه با گواهی معتبر لازم است: برنامه با IP وصل نمی‌شود. لینک tt:// در صفحهٔ اشتراک است.",
     naiveHint: "NaiveProxy روی پورت VLESS-TCP-TLS: همان گواهی و سایت پوششی، نام کاربری u<id> و UUID کاربر. لینک وقتی داده می‌شود که گواهی سرور معتبر باشد.",
     off: "غیرفعال",
     name: "نام اتصال",

@@ -148,19 +148,20 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		}
 	}()
 	_ = m.store.UpdateNodeStatus(n.ID, model.NodeStatusUpdate{
-		LastSeen:       now.Unix(),
-		NodeVersion:    req.NodeVersion,
-		XrayVersion:    req.XrayVersion,
-		XrayRunning:    req.XrayRunning,
-		CertSHA256:     req.CertSHA256,
-		CertSelfSigned: req.CertSelfSigned,
-		CertIssuer:     req.CertIssuer,
-		CertExpiresAt:  req.CertExpiresAt,
-		ConfigHash:     req.ConfigHash,
-		ServesNaive:    req.Naive,
-		ServesMieru:    req.Mieru,
-		ServesAnyTLS:   req.AnyTLS,
-		ServesMTProto:  req.MTProto,
+		LastSeen:          now.Unix(),
+		NodeVersion:       req.NodeVersion,
+		XrayVersion:       req.XrayVersion,
+		XrayRunning:       req.XrayRunning,
+		CertSHA256:        req.CertSHA256,
+		CertSelfSigned:    req.CertSelfSigned,
+		CertIssuer:        req.CertIssuer,
+		CertExpiresAt:     req.CertExpiresAt,
+		ConfigHash:        req.ConfigHash,
+		ServesNaive:       req.Naive,
+		ServesMieru:       req.Mieru,
+		ServesAnyTLS:      req.AnyTLS,
+		ServesTrustTunnel: req.TrustTunnel,
+		ServesMTProto:     req.MTProto,
 	})
 
 	// Everything below names users, and a node is believed only about its own (see

@@ -1430,6 +1430,7 @@
           <details>
             <summary>{{.Proto}}</summary>
             <p><code>{{.URL}}</code></p>
+            {{if .Open}}<a class="btn" href="{{.Open}}">{{$.L.OpenInApp}}</a>{{end}}
             <button class="btn alt" onclick="copy('{{.URL}}', this)">
               {{$.L.Copy}} {{.Proto}}
             </button>

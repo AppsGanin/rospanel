@@ -395,6 +395,12 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		listen, port := innerLaneListen(NaiveInnerAddr, inbounds)
 		inbounds = append(inbounds, innerInbound(TagNaive, listen, port, laneClients(set.NaiveEnabled, model.LaneNaive, users, opts.allowsBuiltin), sniff))
 	}
+	// TrustTunnel shares naive's way in — the same HTTP/2 CONNECT behind the decoy, told
+	// apart by its login — on an inbound of its own, so its traffic counts apart.
+	if set.TrustTunnelEnabled {
+		listen, port := innerLaneListen(TrustTunnelInnerAddr, inbounds)
+		inbounds = append(inbounds, innerInbound(TagTrustTunnel, listen, port, laneClients(set.TrustTunnelEnabled, model.LaneTrustTunnel, users, opts.allowsBuiltin), sniff))
+	}
 	if set.MieruEnabled {
 		listen, port := innerLaneListen(MieruInnerAddr, inbounds)
 		inbounds = append(inbounds, innerInbound(TagMieru, listen, port, laneClients(set.MieruEnabled, model.LaneMieru, users, opts.allowsBuiltin), sniff))
@@ -604,13 +610,14 @@ func proxyOutbounds(laneID string, proxies []model.ProxyEndpoint, legacyHop bool
 // Inbound tags (also the keys the live add/remove-user API addresses). A custom
 // inbound's tag is derived from its row id — see model.Inbound.Tag.
 const (
-	TagVLESS    = "vless-in"
-	TagHysteria = "hysteria-in"
-	TagReality  = "vless-reality-in"
-	TagNaive    = "naive-in"
-	TagMieru    = "mieru-in"
-	TagAnyTLS   = "anytls-in"
-	TagMTProto  = "mtproto-in"
+	TagVLESS       = "vless-in"
+	TagHysteria    = "hysteria-in"
+	TagReality     = "vless-reality-in"
+	TagNaive       = "naive-in"
+	TagTrustTunnel = "trusttunnel-in"
+	TagMieru       = "mieru-in"
+	TagAnyTLS      = "anytls-in"
+	TagMTProto     = "mtproto-in"
 )
 
 // ProtoWireGuard is Xray's name for the protocol of a WireGuard inbound, TURN-VK's and
@@ -676,6 +683,17 @@ func laneClients(on bool, lane string, users []model.User, allowBuiltin func(use
 // NaiveClients are naive-in's clients in cfg — who internal/naive lets in — and the
 // address it listens on ("" when the lane is off).
 func NaiveClients(cfg *Config) ([]VLESSClient, string) { return InnerClients(cfg, TagNaive) }
+
+// TrustTunnelClients are trusttunnel-in's clients in cfg — who internal/naive's
+// TrustTunnel server lets in — and the address it listens on ("" when the lane is off).
+func TrustTunnelClients(cfg *Config) ([]VLESSClient, string) {
+	return InnerClients(cfg, TagTrustTunnel)
+}
+
+// TrustTunnelClientsRaw is TrustTunnelClients for a config as JSON.
+func TrustTunnelClientsRaw(data []byte) ([]VLESSClient, string) {
+	return InnerClientsRaw(data, TagTrustTunnel)
+}
 
 // MieruClients are mieru-in's clients in cfg — who internal/mieru lets in — and the
 // address it listens on ("" when the lane is off).
@@ -1139,6 +1157,10 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 		listen, port := InnerListen(NaiveInnerAddr)
 		in = append(in, Inbound{Tag: TagNaive, Listen: listen, Port: port, Protocol: "vless", Settings: VLESSInboundSettings{Clients: nc, Decryption: "none"}})
 	}
+	if tc := laneClients(set.TrustTunnelEnabled, model.LaneTrustTunnel, users, allowBuiltin); len(tc) > 0 {
+		listen, port := InnerListen(TrustTunnelInnerAddr)
+		in = append(in, Inbound{Tag: TagTrustTunnel, Listen: listen, Port: port, Protocol: "vless", Settings: VLESSInboundSettings{Clients: tc, Decryption: "none"}})
+	}
 	if mc := laneClients(set.MieruEnabled, model.LaneMieru, users, allowBuiltin); len(mc) > 0 {
 		listen, port := InnerListen(MieruInnerAddr)
 		in = append(in, Inbound{Tag: TagMieru, Listen: listen, Port: port, Protocol: "vless", Settings: VLESSInboundSettings{Clients: mc, Decryption: "none"}})
@@ -1239,6 +1261,9 @@ func EnabledInboundTags(set *model.Settings, custom []model.Inbound) []string {
 	}
 	if set.NaiveEnabled {
 		tags = append(tags, TagNaive)
+	}
+	if set.TrustTunnelEnabled {
+		tags = append(tags, TagTrustTunnel)
 	}
 	if set.MieruEnabled {
 		tags = append(tags, TagMieru)

@@ -803,7 +803,7 @@ Swagger. `shadowsocks` — это Shadowsocks-2022 (`method` выбирает AE
 **Грант-токен** называет одно подключение:
 
 - `builtin:<server_id>:<lane>` — встроенный лейн, где `<lane>` — это `vless`,
-  `reality`, `hysteria2`, `naive`, `anytls`, `mieru`, `awg` или `mtproto`, а
+  `reality`, `hysteria2`, `naive`, `trusttunnel`, `anytls`, `mieru`, `awg` или `mtproto`, а
   `<server_id>` — `0` для мастера или id ноды из `GET /v1/nodes`.
 - `inbound:<id>` — свой инбаунд, по id из `GET /v1/servers/{id}/inbounds`.
 

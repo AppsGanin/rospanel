@@ -218,7 +218,7 @@ func validLink(s string) bool {
 	}
 	switch u.Scheme {
 	case "vless", "vmess", "trojan", "ss", "hysteria2", "hy2", "tuic", "wireguard", "wg", "socks", "http", "https",
-		"naive+https", "http2", "amneziawg":
+		"naive+https", "http2", "amneziawg", "tt":
 		return true
 	}
 	return false

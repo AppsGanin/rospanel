@@ -447,6 +447,8 @@ type Manager struct {
 
 	// naive answers NaiveProxy tunnels in front of the decoy (manager_naive.go).
 	naive *naive.Server
+	// trusttunnel answers TrustTunnel the same way, on its own inbound (manager_naive.go).
+	trusttunnel *naive.Server
 	// mieru is the master's mieru lane (internal/mieru), mieruErr its listener's last
 	// error ("" when it listens or is off).
 	mieru    *mieru.Server
@@ -542,6 +544,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		nodeAWG:        map[int64]nodeAWGState{},
 		awg:            awg.New(),
 		naive:          naive.New(xray.NaiveInnerAddr),
+		trusttunnel:    naive.NewTrustTunnel(xray.TrustTunnelInnerAddr),
 		mieru:          mieru.New(xray.MieruInnerAddr),
 		mtproto:        mtproto.New(xray.MTProtoInnerAddr),
 		turn:           turnrelay.New(),

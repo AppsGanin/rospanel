@@ -441,7 +441,7 @@ GET $BASE/healthz
 **رمز المنح** يسمي اتصالا واحدا:
 
 - `builtin:<server_id>:<lane>` — قناة مدمجة، حيث `<lane>` هي `vless` أو `reality`
-  أو `hysteria2` أو `naive` أو `anytls` أو `mieru` أو `awg` أو `mtproto`، و`<server_id>` هي `0` للرئيسي أو معرف عقدة
+  أو `hysteria2` أو `naive` أو `trusttunnel` أو `anytls` أو `mieru` أو `awg` أو `mtproto`، و`<server_id>` هي `0` للرئيسي أو معرف عقدة
   من `GET /v1/nodes`.
 - `inbound:<id>` — مدخل مخصص، بمعرف المدخل نفسه من `GET /v1/servers/{id}/inbounds`.
 

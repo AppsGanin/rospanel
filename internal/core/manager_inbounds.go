@@ -157,6 +157,9 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 	if p := xray.InnerPort(xray.NaiveInnerAddr); p != 0 {
 		r.HoldTCP(p, "NaiveProxy (internal)")
 	}
+	if p := xray.InnerPort(xray.TrustTunnelInnerAddr); p != 0 {
+		r.HoldTCP(p, "TrustTunnel (internal)")
+	}
 	if p := xray.InnerPort(xray.MieruInnerAddr); p != 0 {
 		r.HoldTCP(p, "mieru (internal)")
 	}

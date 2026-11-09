@@ -3687,6 +3687,7 @@ const en: Dict = {
     mtprotoHint: "Telegram proxy with fake TLS on its own TCP port, a secret per user. The link is on the subscription page.",
     enableMtproto: "Turn MTProto on to set its port.",
     anytlsHint: "AnyTLS on the VLESS-TCP-TLS port: same certificate and decoy site, the user's UUID as the password. The link is handed out when the server's certificate is trusted.",
+    trusttunnelHint: "TrustTunnel on the VLESS-TCP-TLS port over HTTP/2, login tt-u<id> and the user's UUID. Requires a domain with a trusted certificate: the app does not connect to an IP. The tt:// link is on the subscription page.",
     naiveHint: "NaiveProxy on the VLESS-TCP-TLS port: same certificate and decoy site, login u<id> and the user's UUID. The link is handed out when the server's certificate is trusted.",
     off: "disabled",
     name: "Connection name",

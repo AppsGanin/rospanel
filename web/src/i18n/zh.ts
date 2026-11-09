@@ -3674,6 +3674,7 @@ const zh: Dict = {
     mtprotoHint: "带 fake TLS 的 Telegram 代理，使用独立 TCP 端口，每个用户有自己的密钥。链接在订阅页面上。",
     enableMtproto: "启用 MTProto 后可设置端口。",
     anytlsHint: "AnyTLS 使用 VLESS-TCP-TLS 端口：相同的证书和伪装站点，密码为用户的 UUID。服务器证书受信任时才会发放链接。",
+    trusttunnelHint: "TrustTunnel 通过 HTTP/2 使用 VLESS-TCP-TLS 端口，登录名为 tt-u<id>，密码为用户的 UUID。需要拥有受信任证书的域名：应用无法通过 IP 连接。tt:// 链接在订阅页面上。",
     naiveHint: "NaiveProxy 使用 VLESS-TCP-TLS 端口：相同的证书和伪装站点，登录名为 u<id>，密码为用户的 UUID。服务器证书受信任时才会发放链接。",
     off: "已禁用",
     name: "连接名称",

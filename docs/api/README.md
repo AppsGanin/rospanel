@@ -727,7 +727,7 @@ by it — the stricter of the two applies. Omitted on an update, the cap is kept
 A **grant token** names one connection:
 
 - `builtin:<server_id>:<lane>` — a built-in lane, where `<lane>` is `vless`, `reality`,
-  `hysteria2`, `naive`, `anytls`, `mieru`, `awg` or `mtproto` and `<server_id>` is `0` for the master or a node id
+  `hysteria2`, `naive`, `trusttunnel`, `anytls`, `mieru`, `awg` or `mtproto` and `<server_id>` is `0` for the master or a node id
   from `GET /v1/nodes`.
 - `inbound:<id>` — a custom inbound, by the id from `GET /v1/servers/{id}/inbounds`.
 

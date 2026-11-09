@@ -3583,6 +3583,7 @@ const ar: Dict = {
     mtprotoHint: "وكيل Telegram مع fake TLS على منفذ TCP خاص به، ولكل مستخدم سرّه. الرابط في صفحة الاشتراك.",
     enableMtproto: "فعّل MTProto لتحديد منفذه.",
     anytlsHint: "AnyTLS على منفذ VLESS-TCP-TLS: الشهادة نفسها وموقع التمويه نفسه، وكلمة المرور هي UUID المستخدم. يُعطى الرابط عندما تكون شهادة الخادم موثوقة.",
+    trusttunnelHint: "TrustTunnel على منفذ VLESS-TCP-TLS عبر HTTP/2، باسم الدخول tt-u<id> وUUID المستخدم. يتطلب نطاقًا بشهادة موثوقة: لا يتصل التطبيق عبر IP. رابط tt:// في صفحة الاشتراك.",
     naiveHint: "NaiveProxy على منفذ VLESS-TCP-TLS: الشهادة نفسها وموقع التمويه نفسه، باسم الدخول u<id> وUUID المستخدم. يُعطى الرابط عندما تكون شهادة الخادم موثوقة.",
     off: "معطّل",
     name: "اسم الاتصال",

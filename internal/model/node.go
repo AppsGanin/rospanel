@@ -93,8 +93,11 @@ type Node struct {
 	ServesMieru   bool  `json:"-"`
 	AnyTLSEnabled *bool `json:"anytls_enabled"`
 	// ServesAnyTLS is ServesNaive for AnyTLS (nodeapi.SyncRequest.AnyTLS).
-	ServesAnyTLS   bool  `json:"-"`
-	MTProtoEnabled *bool `json:"mtproto_enabled"`
+	ServesAnyTLS       bool  `json:"-"`
+	TrustTunnelEnabled *bool `json:"trusttunnel_enabled"`
+	// ServesTrustTunnel is ServesNaive for TrustTunnel (nodeapi.SyncRequest.TrustTunnel).
+	ServesTrustTunnel bool  `json:"-"`
+	MTProtoEnabled    *bool `json:"mtproto_enabled"`
 	// MTProtoDomain is the name in the node's MTProto secrets, kept from the first time
 	// the lane ran (see Settings.MTProtoDomain).
 	MTProtoDomain string `json:"-"`
@@ -204,6 +207,7 @@ type NodeConnections struct {
 	MieruTransport     string `json:"mieru_transport"`
 	MieruName          string `json:"mieru_name"`
 	AnyTLSName         string `json:"anytls_name"`
+	TrustTunnelName    string `json:"trusttunnel_name"`
 	MTProtoPort        int    `json:"mtproto_port"`
 	MTProtoName        string `json:"mtproto_name"`
 }
@@ -223,19 +227,20 @@ func (n *Node) WarpRegistered() bool { return n.WarpPrivateKey != "" }
 // NodeStatusUpdate is what a node reports on each sync, persisted by
 // Store.UpdateNodeStatus.
 type NodeStatusUpdate struct {
-	LastSeen       int64
-	NodeVersion    string
-	XrayVersion    string
-	XrayRunning    bool
-	CertSHA256     string
-	CertSelfSigned bool
-	CertIssuer     string
-	CertExpiresAt  int64
-	ConfigHash     string
-	ServesNaive    bool
-	ServesMieru    bool
-	ServesAnyTLS   bool
-	ServesMTProto  bool
+	LastSeen          int64
+	NodeVersion       string
+	XrayVersion       string
+	XrayRunning       bool
+	CertSHA256        string
+	CertSelfSigned    bool
+	CertIssuer        string
+	CertExpiresAt     int64
+	ConfigHash        string
+	ServesNaive       bool
+	ServesMieru       bool
+	ServesAnyTLS      bool
+	ServesMTProto     bool
+	ServesTrustTunnel bool
 }
 
 // ValidServerHost reports whether h can be a server's address: an IP literal, or a

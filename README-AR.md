@@ -274,6 +274,11 @@ ClashMi)، ورابط `mierus://` لـ Shadowrocket وThrone وExclave وKaring.
 UUID الخاص بالمستخدم. يُقدَّم لعملاء sing-box، وملف تعريف Clash (أنوية mihomo التي تدعمه)، وv2rayN،
 وShadowrocket، وThrone، وExclave، وKaring، وNekoBox، حين تكون الشهادة موثوقة.
 
+**TrustTunnel** (بروتوكول AdGuard) مسار مدمج على منفذ VLESS-TCP-TLS عبر HTTP/2، خلف الشهادة نفسها
+وموقع التمويه نفسه: TCP وUDP، باسم الدخول `tt-u<id>` وكلمة المرور UUID المستخدم. يتطلب نطاقًا بشهادة
+موثوقة: لا تتصل التطبيقات عبر IP. تستورد تطبيقاته (TrustTunnel لـ iOS وAndroid وmacOS وعميل سطر الأوامر)
+رابط `tt://` من صفحة الاشتراك.
+
 **MTProto (وكيل Telegram)** مسار مدمج على منفذ TCP خاص به يُختار تلقائيًا، ومفعّل افتراضيًا: يتصل
 Telegram نفسه عبر الخادم دون تطبيق VPN. ‏fake TLS مع سرّ لكل مستخدم مشتق من UUID الخاص به — يفقده
 المستخدم المعطَّل، وتغيّره إعادة تعيين UUID. يحمل السرّ نطاق الخادم (SNI أو المضيف)، أو، إن لم يكن

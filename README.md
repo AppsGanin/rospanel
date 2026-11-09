@@ -294,6 +294,12 @@ Throne, Exclave and Karing.
 site; the password is the user's UUID. It goes to sing-box clients, the Clash profile (mihomo
 cores that have it), v2rayN, Shadowrocket, Throne, Exclave, Karing and NekoBox, when the certificate is trusted.
 
+**TrustTunnel** (AdGuard's protocol) is a built-in lane on the VLESS-TCP-TLS port over HTTP/2,
+behind the same certificate and decoy site: TCP and UDP, the login `tt-u<id>`, the password the
+user's UUID. Requires a domain with a trusted certificate: the apps do not connect to an IP. Its
+apps (TrustTunnel for iOS, Android, macOS, the CLI client) import the `tt://` link from the
+subscription page.
+
 **MTProto (Telegram proxy)** is a built-in lane on a TCP port of its own, picked automatically, on
 by default: Telegram itself connects through the server, no VPN app needed. Fake TLS with a secret
 per user, derived from their UUID — a disabled user loses it, a UUID reset changes it. The secret

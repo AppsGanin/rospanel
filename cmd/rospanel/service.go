@@ -360,7 +360,8 @@ func runServer(dataDir string) {
 	protocols.SetHTTP1(true)
 	protocols.SetUnencryptedHTTP2(true)
 	httpSrv := &http.Server{
-		// NaiveProxy tunnels arrive through the same fallback as the decoy (internal/naive).
+		// NaiveProxy and TrustTunnel tunnels arrive through the same fallback as the decoy
+		// (internal/naive).
 		Handler:           mgr.NaiveHandler(handler),
 		Protocols:         protocols,
 		HTTP2:             naive.HTTP2Config(),

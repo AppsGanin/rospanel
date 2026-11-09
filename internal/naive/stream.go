@@ -180,9 +180,25 @@ func (cw *clientWriter) Write(p []byte) (int, error) {
 // until either side ends: as one VLESS TCP connection, or — for UDP over TCP — as VLESS
 // UDP connections, one per destination.
 func (s *Server) serve(w http.ResponseWriter, r *http.Request, u cred) {
-	host, port, uot, err := splitTarget(r.Host)
+	var (
+		host string
+		port uint16
+		uot  uotVersion
+		kind ttKind
+		err  error
+	)
+	if s.tt {
+		host, port, kind, err = ttTarget(r.Host)
+	} else {
+		host, port, uot, err = splitTarget(r.Host)
+	}
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if kind == ttCheck {
+		// TrustTunnel's health check: a 200 that ends the stream, as its endpoint sends.
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	// Every stream holds buffers and a goroutine before it dials anything — a UDP one
@@ -192,11 +208,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, u cred) {
 		return
 	}
 	defer s.releaseStream(u.Email)
-	padded, reply := paddingType(r.Header)
-	h := w.Header()
-	h.Set("Padding", paddingHeader())
-	if reply != "" {
-		h.Set("Padding-Type-Reply", reply)
+	var padded bool
+	if !s.tt { // TrustTunnel has no padding, and its endpoint sends no such header
+		var reply string
+		padded, reply = paddingType(r.Header)
+		h := w.Header()
+		h.Set("Padding", paddingHeader())
+		if reply != "" {
+			h.Set("Padding-Type-Reply", reply)
+		}
 	}
 	w.WriteHeader(http.StatusOK)
 	rc := http.NewResponseController(w)
@@ -218,9 +238,14 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, u cred) {
 	// SetUsers may have dropped the user between auth and track; it could not see
 	// this stream then, so look again.
 	if s.accepts(u.User) {
-		if uot != uotNone {
+		switch {
+		case kind == ttUDP:
+			s.serveTTUDP(r, st, body, cw, u)
+		case kind == ttICMP:
+			serveTTICMP(st, body)
+		case uot != uotNone:
 			s.serveUDP(r, st, body, cw, u, uot)
-		} else {
+		default:
 			s.serveTCP(r, st, body, cw, u, host, port)
 		}
 	}

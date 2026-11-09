@@ -646,7 +646,7 @@ schema 只能标为 `string` 的两种格式：`reality_dest` 是裸主机名（
 **授权令牌**（grant token）指向一条连接：
 
 - `builtin:<server_id>:<lane>` — 内置线路，其中 `<lane>` 取 `vless`、`reality`、
-  `hysteria2`、`naive`、`anytls`、`mieru`、`awg` 或 `mtproto`，`<server_id>` 为 `0`
+  `hysteria2`、`naive`、`trusttunnel`、`anytls`、`mieru`、`awg` 或 `mtproto`，`<server_id>` 为 `0`
   表示主服务器，或一个来自 `GET /v1/nodes` 的节点 id。
 - `inbound:<id>` — 自定义入站，id 来自 `GET /v1/servers/{id}/inbounds`。
 

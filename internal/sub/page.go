@@ -646,6 +646,15 @@ type protoLink struct {
 	URL   string
 }
 
+// Open is the link as a button's href for a lane whose app opens the link itself
+// rather than a subscription — TrustTunnel's tt:// — and "" for the rest.
+func (p protoLink) Open() template.URL {
+	if strings.HasPrefix(p.URL, "tt://?") {
+		return template.URL(p.URL) //nolint:gosec // link.TrustTunnel's: tt:// and base64url
+	}
+	return ""
+}
+
 // subStatus maps the derived user status to a label + badge color class.
 func subStatus(s string, lang i18n.Lang) (label, class string) {
 	switch s {
@@ -735,6 +744,11 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 		}
 		if link.NaiveOn(s) && srv.allowsBuiltin(model.LaneNaive) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoNaive, &u), link.Naive(u, s)})
+		}
+		// TrustTunnel's apps import the tt:// link, not a subscription: it is on the
+		// page only (ShareLinks leaves it out).
+		if link.TrustTunnelOn(s) && srv.allowsBuiltin(model.LaneTrustTunnel) {
+			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoTrustTunnel, &u), link.TrustTunnel(u, s)})
 		}
 		if link.AnyTLSOn(s) && srv.allowsBuiltin(model.LaneAnyTLS) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoAnyTLS, &u), link.AnyTLS(u, s)})

@@ -248,6 +248,10 @@ Clash Verge Rev、Mihomo Party、Sparkle、ClashMetaForAndroid、ClashMi）；�
 当证书受信任时，它会下发给 sing-box 客户端、Clash 配置（已支持它的 mihomo 内核）、v2rayN、Shadowrocket、
 Throne、Exclave、Karing 和 NekoBox。
 
+**TrustTunnel**（AdGuard 的协议）是位于 VLESS-TCP-TLS 端口上、基于 HTTP/2 的内置通道，与其共用证书和伪装站点：
+支持 TCP 和 UDP，登录名为 `tt-u<id>`，密码为用户的 UUID。需要拥有受信任证书的域名：应用无法通过 IP 连接。
+其应用（iOS、Android、macOS 版 TrustTunnel 及 CLI 客户端）从订阅页面导入 `tt://` 链接。
+
 **MTProto（Telegram 代理）** 是一条使用独立
 TCP端口的内置通道，端口自动选择，默认开启：Telegram 本身通过服务器连接，无需 VPN 应用。采用
 fakeTLS，每个用户的密钥由其 UUID 派生——被停用的用户随之失去，重置 UUID

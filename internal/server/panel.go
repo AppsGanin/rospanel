@@ -106,6 +106,9 @@ func makeUserView(u model.User, set *model.Settings, userBotUsername string, cus
 	if link.NaiveOn(set) && access.AllowsBuiltin(model.LocalNodeID, model.LaneNaive) {
 		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoNaive, &u), link.Naive(u, set)})
 	}
+	if link.TrustTunnelOn(set) && access.AllowsBuiltin(model.LocalNodeID, model.LaneTrustTunnel) {
+		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoTrustTunnel, &u), link.TrustTunnel(u, set)})
+	}
 	if link.AnyTLSOn(set) && access.AllowsBuiltin(model.LocalNodeID, model.LaneAnyTLS) {
 		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoAnyTLS, &u), link.AnyTLS(u, set)})
 	}

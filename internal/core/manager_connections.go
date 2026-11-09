@@ -184,6 +184,16 @@ func buildConnectionsStatus(set *model.Settings) *ConnectionsStatus {
 				Enabled:     set.NaiveEnabled,
 			},
 			{
+				Key:         "trusttunnel",
+				Name:        model.ProtoTrustTunnel,
+				DisplayName: set.TrustTunnelName,
+				Transport:   "HTTP/2 CONNECT (TrustTunnel)",
+				Security:    "TLS",
+				Port:        strconv.Itoa(vlessPort),
+				Note:        "",
+				Enabled:     set.TrustTunnelEnabled,
+			},
+			{
 				Key:         "anytls",
 				Name:        model.ProtoAnyTLS,
 				DisplayName: set.AnyTLSName,
@@ -275,6 +285,7 @@ var connNameKeys = []struct{ key, proto string }{
 	{"naive", model.ProtoNaive},
 	{"mieru", model.ProtoMieru},
 	{"anytls", model.ProtoAnyTLS},
+	{"trusttunnel", model.ProtoTrustTunnel},
 }
 
 // validateConnNames trims and checks the custom node names, returning them keyed
@@ -616,6 +627,9 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 		return err
 	}
 	if err := m.store.SetAnyTLSName(connNames["anytls"]); err != nil {
+		return err
+	}
+	if err := m.store.SetTrustTunnelName(connNames["trusttunnel"]); err != nil {
 		return err
 	}
 	if err := m.store.SetHysteriaPorts(u.HysteriaPort, u.HopStart, u.HopEnd, interval, obfs); err != nil {
