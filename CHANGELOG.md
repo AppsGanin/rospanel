@@ -1,5 +1,20 @@
 # Changelog
 
+## [5.15.0](https://github.com/AppsGanin/rospanel/compare/v5.14.0...v5.15.0) (2026-11-09)
+
+
+### Features
+
+* **branding:** add a dark theme with its own palette ([adca97f](https://github.com/AppsGanin/rospanel/commit/adca97f20f3fb0bb8a4748177fcdb73db4135b15))
+* **panel:** keep the shell usable when a screen crashes ([c64a50e](https://github.com/AppsGanin/rospanel/commit/c64a50e1dd726f0e6b3eb5ede3b3dcb068b0805a))
+* **sub:** arrange the page's app buttons and pick the wizard app per platform ([7b38dfa](https://github.com/AppsGanin/rospanel/commit/7b38dfa1124eeec5afa98a1dbfe7dfcc68461001))
+* **trusttunnel:** TrustTunnel lane through the :443 decoy ([f8fbc8e](https://github.com/AppsGanin/rospanel/commit/f8fbc8ea2da34e2b820d92b15456e26b44e10921))
+
+
+### Performance Improvements
+
+* **panel:** gzip the SPA's assets once and serve them compressed ([d2d1c26](https://github.com/AppsGanin/rospanel/commit/d2d1c26846ae40a22ced17a38d7215696731c2f3))
+
 ## [5.14.0](https://github.com/AppsGanin/rospanel/compare/v5.13.0...v5.14.0) (2026-11-03)
 
 
