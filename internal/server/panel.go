@@ -736,6 +736,8 @@ func (rt *Router) panelMux() http.Handler {
 	canBroadcasts("POST /api/broadcasts/{id}/cancel", withID(rt.cancelBroadcast))
 	canBroadcasts("POST /api/broadcasts/{id}/retry", withID(rt.retryBroadcast))
 	// Content-hashed build assets (JS/CSS/fonts) never change for a given URL → cache forever.
+	// The handler gzips each file once on its first request and answers with Vary, so a
+	// cache keeps the two forms apart (see spaAssets).
 	mux.Handle("GET /assets/", cacheControl(rt.assets, "public, max-age=31536000, immutable"))
 	// No /favicon.* routes: the build has no such files. Vite emits only what is
 	// imported, under a hashed name in assets/, and the tab's icon comes from

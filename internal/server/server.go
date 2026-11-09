@@ -107,6 +107,14 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 	if err != nil {
 		return nil, err
 	}
+	// The asset handler holds the build in memory and gzips each file on its first
+	// request (see internal/server/compress.go) — 1.7 MB of JS becomes 490 KB on the
+	// wire, which on a mobile link in Russia is the difference between a screen and a
+	// spinner.
+	assets, err := newSPAAssets(spa)
+	if err != nil {
+		return nil, err
+	}
 
 	subPath := "sub"
 	var paySecret, apiPath, nodePath, statusPath string
@@ -132,7 +140,7 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 	rt := &Router{
 		mgr:         mgr,
 		dataDir:     dataDir,
-		assets:      http.FileServer(http.FS(spa)),
+		assets:      assets,
 		indexRaw:    indexRaw,
 		limiter:     newLoginLimiter(),
 		stepUp:      newAPIKeyGuard(),
