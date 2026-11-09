@@ -50,6 +50,10 @@ const zh: Dict = {
     unsavedHint: "离开页面后更改将丢失。每个部分需单独保存。",
     shownOfMatched: "显示 {{shown}} / {{total}} 项，请缩小搜索范围",
     searchCategory: "搜索分类…",
+    crashTitle: "出现了错误",
+    crashHint: "界面渲染出错，数据没有损坏。请刷新页面，或打开其他分区。",
+    crashReload: "刷新页面",
+    crashDetails: "技术细节",
   },
 
   nav: {

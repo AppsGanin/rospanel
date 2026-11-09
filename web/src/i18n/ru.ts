@@ -49,6 +49,12 @@ const ru = {
     unsavedHint: "Уйдёте со страницы — изменения потеряются. У каждого раздела своё сохранение.",
     shownOfMatched: "Показано {{shown}} из {{total}} — уточните поиск",
     searchCategory: "Поиск категории…",
+    // Shown by ErrorBoundary when a render throws: the shell stays usable, so the
+    // text has to say that nothing was lost and that a reload is the way out.
+    crashTitle: "Произошла ошибка",
+    crashHint: "Сбой интерфейса, данные не пострадали. Обновите страницу или откройте другой раздел.",
+    crashReload: "Обновить страницу",
+    crashDetails: "Технические детали",
   },
 
   nav: {

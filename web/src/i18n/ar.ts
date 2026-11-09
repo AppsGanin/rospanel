@@ -50,6 +50,10 @@ const ar: Dict = {
     unsavedHint: "إذا غادرت الصفحة فستضيع. لكل قسم زر حفظ خاص به.",
     shownOfMatched: "يُعرض {{shown}} من {{total}} — ضيّق نطاق البحث",
     searchCategory: "البحث في الفئات…",
+    crashTitle: "حدث خطأ",
+    crashHint: "خطأ في واجهة العرض وليس في البيانات. أعد تحميل الصفحة أو افتح قسمًا آخر.",
+    crashReload: "إعادة تحميل الصفحة",
+    crashDetails: "تفاصيل تقنية",
   },
 
   nav: {

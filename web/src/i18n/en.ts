@@ -50,6 +50,10 @@ const en: Dict = {
     unsavedHint: "Leave the page and they are gone. Each section saves on its own.",
     shownOfMatched: "Showing {{shown}} of {{total}} — narrow the search",
     searchCategory: "Search categories…",
+    crashTitle: "Something went wrong",
+    crashHint: "A rendering error — no data lost. Reload the page, or open another section.",
+    crashReload: "Reload the page",
+    crashDetails: "Technical details",
   },
 
   nav: {

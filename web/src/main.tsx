@@ -15,13 +15,18 @@ import './index.css'
 // component renders, or t() returns raw keys on the very first paint.
 import { ready } from './i18n'
 import { App } from './App'
+import { ErrorBoundary } from './ErrorBoundary'
 import { Toaster } from './toast'
 
 ready.then(() =>
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <App />
-      <Toaster />
+      {/* Last resort: a throw outside a section (login, wizard, toast host) would
+          otherwise leave the panel blank with no way back. */}
+      <ErrorBoundary>
+        <App />
+        <Toaster />
+      </ErrorBoundary>
     </React.StrictMode>,
   ),
 )
