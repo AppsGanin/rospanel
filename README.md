@@ -793,9 +793,10 @@ needed; see [docs/plugins](docs/plugins/README.md) and [examples/plugins](exampl
 
 #### 🎨 Branding and theme
 
-Your own name and logo instead of "RosPanel" — in the panel and on the subscription page. An
-accent color repaints the whole interface, and **dark mode** adapts text, statuses and charts
-on its own.
+Your own name and logo instead of "RosPanel" — in the panel and on the subscription page. Two
+palettes — **light and dark**, each with its own accent, text, background and surface. The
+panel, subscription page, status page and documents show the one the system uses; the panel's
+top bar can pin one.
 
 #### 🛡️ Abuse detection
 

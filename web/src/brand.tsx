@@ -6,6 +6,8 @@
 //   muted   → --color-ink-muted   (text-ink-muted)
 //   bg      → --ui-bg             (page background, see index.css)
 //   surface → --color-white       (bg-white: cards, inputs, modals)
+// There are two themes, light and dark: the panel shows the one the system asks
+// for, unless the admin picked one in the top bar (kept in this browser).
 import {
   createContext,
   useCallback,
@@ -25,19 +27,67 @@ const DEFAULT_THEME: ThemeColors = {
   bg: '#eaf1fb',
   surface: '#ffffff',
 }
+// Must match internal/branding.DefaultDarkTheme; its accent is the light one's.
+const DEFAULT_DARK: ThemeColors = {
+  accent: '',
+  text: '#e4ebf5',
+  muted: '#8e9db2',
+  bg: '#0b1220',
+  surface: '#151e30',
+}
+
+// The admin's own pick in the top bar: follow the system, or hold one theme.
+export type ThemeMode = 'auto' | 'light' | 'dark'
 
 type BrandState = BrandingInfo & {
   logoURL: string // custom-logo endpoint (only meaningful when has_custom_logo)
   refresh: () => Promise<void>
   loaded: boolean
+  mode: ThemeMode
+  setMode: (m: ThemeMode) => void
+  dark: boolean // the dark theme is on screen now
 }
 
 const FALLBACK: BrandingInfo = {
   panel_name: DEFAULT_NAME,
   theme: DEFAULT_THEME,
+  theme_dark: { ...DEFAULT_DARK, accent: DEFAULT_THEME.accent },
   has_custom_logo: false,
   default_name: DEFAULT_NAME,
   default_theme: DEFAULT_THEME,
+  default_theme_dark: DEFAULT_DARK,
+}
+
+const MODE_KEY = 'rp-theme-mode'
+const CACHE_KEY = 'rp-brand-palette'
+
+function readMode(): ThemeMode {
+  try {
+    const v = localStorage.getItem(MODE_KEY)
+    if (v === 'light' || v === 'dark') return v
+  } catch {
+    /* storage blocked: follow the system */
+  }
+  return 'auto'
+}
+
+const darkQuery = () =>
+  typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(prefers-color-scheme: dark)')
+    : null
+
+// wantsDark: the dark theme shows when the admin picked it or the system asks for it.
+function wantsDark(mode: ThemeMode, sysDark: boolean): boolean {
+  if (mode !== 'auto') return mode === 'dark'
+  return sysDark
+}
+
+// paint applies whichever theme should show now. The stock light theme is what
+// the compiled CSS already has, so its defaults clear the overrides; the dark one
+// has no compiled twin and sets every variable.
+function paint(info: BrandingInfo, mode: ThemeMode, sysDark: boolean) {
+  if (wantsDark(mode, sysDark)) applyTheme(info.theme_dark, null)
+  else applyTheme(info.theme ?? DEFAULT_THEME, info.default_theme ?? DEFAULT_THEME)
 }
 
 const BrandCtx = createContext<BrandState | null>(null)
@@ -109,11 +159,11 @@ const SHADES = RAMP.map(([s]) => s)
 
 // applyTheme overrides the brand ramp + text/bg/surface variables on :root, or
 // clears each override when it matches the stock default (so the hand-tuned
-// compiled values show through).
-function applyTheme(theme: ThemeColors, def: ThemeColors) {
+// compiled values show through). A null default sets every variable.
+function applyTheme(theme: ThemeColors, def: ThemeColors | null) {
   const root = document.documentElement
-  const set = (name: string, value: string, fallback: string) => {
-    if (value && value.toLowerCase() !== fallback.toLowerCase()) {
+  const set = (name: string, value: string, fallback: string | undefined) => {
+    if (value && (fallback === undefined || value.toLowerCase() !== fallback.toLowerCase())) {
       root.style.setProperty(name, value)
     } else {
       root.style.removeProperty(name)
@@ -122,7 +172,7 @@ function applyTheme(theme: ThemeColors, def: ThemeColors) {
 
   // Accent ramp.
   const base = hexToRgb(theme.accent)
-  if (base && theme.accent.toLowerCase() !== def.accent.toLowerCase()) {
+  if (base && (!def || theme.accent.toLowerCase() !== def.accent.toLowerCase())) {
     for (const [shade, target, t] of RAMP) {
       root.style.setProperty(`--color-brand-${shade}`, toHex(mix(base, target, t)))
     }
@@ -130,15 +180,16 @@ function applyTheme(theme: ThemeColors, def: ThemeColors) {
     for (const s of SHADES) root.style.removeProperty(`--color-brand-${s}`)
   }
 
-  set('--color-ink', theme.text, def.text)
-  set('--color-ink-muted', theme.muted, def.muted)
-  set('--ui-bg', theme.bg, def.bg)
-  set('--color-white', theme.surface, def.surface)
+  set('--color-ink', theme.text, def?.text)
+  set('--color-ink-muted', theme.muted, def?.muted)
+  set('--ui-bg', theme.bg, def?.bg)
+  set('--color-white', theme.surface, def?.surface)
 
   // Neutral ramp (borders/dividers/hover/secondary text) derived from the theme.
-  const text = hexToRgb(theme.text) ?? hexToRgb(def.text)!
-  const surface = hexToRgb(theme.surface) ?? hexToRgb(def.surface)!
-  const accent = base ?? hexToRgb(def.accent)!
+  const fb = def ?? DEFAULT_THEME
+  const text = hexToRgb(theme.text) ?? hexToRgb(fb.text)!
+  const surface = hexToRgb(theme.surface) ?? hexToRgb(fb.surface)!
+  const accent = base ?? hexToRgb(fb.accent)!
   for (const [shade, light, tint] of GRAY) {
     root.style.setProperty(
       `--color-gray-${shade}`,
@@ -151,6 +202,8 @@ function applyTheme(theme: ThemeColors, def: ThemeColors) {
   // it stays readable for any accent+surface combo (a plain brand-700 would be
   // dark accent on a dark surface). Always set — `.text-accent` references it.
   const darkSurface = luminance(surface) < 0.4
+  // The browser's own controls (scrollbars, date pickers, autofill) follow suit.
+  root.style.colorScheme = darkSurface ? 'dark' : 'light'
   root.style.setProperty(
     '--accent-fg',
     toHex(darkSurface ? mix(accent, 255, 0.42) : mix(accent, 0, 0.18)),
@@ -192,9 +245,23 @@ function onFill(fill: [number, number, number]): string {
   return luminance(fill) > 0.3 ? ON_FILL_DARK : '#ffffff'
 }
 
+// The last palette this browser saw, painted before the first fetch returns, so
+// a dark panel does not flash light on every load.
+function cachedInfo(): BrandingInfo | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    return raw ? (JSON.parse(raw) as BrandingInfo) : null
+  } catch {
+    return null
+  }
+}
+paint(cachedInfo() ?? FALLBACK, readMode(), darkQuery()?.matches ?? false)
+
 export function BrandProvider({ children }: { children: ReactNode }) {
   const [info, setInfo] = useState<BrandingInfo | null>(null)
   const [logoBust, setLogoBust] = useState(0)
+  const [mode, setModeState] = useState<ThemeMode>(readMode)
+  const [sysDark, setSysDark] = useState(() => darkQuery()?.matches ?? false)
 
   const refresh = useCallback(async () => {
     const b = await getBranding().catch(() => FALLBACK)
@@ -206,11 +273,35 @@ export function BrandProvider({ children }: { children: ReactNode }) {
     refresh()
   }, [refresh])
 
+  // Follow the system flipping while the panel is open.
+  useEffect(() => {
+    const q = darkQuery()
+    if (!q) return
+    const on = () => setSysDark(q.matches)
+    q.addEventListener('change', on)
+    return () => q.removeEventListener('change', on)
+  }, [])
+
+  const setMode = useCallback((m: ThemeMode) => {
+    setModeState(m)
+    try {
+      if (m === 'auto') localStorage.removeItem(MODE_KEY)
+      else localStorage.setItem(MODE_KEY, m)
+    } catch {
+      /* storage blocked: the pick lasts this tab */
+    }
+  }, [])
+
   useEffect(() => {
     if (!info) return
-    applyTheme(info.theme ?? DEFAULT_THEME, info.default_theme ?? DEFAULT_THEME)
+    paint(info, mode, sysDark)
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify(info))
+    } catch {
+      /* no cache: the first paint is the stock theme */
+    }
     document.title = info.panel_name || DEFAULT_NAME
-  }, [info])
+  }, [info, mode, sysDark])
 
   const value = useMemo<BrandState>(() => {
     const i = info ?? FALLBACK
@@ -219,8 +310,11 @@ export function BrandProvider({ children }: { children: ReactNode }) {
       logoURL: `api/branding/logo${logoBust ? `?v=${logoBust}` : ''}`,
       refresh,
       loaded: info !== null,
+      mode,
+      setMode,
+      dark: wantsDark(mode, sysDark),
     }
-  }, [info, logoBust, refresh])
+  }, [info, logoBust, refresh, mode, setMode, sysDark])
 
   return <BrandCtx.Provider value={value}>{children}</BrandCtx.Provider>
 }

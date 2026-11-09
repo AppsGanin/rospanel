@@ -81,14 +81,14 @@ func TestParseThemeAlwaysYieldsACompletePalette(t *testing.T) {
 func TestNormalizeTheme(t *testing.T) {
 	// Nothing set persists as nothing, so the settings row does not carry a JSON
 	// blob of empty strings that reads as "customised".
-	if got, err := NormalizeTheme(Theme{}); err != nil || got != "" {
+	if got, err := NormalizeTheme(Theme{}, Theme{}); err != nil || got != "" {
 		t.Errorf("NormalizeTheme(empty) = %q, %v; want \"\"", got, err)
 	}
-	if got, err := NormalizeTheme(Theme{Accent: "  "}); err != nil || got != "" {
+	if got, err := NormalizeTheme(Theme{Accent: "  "}, Theme{}); err != nil || got != "" {
 		t.Errorf("a whitespace-only theme should store nothing, got %q, %v", got, err)
 	}
 
-	stored, err := NormalizeTheme(Theme{Accent: " #ABCDEF ", Bg: "#000000"})
+	stored, err := NormalizeTheme(Theme{Accent: " #ABCDEF ", Bg: "#000000"}, Theme{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,14 +108,57 @@ func TestNormalizeTheme(t *testing.T) {
 		{Theme{Bg: "123456"}, "err.badColorBg"},
 		{Theme{Surface: "#1234567"}, "err.badColorSurface"},
 	} {
-		_, err := NormalizeTheme(tc.theme)
+		_, err := NormalizeTheme(tc.theme, Theme{})
 		if err == nil {
 			t.Errorf("%+v was accepted", tc.theme)
 			continue
 		}
+		if _, derr := NormalizeTheme(Theme{}, tc.theme); derr == nil {
+			t.Errorf("dark %+v was accepted", tc.theme)
+		}
 		if got := fieldCode(t, err); got != tc.code {
 			t.Errorf("%+v: code %q, want %q", tc.theme, got, tc.code)
 		}
+	}
+}
+
+// The dark palette rides in the same JSON: a stored theme from before it existed
+// reads as the stock dark one with the operator's accent, a dark colour equal to
+// its default is not stored (so the dark accent follows the light one), and a
+// custom one survives the round trip.
+func TestDarkPalette(t *testing.T) {
+	p := ParsePalette(`{"accent":"#ff0000"}`)
+	if want := DefaultDarkTheme("#ff0000"); p.Dark != want {
+		t.Errorf("old JSON dark = %+v, want %+v", p.Dark, want)
+	}
+	if !IsDark(p.Dark) || IsDark(p.Light) {
+		t.Errorf("IsDark: dark %v, light %v", IsDark(p.Dark), IsDark(p.Light))
+	}
+
+	// A single theme painted dark before the dark theme existed stays the dark one.
+	old := `{"accent":"#22aa22","text":"#eeeeee","muted":"#999999","bg":"#000000","surface":"#111111"}`
+	if p := ParsePalette(old); p.Dark != p.Light {
+		t.Errorf("an old dark theme: dark = %+v, want the light one %+v", p.Dark, p.Light)
+	}
+
+	js, err := NormalizeTheme(Theme{Accent: "#ff0000"}, DefaultDarkTheme("#ff0000"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(js, "dark") {
+		t.Errorf("a default dark palette was stored: %s", js)
+	}
+	if got := ParsePalette(strings.Replace(js, "#ff0000", "#00ff00", 1)).Dark.Accent; got != "#00ff00" {
+		t.Errorf("dark accent = %s, want it to follow the light one", got)
+	}
+
+	js, err = NormalizeTheme(Theme{}, Theme{Bg: "#101010", Accent: "#22AA22"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p = ParsePalette(js)
+	if p.Dark.Bg != "#101010" || p.Dark.Accent != "#22aa22" || p.Light != DefaultTheme() {
+		t.Errorf("round trip = %+v (from %s)", p, js)
 	}
 }
 

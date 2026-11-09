@@ -41,6 +41,10 @@ const ar: Dict = {
     showMoreCount: "عرض المزيد ({{n}})",
     menu: "القائمة",
     language: "اللغة",
+    theme: "السمة",
+    themeAuto: "حسب النظام",
+    themeLight: "فاتحة",
+    themeDark: "داكنة",
     panelTime: "توقيت لوحة التحكم · {{tz}}",
     unsavedTitle: "لديك تغييرات غير محفوظة",
     unsavedHint: "إذا غادرت الصفحة فستضيع. لكل قسم زر حفظ خاص به.",
@@ -2927,6 +2931,9 @@ const ar: Dict = {
     saved: "تم حفظ الهوية البصرية",
     logoUploaded: "تم رفع الشعار",
     logoReset: "أُعيد الشعار إلى الافتراضي",
+    lightTheme: "فاتحة",
+    darkTheme: "داكنة",
+    darkAccentHint: "افتراضيًا لون التمييز في السمة الفاتحة.",
   },
 
   manage: {

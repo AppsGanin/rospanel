@@ -40,6 +40,10 @@ const ru = {
     showMoreCount: "Показать ещё ({{n}})",
     menu: "Меню",
     language: "Язык",
+    theme: "Тема",
+    themeAuto: "Как в системе",
+    themeLight: "Светлая",
+    themeDark: "Тёмная",
     panelTime: "Время панели · {{tz}}",
     unsavedTitle: "Есть несохранённые изменения",
     unsavedHint: "Уйдёте со страницы — изменения потеряются. У каждого раздела своё сохранение.",
@@ -3016,6 +3020,9 @@ const ru = {
     saved: "Брендинг сохранён",
     logoUploaded: "Логотип загружен",
     logoReset: "Логотип сброшен на стандартный",
+    lightTheme: "Светлая",
+    darkTheme: "Тёмная",
+    darkAccentHint: "По умолчанию — акцент светлой темы.",
   },
 
   manage: {

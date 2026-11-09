@@ -41,6 +41,10 @@ const zh: Dict = {
     showMoreCount: "显示更多（{{n}}）",
     menu: "菜单",
     language: "语言",
+    theme: "主题",
+    themeAuto: "跟随系统",
+    themeLight: "浅色",
+    themeDark: "深色",
     panelTime: "面板时间 · {{tz}}",
     unsavedTitle: "有未保存的更改",
     unsavedHint: "离开页面后更改将丢失。每个部分需单独保存。",
@@ -3018,6 +3022,9 @@ const zh: Dict = {
     saved: "品牌设置已保存",
     logoUploaded: "徽标已上传",
     logoReset: "徽标已恢复默认",
+    lightTheme: "浅色",
+    darkTheme: "深色",
+    darkAccentHint: "默认使用浅色主题的强调色。",
   },
 
   manage: {

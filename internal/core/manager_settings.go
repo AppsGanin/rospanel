@@ -115,10 +115,10 @@ func (m *Manager) SetPanelName(name string) error {
 	return m.store.SetPanelName(name)
 }
 
-// SetPanelTheme validates and persists the colour theme (each field empty ⇒ the
-// matching default applies).
-func (m *Manager) SetPanelTheme(t branding.Theme) error {
-	js, err := branding.NormalizeTheme(t)
+// SetPanelTheme validates and persists the light and dark colour themes (each
+// field empty ⇒ the matching default applies).
+func (m *Manager) SetPanelTheme(light, dark branding.Theme) error {
+	js, err := branding.NormalizeTheme(light, dark)
 	if err != nil {
 		return fromFieldErr(err)
 	}

@@ -3624,6 +3624,9 @@
           "bg": {
             "type": "string"
           },
+          "dark": {
+            "$ref": "#/components/schemas/ViewColors"
+          },
           "muted": {
             "type": "string"
           },
@@ -3662,6 +3665,33 @@
         "required": [
           "question",
           "reasons"
+        ],
+        "type": "object"
+      },
+      "ViewColors": {
+        "properties": {
+          "accent": {
+            "type": "string"
+          },
+          "bg": {
+            "type": "string"
+          },
+          "muted": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accent",
+          "text",
+          "muted",
+          "bg",
+          "surface"
         ],
         "type": "object"
       },

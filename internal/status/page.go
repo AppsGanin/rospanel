@@ -67,12 +67,8 @@ type Day struct {
 	Title string
 }
 
-// Data is everything the template renders.
-type Data struct {
-	Lang      string
-	Dir       string
-	Title     string
-	LogoURL   string
+// Colors is one theme as the page's CSS variables take it.
+type Colors struct {
 	Brand     string
 	BrandDark string
 	Ink       string
@@ -83,6 +79,37 @@ type Data struct {
 	DangerFg  string
 	WarningFg string
 	InfoFg    string
+	Scheme    string // CSS color-scheme: light | dark
+}
+
+func colorsOf(th branding.Theme) Colors {
+	c := Colors{
+		Brand:     th.Accent,
+		BrandDark: branding.Darken(th.Accent, 0.16),
+		Ink:       th.Text,
+		Muted:     th.Muted,
+		Bg:        th.Bg,
+		Surface:   th.Surface,
+		SuccessFg: branding.Fg("#059669", th.Surface),
+		DangerFg:  branding.Fg("#dc2626", th.Surface),
+		WarningFg: branding.Fg("#ea580c", th.Surface),
+		InfoFg:    branding.Fg("#2563eb", th.Surface),
+		Scheme:    "light",
+	}
+	if branding.IsDark(th) {
+		c.Scheme = "dark"
+	}
+	return c
+}
+
+// Data is everything the template renders.
+type Data struct {
+	Lang    string
+	Dir     string
+	Title   string
+	LogoURL string
+	Colors          // the light theme
+	Dark    *Colors // the dark theme, for a dark system
 
 	Headline   string
 	HeadlineOK bool
@@ -209,17 +236,10 @@ func (d *Data) Theme(panelName, panelTheme string, lang i18n.Lang, days int) {
 	if name == branding.DefaultName {
 		name = i18n.T(lang, "sub.defaultBrand")
 	}
-	th := branding.ParseTheme(panelTheme)
-	d.Brand = th.Accent
-	d.BrandDark = branding.Darken(th.Accent, 0.16)
-	d.Ink = th.Text
-	d.Muted = th.Muted
-	d.Bg = th.Bg
-	d.Surface = th.Surface
-	d.SuccessFg = branding.Fg("#059669", th.Surface)
-	d.DangerFg = branding.Fg("#dc2626", th.Surface)
-	d.WarningFg = branding.Fg("#ea580c", th.Surface)
-	d.InfoFg = branding.Fg("#2563eb", th.Surface)
+	pal := branding.ParsePalette(panelTheme)
+	d.Colors = colorsOf(pal.Light)
+	dark := colorsOf(pal.Dark)
+	d.Dark = &dark
 	d.Lang = string(lang)
 	d.Dir = lang.Dir()
 	d.L = texts(lang, days)

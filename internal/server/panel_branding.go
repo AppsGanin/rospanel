@@ -11,17 +11,22 @@ import (
 // built-in defaults (so the UI can show what "reset" reverts to).
 func (rt *Router) brandingInfo() map[string]any {
 	name := branding.DefaultName
-	theme := branding.DefaultTheme()
+	pal := branding.ParsePalette("")
 	if set, err := rt.mgr.Settings(); err == nil {
 		name = branding.Name(set.PanelName)
-		theme = branding.ParseTheme(set.PanelTheme)
+		pal = branding.ParsePalette(set.PanelTheme)
 	}
+	// default_theme_dark has no accent: the dark default is whatever the light
+	// accent is, which the editor knows better than this reply (it may be unsaved).
+	defDark := branding.DefaultDarkTheme("")
 	return map[string]any{
-		"panel_name":      name,
-		"theme":           theme,
-		"has_custom_logo": branding.HasCustomLogo(rt.dataDir),
-		"default_name":    branding.DefaultName,
-		"default_theme":   branding.DefaultTheme(),
+		"panel_name":         name,
+		"theme":              pal.Light,
+		"theme_dark":         pal.Dark,
+		"has_custom_logo":    branding.HasCustomLogo(rt.dataDir),
+		"default_name":       branding.DefaultName,
+		"default_theme":      branding.DefaultTheme(),
+		"default_theme_dark": defDark,
 	}
 }
 
@@ -46,17 +51,31 @@ func (rt *Router) brandingLogo(w http.ResponseWriter, _ *http.Request) {
 // saveBranding persists the panel name and colour theme.
 func (rt *Router) saveBranding(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		PanelName string         `json:"panel_name"`
-		Theme     branding.Theme `json:"theme"`
+		PanelName string          `json:"panel_name"`
+		Theme     branding.Theme  `json:"theme"`
+		ThemeDark *branding.Theme `json:"theme_dark"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
+	}
+	// A caller that knows nothing of the dark theme (an old panel tab) keeps what
+	// is stored rather than wiping it.
+	if req.ThemeDark == nil {
+		var d branding.Theme
+		if set, err := rt.mgr.Settings(); err == nil {
+			pal := branding.ParsePalette(set.PanelTheme)
+			d = pal.Dark
+			if d.Accent == pal.Light.Accent {
+				d.Accent = "" // still following the light accent
+			}
+		}
+		req.ThemeDark = &d
 	}
 	if err := rt.mgr.SetPanelName(req.PanelName); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
-	if err := rt.mgr.SetPanelTheme(req.Theme); err != nil {
+	if err := rt.mgr.SetPanelTheme(req.Theme, *req.ThemeDark); err != nil {
 		writeManagerErr(w, err)
 		return
 	}

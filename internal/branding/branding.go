@@ -72,24 +72,68 @@ func Name(panelName string) string {
 }
 
 // ParseTheme decodes the stored theme JSON and fills any empty/invalid field
-// from DefaultTheme(), so the result is always a complete, valid palette.
-func ParseTheme(themeJSON string) Theme {
-	def := DefaultTheme()
-	out := def
-	if strings.TrimSpace(themeJSON) != "" {
-		var t Theme
-		if json.Unmarshal([]byte(themeJSON), &t) == nil {
-			out = Theme{
-				Accent:  pick(t.Accent, def.Accent),
-				Text:    pick(t.Text, def.Text),
-				Muted:   pick(t.Muted, def.Muted),
-				Bg:      pick(t.Bg, def.Bg),
-				Surface: pick(t.Surface, def.Surface),
-			}
-		}
-	}
-	return out
+// from DefaultTheme(), so the result is always a complete, valid palette. It is
+// the light theme; ParsePalette also returns the dark one.
+func ParseTheme(themeJSON string) Theme { return ParsePalette(themeJSON).Light }
+
+// Palette is both themes: Light shows on a light system, Dark on a dark one.
+type Palette struct {
+	Light Theme
+	Dark  Theme
 }
+
+// stored is the panel_theme JSON: the light colours at the top level (the shape
+// it had before the dark theme existed), the dark ones under "dark".
+type stored struct {
+	Theme
+	Dark *Theme `json:"dark,omitempty"`
+}
+
+// DefaultDarkTheme is the stock dark palette. It carries the light theme's
+// accent, so a panel painted in its own colour keeps it after dark.
+func DefaultDarkTheme(accent string) Theme {
+	return Theme{
+		Accent:  accent,
+		Text:    "#e4ebf5",
+		Muted:   "#8e9db2",
+		Bg:      "#0b1220",
+		Surface: "#151e30",
+	}
+}
+
+func fill(t, def Theme) Theme {
+	return Theme{
+		Accent:  pick(t.Accent, def.Accent),
+		Text:    pick(t.Text, def.Text),
+		Muted:   pick(t.Muted, def.Muted),
+		Bg:      pick(t.Bg, def.Bg),
+		Surface: pick(t.Surface, def.Surface),
+	}
+}
+
+// ParsePalette decodes the stored theme JSON into both complete palettes: an
+// empty or invalid field is its default, never an empty CSS value.
+func ParsePalette(themeJSON string) Palette {
+	var st stored
+	if strings.TrimSpace(themeJSON) != "" && json.Unmarshal([]byte(themeJSON), &st) != nil {
+		st = stored{}
+	}
+	light := fill(st.Theme, DefaultTheme())
+	var dark Theme
+	switch {
+	case st.Dark != nil:
+		dark = *st.Dark
+	case IsDark(light):
+		// Saved before there were two themes, by an operator who painted the one
+		// theme dark: that is their dark theme too, not the stock one.
+		dark = light
+	}
+	return Palette{Light: light, Dark: fill(dark, DefaultDarkTheme(light.Accent))}
+}
+
+// IsDark reports whether a theme reads as dark — its surface, which carries the
+// text. A light theme the operator painted dark counts as dark too.
+func IsDark(t Theme) bool { return luminance(t.Surface) < 0.4 }
 
 func pick(v, fallback string) string {
 	v = strings.ToLower(strings.TrimSpace(v))
@@ -101,7 +145,45 @@ func pick(v, fallback string) string {
 
 // NormalizeTheme validates each provided colour and returns the JSON to persist.
 // Empty fields are dropped (⇒ default applies); a non-empty non-hex field errors.
-func NormalizeTheme(t Theme) (string, error) {
+// A dark colour equal to its default is dropped too, so the dark accent keeps
+// following the light one until the operator gives it its own.
+func NormalizeTheme(light, dark Theme) (string, error) {
+	var err error
+	if light, err = cleanTheme(light); err != nil {
+		return "", err
+	}
+	if dark, err = cleanTheme(dark); err != nil {
+		return "", err
+	}
+	def := DefaultDarkTheme(pick(light.Accent, DefaultTheme().Accent))
+	drop := func(v, d string) string {
+		if v == d {
+			return ""
+		}
+		return v
+	}
+	dark = Theme{
+		Accent:  drop(dark.Accent, def.Accent),
+		Text:    drop(dark.Text, def.Text),
+		Muted:   drop(dark.Muted, def.Muted),
+		Bg:      drop(dark.Bg, def.Bg),
+		Surface: drop(dark.Surface, def.Surface),
+	}
+	st := stored{Theme: light}
+	if dark != (Theme{}) {
+		st.Dark = &dark
+	}
+	if st == (stored{}) {
+		return "", nil // nothing set ⇒ store empty, all defaults apply
+	}
+	b, err := json.Marshal(st)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func cleanTheme(t Theme) (Theme, error) {
 	// Which colour failed is part of the message, and it is a word — so each field
 	// gets its own code rather than one code with the field name glued in: an
 	// argument travels verbatim and would arrive at an English panel in Russian.
@@ -114,28 +196,21 @@ func NormalizeTheme(t Theme) (string, error) {
 	}
 	var err error
 	if t.Accent, err = clean("err.badColorAccent", "цвет «акцент» должен быть в формате #RRGGBB", t.Accent); err != nil {
-		return "", err
+		return t, err
 	}
 	if t.Text, err = clean("err.badColorText", "цвет «текст» должен быть в формате #RRGGBB", t.Text); err != nil {
-		return "", err
+		return t, err
 	}
 	if t.Muted, err = clean("err.badColorMuted", "цвет «приглушённый текст» должен быть в формате #RRGGBB", t.Muted); err != nil {
-		return "", err
+		return t, err
 	}
 	if t.Bg, err = clean("err.badColorBg", "цвет «фон» должен быть в формате #RRGGBB", t.Bg); err != nil {
-		return "", err
+		return t, err
 	}
 	if t.Surface, err = clean("err.badColorSurface", "цвет «поверхность» должен быть в формате #RRGGBB", t.Surface); err != nil {
-		return "", err
+		return t, err
 	}
-	if t == (Theme{}) {
-		return "", nil // nothing set ⇒ store empty, all defaults apply
-	}
-	b, err := json.Marshal(t)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
+	return t, nil
 }
 
 // Darken mixes hex toward black by frac (0..1); used to derive the darker accent

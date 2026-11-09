@@ -385,11 +385,8 @@ type awgCard struct {
 	QRURL   string
 }
 
-type pageData struct {
-	Lang      i18n.Lang
-	L         pageText
-	Name      string
-	BrandName string // panel display name (defaults to the stock RosPanel name)
+// pageColors is one theme as the page's CSS variables take it.
+type pageColors struct {
 	Brand     string // accent colour #rrggbb
 	BrandDark string // darker accent for hover/active states
 	AccentFg  string // accent text colour adjusted for the surface
@@ -401,12 +398,45 @@ type pageData struct {
 	Muted     string // secondary text colour
 	Bg        string // page background base
 	Surface   string // card background
-	IsDefault bool   // true when the stock RosPanel name is in effect
-	SubURL    string
-	Access    Access
-	Links     []protoLink
-	DeepLinks []DeepLink
-	Wizard    []WizardPlatform
+	Glow      string // what the top of the background fades from: white, or the surface on a dark theme
+	Scheme    string // CSS color-scheme: light | dark, for the browser's own controls
+}
+
+func colorsOf(t branding.Theme) pageColors {
+	c := pageColors{
+		Brand:     t.Accent,
+		BrandDark: branding.Darken(t.Accent, 0.16),
+		AccentFg:  branding.Fg(t.Accent, t.Surface),
+		OnBrand:   branding.OnFill(t.Accent),
+		SuccessFg: branding.Fg("#059669", t.Surface),
+		WarningFg: branding.Fg("#ea580c", t.Surface),
+		DangerFg:  branding.Fg("#dc2626", t.Surface),
+		Ink:       t.Text,
+		Muted:     t.Muted,
+		Bg:        t.Bg,
+		Surface:   t.Surface,
+		Glow:      "#ffffff",
+		Scheme:    "light",
+	}
+	if branding.IsDark(t) {
+		c.Glow, c.Scheme = t.Surface, "dark"
+	}
+	return c
+}
+
+type pageData struct {
+	Lang       i18n.Lang
+	L          pageText
+	Name       string
+	BrandName  string      // panel display name (defaults to the stock RosPanel name)
+	pageColors             // the light theme
+	Dark       *pageColors // the dark theme, for a dark system
+	IsDefault  bool        // true when the stock RosPanel name is in effect
+	SubURL     string
+	Access     Access
+	Links      []protoLink
+	DeepLinks  []DeepLink
+	Wizard     []WizardPlatform
 	// AWG lists one card per server whose AmneziaWG lane the user may use: the
 	// config file to import and its QR.
 	AWG []awgCard
@@ -785,23 +815,15 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 	if isDefault {
 		brandName = i18n.T(lang, "sub.defaultBrand")
 	}
-	theme := branding.ParseTheme(local.PanelTheme)
+	pal := branding.ParsePalette(local.PanelTheme)
+	dark := colorsOf(pal.Dark)
 	data := pageData{
 		Lang:        lang,
 		L:           text(lang),
 		Name:        u.Name,
 		BrandName:   brandName,
-		Brand:       theme.Accent,
-		BrandDark:   branding.Darken(theme.Accent, 0.16),
-		AccentFg:    branding.Fg(theme.Accent, theme.Surface),
-		OnBrand:     branding.OnFill(theme.Accent),
-		SuccessFg:   branding.Fg("#059669", theme.Surface),
-		WarningFg:   branding.Fg("#ea580c", theme.Surface),
-		DangerFg:    branding.Fg("#dc2626", theme.Surface),
-		Ink:         theme.Text,
-		Muted:       theme.Muted,
-		Bg:          theme.Bg,
-		Surface:     theme.Surface,
+		pageColors:  colorsOf(pal.Light),
+		Dark:        &dark,
 		IsDefault:   isDefault,
 		SubURL:      subURL,
 		Links:       protoLinks,

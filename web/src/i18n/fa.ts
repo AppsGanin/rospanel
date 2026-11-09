@@ -41,6 +41,10 @@ const fa: Dict = {
     showMoreCount: "نمایش بیشتر ({{n}})",
     menu: "منو",
     language: "زبان",
+    theme: "پوسته",
+    themeAuto: "مطابق سیستم",
+    themeLight: "روشن",
+    themeDark: "تیره",
     panelTime: "زمان پنل · {{tz}}",
     unsavedTitle: "تغییرات ذخیره‌نشده دارید",
     unsavedHint: "با ترک صفحه، این تغییرات از بین می‌روند. هر بخش جداگانه ذخیره می‌شود.",
@@ -3019,6 +3023,9 @@ const fa: Dict = {
     saved: "برندینگ ذخیره شد",
     logoUploaded: "لوگو بارگذاری شد",
     logoReset: "لوگو به پیش‌فرض بازنشانی شد",
+    lightTheme: "روشن",
+    darkTheme: "تیره",
+    darkAccentHint: "پیش‌فرض: رنگ تأکید پوسته روشن.",
   },
 
   manage: {

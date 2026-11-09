@@ -1329,7 +1329,7 @@ function InboundForm({
       )}
 
       {combo?.unsupported && combo.unsupported.length > 0 && (
-        <p className="rounded-lg bg-orange-50 px-3 py-2 text-xs text-orange-800">
+        <p className="rounded-lg warning-tint px-3 py-2 text-xs text-warning">
           {t("inb.comboUnsupported", { clients: combo.unsupported.join(", ") })}
         </p>
       )}

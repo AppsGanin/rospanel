@@ -87,7 +87,7 @@ export function LogViewer({
         className="flex-1 overflow-auto bg-gray-50 p-3 font-mono text-xs leading-relaxed"
       >
         {!live && (
-          <p className="mb-2 rounded border border-orange-200 bg-orange-50 px-2 py-1 text-orange-800">
+          <p className="mb-2 rounded border border-orange-500/30 warning-tint px-2 py-1 text-warning">
             {t("logs.reconnecting")}
           </p>
         )}

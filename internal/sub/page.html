@@ -14,7 +14,8 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="{{.BrandName}}" />
-    <meta name="theme-color" content="{{.Bg}}" />
+    <meta name="theme-color" content="{{.Bg}}"{{if .Dark}} media="(prefers-color-scheme: light)"{{end}} />
+    {{with .Dark}}<meta name="theme-color" content="{{.Bg}}" media="(prefers-color-scheme: dark)" />{{end}}
     <script src="{{.SubURL}}/tg.js"></script>
     <style>
       /* Mulish, self-hosted from this panel (see sub.Font). Google Fonts is
@@ -129,9 +130,29 @@
         --muted: {{.Muted}};
         --bg: {{.Bg}};
         --surface: {{.Surface}};
+        --glow: {{.Glow}};
         --line: color-mix(in srgb, var(--brand) 8%, transparent);
-        color-scheme: light dark;
+        color-scheme: {{.Scheme}};
       }
+      {{with .Dark}}
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --brand: {{.Brand}};
+          --brand-dark: {{.BrandDark}};
+          --accent-fg: {{.AccentFg}};
+          --on-brand: {{.OnBrand}};
+          --success-fg: {{.SuccessFg}};
+          --warning-fg: {{.WarningFg}};
+          --danger-fg: {{.DangerFg}};
+          --ink: {{.Ink}};
+          --muted: {{.Muted}};
+          --bg: {{.Bg}};
+          --surface: {{.Surface}};
+          --glow: {{.Glow}};
+          color-scheme: {{.Scheme}};
+        }
+      }
+      {{end}}
       * {
         box-sizing: border-box;
       }
@@ -150,7 +171,7 @@
           ),
           linear-gradient(
             180deg,
-            color-mix(in srgb, var(--bg) 55%, white) 0%,
+            color-mix(in srgb, var(--bg) 55%, var(--glow)) 0%,
             var(--bg) 100%
           );
         background-attachment: fixed;

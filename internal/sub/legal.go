@@ -59,6 +59,18 @@ func LegalTitle(kind string, lang i18n.Lang) string {
 	return i18n.T(lang, "sub.legalTerms")
 }
 
+// legalColors is one theme of the document page.
+type legalColors struct{ Bg, Surface, Ink, Muted, Accent, Scheme string }
+
+func legalColorsOf(t branding.Theme) legalColors {
+	scheme := "light"
+	if branding.IsDark(t) {
+		scheme = "dark"
+	}
+	// The accent is text here (the name, links), so it takes the surface-adjusted shade.
+	return legalColors{t.Bg, t.Surface, t.Text, t.Muted, branding.Fg(t.Accent, t.Surface), scheme}
+}
+
 var legalTpl = template.Must(template.New("legal").Parse(`<!doctype html>
 <html lang="{{.Lang}}" dir="{{.Dir}}">
 <head>
@@ -67,22 +79,25 @@ var legalTpl = template.Must(template.New("legal").Parse(`<!doctype html>
 <meta name="robots" content="noindex, nofollow" />
 <title>{{.Title}}{{if .Brand}} — {{.Brand}}{{end}}</title>
 <style>
-  :root { color-scheme: light; }
-  body { margin: 0; background: {{.Bg}}; color: {{.Ink}};
+  :root { --bg: {{.L.Bg}}; --surface: {{.L.Surface}}; --ink: {{.L.Ink}}; --muted: {{.L.Muted}}; --accent: {{.L.Accent}}; color-scheme: {{.L.Scheme}}; }
+  {{with .D}}@media (prefers-color-scheme: dark) {
+    :root { --bg: {{.Bg}}; --surface: {{.Surface}}; --ink: {{.Ink}}; --muted: {{.Muted}}; --accent: {{.Accent}}; color-scheme: {{.Scheme}}; }
+  }{{end}}
+  body { margin: 0; background: var(--bg); color: var(--ink);
     font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   main { max-width: 760px; margin: 0 auto; padding: 28px 18px 48px; }
-  .card { background: {{.Surface}}; border-radius: 16px; padding: 24px 22px;
+  .card { background: var(--surface); border-radius: 16px; padding: 24px 22px;
     box-shadow: 0 1px 2px rgba(0,0,0,.06); overflow-wrap: anywhere; }
-  .brand { font-weight: 700; color: {{.Accent}}; margin: 0 0 6px; font-size: 14px; }
+  .brand { font-weight: 700; color: var(--accent); margin: 0 0 6px; font-size: 14px; }
   h1.title { margin: 0 0 4px; font-size: 24px; line-height: 1.25; }
-  .date { color: {{.Muted}}; font-size: 13px; margin: 0 0 20px; }
+  .date { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
   .doc h1, .doc h2, .doc h3 { line-height: 1.3; margin: 1.4em 0 .5em; }
   .doc h1 { font-size: 21px; } .doc h2 { font-size: 18px; } .doc h3 { font-size: 16px; }
   .doc p, .doc ul, .doc ol { margin: 0 0 .9em; }
-  .doc a { color: {{.Accent}}; }
+  .doc a { color: var(--accent); }
   .doc table { border-collapse: collapse; width: 100%; margin: 0 0 1em; display: block; overflow-x: auto; }
   .doc th, .doc td { border: 1px solid rgba(127,127,127,.3); padding: 6px 10px; text-align: start; }
-  .doc blockquote { margin: 0 0 1em; padding: 2px 14px; border-inline-start: 3px solid {{.Accent}}; color: {{.Muted}}; }
+  .doc blockquote { margin: 0 0 1em; padding: 2px 14px; border-inline-start: 3px solid var(--accent); color: var(--muted); }
   .doc code { font-family: ui-monospace, Menlo, monospace; font-size: .92em; }
   .doc hr { border: 0; border-top: 1px solid rgba(127,127,127,.3); margin: 1.5em 0; }
 </style>
@@ -119,12 +134,12 @@ func LegalPage(set *model.Settings, doc model.LegalDoc, lang i18n.Lang, loc *tim
 		}
 		updated = i18n.T(lang, "sub.legalUpdated", time.Unix(doc.UpdatedAt, 0).In(loc).Format("02.01.2006"))
 	}
-	theme := branding.ParseTheme(set.PanelTheme)
+	pal := branding.ParsePalette(set.PanelTheme)
+	dark := legalColorsOf(pal.Dark)
 	var b bytes.Buffer
 	err = legalTpl.Execute(&b, map[string]any{
 		"Lang": string(lang), "Dir": lang.Dir(), "Brand": name, "Title": LegalTitle(doc.Kind, lang), "Updated": updated,
-		"Body": body, "Bg": theme.Bg, "Surface": theme.Surface, "Ink": theme.Text,
-		"Muted": theme.Muted, "Accent": theme.Accent,
+		"Body": body, "L": legalColorsOf(pal.Light), "D": &dark,
 	})
 	return b.Bytes(), err
 }

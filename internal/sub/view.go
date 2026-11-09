@@ -129,9 +129,20 @@ type ViewTelegram struct {
 	QRURL   string `json:"qr_url"`
 }
 
-// ViewBrand is the operator's name and colours, for a page that should look like theirs.
+// ViewBrand is the operator's name and colours, for a page that should look like
+// theirs: the light theme at the top, the dark one under dark.
 type ViewBrand struct {
-	Name    string `json:"name"`
+	Name    string      `json:"name"`
+	Accent  string      `json:"accent"`
+	Text    string      `json:"text"`
+	Muted   string      `json:"muted"`
+	Bg      string      `json:"bg"`
+	Surface string      `json:"surface"`
+	Dark    *ViewColors `json:"dark,omitempty"`
+}
+
+// ViewColors is one theme's colours.
+type ViewColors struct {
 	Accent  string `json:"accent"`
 	Text    string `json:"text"`
 	Muted   string `json:"muted"`
@@ -156,6 +167,9 @@ func PageView(u model.User, local *model.Settings, servers []Server, billing Bil
 		Apps: []ViewApp{}, Links: []ViewLink{}, AWG: []ViewAWG{}, WG: []ViewAWG{}, Turn: []ViewTurn{}, Telegram: []ViewTelegram{}, Blocks: []ViewBlock{},
 		Brand:   ViewBrand{Name: d.BrandName, Accent: d.Brand, Text: d.Ink, Muted: d.Muted, Bg: d.Bg, Surface: d.Surface},
 		Devices: devices,
+	}
+	if d.Dark != nil {
+		v.Brand.Dark = &ViewColors{Accent: d.Dark.Brand, Text: d.Dark.Ink, Muted: d.Dark.Muted, Bg: d.Dark.Bg, Surface: d.Dark.Surface}
 	}
 	if v.Devices.List == nil {
 		v.Devices.List = []DeviceRow{}

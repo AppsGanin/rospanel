@@ -72,10 +72,28 @@
         --warn: {{.WarningFg}};
         --bad: {{.DangerFg}};
         --info: {{.InfoFg}};
+        color-scheme: {{.Scheme}};
         --line: color-mix(in srgb, var(--ink) 10%, transparent);
         --soft: color-mix(in srgb, var(--ink) 4%, var(--surface));
         --radius: 16px;
       }
+      {{with .Dark}}
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --brand: {{.Brand}};
+          --brand-dark: {{.BrandDark}};
+          --ink: {{.Ink}};
+          --muted: {{.Muted}};
+          --bg: {{.Bg}};
+          --surface: {{.Surface}};
+          --ok: {{.SuccessFg}};
+          --warn: {{.WarningFg}};
+          --bad: {{.DangerFg}};
+          --info: {{.InfoFg}};
+          color-scheme: {{.Scheme}};
+        }
+      }
+      {{end}}
       body {
         min-height: 100vh;
         padding: 28px 16px 40px;

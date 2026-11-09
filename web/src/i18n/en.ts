@@ -41,6 +41,10 @@ const en: Dict = {
     showMoreCount: "Show more ({{n}})",
     menu: "Menu",
     language: "Language",
+    theme: "Theme",
+    themeAuto: "System",
+    themeLight: "Light",
+    themeDark: "Dark",
     panelTime: "Panel time · {{tz}}",
     unsavedTitle: "You have unsaved changes",
     unsavedHint: "Leave the page and they are gone. Each section saves on its own.",
@@ -3019,6 +3023,9 @@ const en: Dict = {
     saved: "Branding saved",
     logoUploaded: "Logo uploaded",
     logoReset: "Logo reset to the default",
+    lightTheme: "Light",
+    darkTheme: "Dark",
+    darkAccentHint: "Defaults to the light theme accent.",
   },
 
   manage: {

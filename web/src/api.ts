@@ -1576,10 +1576,12 @@ export interface ThemeColors {
 
 export interface BrandingInfo {
   panel_name: string
-  theme: ThemeColors
+  theme: ThemeColors // the light theme
+  theme_dark: ThemeColors // the dark theme, for a dark system
   has_custom_logo: boolean
   default_name: string
   default_theme: ThemeColors
+  default_theme_dark: ThemeColors // accent "" — the dark default is the light accent
 }
 
 export const getBranding = () => api<BrandingInfo>('api/branding')
@@ -1604,10 +1606,18 @@ export const previewLegal = (markdown: string) =>
     body: JSON.stringify({ markdown }),
   })
 
-export const saveBranding = (panelName: string, theme: ThemeColors) =>
+export const saveBranding = (
+  panelName: string,
+  theme: ThemeColors,
+  themeDark: ThemeColors,
+) =>
   api<BrandingInfo>('api/settings/branding', {
     method: 'POST',
-    body: JSON.stringify({ panel_name: panelName, theme }),
+    body: JSON.stringify({
+      panel_name: panelName,
+      theme,
+      theme_dark: themeDark,
+    }),
   })
 export const uploadBrandingLogo = (file: File) => {
   const fd = new FormData()

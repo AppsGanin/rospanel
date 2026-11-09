@@ -5,6 +5,7 @@ import { getMe, logout, type Perm, type Role } from "./api";
 import { Credentials } from "./Credentials";
 import { ChangelogModal } from "./ChangelogModal";
 import { LangMenu, LangRow } from "./LangSwitch";
+import { ThemeMenu, ThemeRow } from "./ThemeSwitch";
 import { type MessageHooks, MessageHooksContext } from "./messageHooks";
 import { BrandLogo } from "./Logo";
 import { OverviewPanel } from "./OverviewPanel";
@@ -299,7 +300,8 @@ export function Dashboard({
           </h1>
           <Clock />
           {/* The phone picks its language in the account sheet (LangRow). */}
-          <span className="max-sm:hidden">
+          <span className="flex items-center gap-1 max-sm:hidden">
+            <ThemeMenu />
             <LangMenu />
           </span>
         </header>
@@ -368,6 +370,7 @@ export function Dashboard({
                   <MoreRow key={it.label} item={it} onDone={() => setMoreOpen(false)} />
                 ))}
                 <LangRow />
+                <ThemeRow />
                 <MoreRow
                   item={{ label: t("nav.logout"), onClick: doLogout, danger: true }}
                   onDone={() => setMoreOpen(false)}
