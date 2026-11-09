@@ -1269,7 +1269,7 @@
         {{if eq .Type "button"}}<a class="btn alt" style="margin: 0 0 12px" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Label}}</a>
         {{else}}<div class="card plugin-block{{if eq .Type "notice"}} notice{{end}}" dir="auto" style="margin-bottom: 12px">{{.HTML}}</div>{{end}}
         {{end}}
-        {{if .DeepLinks}}
+        {{if .Wizard}}
         <button class="btn" style="margin: 0 0 12px" onclick="openWizard()">{{.L.WzOpen}}</button>
         {{end}}
         <div class="card">
@@ -1280,6 +1280,7 @@
           <button class="btn" onclick="copy('{{.SubURL}}', this)">
             {{.L.CopyLink}}
           </button>
+          {{if .DeepLinks}}
           <button
             id="openapps-btn"
             class="btn alt"
@@ -1287,6 +1288,7 @@
           >
             {{.L.OpenInApp}}
           </button>
+          {{end}}
           {{if .ShowDownload}}
           <a
             class="btn alt"
@@ -1662,7 +1664,7 @@
       </div>
     </div>
 
-    {{if .DeepLinks}}
+    {{if .Wizard}}
     <!-- Connect in three steps: the app for this device, the subscription added to
          it with one tap, then connecting. -->
     <div id="wizard" class="modal" onclick="if (event.target === this) this.classList.remove('show');">
@@ -1671,24 +1673,30 @@
           <b id="wz-title"></b>
           <button class="x" onclick="document.getElementById('wizard').classList.remove('show')">✕</button>
         </div>
+        <!-- Each platform may have its own client: every text and button naming it
+             is rendered per platform (wz-p) and the switcher shows that platform's. -->
         <div class="wz-step" data-step="1">
-          <p class="muted" style="margin: 0">{{.L.WzStep1Hint}}</p>
+          {{range .Wizard}}<p class="muted wz-p" data-plat="{{.Key}}" style="margin: 0" hidden>{{.Hint1}}</p>{{end}}
           <div class="wz-plats">
             {{range .Wizard}}<button type="button" class="chip" data-plat="{{.Key}}" onclick="wzPlat('{{.Key}}')">{{.Name}}</button>{{end}}
           </div>
-          {{range .Wizard}}
-          <div class="wz-links" data-plat="{{.Key}}" hidden>
+          {{range .Wizard}}{{if .Links}}
+          <div class="wz-links wz-p" data-plat="{{.Key}}" hidden>
             {{range .Links}}<button class="btn alt" onclick="openExternal('{{.URL}}')">{{.Label}}</button>{{end}}
           </div>
-          {{end}}
+          {{end}}{{end}}
         </div>
         <div class="wz-step" data-step="2" hidden>
-          <p class="muted" style="margin: 0">{{.L.WzStep2Hint}}</p>
-          {{with index .DeepLinks 0}}<a class="btn" href="{{.Href}}" data-i="0" onclick="return appClick(event)">{{$.L.WzAdd}}</a>{{end}}
+          {{range .Wizard}}
+          <div class="wz-p" data-plat="{{.Key}}" hidden>
+            <p class="muted" style="margin: 0">{{.Hint2}}</p>
+            <a class="btn" href="{{.Href}}" data-i="{{.AppIndex}}" onclick="return appClick(event)">{{.AddLabel}}</a>
+          </div>
+          {{end}}
           <button class="btn alt" onclick="document.getElementById('wizard').classList.remove('show'); openApps()">{{.L.WzOther}}</button>
         </div>
         <div class="wz-step" data-step="3" hidden>
-          <p style="margin: 0">{{.L.WzStep3Hint}}</p>
+          {{range .Wizard}}<p class="wz-p" data-plat="{{.Key}}" style="margin: 0" hidden>{{.Hint3}}</p>{{end}}
         </div>
         <div class="wz-nav">
           <button class="btn alt" id="wz-back" onclick="wzGo(-1)">{{.L.WzBack}}</button>
@@ -1932,7 +1940,7 @@
         Array.prototype.forEach.call(document.querySelectorAll("#wizard .chip"), function (c) {
           c.classList.toggle("on", c.getAttribute("data-plat") === key);
         });
-        Array.prototype.forEach.call(document.querySelectorAll("#wizard .wz-links"), function (l) {
+        Array.prototype.forEach.call(document.querySelectorAll("#wizard .wz-p"), function (l) {
           l.hidden = l.getAttribute("data-plat") !== key;
         });
       }
@@ -1954,7 +1962,13 @@
       }
       function openWizard() {
         WZ_STEP = 1;
-        wzPlat(wzDetect());
+        // A platform the wizard does not offer (its client is off) starts on the first one.
+        var key = wzDetect();
+        if (!document.querySelector('#wizard .chip[data-plat="' + key + '"]')) {
+          var first = document.querySelector("#wizard .chip");
+          if (first) key = first.getAttribute("data-plat");
+        }
+        wzPlat(key);
         wzShow();
         document.getElementById("wizard").classList.add("show");
       }

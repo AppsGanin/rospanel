@@ -15,7 +15,9 @@ import {
   type HWIDSettings,
   type SubRule,
   type SubDPI,
+  type SubApp,
   type SubSettings,
+  type AppLinks,
 } from "./api";
 import { useAction, useDirtyForm } from "./hooks";
 import i18n from "./i18n";
@@ -24,6 +26,10 @@ import { subPathError } from "./validate";
 import {
   CenterLoader,
   cn,
+  IconButton,
+  IconChevron,
+  IconPlus,
+  IconTrash,
   Panel,
   SaveBar,
   Select,
@@ -36,6 +42,16 @@ import {
 import { SubDPICard } from "./SubDPICard";
 import { SubRulesEditor } from "./SubRulesEditor";
 import { SubTemplatesCard } from "./SubTemplatesCard";
+
+// The wizard's platforms, in its order; the OS names read the same in every language.
+const WIZARD_PLATFORMS: [string, string][] = [
+  ["ios", "iPhone · iPad"],
+  ["android", "Android"],
+  ["windows", "Windows"],
+  ["macos", "macOS"],
+  ["linux", "Linux"],
+  ["tv", "TV"],
+];
 
 const ROUTING_REPO = "https://github.com/hydraponique/roscomvpn-routing";
 
@@ -61,6 +77,8 @@ const EMPTY_SUB: SubSettings = {
   sub_page_enabled: true,
   sub_page_url: "",
   sub_moved_to: "",
+  sub_apps: [],
+  sub_wizard_apps: {},
 };
 
 // Requiring an id is the default: a cap a client can dodge by staying silent is not
@@ -135,6 +153,8 @@ export function SubscriptionsPanel() {
           sub_page_enabled: d.sub_page_enabled ?? true,
           sub_page_url: d.sub_page_url ?? "",
           sub_moved_to: d.sub_moved_to ?? "",
+          sub_apps: d.sub_apps ?? [],
+          sub_wizard_apps: d.sub_wizard_apps ?? {},
         };
         load(init);
         loadHwid(d.hwid ?? EMPTY_HWID);
@@ -174,7 +194,17 @@ export function SubscriptionsPanel() {
   // operator this is one settings page and one Save.
   const save = () =>
     run(async () => {
-      if (dirty) await saveSubSettings(s);
+      // A client of the operator's own gets its key on save; the list is read back so
+      // the next save keeps that key instead of making the client anew.
+      let reloaded = false;
+      if (dirty) {
+        await saveSubSettings(s);
+        if (s.sub_apps.some((a) => !a.key)) {
+          const d = await getSettings();
+          load({ ...s, sub_apps: d.sub_apps ?? [], sub_wizard_apps: d.sub_wizard_apps ?? {} });
+          reloaded = true;
+        }
+      }
       if (hwidDirty) await saveHWIDSettings(h);
       if (dpiDirty) {
         await saveSubDPI(dpi);
@@ -188,7 +218,7 @@ export function SubscriptionsPanel() {
         await saveSubTemplates(tpl);
         setTplSaved(tpl);
       }
-      commit();
+      if (!reloaded) commit();
       commitHwid();
       notifySuccess(t("subs.saved"));
     });
@@ -361,6 +391,56 @@ export function SubscriptionsPanel() {
         />
       </Panel>
 
+      <Panel
+        title={t("subs.apps")}
+        aside={
+          <IconButton
+            variant="filled"
+            color="brand"
+            title={t("subs.appAdd")}
+            onClick={() =>
+              patch({
+                sub_apps: [
+                  { key: "", label: "", on: true, custom: true, platforms: "", link: "" },
+                  ...s.sub_apps,
+                ],
+              })
+            }
+          >
+            <IconPlus />
+          </IconButton>
+        }
+      >
+        <SettingRow hint={t("subs.appsHint")} />
+        <SubAppsList
+          apps={s.sub_apps}
+          onChange={(sub_apps) =>
+            // Removing a client the wizard uses hands those platforms back to Happ.
+            patch({
+              sub_apps,
+              sub_wizard_apps: Object.fromEntries(
+                Object.entries(s.sub_wizard_apps).map(([p, k]) => [p, sub_apps.some((a) => a.key === k) ? k : "happ"]),
+              ),
+            })
+          }
+        />
+        <SettingRow label={t("subs.wizardApp")} hint={t("subs.wizardAppHint")} />
+        {WIZARD_PLATFORMS.map(([key, name]) => (
+          <SettingRow
+            key={key}
+            label={name === "TV" ? t("subs.wizardTV") : name}
+            field={
+              <Select
+                // A client gets its key on save, so a new one is offered after that.
+                data={s.sub_apps.filter((a) => a.key).map((a) => ({ value: a.key, label: a.label }))}
+                value={s.sub_wizard_apps[key] ?? "happ"}
+                onChange={(v) => patch({ sub_wizard_apps: { ...s.sub_wizard_apps, [key]: v } })}
+              />
+            }
+          />
+        ))}
+      </Panel>
+
       {/* Device binding: off is one row, on is five. */}
       <Panel
         title={t("subs.hwid")}
@@ -521,3 +601,146 @@ export function SubscriptionsPanel() {
   );
 }
 
+
+// SubAppsList orders the page's "open in app" buttons and switches each on or off.
+// A row opens to the client's download buttons per platform — and for one of the
+// operator's own, its name, platforms and import link.
+function SubAppsList({ apps, onChange }: { apps: SubApp[]; onChange: (a: SubApp[]) => void }) {
+  const { t } = useTranslation();
+  // Rows the operator opened or closed, by key; a new client (no key yet) starts open.
+  const [toggled, setToggled] = useState<Set<string>>(new Set());
+  const move = (i: number, d: -1 | 1) => {
+    const next = [...apps];
+    [next[i], next[i + d]] = [next[i + d], next[i]];
+    onChange(next);
+  };
+  const edit = (i: number, p: Partial<SubApp>) => onChange(apps.map((x, j) => (j === i ? { ...x, ...p } : x)));
+  return (
+    <>
+      {apps.map((a, i) => {
+        const id = a.key || `new-${i}`;
+        const open = toggled.has(id) !== !a.key;
+        const count = Object.values(a.links ?? {}).reduce((n, ls) => n + ls.filter((l) => l.url.trim()).length, 0);
+        return (
+          <div key={id} className={cn("border-t border-gray-100", !a.on && "opacity-60")}>
+            <div className="flex items-center gap-3 px-3.5 py-2">
+              <Switch checked={a.on} onChange={(v) => edit(i, { on: v })} />
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-2 text-start"
+                aria-expanded={open}
+                onClick={() =>
+                  setToggled((cur) => {
+                    const next = new Set(cur);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  })
+                }
+              >
+                <span className="truncate text-[13px] font-medium text-ink">{a.label || t("subs.appNew")}</span>
+                <span className="shrink-0 text-xs text-ink-muted">{t("subs.wizardLinkCount", { count })}</span>
+                <IconChevron className={cn("shrink-0 text-ink-muted transition", open && "rotate-180")} />
+              </button>
+              <IconButton title={t("subs.ruleUp")} disabled={i === 0} onClick={() => move(i, -1)}>
+                <IconChevron className="rotate-180" />
+              </IconButton>
+              <IconButton title={t("subs.ruleDown")} disabled={i === apps.length - 1} onClick={() => move(i, 1)}>
+                <IconChevron />
+              </IconButton>
+              {a.custom && (
+                <IconButton color="red" title={t("common.delete")} onClick={() => onChange(apps.filter((_, j) => j !== i))}>
+                  <IconTrash />
+                </IconButton>
+              )}
+            </div>
+            {open && (
+              <div className="flex flex-col gap-3 bg-gray-50/60 px-3.5 py-3">
+                {a.custom && (
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <TextInput
+                      ariaLabel={t("subs.appName")}
+                      placeholder={t("subs.appName")}
+                      value={a.label}
+                      onChange={(v) => edit(i, { label: v })}
+                    />
+                    <TextInput
+                      ariaLabel={t("subs.appPlatforms")}
+                      placeholder={t("subs.appPlatforms")}
+                      value={a.platforms ?? ""}
+                      onChange={(v) => edit(i, { platforms: v })}
+                    />
+                    <TextInput
+                      className="sm:col-span-2"
+                      ariaLabel={t("subs.appLink")}
+                      placeholder="myapp://import/{url}"
+                      mono
+                      value={a.link ?? ""}
+                      onChange={(v) => edit(i, { link: v })}
+                    />
+                  </div>
+                )}
+                <div className="text-xs text-ink-muted">{t("subs.appLinksHint")}</div>
+                {WIZARD_PLATFORMS.map(([key, name]) => (
+                  <PlatformLinks
+                    key={key}
+                    name={name === "TV" ? t("subs.wizardTV") : name}
+                    links={a.links?.[key] ?? []}
+                    onChange={(ls) => edit(i, { links: { ...(a.links ?? {}), [key]: ls } as AppLinks })}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+// PlatformLinks edits one platform's download buttons: a label and an address each.
+function PlatformLinks({
+  name,
+  links,
+  onChange,
+}: {
+  name: string;
+  links: { label: string; url: string }[];
+  onChange: (ls: { label: string; url: string }[]) => void;
+}) {
+  const { t } = useTranslation();
+  const edit = (i: number, p: Partial<{ label: string; url: string }>) =>
+    onChange(links.map((l, j) => (j === i ? { ...l, ...p } : l)));
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <span className="text-xs font-semibold text-ink">{name}</span>
+        <IconButton
+          title={t("subs.wizardLinkAdd")}
+          disabled={links.length >= 5}
+          onClick={() => onChange([...links, { label: "", url: "" }])}
+        >
+          <IconPlus />
+        </IconButton>
+      </div>
+      <div className="flex flex-col gap-2">
+        {links.map((l, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: rows have no id of their own and are edited in place
+          <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:grid-cols-[180px_minmax(0,1fr)_auto]">
+            <TextInput
+              className="col-span-2 sm:col-span-1"
+              ariaLabel={t("subs.wizardLinkLabel")}
+              placeholder={t("subs.wizardLinkLabel")}
+              value={l.label}
+              onChange={(v) => edit(i, { label: v })}
+            />
+            <TextInput ariaLabel={name} placeholder="https://" mono value={l.url} onChange={(v) => edit(i, { url: v })} />
+            <IconButton color="red" title={t("common.delete")} onClick={() => onChange(links.filter((_, j) => j !== i))}>
+              <IconTrash />
+            </IconButton>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

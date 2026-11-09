@@ -1107,6 +1107,27 @@ export interface SubSettings {
   // New subscription address advertised as moved-permanently-to; {token} is the
   // user's token. Empty = the panel has not moved.
   sub_moved_to: string
+  // The page's "open in app" buttons, in the order shown; off ones are hidden.
+  sub_apps: SubApp[]
+  // The client the page's connect wizard installs on each platform (ios, android,
+  // windows, macos, linux, tv), a sub_apps key.
+  sub_wizard_apps: Record<string, string>
+}
+
+export type AppLinks = Record<string, { label: string; url: string }[]>
+
+// A stock client, or one of the operator's own (custom), whose link template takes
+// the subscription as {url}, {url_enc} or {url_b64}. A new one is sent with key "".
+export interface SubApp {
+  key: string
+  label: string
+  on: boolean
+  custom?: boolean
+  platforms?: string
+  link?: string
+  // Download buttons per platform (ios, android, windows, macos, linux, tv); the
+  // connect wizard offers its client's.
+  links?: AppLinks
 }
 
 // HWIDSettings gates device binding: which installs may fetch the subscription and

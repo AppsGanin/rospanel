@@ -77,7 +77,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	var masterHideFull, masterHideOver, awgEn, naiveEn, mieruEn, anytlsEn, hideOffline, subHappCrypt, subTGBind, subTGRebind, subShowClash, tgMailingSwitch, subPageEnabled int
 	var awgParamsJSON, connPolicyJSON string
 	var walletEn, refFirstOnly, winbackEn, churnSurvey, autoUpdateNodes, blacklistEn, planChange int
-	var trafficPacksJSON string
+	var trafficPacksJSON, customAppsJSON, appLinksJSON, wizardAppsJSON string
 	var billingPeriodsJSON string
 	err := s.rdb.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -138,7 +138,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       reach_countries, reach_probes, reach_every, reach_threshold, reach_token,
 		       mtproto_enabled, mtproto_port, mtproto_name, mtproto_domain,
 		       sub_self_rotate, monthly_report_sent, sub_tg_rebind_hours, sub_page_enabled,
-		       sub_moved_to
+		       sub_moved_to, sub_apps, sub_custom_apps, sub_app_links, sub_wizard_apps
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -202,7 +202,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&reachCountries, &st.Reach.Probes, &st.Reach.Every, &st.Reach.Threshold, &st.Reach.Token,
 		&mtprotoEn, &st.MTProtoPort, &st.MTProtoName, &st.MTProtoDomain,
 		&st.SubSelfRotateHours, &st.MonthlyReportSent, &st.SubTGRebindHours, &subPageEnabled,
-		&st.SubMovedTo,
+		&st.SubMovedTo, &st.SubApps, &customAppsJSON, &appLinksJSON, &wizardAppsJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -244,6 +244,15 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	st.AutoUpdateNodes = autoUpdateNodes != 0
 	st.BlacklistEnabled = blacklistEn != 0
 	st.PlanChange = planChange != 0
+	if wizardAppsJSON != "" {
+		_ = json.Unmarshal([]byte(wizardAppsJSON), &st.SubWizardApps)
+	}
+	if appLinksJSON != "" {
+		_ = json.Unmarshal([]byte(appLinksJSON), &st.SubAppLinks)
+	}
+	if customAppsJSON != "" {
+		_ = json.Unmarshal([]byte(customAppsJSON), &st.SubCustomApps)
+	}
 	if trafficPacksJSON != "" {
 		_ = json.Unmarshal([]byte(trafficPacksJSON), &st.TrafficPacks)
 	}
@@ -530,6 +539,30 @@ func (s *Store) SetOpera(enabled bool, country string, port int) error {
 
 // SetSubSettings persists the subscription delivery settings.
 func (s *Store) SetSubSettings(st *model.Settings) error {
+	customApps := ""
+	if len(st.SubCustomApps) > 0 {
+		b, err := json.Marshal(st.SubCustomApps)
+		if err != nil {
+			return err
+		}
+		customApps = string(b)
+	}
+	wizardApps := ""
+	if len(st.SubWizardApps) > 0 {
+		b, err := json.Marshal(st.SubWizardApps)
+		if err != nil {
+			return err
+		}
+		wizardApps = string(b)
+	}
+	appLinks := ""
+	if len(st.SubAppLinks) > 0 {
+		b, err := json.Marshal(st.SubAppLinks)
+		if err != nil {
+			return err
+		}
+		appLinks = string(b)
+	}
 	_, err := s.db.Exec(`
 		UPDATE settings SET
 			sub_path = ?,
@@ -537,7 +570,7 @@ func (s *Store) SetSubSettings(st *model.Settings) error {
 			sub_routing_happ = ?, sub_routing_incy = ?, sub_routing_mihomo = ?,
 			sub_update_interval = ?, sub_announce = ?, sub_show_configs = ?,
 			sub_order_mode = ?, sub_hide_offline = ?, sub_happ_crypt = ?, sub_page_url = ?, sub_show_clash = ?,
-			sub_self_rotate = ?, sub_page_enabled = ?, sub_moved_to = ?,
+			sub_self_rotate = ?, sub_page_enabled = ?, sub_moved_to = ?, sub_apps = ?, sub_custom_apps = ?, sub_app_links = ?, sub_wizard_apps = ?,
 			updated_at = unixepoch()
 		WHERE id = 1`,
 		st.SubPath,
@@ -546,7 +579,7 @@ func (s *Store) SetSubSettings(st *model.Settings) error {
 		st.SubUpdateInterval, st.SubAnnounce, boolToInt(st.SubShowConfigs),
 		model.OrderModeOr(st.SubOrderMode), boolToInt(st.SubHideOffline), boolToInt(st.SubHappCrypt),
 		st.SubPageURL, boolToInt(st.SubShowClash),
-		st.SubSelfRotateHours, boolToInt(st.SubPageEnabled), st.SubMovedTo,
+		st.SubSelfRotateHours, boolToInt(st.SubPageEnabled), st.SubMovedTo, st.SubApps, customApps, appLinks, wizardApps,
 	)
 	return err
 }

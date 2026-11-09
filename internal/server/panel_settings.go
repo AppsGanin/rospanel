@@ -65,6 +65,8 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"sub_update_interval":  set.SubUpdateInterval,
 		"sub_announce":         set.SubAnnounce,
 		"sub_moved_to":         set.SubMovedTo,
+		"sub_apps":             sub.ParseAppOrder(set),
+		"sub_wizard_apps":      sub.WizardApps(set),
 		"sub_page_url":         set.SubPageURL,
 		"sub_show_configs":     set.SubShowConfigs,
 		"sub_show_clash":       set.SubShowClash,
@@ -460,6 +462,11 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		// PageEnabled serves the panel's own subscription page; nil keeps it as it is,
 		// so a client that does not know the field cannot switch the page off.
 		PageEnabled *bool `json:"sub_page_enabled"`
+		// Apps is the page's client buttons in order, each on or off; nil keeps them.
+		Apps []sub.AppPref `json:"sub_apps"`
+		// Apps also carries each client's download links. WizardApps is the client the
+		// connect wizard installs on each platform; nil keeps them.
+		WizardApps map[string]string `json:"sub_wizard_apps"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -470,6 +477,36 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	selfRotate, pageEnabled := cur.SubSelfRotateHours, cur.SubPageEnabled
+	// The apps list is the saved one unless the form sent its own.
+	apps := &model.Settings{
+		SubApps: cur.SubApps, SubCustomApps: cur.SubCustomApps,
+		SubAppLinks: cur.SubAppLinks, SubWizardApps: cur.SubWizardApps,
+	}
+	if req.Apps != nil {
+		if err := sub.SetAppOrder(apps, req.Apps); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if req.WizardApps != nil {
+		per := map[string]string{}
+		for _, k := range model.WizardPlatformKeys {
+			// Happ is what a platform gets anyway, so only the others are stored.
+			if v := strings.TrimSpace(req.WizardApps[k]); v != "" && v != "happ" {
+				per[k] = v
+			}
+		}
+		apps.SubWizardApps = per
+	}
+	// The wizard's clients must be ones the page knows — checked against the list as
+	// saved now, so removing a client the wizard pointed at is caught too.
+	for plat, k := range apps.SubWizardApps {
+		if !sub.HasApp(apps, k) {
+			writeErr(w, http.StatusBadRequest, "sub_wizard_apps: "+plat+": no such client on the page")
+			return
+		}
+	}
+
 	if req.SelfRotate != nil {
 		selfRotate = *req.SelfRotate
 	}
@@ -507,6 +544,10 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		SubSelfRotateHours: selfRotate,
 		SubPageEnabled:     pageEnabled,
 		SubPageURL:         req.PageURL,
+		SubApps:            apps.SubApps,
+		SubCustomApps:      apps.SubCustomApps,
+		SubAppLinks:        apps.SubAppLinks,
+		SubWizardApps:      apps.SubWizardApps,
 	})
 	if err != nil {
 		writeManagerErr(w, err)

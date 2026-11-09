@@ -5,15 +5,19 @@ package sub
 import (
 	"bytes"
 	"compress/zlib"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"net"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/extsub"
@@ -173,19 +177,28 @@ func URL(set *model.Settings, token string) string {
 // keeps the custom client schemes (happ://, v2rayng://, …) instead of sanitizing
 // them to "#ZgotmplZ". Platform notes which OS the client targets.
 type DeepLink struct {
+	Key      string // stable id the operator's order (model.Settings.SubApps) names
 	Label    string
 	Platform string
 	Href     template.URL
 }
 
-// DeepLinks builds best-effort import deep-links for the popular clients, most
-// popular first. Schemes drift across client releases — verify periodically.
+// DeepLinks builds best-effort import deep-links for the popular clients, in the
+// operator's order with the apps they switched off left out (model.Settings.SubApps;
+// empty = every app, most popular first). Schemes drift across client releases —
+// verify periodically.
 //
 // happCrypt hands Happ the subscription as an encrypted happ://crypt4/ link, which
 // it adds without showing the address. Should encrypting fail — it cannot for any
 // address this panel builds — the button falls back to the plain link rather than
 // disappearing: the page is how a user gets connected at all.
-func DeepLinks(subURL string, lang i18n.Lang, happCrypt bool) []DeepLink {
+func DeepLinks(subURL string, lang i18n.Lang, set *model.Settings) []DeepLink {
+	return ApplyAppOrder(appCatalog(subURL, lang, set), set.SubApps)
+}
+
+// appCatalog is every client the page knows — the stock ones, then the operator's
+// own — in the stock order, none left out.
+func appCatalog(subURL string, lang i18n.Lang, set *model.Settings) []DeepLink {
 	enc := url.QueryEscape(subURL)
 	// Only the generic platform blurbs are translated; the OS names below are
 	// proper nouns and read the same in every language.
@@ -195,25 +208,234 @@ func DeepLinks(subURL string, lang i18n.Lang, happCrypt bool) []DeepLink {
 	// percent-encoded) — feeding it a %-escaped URL makes it fail with "invalid URL".
 	subB64 := base64.StdEncoding.EncodeToString([]byte(subURL))
 	happ := "happ://add/" + subURL
-	if happCrypt {
+	if set.SubHappCrypt && subURL != "" {
 		if l, err := extsub.EncryptHapp(subURL); err == nil {
 			happ = l
 		}
 	}
-	return []DeepLink{
-		{"Happ", allTV, template.URL(happ)},
-		{"INCY", allTV, template.URL("incy://import/" + subURL)},
-		{"v2RayTun", allTV, template.URL("v2raytun://import/" + subURL)},
-		{"Hiddify", all, template.URL("hiddify://import/" + subURL)},
-		{"Karing", allTV, template.URL("karing://install-config?url=" + enc)},
-		{"sing-box", all, template.URL("sing-box://import-remote-profile?url=" + enc)},
-		{"Clash Meta / Mihomo", "Windows · macOS · Linux · Android", template.URL("clash://install-config?url=" + enc)},
-		{"V2Box", "iOS · macOS · Android", template.URL("v2box://install-sub?url=" + enc)},
-		{"v2rayNG", "Android", template.URL("v2rayng://install-sub?url=" + enc)},
-		{"NekoBox", "Android", template.URL("sn://subscription?url=" + enc)},
-		{"Streisand", "iOS · macOS · tvOS", template.URL("streisand://import/" + subURL)},
-		{"Shadowrocket", "iOS · macOS · tvOS", template.URL("shadowrocket://add/sub://" + subB64)},
+	cat := []DeepLink{
+		{"happ", "Happ", allTV, template.URL(happ)},
+		{"incy", "INCY", allTV, template.URL("incy://import/" + subURL)},
+		{"v2raytun", "v2RayTun", allTV, template.URL("v2raytun://import/" + subURL)},
+		{"hiddify", "Hiddify", all, template.URL("hiddify://import/" + subURL)},
+		{"karing", "Karing", allTV, template.URL("karing://install-config?url=" + enc)},
+		{"singbox", "sing-box", all, template.URL("sing-box://import-remote-profile?url=" + enc)},
+		{"clash", "Clash Meta / Mihomo", "Windows · macOS · Linux · Android", template.URL("clash://install-config?url=" + enc)},
+		{"v2box", "V2Box", "iOS · macOS · Android", template.URL("v2box://install-sub?url=" + enc)},
+		{"v2rayng", "v2rayNG", "Android", template.URL("v2rayng://install-sub?url=" + enc)},
+		{"nekobox", "NekoBox", "Android", template.URL("sn://subscription?url=" + enc)},
+		{"streisand", "Streisand", "iOS · macOS · tvOS", template.URL("streisand://import/" + subURL)},
+		{"shadowrocket", "Shadowrocket", "iOS · macOS · tvOS", template.URL("shadowrocket://add/sub://" + subB64)},
 	}
+	fill := strings.NewReplacer("{url_enc}", enc, "{url_b64}", subB64, "{url}", subURL)
+	for _, c := range set.SubCustomApps {
+		// Validated on save (model.ValidSubCustomAppLink); the check here keeps a row
+		// written some other way from ever reaching an href.
+		if !model.ValidSubCustomAppLink(c.Link) {
+			continue
+		}
+		cat = append(cat, DeepLink{CustomAppKey(c.ID), c.Name, c.Platforms, template.URL(fill.Replace(c.Link))}) //nolint:gosec // scheme checked above
+	}
+	return cat
+}
+
+// HasApp reports whether key names a client the page knows, stock or the
+// operator's own.
+func HasApp(set *model.Settings, key string) bool {
+	for _, d := range appCatalog("", i18n.RU, set) {
+		if d.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// CustomAppKey is an operator's client's key in model.Settings.SubApps.
+func CustomAppKey(id string) string { return "x" + id }
+
+// AppPref is one client in the operator's list: its key and whether the page
+// offers it. Custom marks one of the operator's own, which carries its platforms
+// and link template too; a new one comes in with no key and is given one on save.
+type AppPref struct {
+	Key       string `json:"key"`
+	Label     string `json:"label"`
+	On        bool   `json:"on"`
+	Custom    bool   `json:"custom,omitempty"`
+	Platforms string `json:"platforms,omitempty"`
+	Link      string `json:"link,omitempty"`
+	// Links are the client's download buttons per platform (AppLinks).
+	Links map[string][]model.SubAppLink `json:"links"`
+}
+
+// ParseAppOrder reads model.Settings.SubApps: keys separated by commas, in the
+// order the page shows them, a leading "-" marking an app switched off. Unknown
+// keys and repeats are dropped; an app the list does not name (one added in a later
+// release, or a client of the operator's added since) follows the named ones, on.
+func ParseAppOrder(set *model.Settings) []AppPref {
+	prefs := parseAppOrder(appCatalog("", i18n.RU, set), set.SubApps)
+	custom := make(map[string]model.SubCustomApp, len(set.SubCustomApps))
+	for _, c := range set.SubCustomApps {
+		custom[CustomAppKey(c.ID)] = c
+	}
+	for i, p := range prefs {
+		if c, ok := custom[p.Key]; ok {
+			prefs[i].Custom, prefs[i].Platforms, prefs[i].Link = true, c.Platforms, c.Link
+		}
+		prefs[i].Links = AppLinks(i18n.RU, set, p.Key)
+	}
+	return prefs
+}
+
+func parseAppOrder(cat []DeepLink, spec string) []AppPref {
+	label := make(map[string]string, len(cat))
+	for _, d := range cat {
+		label[d.Key] = d.Label
+	}
+	seen := map[string]bool{}
+	out := make([]AppPref, 0, len(cat))
+	for _, f := range strings.Split(spec, ",") {
+		f = strings.TrimSpace(f)
+		on := !strings.HasPrefix(f, "-")
+		f = strings.TrimPrefix(f, "-")
+		if _, ok := label[f]; !ok || seen[f] {
+			continue
+		}
+		seen[f] = true
+		out = append(out, AppPref{Key: f, Label: label[f], On: on})
+	}
+	for _, d := range cat {
+		if !seen[d.Key] {
+			out = append(out, AppPref{Key: d.Key, Label: d.Label, On: true})
+		}
+	}
+	return out
+}
+
+// SetAppOrder writes the operator's list into set: the order and on/off into
+// SubApps, the operator's own clients into SubCustomApps, each client's download
+// buttons into SubAppLinks (untouched stock ones are not stored, so they follow the
+// release and Happ's keep each visitor's language). A custom client keeps
+// its key when it already had one in set and gets a fresh one otherwise. The
+// error names the field the operator got wrong.
+func SetAppOrder(set *model.Settings, prefs []AppPref) error {
+	had := map[string]bool{}
+	for _, c := range set.SubCustomApps {
+		had[CustomAppKey(c.ID)] = true
+	}
+	var custom []model.SubCustomApp
+	order := make([]AppPref, 0, len(prefs))
+	appLinks := map[string]map[string][]model.SubAppLink{}
+	// links files a client's buttons under its final key once that is known.
+	links := func(key, name string, in map[string][]model.SubAppLink) error {
+		if in == nil {
+			return nil
+		}
+		clean, err := cleanAppLinks(name, in)
+		if err != nil {
+			return err
+		}
+		stock := StockAppLinks(i18n.RU, key)
+		if reflect.DeepEqual(clean, stock) {
+			return nil
+		}
+		if len(clean) > 0 || len(stock) > 0 { // a stock client emptied is "none", not "stock"
+			appLinks[key] = clean
+		}
+		return nil
+	}
+	for _, p := range prefs {
+		if !p.Custom {
+			if err := links(p.Key, p.Key, p.Links); err != nil {
+				return err
+			}
+			order = append(order, p)
+			continue
+		}
+		name, plat, link := strings.TrimSpace(p.Label), strings.TrimSpace(p.Platforms), strings.TrimSpace(p.Link)
+		if name == "" || utf8.RuneCountInString(name) > 40 || strings.ContainsAny(name, "\r\n") {
+			return fmt.Errorf("sub_apps: a client needs a name of up to 40 characters")
+		}
+		if utf8.RuneCountInString(plat) > 80 || strings.ContainsAny(plat, "\r\n") {
+			return fmt.Errorf("sub_apps: %s: platforms up to 80 characters", name)
+		}
+		if !model.ValidSubCustomAppLink(link) {
+			return fmt.Errorf("sub_apps: %s: the link needs its own scheme (myapp://…) and {url}, {url_enc} or {url_b64}", name)
+		}
+		if len(custom) == model.SubCustomAppMax {
+			return fmt.Errorf("sub_apps: at most %d clients of your own", model.SubCustomAppMax)
+		}
+		id := strings.TrimPrefix(p.Key, "x")
+		if !had[p.Key] || !strings.HasPrefix(p.Key, "x") {
+			id = newCustomAppID()
+		}
+		had[CustomAppKey(id)] = false // a repeated key gets a fresh one next time round
+		if err := links(CustomAppKey(id), name, p.Links); err != nil {
+			return err
+		}
+		custom = append(custom, model.SubCustomApp{ID: id, Name: name, Platforms: plat, Link: link})
+		order = append(order, AppPref{Key: CustomAppKey(id), On: p.On})
+	}
+	set.SubCustomApps = custom
+	// Only the clients the list still has; a pref sent without links keeps its own.
+	known := map[string]bool{}
+	for _, d := range appCatalog("", i18n.RU, set) {
+		known[d.Key] = true
+	}
+	for _, p := range prefs {
+		if p.Links == nil && p.Key != "" {
+			if l, ok := set.SubAppLinks[p.Key]; ok {
+				appLinks[p.Key] = l
+			}
+		}
+	}
+	for k := range appLinks {
+		if !known[k] {
+			delete(appLinks, k)
+		}
+	}
+	if len(appLinks) == 0 {
+		appLinks = nil
+	}
+	set.SubAppLinks = appLinks
+	set.SubApps = joinAppOrder(parseAppOrder(appCatalog("", i18n.RU, set), joinAppOrder(order)))
+	return nil
+}
+
+func newCustomAppID() string {
+	var b [5]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+func joinAppOrder(prefs []AppPref) string {
+	parts := make([]string, 0, len(prefs))
+	for _, p := range prefs {
+		if p.On {
+			parts = append(parts, p.Key)
+		} else {
+			parts = append(parts, "-"+p.Key)
+		}
+	}
+	return strings.Join(parts, ",")
+}
+
+// ApplyAppOrder sorts the catalog by the operator's order and drops the apps
+// switched off. An empty spec keeps the catalog as it is.
+func ApplyAppOrder(cat []DeepLink, spec string) []DeepLink {
+	if strings.TrimSpace(spec) == "" {
+		return cat
+	}
+	byKey := make(map[string]DeepLink, len(cat))
+	for _, d := range cat {
+		byKey[d.Key] = d
+	}
+	out := make([]DeepLink, 0, len(cat))
+	for _, p := range parseAppOrder(cat, spec) {
+		if p.On {
+			out = append(out, byKey[p.Key])
+		}
+	}
+	return out
 }
 
 // HappLink is the user's subscription as an encrypted happ://crypt4/ link, or ""

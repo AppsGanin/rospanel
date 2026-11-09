@@ -17,6 +17,18 @@ func (s *Settings) Clone() *Settings {
 	c := *s
 	c.ProxyAccounts = slices.Clone(s.ProxyAccounts)
 	c.SubRules = slices.Clone(s.SubRules)
+	c.SubCustomApps = slices.Clone(s.SubCustomApps)
+	c.SubWizardApps = maps.Clone(s.SubWizardApps)
+	if s.SubAppLinks != nil {
+		c.SubAppLinks = make(map[string]map[string][]SubAppLink, len(s.SubAppLinks))
+		for app, byPlat := range s.SubAppLinks {
+			m := make(map[string][]SubAppLink, len(byPlat))
+			for k, v := range byPlat {
+				m[k] = slices.Clone(v)
+			}
+			c.SubAppLinks[app] = m
+		}
+	}
 	for i := range c.SubRules {
 		c.SubRules[i].Protocols = maps.Clone(c.SubRules[i].Protocols)
 	}

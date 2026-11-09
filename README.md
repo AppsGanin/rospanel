@@ -437,8 +437,11 @@ link can be **reset** (token rotation) without changing UUIDs and passwords. An
 through `happ://crypt4/…`, so the app never shows its address; the same link can be copied from
 the user's card.
 
-A **connect wizard** in 3 steps: the platform is detected, then Happ's official download (the
-Russian App Store separately for iPhone), then the subscription added with one tap. Added to the home
+A **connect wizard** in 3 steps: the platform is detected, then that platform's app is downloaded
+(Happ by default; the app is chosen per platform), then the subscription added with one tap. The
+page's **app buttons** (*Settings → Subscriptions*) can be reordered, switched off and joined by your
+own clients (name, platforms, an import link taking `{url}`, `{url_enc}` or `{url_b64}`); each app
+carries its download links per platform, pre-filled for the built-in ones. Added to the home
 screen, the page opens like an app. Inside Telegram it looks like part of it:
 the header colour, the system Back button, haptic feedback. Terms show the price per day and the
 saving.

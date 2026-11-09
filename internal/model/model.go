@@ -1141,6 +1141,20 @@ type Settings struct {
 	// response sends it as moved-permanently-to so clients update after a domain
 	// move. Empty means no move.
 	SubMovedTo string `json:"-"`
+	// SubApps is the order of the page's "open in app" buttons: client keys
+	// (sub.DeepLink.Key) joined by commas, "-key" for one switched off. Empty = every
+	// app in the stock order. sub.ParseAppOrder reads it.
+	SubApps string `json:"-"`
+	// SubCustomApps are the operator's own clients on the page, each placed in
+	// SubApps by its key ("x" + ID).
+	SubCustomApps []SubCustomApp `json:"-"`
+	// SubWizardApps is the client the page's connect wizard installs on each
+	// platform: WizardPlatformKeys → a SubApps key. A platform not in it gets Happ.
+	SubWizardApps map[string]string `json:"-"`
+	// SubAppLinks are each client's download buttons, by its SubApps key and then
+	// by WizardPlatformKeys; the connect wizard offers its client's. A stock client
+	// not in the map has its built-in ones (sub.StockAppLinks), a custom one none.
+	SubAppLinks map[string]map[string][]SubAppLink `json:"-"`
 	// SubPageURL is the operator's own subscription page: a browser opening a
 	// subscription link is redirected there, {token} replaced by the user's token.
 	// Empty ⇒ the panel's own page. Apps fetching the subscription never see it.

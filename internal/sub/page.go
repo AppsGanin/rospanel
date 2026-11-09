@@ -119,12 +119,8 @@ type pageText struct {
 	RenewTitle     string
 	WzOpen         string
 	WzStep1        string
-	WzStep1Hint    string
 	WzStep2        string
-	WzStep2Hint    string
 	WzStep3        string
-	WzStep3Hint    string
-	WzAdd          string
 	WzOther        string
 	WzBack         string
 	WzNext         string
@@ -235,12 +231,8 @@ func text(lang i18n.Lang) pageText {
 		RenewTitle:     t("sub.renewTitle"),
 		WzOpen:         t("sub.wzOpen"),
 		WzStep1:        t("sub.wzStep1"),
-		WzStep1Hint:    t("sub.wzStep1Hint"),
 		WzStep2:        t("sub.wzStep2"),
-		WzStep2Hint:    t("sub.wzStep2Hint"),
 		WzStep3:        t("sub.wzStep3"),
-		WzStep3Hint:    t("sub.wzStep3Hint"),
-		WzAdd:          t("sub.wzAdd"),
 		WzOther:        t("sub.wzOther"),
 		WzBack:         t("sub.wzBack"),
 		WzNext:         t("sub.wzNext"),
@@ -436,7 +428,9 @@ type pageData struct {
 	Access     Access
 	Links      []protoLink
 	DeepLinks  []DeepLink
-	Wizard     []WizardPlatform
+	// Wizard is the connect wizard per platform; empty (every platform's client
+	// switched off) hides it.
+	Wizard []WizardPlatform
 	// AWG lists one card per server whose AmneziaWG lane the user may use: the
 	// config file to import and its QR.
 	AWG []awgCard
@@ -831,8 +825,7 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 		WG:          wgCards,
 		Turn:        turnCards,
 		Telegram:    tgCards,
-		DeepLinks:   DeepLinks(subURL, lang, local.SubHappCrypt),
-		Wizard:      Wizard(lang),
+		DeepLinks:   DeepLinks(subURL, lang, local),
 		StatusLabel: statusLabel,
 		StatusClass: statusClass,
 		Used:        fmtBytes(used),
@@ -851,6 +844,7 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 		ShowConfigs:  local.SubShowConfigs && showDownload,
 		ShowDownload: showDownload && local.SubShowClash,
 	}
+	data.Wizard = Wizard(lang, local, data.DeepLinks)
 	if u.DataLimit > 0 {
 		data.HasLimit = true
 		data.Limit = fmtBytes(u.DataLimit)

@@ -405,7 +405,7 @@ func (rt *Router) handleSubApp(w http.ResponseWriter, r *http.Request, u model.U
 		return
 	}
 	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
-	links := sub.DeepLinks(sub.URL(set, u.SubToken), lang, set.SubHappCrypt)
+	links := sub.DeepLinks(sub.URL(set, u.SubToken), lang, set)
 	if n < 0 || n >= len(links) {
 		rt.currentDecoy().ServeHTTP(w, r)
 		return
