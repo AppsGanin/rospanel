@@ -825,8 +825,42 @@ func payPlanLabel(lang i18n.Lang, p model.TariffPlan) string {
 
 // isBrowser reports whether the request looks like a web browser (so we serve
 // the human page instead of the machine subscription payload).
+//
+// Accept: text/html alone is not proof: some proxy apps fetch the subscription with
+// a browser-like Accept — Happ 6.x on iOS does — and answering them with the page
+// leaves the app with "there are no server links". A User-Agent that names a known
+// client therefore wins over the Accept header.
 func isBrowser(r *http.Request) bool {
-	return strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/html")
+	if !strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/html") {
+		return false
+	}
+	return !isProxyClientUA(r.Header.Get("User-Agent"))
+}
+
+// proxyClientUAs are User-Agent fragments of subscription clients that are not
+// browsers, on top of the ones format detection already knows (subFormatFor and
+// model.IsXrayCoreClient). Lower-case; matched as substrings. The short or generic
+// names carry their "/" so a browser's User-Agent cannot match them by accident.
+var proxyClientUAs = []string{
+	"v2raytun", "hiddify", "karing", "nekobox", "nekoray", "throne/", "shadowrocket",
+	"quantumult", "loon/", "surge/", "foxray", "v2box", "incy", "flclash", "streisand",
+}
+
+// isProxyClientUA reports whether a User-Agent belongs to a known subscription client.
+func isProxyClientUA(userAgent string) bool {
+	ua := strings.ToLower(userAgent)
+	if ua == "" {
+		return false
+	}
+	if model.IsXrayCoreClient(ua) || subFormatFor(ua) != "v2ray" {
+		return true
+	}
+	for _, k := range proxyClientUAs {
+		if strings.Contains(ua, k) {
+			return true
+		}
+	}
+	return false
 }
 
 // hasTurnInbound reports whether the user may use a WireGuard inbound on any of these
