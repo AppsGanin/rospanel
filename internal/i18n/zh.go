@@ -59,6 +59,7 @@ var zh = map[string]string{
 	"sub.deviceNeverSeen":        "—",
 	"sub.greeting":               "您好",
 	"sub.greetingName":           "您好，%s",
+	"sub.userID":                 "ID",
 	"sub.online":                 "● 在线",
 	"sub.offline":                "○ 离线",
 	"sub.copy":                   "复制",

@@ -59,6 +59,7 @@ var ar = map[string]string{
 	"sub.deviceNeverSeen":        "—",
 	"sub.greeting":               "مرحبًا",
 	"sub.greetingName":           "مرحبًا، %s",
+	"sub.userID":                 "المعرّف",
 	"sub.online":                 "● متصل",
 	"sub.offline":                "○ غير متصل",
 	"sub.copy":                   "نسخ",

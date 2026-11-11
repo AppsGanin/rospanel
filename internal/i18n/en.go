@@ -61,6 +61,7 @@ var en = map[string]string{
 	"sub.deviceNeverSeen":        "—",
 	"sub.greeting":               "Hi",
 	"sub.greetingName":           "Hi, %s",
+	"sub.userID":                 "ID",
 	"sub.online":                 "● online",
 	"sub.offline":                "○ offline",
 	"sub.copy":                   "Copy",

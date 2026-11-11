@@ -226,6 +226,11 @@
         background: color-mix(in srgb, var(--muted) 18%, transparent);
         color: var(--muted);
       }
+      button.badge.uid {
+        border: 0;
+        font-family: inherit;
+        cursor: pointer;
+      }
       .badge.green {
         background: #10b981;
         color: #fff;
@@ -1207,6 +1212,8 @@
       <h1>{{if .Name}}{{printf .L.GreetingName .Name}}{{else}}{{.L.Greeting}}{{end}} 👋</h1>
 
       <div class="badges">
+        {{if .UserID}}<button type="button" class="badge gray uid" title="{{.L.Copy}}"
+          onclick="copyQuiet('{{.UserID}}')">{{.L.UserID}} <bdi>{{.UserID}}</bdi></button>{{end}}
         <span class="badge {{.StatusClass}}">{{.StatusLabel}}</span>
         {{if .Online}}<span class="badge green">{{.L.Online}}</span>{{else}}<span
           class="badge gray"
@@ -2022,6 +2029,12 @@
         }
         openExternal(el.href);
         return false;
+      }
+      // copyQuiet copies and leaves the button as it was: a haptic tick is the only sign.
+      function copyQuiet(t) {
+        navigator.clipboard.writeText(t).then(function () {
+          if (window.haptic) haptic("success");
+        });
       }
       function copy(t, el) {
         navigator.clipboard.writeText(t).then(function () {

@@ -70,6 +70,7 @@ var ru = map[string]string{
 	"sub.deviceNeverSeen":        "—",
 	"sub.greeting":               "Привет",
 	"sub.greetingName":           "Привет, %s",
+	"sub.userID":                 "ID",
 	"sub.online":                 "● онлайн",
 	"sub.offline":                "○ офлайн",
 	"sub.copy":                   "Скопировать",

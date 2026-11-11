@@ -99,6 +99,7 @@ type pageText struct {
 	DefaultBrand   string
 	Greeting       string
 	GreetingName   string // Greeting with the user's name, a %s
+	UserID         string // the label before the user's id
 	Online         string
 	Offline        string
 	Traffic        string
@@ -211,6 +212,7 @@ func text(lang i18n.Lang) pageText {
 		DefaultBrand:   t("sub.defaultBrand"),
 		Greeting:       t("sub.greeting"),
 		GreetingName:   t("sub.greetingName"),
+		UserID:         t("sub.userID"),
 		Online:         t("sub.online"),
 		Offline:        t("sub.offline"),
 		Traffic:        t("sub.traffic"),
@@ -419,6 +421,7 @@ func colorsOf(t branding.Theme) pageColors {
 type pageData struct {
 	Lang       i18n.Lang
 	L          pageText
+	UserID     int64
 	Name       string
 	BrandName  string      // panel display name (defaults to the stock RosPanel name)
 	pageColors             // the light theme
@@ -828,6 +831,7 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 	data := pageData{
 		Lang:        lang,
 		L:           text(lang),
+		UserID:      u.ID,
 		Name:        u.Name,
 		BrandName:   brandName,
 		pageColors:  colorsOf(pal.Light),

@@ -59,6 +59,7 @@ var fa = map[string]string{
 	"sub.deviceNeverSeen":        "—",
 	"sub.greeting":               "سلام",
 	"sub.greetingName":           "سلام، %s",
+	"sub.userID":                 "شناسه",
 	"sub.online":                 "● آنلاین",
 	"sub.offline":                "○ آفلاین",
 	"sub.copy":                   "کپی",
