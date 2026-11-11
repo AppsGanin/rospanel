@@ -202,7 +202,7 @@ func (s *Supervisor) syncWireGuardLocked(apiAddr string, want []wireGuardInbound
 		}
 	}
 
-	api := newXrayAPI(apiAddr, s.waitFn)
+	api := s.newAPI(apiAddr)
 	defer api.close()
 	// The tap's lookup follows the peers, whether the sync gets all the way or not.
 	defer func() { p.tunnelUsers.Store(tunnelUsersOf(p.wireGuard)) }()

@@ -243,6 +243,10 @@ func (s *Supervisor) ApplyRawLive(apiAddr string, data []byte) (RawApply, error)
 			return live, nil
 		}
 		if err != nil {
+			if s.aborted() {
+				// Shutting down: a restart now would only cost the last traffic sample.
+				return RawUnchanged, fmt.Errorf("live user update cut short by shutdown: %w", err)
+			}
 			attempted = true
 			slog.Warn("xray: live user update failed, restarting with the new config", "err", err)
 		}

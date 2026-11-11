@@ -33,7 +33,7 @@ func (s *Supervisor) QueryLanesLive(apiAddr string) (map[string]Traffic, error) 
 		if s.statsAPI != nil {
 			s.statsAPI.close()
 		}
-		s.statsAPI = newXrayAPI(apiAddr, s.waitFn)
+		s.statsAPI = s.newAPI(apiAddr)
 	}
 	api := s.statsAPI
 	s.mu.Unlock()

@@ -163,6 +163,11 @@ type Supervisor struct {
 	verOnce sync.Once
 	version string
 
+	// abortCh is closed by Abort: api calls under way give up and are not asked again.
+	// Nil on a bare Supervisor, which then never aborts.
+	abortCh   chan struct{}
+	abortOnce sync.Once
+
 	logs *logbuf.Hub // recent Xray log lines + live subscribers
 }
 
@@ -421,7 +426,70 @@ func NewSupervisor(binName, configPath, assetDir string) *Supervisor {
 	if bin == "" {
 		slog.Warn("xray: binary not found; config will be generated but Xray won't be started", "binary", binName)
 	}
-	return &Supervisor{bin: bin, configPath: configPath, assetDir: assetDir, logs: logbuf.New(), promoteAfter: healthyUptime}
+	return &Supervisor{bin: bin, configPath: configPath, assetDir: assetDir, logs: logbuf.New(), promoteAfter: healthyUptime,
+		abortCh: make(chan struct{})}
+}
+
+// Abort is the first step of a shutdown, safe from any goroutine: Xray is not started
+// again, and the api calls an apply is making give up rather than wait out their
+// retries. An apply holds runMu throughout, so without this a stop waits behind one
+// that cannot reach Xray — seconds per user change, past systemd's patience. Stop
+// still has to follow.
+func (s *Supervisor) Abort() {
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
+	s.abortOnce.Do(func() {
+		if s.abortCh != nil {
+			close(s.abortCh)
+		}
+	})
+}
+
+// aborted reports whether Abort was called.
+func (s *Supervisor) aborted() bool {
+	select {
+	case <-s.abortCh:
+		return true
+	default:
+		return false // a nil channel lands here too
+	}
+}
+
+// pause waits d between api retries; false when Abort came first.
+func (s *Supervisor) pause(d time.Duration) bool {
+	if s.waitFn != nil {
+		s.waitFn(d)
+		return !s.aborted()
+	}
+	select {
+	case <-time.After(d):
+		return true
+	case <-s.abortCh:
+		return false
+	}
+}
+
+// callContext bounds one call by timeout and by Abort.
+func (s *Supervisor) callContext(timeout time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	if s.abortCh != nil {
+		go func() {
+			select {
+			case <-s.abortCh:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+	}
+	return ctx, cancel
+}
+
+// newAPI is newXrayAPI for this supervisor: its retries stop at Abort.
+func (s *Supervisor) newAPI(addr string) *xrayAPI {
+	a := newXrayAPI(addr, s.waitFn)
+	a.abort = s.abortCh
+	return a
 }
 
 // ConfigBytes returns the on-disk config.json currently applied to Xray.
@@ -842,7 +910,7 @@ func (s *Supervisor) runXray(timeout time.Duration, args ...string) ([]byte, err
 	if s.bin == "" {
 		return nil, fmt.Errorf("xray binary unavailable")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := s.callContext(timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, s.bin, args...)
 	cmd.Env = s.env()
@@ -874,14 +942,12 @@ func (s *Supervisor) runXray(timeout time.Duration, args ...string) ([]byte, err
 func (s *Supervisor) runXrayAPI(timeout time.Duration, args ...string) ([]byte, error) {
 	for attempt := 0; ; attempt++ {
 		out, err := s.runXray(timeout, args...)
-		if err == nil || !neverReachedXray(err) || attempt >= len(apiDialRetries) {
+		if err == nil || !neverReachedXray(err) || attempt >= len(apiDialRetries) || s.aborted() {
 			return out, err
 		}
 		slog.Warn("xray: api call could not reach xray, asking again", "call", args[1], "attempt", attempt+1, "err", err)
-		if s.waitFn != nil {
-			s.waitFn(apiDialRetries[attempt])
-		} else {
-			time.Sleep(apiDialRetries[attempt])
+		if !s.pause(apiDialRetries[attempt]) {
+			return out, err
 		}
 	}
 }
@@ -1562,7 +1628,7 @@ func (s *Supervisor) QueryStatsLive(apiAddr string) (map[string]Traffic, error) 
 		if s.statsAPI != nil {
 			s.statsAPI.close()
 		}
-		s.statsAPI = newXrayAPI(apiAddr, s.waitFn)
+		s.statsAPI = s.newAPI(apiAddr)
 	}
 	api := s.statsAPI
 	s.mu.Unlock()

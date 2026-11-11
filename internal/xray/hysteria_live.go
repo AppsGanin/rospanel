@@ -225,7 +225,7 @@ func (s *Supervisor) syncHysteriaLocked(apiAddr string, want []hysteriaInbound) 
 		p.hysteria = st
 	}
 
-	api := newXrayAPI(apiAddr, s.waitFn)
+	api := s.newAPI(apiAddr)
 	defer api.close()
 	cutChanged := false
 	for _, in := range want {

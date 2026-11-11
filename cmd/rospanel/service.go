@@ -183,6 +183,7 @@ func runServer(dataDir string) {
 	default:
 		log.Printf("bbr: not enabled (unavailable on this kernel or insufficient perms): %v", err)
 	}
+	logConntrack(tuning.EnsureConntrack(tuning.RAMMiB()))
 
 	// Geo databases for geosite/geoip routing rules. Done synchronously before the
 	// first reconcile so the builtin geoip rule resolves and Xray can start.
@@ -456,6 +457,14 @@ const panelMemoryShare = 0.5
 
 // logMemoryLimit says what SetMemoryLimit decided, so an operator reading the boot log
 // can tell a slow, collecting panel from one that has room.
+// logConntrack says what EnsureConntrack changed; an unchanged table says nothing.
+func logConntrack(c tuning.Conntrack, err error) {
+	if err == nil && c.Changed {
+		slog.Info("conntrack: sized for a proxy", "max", c.Max, "was", c.WasMax,
+			"tcp_established_timeout", c.Established, "was_timeout", c.Was)
+	}
+}
+
 func logMemoryLimit(m tuning.Memory) {
 	switch {
 	case m.Basis == "GOMEMLIMIT":

@@ -30,6 +30,9 @@ type xrayAPI struct {
 	addr   string
 	client *http.Client
 	wait   func(time.Duration)
+	// abort, once closed, ends the call under way and stops asking again (see
+	// Supervisor.Abort). Nil never closes.
+	abort <-chan struct{}
 }
 
 // apiCallTimeout bounds one call. A removal walks the inbound's users — half a
@@ -211,20 +214,35 @@ func pbNext(b []byte) (field int, value, rest []byte, err error) {
 	}
 }
 
+func (a *xrayAPI) aborted() bool {
+	select {
+	case <-a.abort:
+		return true
+	default:
+		return false
+	}
+}
+
 // call makes one unary call, asked again while it cannot reach Xray the way runXrayAPI
 // asks a CLI call again: a call that failed to connect sent nothing. It returns the
 // answer's message.
 func (a *xrayAPI) call(method string, msg []byte) ([]byte, error) {
 	for attempt := 0; ; attempt++ {
 		sent, answer, err := a.callOnce(method, msg)
-		if err == nil || sent || attempt >= len(apiDialRetries) {
+		if err == nil || sent || attempt >= len(apiDialRetries) || a.aborted() {
 			return answer, err
 		}
 		slog.Warn("xray: api call could not reach xray, asking again", "call", method, "attempt", attempt+1, "err", err)
 		if a.wait != nil {
 			a.wait(apiDialRetries[attempt])
 		} else {
-			time.Sleep(apiDialRetries[attempt])
+			select {
+			case <-time.After(apiDialRetries[attempt]):
+			case <-a.abort:
+			}
+		}
+		if a.aborted() {
+			return answer, err
 		}
 	}
 }
@@ -242,6 +260,17 @@ func (a *xrayAPI) callOnce(method string, msg []byte) (sent bool, answer []byte,
 
 	ctx, cancel := context.WithTimeout(context.Background(), apiCallTimeout)
 	defer cancel()
+	if a.abort != nil {
+		stop := make(chan struct{})
+		defer close(stop)
+		go func() {
+			select {
+			case <-a.abort:
+				cancel()
+			case <-stop:
+			}
+		}()
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+a.addr+method, bytes.NewReader(frame))
 	if err != nil {
 		return false, nil, err

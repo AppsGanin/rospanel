@@ -254,6 +254,8 @@ type Agent struct {
 	syncCancel      context.CancelFunc
 	syncWaiting     bool
 	syncInterrupted atomic.Bool
+	// syncBeatAt is when the sync loop last showed it is alive (see stall.go).
+	syncBeatAt atomic.Int64
 
 	// awg is this node's AmneziaWG tunnel (see awg.go); awgEmails maps a peer's
 	// public key to the user tag it reports under, awgLast the counters last read.
@@ -329,6 +331,11 @@ func Run(ctx context.Context, dataDir string) error {
 	if state, _ := tuning.EnsureBBR(); state == tuning.BBREnabled {
 		slog.Info("node: BBR enabled")
 	}
+	// A full conntrack table drops new connections, ours to the panel among them.
+	if c, err := tuning.EnsureConntrack(tuning.RAMMiB()); err == nil && c.Changed {
+		slog.Info("node: conntrack sized for a proxy", "max", c.Max, "was", c.WasMax,
+			"tcp_established_timeout", c.Established, "was_timeout", c.Was)
+	}
 	// A node the panel switched off stays off across a reboot. Suspending BEFORE the
 	// re-apply below is what makes that airtight: the config, certificate and
 	// firewall rules are still set up (so re-enabling is instant), but Xray is never
@@ -369,6 +376,17 @@ func Run(ctx context.Context, dataDir string) error {
 	go a.shapeLoop(ctx) // per-user speed caps, from this node's own address view
 	go a.quotaLoop(ctx) // quotas between the minute-long traffic samples
 	go keepHostFW(ctx)  // a firewall reload drops the ports we opened
+	go a.dumpOnSignal(ctx)
+	// A stop must not wait behind an apply that cannot reach Xray's API.
+	go func() {
+		<-ctx.Done()
+		a.sup.Abort()
+	}()
+	a.syncBeat(0)
+	go a.watchSyncStall(ctx, syncStallLimit, stallCheckEvery, a.exitOnStall)
+	stopped := make(chan struct{})
+	defer close(stopped)
+	go a.exitIfStopHangs(ctx, stopDeadline, stopped)
 	a.syncLoop(ctx)
 	a.shutdown()
 	return nil
@@ -844,6 +862,7 @@ func (a *Agent) syncLoop(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		a.syncBeat(0)
 		// Cleared per attempt so the flag only ever describes the request in flight.
 		a.syncInterrupted.Store(false)
 		pollStart := time.Now()
@@ -870,13 +889,13 @@ func (a *Agent) syncLoop(ctx context.Context) {
 			if benignPollCut(err) && time.Since(pollStart) >= minHeldPoll {
 				slog.Debug("node: long-poll cut, re-polling", "err", err)
 				backoff = backoffMin
-				if !sleepCtx(ctx, backoffMin) {
+				if !a.syncSleep(ctx, backoffMin) {
 					return
 				}
 				continue
 			}
 			slog.Warn("node: sync failed (keeping last config)", "err", err)
-			if !sleepCtx(ctx, backoff) {
+			if !a.syncSleep(ctx, backoff) {
 				return
 			}
 			backoff = min(backoff*2, backoffMax)
@@ -904,7 +923,7 @@ func (a *Agent) syncLoop(ctx context.Context) {
 				a.setRevoked(true)
 				a.revoked.Store(true)
 			}
-			if !sleepCtx(ctx, revokedPoll) {
+			if !a.syncSleep(ctx, revokedPoll) {
 				return
 			}
 			continue
@@ -1003,7 +1022,7 @@ func (a *Agent) syncLoop(ctx context.Context) {
 			if err != nil {
 				// As below: the panel keeps sending what this node could not apply.
 				slog.Error("node: applying pushed config failed — backing off", "err", err, "backoff", applyBackoff)
-				if !sleepCtx(ctx, applyBackoff) {
+				if !a.syncSleep(ctx, applyBackoff) {
 					return
 				}
 				applyBackoff = min(applyBackoff*2, backoffMax)
@@ -1018,7 +1037,7 @@ func (a *Agent) syncLoop(ctx context.Context) {
 				// otherwise a config this node's Xray can't parse (e.g. version skew)
 				// spins geo/ACME/`xray -test` every few seconds on both sides forever.
 				slog.Error("node: applying pushed config failed — backing off", "err", err, "backoff", applyBackoff)
-				if !sleepCtx(ctx, applyBackoff) {
+				if !a.syncSleep(ctx, applyBackoff) {
 					return
 				}
 				applyBackoff = min(applyBackoff*2, backoffMax)
