@@ -729,6 +729,7 @@ func (rt *Router) panelMux() http.Handler {
 	canBroadcasts("GET /api/broadcasts", rt.listBroadcasts)
 	canBroadcasts("POST /api/broadcasts", rt.createBroadcast)
 	canBroadcasts("GET /api/broadcasts/audience", rt.broadcastAudience)
+	canBroadcasts("GET /api/broadcasts/groups", rt.broadcastGroups)
 	canBroadcasts("POST /api/broadcasts/test", rt.testBroadcast)
 	canBroadcasts("GET /api/broadcasts/rules", rt.listAutoRules)
 	canBroadcasts("POST /api/broadcasts/rules", rt.saveAutoRule)

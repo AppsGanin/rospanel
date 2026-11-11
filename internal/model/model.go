@@ -537,10 +537,14 @@ type Broadcast struct {
 	MediaName   string            `json:"media_name"`
 	Buttons     []BroadcastButton `json:"buttons"`
 	Audience    string            `json:"audience"`
-	Status      string            `json:"status"`
-	CreatedAt   int64             `json:"created_at"`
-	StartedAt   int64             `json:"started_at"`
-	FinishedAt  int64             `json:"finished_at"`
+	// GroupID narrows the audience to the members of one access group (0: none);
+	// GroupName is that group's name now, "" once it is deleted.
+	GroupID    int64  `json:"group_id"`
+	GroupName  string `json:"group_name"`
+	Status     string `json:"status"`
+	CreatedAt  int64  `json:"created_at"`
+	StartedAt  int64  `json:"started_at"`
+	FinishedAt int64  `json:"finished_at"`
 	// ScheduledAt is when a scheduled broadcast goes out; its audience is read then.
 	ScheduledAt int64 `json:"scheduled_at"`
 

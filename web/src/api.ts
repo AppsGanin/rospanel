@@ -1822,6 +1822,9 @@ export interface Broadcast {
   media_name: string
   buttons: BroadcastButton[] | null
   audience: BroadcastAudience
+  // Narrowed to one access group's members (0: none); its name now, "" once deleted.
+  group_id: number
+  group_name: string
   status: BroadcastStatus
   created_at: number
   started_at: number
@@ -1843,15 +1846,19 @@ export interface Broadcast {
 export const listBroadcasts = () => api<Broadcast[]>('api/broadcasts')
 
 // broadcastAudience previews how many recipients a filter resolves to right now.
-export const broadcastAudience = (audience: BroadcastAudience) =>
+export const broadcastAudience = (audience: BroadcastAudience, groupId = 0) =>
   api<{ count: number; hook_users: number }>(
-    `api/broadcasts/audience?audience=${encodeURIComponent(audience)}`,
+    `api/broadcasts/audience?audience=${encodeURIComponent(audience)}&group_id=${groupId}`,
   )
+
+// The access groups a broadcast can be narrowed to (the broadcasts permission is enough).
+export const listBroadcastGroups = () =>
+  api<{ id: number; name: string; members: number }[]>('api/broadcasts/groups')
 
 // broadcastForm packs the composed message the way both create and test expect: a
 // JSON "payload" part plus an optional file, since an attachment can't ride in JSON.
 const broadcastForm = (
-  b: { text: string; audience: BroadcastAudience; buttons: BroadcastButton[]; scheduled_at?: number },
+  b: { text: string; audience: BroadcastAudience; group_id?: number; buttons: BroadcastButton[]; scheduled_at?: number },
   media: File | null,
 ) => {
   const fd = new FormData()
@@ -1861,14 +1868,14 @@ const broadcastForm = (
 }
 
 export const createBroadcast = (
-  b: { text: string; audience: BroadcastAudience; buttons: BroadcastButton[]; scheduled_at?: number },
+  b: { text: string; audience: BroadcastAudience; group_id?: number; buttons: BroadcastButton[]; scheduled_at?: number },
   media: File | null,
 ) => apiForm<Broadcast>('api/broadcasts', broadcastForm(b, media))
 
 // testBroadcast delivers the composed message to the linked admin chats first.
 // Broken markup seen by the whole audience can only be fixed by another broadcast.
 export const testBroadcast = (
-  b: { text: string; audience: BroadcastAudience; buttons: BroadcastButton[] },
+  b: { text: string; audience: BroadcastAudience; group_id?: number; buttons: BroadcastButton[] },
   media: File | null,
 ) => apiForm<{ ok: boolean }>('api/broadcasts/test', broadcastForm(b, media))
 

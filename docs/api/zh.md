@@ -1210,7 +1210,7 @@ localhost 主机**——接收方往往是运营者自己的内部服务，而�
 | `incident.updated` | 它被编辑、发布了进展中的一步（`data.update`：`stage`、`body`、`created_at`），或撤回了某一步（没有 `data.update`；`data.updates` 是当前的进展记录） |
 | `incident.resolved` | 它被解决，或维护被标记为结束；只是在 `ends_at` 自然关闭的窗口不会发送任何内容 |
 | `incident.deleted` | 它被删除；`data` 是它原来的内容 |
-| `broadcast.sent` | 一次群发已发出——每次群发一条投递：`data.id`、`data.text`、`data.buttons`、`data.audience`、`data.media_kind`/`data.media_name`、`data.telegram_recipients`（bot 要发送到的聊天）、`data.users`（`id`、`external_id`）——受众中 bot 触达不到的账户，但在 bot 中关闭了邮件的用户除外。订阅此事件后，群发在 bot 关闭时也能工作（仅文本） |
+| `broadcast.sent` | 一次群发已发出——每次群发一条投递：`data.id`、`data.text`、`data.buttons`、`data.audience`、`data.group_id`（仅在限定到访问组时）、`data.media_kind`/`data.media_name`、`data.telegram_recipients`（bot 要发送到的聊天）、`data.users`（`id`、`external_id`）——受众中 bot 触达不到的账户，但在 bot 中关闭了邮件的用户除外。订阅此事件后，群发在 bot 关闭时也能工作（仅文本） |
 
 ## 投递格式
 

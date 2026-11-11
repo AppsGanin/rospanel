@@ -150,7 +150,7 @@ func TestAudienceFilters(t *testing.T) {
 		{model.AudienceExpired, []int64{200}},
 	} {
 		t.Run(tc.audience, func(t *testing.T) {
-			got, err := m.audienceChats(tc.audience)
+			got, err := m.audienceChats(bcAudience{kind: tc.audience})
 			if err != nil {
 				t.Fatalf("audienceChats: %v", err)
 			}

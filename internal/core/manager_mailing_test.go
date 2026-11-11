@@ -88,7 +88,7 @@ func TestUserMailingAndLang(t *testing.T) {
 			t.Fatalf("an automatic message went to an account with mailings off: %s", j.Body)
 		}
 	}
-	users, err := m.audienceHookUsers(model.AudienceAll, true)
+	users, err := m.audienceHookUsers(bcAudience{kind: model.AudienceAll}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestUserMailingAndLang(t *testing.T) {
 	if err := m.SetUserMailing(ctx, tg, false); err != nil {
 		t.Fatal(err)
 	}
-	if chats, _ := m.audienceChats(model.AudienceAll); len(chats) != 0 {
+	if chats, _ := m.audienceChats(bcAudience{kind: model.AudienceAll}); len(chats) != 0 {
 		t.Fatalf("the bot's broadcast = %v, want nobody", chats)
 	}
 

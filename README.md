@@ -721,6 +721,7 @@ expiring soon, long-inactive, never connected) with an image and a button. Deliv
 by a recipient table, so an interrupted broadcast **resumes instead of restarting**, and nobody
 gets the message twice.
 A broadcast can wait for its date and time; its audience is read when it goes out.
+Any slice can be narrowed to one access group ("active" users of the VIP group).
 
 **Month in review** — on the 1st the admin bot sums up the month before: revenue, users, traffic,
 server uptime and incidents.

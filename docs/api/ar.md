@@ -885,7 +885,7 @@ Webhooks** (أضف عنوان URL للمستقبل وأشر الأحداث ال�
 | `incident.updated` | جرى تعديله، أو نشرت خطوة من مساره (`data.update`: `stage`، و`body`، و`created_at`) أو سحبت واحدة (بلا `data.update`؛ و`data.updates` هو المسار كما صار الآن) |
 | `incident.resolved` | حل، أو علمت الصيانة منتهية؛ والنافذة التي تغلق ببساطة عند `ends_at` لا ترسل شيئا |
 | `incident.deleted` | حذف؛ و`data` هو الحادث كما كان |
-| `broadcast.sent` | خرج بث — تسليم واحد لكل بث: `data.id`، و`data.text`، و`data.buttons`، و`data.audience`، و`data.media_kind`/`data.media_name`، و`data.telegram_recipients` (المحادثات التي يرسل إليها البوت)، و`data.users` (`id`، `external_id`) — والحسابات في الجمهور التي لا يبلغها البوت، عدا من أطفأ الرسائل في البوت. وباشتراك هذا الحدث تعمل البثوث والبوت معطل (نصا فقط) |
+| `broadcast.sent` | خرج بث — تسليم واحد لكل بث: `data.id`، و`data.text`، و`data.buttons`، و`data.audience`، و`data.group_id` (فقط عند حصرها في مجموعة وصول)، و`data.media_kind`/`data.media_name`، و`data.telegram_recipients` (المحادثات التي يرسل إليها البوت)، و`data.users` (`id`، `external_id`) — والحسابات في الجمهور التي لا يبلغها البوت، عدا من أطفأ الرسائل في البوت. وباشتراك هذا الحدث تعمل البثوث والبوت معطل (نصا فقط) |
 
 ## صيغة التسليم
 

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -72,7 +73,7 @@ func TestAudienceTargeting(t *testing.T) {
 		{"expiring:1", nil},
 	} {
 		t.Run(tc.audience, func(t *testing.T) {
-			got, err := m.audienceChats(tc.audience)
+			got, err := m.audienceChats(bcAudience{kind: tc.audience})
 			if err != nil {
 				t.Fatalf("audienceChats: %v", err)
 			}
@@ -135,7 +136,7 @@ func TestDeletedAccountBecomesUnlinked(t *testing.T) {
 		{model.AudienceActive, false},
 	} {
 		t.Run(tc.audience, func(t *testing.T) {
-			chats, err := m.audienceChats(tc.audience)
+			chats, err := m.audienceChats(bcAudience{kind: tc.audience})
 			if err != nil {
 				t.Fatalf("audienceChats: %v", err)
 			}
@@ -155,12 +156,89 @@ func TestAudiencePreviewMatchesTheSend(t *testing.T) {
 	m := bcManager(t)
 	subscribeChat(t, m, 100, 0)
 
-	if n, err := m.AudiencePreview(""); err != nil || n != 1 {
+	if n, err := m.AudiencePreview("", 0); err != nil || n != 1 {
 		t.Fatalf("empty audience previewed %d, %v; want the same 1 recipient the send would use", n, err)
 	}
 	for _, bad := range []string{"nonsense", "seen:0", "seen:9999"} {
-		if _, err := m.AudiencePreview(bad); err == nil {
+		if _, err := m.AudiencePreview(bad, 0); err == nil {
 			t.Errorf("%q previewed a count instead of being refused", bad)
 		}
+	}
+}
+
+// A group narrows any audience to its members, is stored on the broadcast with its
+// name read back, and once deleted refuses the send instead of reaching nobody.
+func TestAudienceGroup(t *testing.T) {
+	t.Parallel()
+	m := bcManager(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	vip := mkUser(t, m, "vip", 0)
+	vipSoon := mkUser(t, m, "vip-soon", now.Add(48*time.Hour).Unix())
+	other := mkUser(t, m, "other", now.Add(48*time.Hour).Unix())
+	subscribeChat(t, m, 100, vip)
+	subscribeChat(t, m, 200, vipSoon)
+	subscribeChat(t, m, 300, other)
+	subscribeChat(t, m, 400, 0)
+
+	g, err := m.store.CreateGroup("VIP", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.SetGroupMembers(g.ID, []int64{vip, vipSoon}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		audience string
+		want     int
+	}{
+		{model.AudienceAll, 2}, // members only: not the chat without an account
+		{"expiring:3", 1},      // the group AND the audience
+		{model.AudienceNever, 2},
+	} {
+		if n, err := m.AudiencePreview(tc.audience, g.ID); err != nil || n != tc.want {
+			t.Errorf("%s in VIP: %d, %v; want %d", tc.audience, n, err, tc.want)
+		}
+	}
+	// The external system's share follows the same group (bot off: everyone in it).
+	aud, err := m.resolveAudience("expiring:3", g.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hu, err := m.audienceHookUsers(aud, false); err != nil || len(hu) != 1 || hu[0].ID != vipSoon {
+		t.Errorf("hook users = %v, %v; want only vip-soon", hu, err)
+	}
+	if _, err := m.AudiencePreview(model.AudienceUnlinked, g.ID); err == nil {
+		t.Error("a group on the accountless audience was accepted")
+	}
+
+	b, err := m.CreateBroadcast(ctx, &model.Broadcast{Text: "hi", Audience: "expiring:3", GroupID: g.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Total != 1 || b.GroupID != g.ID || b.GroupName != "VIP" {
+		t.Fatalf("broadcast = total %d, group %d %q", b.Total, b.GroupID, b.GroupName)
+	}
+
+	// Scheduled to the group, then the group is deleted: refused at send time.
+	later := now.Add(time.Hour).Unix()
+	s, err := m.CreateBroadcast(ctx, &model.Broadcast{Text: "later", GroupID: g.ID, ScheduledAt: later})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.DeleteGroup(g.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := m.GetBroadcast(s.ID); got.GroupName != "" {
+		t.Fatalf("deleted group still named %q", got.GroupName)
+	}
+	m.StartDueBroadcasts(later)
+	if got, _ := m.GetBroadcast(s.ID); got.Status != model.BroadcastCancelled {
+		t.Fatalf("scheduled to a deleted group: %s, want cancelled", got.Status)
+	}
+	if _, err := m.CreateBroadcast(ctx, &model.Broadcast{Text: "hi", GroupID: g.ID}); err == nil {
+		t.Fatal("created for a deleted group")
 	}
 }

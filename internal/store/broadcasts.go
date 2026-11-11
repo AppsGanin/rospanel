@@ -43,10 +43,10 @@ func (s *Store) CreateBroadcast(b *model.Broadcast, now int64) (int64, error) {
 	var id int64
 	err := s.db.QueryRow(
 		`INSERT INTO broadcasts (created_by, text, media_kind, media_name, buttons_json,
-		                         audience, status, created_at, hook_users, scheduled_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		                         audience, status, created_at, hook_users, scheduled_at, group_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 		b.CreatedBy, b.Text, b.MediaKind, b.MediaName, buttons,
-		b.Audience, status, now, b.HookUsers, b.ScheduledAt,
+		b.Audience, status, now, b.HookUsers, b.ScheduledAt, b.GroupID,
 	).Scan(&id)
 	if err != nil {
 		return 0, err
@@ -312,7 +312,8 @@ func (s *Store) ListBroadcasts(limit int) ([]model.Broadcast, error) {
 }
 
 const broadcastSelect = `SELECT id, created_by, text, media_kind, media_file_id, media_name,
-       buttons_json, audience, status, created_at, started_at, finished_at, hook_users, scheduled_at FROM broadcasts`
+       buttons_json, audience, status, created_at, started_at, finished_at, hook_users, scheduled_at,
+       group_id, COALESCE((SELECT name FROM groups g WHERE g.id = broadcasts.group_id), '') FROM broadcasts`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
@@ -320,7 +321,8 @@ func scanBroadcastRow(r rowScanner) (*model.Broadcast, error) {
 	var b model.Broadcast
 	var buttons string
 	if err := r.Scan(&b.ID, &b.CreatedBy, &b.Text, &b.MediaKind, &b.MediaFileID, &b.MediaName,
-		&buttons, &b.Audience, &b.Status, &b.CreatedAt, &b.StartedAt, &b.FinishedAt, &b.HookUsers, &b.ScheduledAt); err != nil {
+		&buttons, &b.Audience, &b.Status, &b.CreatedAt, &b.StartedAt, &b.FinishedAt, &b.HookUsers, &b.ScheduledAt,
+		&b.GroupID, &b.GroupName); err != nil {
 		return nil, err
 	}
 	if buttons != "" {

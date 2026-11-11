@@ -108,7 +108,7 @@ func TestBroadcastWebhook(t *testing.T) {
 	if got, _ := m.GetBroadcast(b.ID); got.Status != model.BroadcastDone || got.Total != 0 {
 		t.Fatalf("webhook-only broadcast: status %s, total %d", got.Status, got.Total)
 	}
-	if n, _ := m.AudienceHookPreview(model.AudienceAll); n != 3 {
+	if n, _ := m.AudienceHookPreview(model.AudienceAll, 0); n != 3 {
 		t.Fatalf("preview = %d, want 3", n)
 	}
 
@@ -121,5 +121,54 @@ func TestBroadcastWebhook(t *testing.T) {
 	}
 	if _, err := m.CreateBroadcast(ctx, &model.Broadcast{Text: "x"}); err == nil {
 		t.Fatal("created with no way to deliver it")
+	}
+}
+
+// A broadcast narrowed to a group hands the external system only the group's
+// accounts, and says which group in the payload.
+func TestBroadcastWebhookGroup(t *testing.T) {
+	t.Parallel()
+	m := bcManager(t)
+	m.webhookCh = make(chan webhookJob, 1)
+	st := m.store
+	in := mkUser(t, m, "in", 0)
+	mkUser(t, m, "out", 0)
+	g, err := st.CreateGroup("VIP", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetGroupMembers(g.ID, []int64{in}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateWebhook("https://hooks.example/g", []string{model.WebhookBroadcastSent}, true); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := m.AudienceHookPreview(model.AudienceAll, g.ID); err != nil || n != 1 {
+		t.Fatalf("hook preview = %d, %v; want 1", n, err)
+	}
+	b, err := m.CreateBroadcast(context.Background(), &model.Broadcast{Text: "vip", Audience: model.AudienceAll, GroupID: g.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.StartBroadcast(b.ID); err != nil {
+		t.Fatal(err)
+	}
+	jobs := takeWebhooks(t, st)
+	if len(jobs) != 1 {
+		t.Fatalf("%d deliveries, want 1", len(jobs))
+	}
+	var p struct {
+		Data struct {
+			GroupID int64 `json:"group_id"`
+			Users   []struct {
+				ID int64 `json:"id"`
+			} `json:"users"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(jobs[0].Body, &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.Data.GroupID != g.ID || len(p.Data.Users) != 1 || p.Data.Users[0].ID != in {
+		t.Fatalf("broadcast.sent = %+v, want group %d and only user %d", p.Data, g.ID, in)
 	}
 }

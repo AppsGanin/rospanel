@@ -8,6 +8,7 @@ import {
   broadcastAudience,
   cancelBroadcast,
   createBroadcast,
+  listBroadcastGroups,
   listBroadcasts,
   pauseBroadcast,
   resumeBroadcast,
@@ -17,7 +18,7 @@ import {
 import { HtmlEditor } from "./HtmlEditor";
 import { AutoRules } from "./AutoRules";
 import { useMessageHooks } from "./messageHooks";
-import { useShowMore } from "./hooks";
+import { useRefreshTick, useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { fromMoment, MomentField, type Moment, toMoment } from "./MomentField";
 import { inPanelTz } from "./tz";
@@ -56,10 +57,12 @@ const audiences = (): { value: string; label: string; days?: boolean }[] => [
 
 // audienceLabel turns a stored audience ("seen:7") back into words for the history,
 // where the run is over and the picker that produced it is long reset.
-function audienceLabel(a: string): string {
-  const [kind, days] = a.split(":");
+function audienceLabel(b: Broadcast): string {
+  const [kind, days] = b.audience.split(":");
   const base = audiences().find((x) => x.value === kind)?.label ?? kind;
-  return days ? `${base} ${i18n.t("bc.days", { count: Number(days) })}` : base;
+  const label = days ? `${base} ${i18n.t("bc.days", { count: Number(days) })}` : base;
+  if (!b.group_id) return label;
+  return `${label} · ${b.group_name || i18n.t("bc.groupDeleted")}`;
 }
 
 const dayChoices = () =>
@@ -131,6 +134,15 @@ export function BroadcastPanel({ userBot }: { userBot: boolean }) {
   const audience: BroadcastAudience = needsDays
     ? `${audienceKind}:${audienceDays}`
     : audienceKind;
+  // An access group narrows any audience but the one without accounts.
+  const [groups, setGroups] = useState<{ id: number; name: string; members: number }[]>([]);
+  const [groupPick, setGroupPick] = useState("0");
+  // Only a group still in the list: one deleted meanwhile falls back to "any group",
+  // the value the picker then shows.
+  const groupId =
+    audienceKind !== "unlinked" && groups.some((g) => String(g.id) === groupPick)
+      ? Number(groupPick)
+      : 0;
   // The inline keyboard, as rows the operator edits. Each carries a key of its own:
   // deleting the middle button must take that button's inputs with it, not shift the
   // one below into its DOM (and its caret).
@@ -158,6 +170,18 @@ export function BroadcastPanel({ userBot }: { userBot: boolean }) {
     load().finally(() => setLoaded(true));
   }, []);
 
+  // The groups and their member counts change on other screens: re-read every minute
+  // while the tab is visible, and on coming back to it.
+  const groupsTick = useRefreshTick(60_000);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the tick is the trigger
+  useEffect(() => {
+    listBroadcastGroups()
+      .then(setGroups)
+      .catch(() => {
+        /* no groups to offer — the picker stays hidden */
+      });
+  }, [groupsTick]);
+
   // Poll only while something is actually moving, and stop the moment it isn't.
   useEffect(() => {
     if (!list.some(isLive)) return;
@@ -173,17 +197,22 @@ export function BroadcastPanel({ userBot }: { userBot: boolean }) {
 
   useEffect(() => {
     let dropped = false;
-    broadcastAudience(audience)
+    broadcastAudience(audience, groupId)
       .then((r) => {
         if (dropped) return;
         setReach(r.count);
         setHookReach(r.hook_users);
       })
-      .catch(() => !dropped && setReach(null));
+      .catch(() => {
+        if (dropped) return;
+        setReach(null);
+        // The group may have been deleted since the list was read: re-read it.
+        if (groupId) listBroadcastGroups().then(setGroups).catch(() => {});
+      });
     return () => {
       dropped = true;
     };
-  }, [audience]);
+  }, [audience, groupId]);
 
   const limit = media ? CAPTION_MAX : TEXT_MAX;
   const overLimit = [...text].length > limit;
@@ -193,6 +222,7 @@ export function BroadcastPanel({ userBot }: { userBot: boolean }) {
   const payload = {
     text,
     audience,
+    group_id: groupId,
     buttons: buttons.map((b) => ({ text: b.text, url: b.url })),
   };
 
@@ -303,6 +333,21 @@ export function BroadcastPanel({ userBot }: { userBot: boolean }) {
                   data={dayChoices()}
                   value={audienceDays}
                   onChange={setAudienceDays}
+                />
+              </div>
+            )}
+            {groups.length > 0 && audienceKind !== "unlinked" && (
+              <div className="w-full min-w-0 sm:w-56">
+                <Select
+                  data={[
+                    { value: "0", label: t("bc.groupAny") },
+                    ...groups.map((g) => ({
+                      value: String(g.id),
+                      label: `${g.name} (${g.members})`,
+                    })),
+                  ]}
+                  value={groupId ? groupPick : "0"}
+                  onChange={setGroupPick}
                 />
               </div>
             )}
@@ -516,7 +561,7 @@ function BroadcastRow({
           {st.label}
         </Badge>
         <span className="truncate text-[11px] text-ink-muted">
-          {audienceLabel(b.audience)}
+          {audienceLabel(b)}
         </span>
         {b.created_by && (
           <span className="truncate text-[11px] text-ink-muted">{b.created_by}</span>

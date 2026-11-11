@@ -94,20 +94,73 @@ func (s *Store) GetGroup(id int64) (*model.Group, error) {
 		return nil, err
 	}
 	g.Grants = grants
-	mrows, err := s.rdb.Query(`SELECT user_id FROM group_members WHERE group_id = ?`, id)
+	if g.MemberIDs, err = s.groupMemberIDs(s.rdb, id); err != nil {
+		return nil, err
+	}
+	g.Members = len(g.MemberIDs)
+	return &g, nil
+}
+
+// groupMemberIDs returns the ids of a group's members.
+func (s *Store) groupMemberIDs(db *sql.DB, id int64) ([]int64, error) {
+	rows, err := db.Query(`SELECT user_id FROM group_members WHERE group_id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
-	defer mrows.Close()
-	for mrows.Next() {
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
 		var uid int64
-		if err := mrows.Scan(&uid); err != nil {
+		if err := rows.Scan(&uid); err != nil {
 			return nil, err
 		}
-		g.MemberIDs = append(g.MemberIDs, uid)
-		g.Members++
+		out = append(out, uid)
 	}
-	return &g, mrows.Err()
+	return out, rows.Err()
+}
+
+// GroupMemberSet returns the ids of a group's members, and whether the group exists.
+// The list is unbounded, so it is read on the main connection like the user roster,
+// not on the read pool.
+func (s *Store) GroupMemberSet(id int64) (map[int64]bool, bool, error) {
+	var one int
+	err := s.db.QueryRow(`SELECT 1 FROM groups WHERE id = ?`, id).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	ids, err := s.groupMemberIDs(s.db, id)
+	if err != nil {
+		return nil, false, err
+	}
+	out := make(map[int64]bool, len(ids))
+	for _, uid := range ids {
+		out[uid] = true
+	}
+	return out, true, nil
+}
+
+// GroupNames returns every group's id, name and member count, without the grants
+// and member lists Groups carries.
+func (s *Store) GroupNames() ([]model.Group, error) {
+	rows, err := s.rdb.Query(`
+		SELECT g.id, g.name, (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id)
+		FROM groups g ORDER BY lower(g.name)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.Group{}
+	for rows.Next() {
+		var g model.Group
+		if err := rows.Scan(&g.ID, &g.Name, &g.Members); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
 }
 
 // groupGrants returns a group's grant tokens.

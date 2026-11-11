@@ -1357,7 +1357,7 @@ body is never read).
 | `incident.updated` | it was edited, a step of its course was posted (`data.update`: `stage`, `body`, `created_at`) or one was taken back (no `data.update`; `data.updates` is the course as it now is) |
 | `incident.resolved` | it was resolved, or maintenance was marked finished; a window that simply closes at `ends_at` sends nothing |
 | `incident.deleted` | it was deleted; `data` is the incident as it was |
-| `broadcast.sent` | a broadcast went out — one delivery per broadcast: `data.id`, `data.text`, `data.buttons`, `data.audience`, `data.media_kind`/`data.media_name`, `data.telegram_recipients` (chats the bot sends it to), `data.users` (`id`, `external_id`) — the accounts in the audience the bot does not reach, except who turned mailings off in the bot. With this event subscribed broadcasts work with the bot off (text only) |
+| `broadcast.sent` | a broadcast went out — one delivery per broadcast: `data.id`, `data.text`, `data.buttons`, `data.audience`, `data.group_id` (only when narrowed to an access group), `data.media_kind`/`data.media_name`, `data.telegram_recipients` (chats the bot sends it to), `data.users` (`id`, `external_id`) — the accounts in the audience the bot does not reach, except who turned mailings off in the bot. With this event subscribed broadcasts work with the bot off (text only) |
 
 ## Delivery format
 

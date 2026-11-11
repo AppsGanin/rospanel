@@ -1459,7 +1459,7 @@ curl -sS -X DELETE "$BASE/v1/users/5" -H "Authorization: Bearer $KEY"
 | `incident.updated` | его отредактировали, опубликовали шаг его хода (`data.update`: `stage`, `body`, `created_at`) или отозвали один (без `data.update`; `data.updates` — ход в текущем виде) |
 | `incident.resolved` | его разрешили или работы отметили завершёнными; окно, которое просто закрывается по `ends_at`, ничего не шлёт |
 | `incident.deleted` | его удалили; `data` — инцидент в том виде, каким он был |
-| `broadcast.sent` | рассылка ушла — одна доставка на рассылку: `data.id`, `data.text`, `data.buttons`, `data.audience`, `data.media_kind`/`data.media_name`, `data.telegram_recipients` (чаты, в которые её шлёт бот), `data.users` (`id`, `external_id`) — аккаунты из аудитории, до которых бот не достаёт, кроме тех, кто выключил рассылки в боте. С подпиской на это событие рассылки работают при выключенном боте (только текст) |
+| `broadcast.sent` | рассылка ушла — одна доставка на рассылку: `data.id`, `data.text`, `data.buttons`, `data.audience`, `data.group_id` (только когда рассылка сужена до группы доступа), `data.media_kind`/`data.media_name`, `data.telegram_recipients` (чаты, в которые её шлёт бот), `data.users` (`id`, `external_id`) — аккаунты из аудитории, до которых бот не достаёт, кроме тех, кто выключил рассылки в боте. С подпиской на это событие рассылки работают при выключенном боте (только текст) |
 
 ## Формат доставки
 

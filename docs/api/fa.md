@@ -864,7 +864,7 @@ curl -sS -X DELETE "$BASE/v1/users/5" -H "Authorization: Bearer $KEY"
 | `incident.updated` | ویرایش شد، یک گام از مسیرش ارسال شد (`data.update`: `stage`، `body`، `created_at`) یا یکی پس گرفته شد (بدون `data.update`؛ `data.updates` مسیر همان‌طور که حالا هست) |
 | `incident.resolved` | حل شد، یا تعمیر تمام‌شده علامت خورد؛ پنجره‌ای که فقط در `ends_at` بسته می‌شود چیزی نمی‌فرستد |
 | `incident.deleted` | حذف شد؛ `data` همان رخداد به‌صورتی که بود |
-| `broadcast.sent` | یک ارسال همگانی رفت — یک تحویل برای هر ارسال همگانی: `data.id`، `data.text`، `data.buttons`، `data.audience`، `data.media_kind`/`data.media_name`، `data.telegram_recipients` (چت‌هایی که ربات به آن‌ها می‌فرستد)، `data.users` (`id`، `external_id`) — حساب‌های مخاطب که ربات به آن‌ها نمی‌رسد، جز کسانی که ارسال‌ها را در ربات خاموش کرده‌اند. با اشتراک این رویداد، ارسال‌های همگانی با ربات خاموش هم کار می‌کنند (فقط متن) |
+| `broadcast.sent` | یک ارسال همگانی رفت — یک تحویل برای هر ارسال همگانی: `data.id`، `data.text`، `data.buttons`، `data.audience`، `data.group_id` (فقط وقتی به یک گروه دسترسی محدود شده باشد)، `data.media_kind`/`data.media_name`، `data.telegram_recipients` (چت‌هایی که ربات به آن‌ها می‌فرستد)، `data.users` (`id`، `external_id`) — حساب‌های مخاطب که ربات به آن‌ها نمی‌رسد، جز کسانی که ارسال‌ها را در ربات خاموش کرده‌اند. با اشتراک این رویداد، ارسال‌های همگانی با ربات خاموش هم کار می‌کنند (فقط متن) |
 
 ## قالب تحویل
 
