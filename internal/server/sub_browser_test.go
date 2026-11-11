@@ -31,6 +31,8 @@ func TestIsBrowserTrustsKnownClients(t *testing.T) {
 		{"shadowrocket", htmlAccept, "Shadowrocket/2.2.60 CFNetwork/3826 Darwin/25.0.0", false},
 		{"mihomo", htmlAccept, "clash.meta/v1.19.32", false},
 		{"streisand", htmlAccept, "Streisand/1.6.40", false},
+		{"flclash", htmlAccept, "FlClash/v0.8.90 clash-verge Platform/android", false},
+		{"browser with meta in its user-agent", htmlAccept, "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36 MetaBrowser/1.0", true},
 		{"no html in accept", "*/*", "Mozilla/5.0 Safari/604.1", false},
 		{"no accept at all", "", "Happ/6.4.0/ios", false},
 	}

@@ -838,12 +838,14 @@ func isBrowser(r *http.Request) bool {
 }
 
 // proxyClientUAs are User-Agent fragments of subscription clients that are not
-// browsers, on top of the ones format detection already knows (subFormatFor and
-// model.IsXrayCoreClient). Lower-case; matched as substrings. The short or generic
-// names carry their "/" so a browser's User-Agent cannot match them by accident.
+// browsers, on top of model.IsXrayCoreClient and the sing-box apps subFormatFor
+// knows. Lower-case; matched as substrings. The short or generic names carry their
+// "/" so a browser's User-Agent cannot match them by accident. subFormatFor's bare
+// "meta" is not reused here: a browser or in-app webview may carry the word.
 var proxyClientUAs = []string{
+	"clash", "mihomo", "stash/",
 	"v2raytun", "hiddify", "karing", "nekobox", "nekoray", "throne/", "shadowrocket",
-	"quantumult", "loon/", "surge/", "foxray", "v2box", "incy", "flclash", "streisand",
+	"quantumult", "loon/", "surge/", "foxray", "v2box", "incy",
 }
 
 // isProxyClientUA reports whether a User-Agent belongs to a known subscription client.
@@ -852,7 +854,7 @@ func isProxyClientUA(userAgent string) bool {
 	if ua == "" {
 		return false
 	}
-	if model.IsXrayCoreClient(ua) || subFormatFor(ua) != "v2ray" {
+	if model.IsXrayCoreClient(ua) || subFormatFor(ua) == "singbox" {
 		return true
 	}
 	for _, k := range proxyClientUAs {
