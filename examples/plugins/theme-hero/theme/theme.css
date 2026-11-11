@@ -1,0 +1,498 @@
+/* The whole page's look: "panel_styles": false in plugin.json leaves the panel's
+   stylesheet out. What stays
+   from the panel are the fonts (Mulish) and the colour variables — the operator's
+   palette, light and dark — so the page keeps their brand. */
+
+* {
+  box-sizing: border-box;
+}
+[hidden] {
+  display: none !important;
+}
+html {
+  background: var(--bg);
+}
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Mulish, system-ui, sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(900px 520px at 50% -180px, color-mix(in srgb, var(--brand) 38%, var(--bg)), var(--bg) 70%);
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: var(--accent-fg);
+}
+h1,
+h2,
+p {
+  margin: 0;
+}
+h2 {
+  font-size: 1.05rem;
+}
+.dim {
+  color: var(--muted);
+}
+.shell {
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 18px 16px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Top bar and greeting */
+.top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.top-logo {
+  width: 30px;
+  height: 30px;
+}
+.top-brand {
+  font-weight: 800;
+  flex: 1;
+}
+.top-id {
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  cursor: pointer;
+}
+.hello {
+  text-align: center;
+  padding: 10px 0 4px;
+}
+.hello-k {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.hello-h {
+  font-size: 1.7rem;
+  font-weight: 800;
+  margin: 4px 0 18px;
+}
+
+/* Traffic ring: --p is the used share, set from the page's data */
+.ring {
+  --p: 0;
+  width: 168px;
+  height: 168px;
+  margin: 0 auto;
+  border-radius: 50%;
+  background: conic-gradient(var(--brand) calc(var(--p) * 1%), color-mix(in srgb, var(--ink) 10%, transparent) 0);
+  display: grid;
+  place-items: center;
+}
+.ring-in {
+  width: 136px;
+  height: 136px;
+  border-radius: 50%;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.ring-in b {
+  font-size: 1.35rem;
+}
+.ring-in span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 16px;
+}
+.fact {
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.st-green {
+  color: var(--success-fg);
+}
+.st-red {
+  color: var(--danger-fg);
+}
+.st-orange {
+  color: var(--warning-fg);
+}
+
+/* Notices */
+.note {
+  padding: 12px 14px;
+  border-radius: 16px;
+  border-inline-start: 4px solid var(--warning-fg);
+  background: var(--surface);
+}
+.note-incident {
+  border-color: var(--danger-fg);
+}
+.note p {
+  margin: 4px 0;
+}
+.note small,
+.line-t small {
+  color: var(--muted);
+}
+
+/* Tabs: a segmented control */
+.seg {
+  display: flex;
+  padding: 4px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.tab {
+  flex: 1;
+  font: inherit;
+  font-weight: 700;
+  padding: 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tab.active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.08);
+}
+.paywatch {
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
+}
+.pane {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Panels and rows */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px -18px rgb(0 0 0 / 0.35);
+}
+.panel-hi {
+  outline: 2px solid var(--brand);
+}
+.connect {
+  align-items: stretch;
+  text-align: center;
+}
+.qr {
+  width: 220px;
+  height: 220px;
+  margin: 0 auto;
+  border-radius: 12px;
+  background: #fff;
+  padding: 8px;
+}
+.row {
+  display: flex;
+  gap: 8px;
+}
+.row > input {
+  flex: 1;
+}
+.row > .b {
+  flex: 0 0 auto;
+  width: auto;
+  padding-inline: 20px;
+}
+.panel.row {
+  flex-direction: row;
+}
+.line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.line-t {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.line-t code {
+  font-size: 0.72rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.amt {
+  font-weight: 800;
+}
+.amt.in {
+  color: var(--success-fg);
+}
+/* A fold: a panel whose own chevron turns when it opens (details is not a flex box
+   in every browser, so it is a plain block with padding). */
+.more {
+  padding: 4px 18px;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px -18px rgb(0 0 0 / 0.35);
+}
+.more summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  font-weight: 800;
+  list-style: none;
+  cursor: pointer;
+}
+.more summary::-webkit-details-marker {
+  display: none;
+}
+.more summary::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-inline-end: 4px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 0.2s;
+}
+.more[open] summary::after {
+  transform: rotate(-135deg);
+}
+.more[open] {
+  padding-bottom: 10px;
+}
+code.ref {
+  padding: 10px;
+  border-radius: 10px;
+  word-break: break-all;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.chip.on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-brand);
+}
+.switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+}
+.switch input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--brand);
+}
+
+/* Buttons and fields */
+.b {
+  display: block;
+  width: 100%;
+  font: inherit;
+  font-weight: 800;
+  text-align: center;
+  text-decoration: none;
+  padding: 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--brand);
+  color: var(--on-brand);
+  cursor: pointer;
+}
+.b:disabled {
+  opacity: 0.6;
+}
+.b-soft {
+  background: color-mix(in srgb, var(--brand) 14%, var(--surface));
+  color: var(--accent-fg);
+}
+.b-ghost {
+  background: none;
+  color: var(--accent-fg);
+  padding: 8px;
+}
+.b-danger {
+  background: none;
+  color: var(--danger-fg);
+  border: 1px solid color-mix(in srgb, var(--danger-fg) 40%, transparent);
+}
+.b-mini {
+  width: auto;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  background: color-mix(in srgb, var(--brand) 14%, var(--surface));
+  color: var(--accent-fg);
+}
+input,
+select {
+  font: inherit;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
+  background: var(--bg);
+  color: var(--ink);
+  min-width: 0;
+}
+.foot {
+  text-align: center;
+  font-size: 0.82rem;
+}
+
+/* Dialogs: a sheet from the bottom. The page's script opens one with .show. */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.45);
+}
+.modal.show {
+  display: flex;
+}
+.sheet {
+  width: 100%;
+  max-width: 460px;
+  max-height: 86vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 18px 28px;
+  border-radius: 24px 24px 0 0;
+  background: var(--surface);
+}
+.sheet-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 1.05rem;
+}
+.x {
+  font: inherit;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 6px;
+}
+.pick-app {
+  display: flex;
+  justify-content: space-between;
+  padding: 14px;
+  border-radius: 14px;
+  text-decoration: none;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.pick-app small {
+  color: var(--muted);
+}
+.pick {
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  overflow: hidden;
+}
+.pick.on {
+  border-color: var(--brand);
+}
+.pick-head {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  font: inherit;
+  padding: 14px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: start;
+  cursor: pointer;
+}
+.pick-head span,
+.pick-head small {
+  color: var(--muted);
+}
+.pick-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+/* The connect wizard: a step is a column, and so is a platform's block of links. */
+.wz-step,
+div.wz-p {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.wz-step .chips {
+  margin: 2px 0;
+}
+.sheet > .row {
+  margin-top: 6px;
+}
+.sheet > .row > .b {
+  flex: 1;
+}
+/* On the first step the script hides "back" (visibility): give its place to "next". */
+#wz-back[style*="hidden"] {
+  display: none;
+}
+
+.payimg {
+  max-width: 100%;
+  border-radius: 12px;
+}

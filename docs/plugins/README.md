@@ -15,7 +15,8 @@ agreed when installing it. Plugins are in beta.
 | Add a payment method | `payment` | [lava](../../examples/plugins/lava) |
 | Take requests from the internet: a shop, a form, OAuth | `onHttp` | [shop-webhook](../../examples/plugins/shop-webhook) |
 | Show data on a user's card, buttons, dashboard widgets | `userFields`, `onAction`, `widget` | [email](../../examples/plugins/email) |
-| Blocks and a theme on the subscription page | `subBlocks`, `theme` | [announcement](../../examples/plugins/announcement), [theme-night](../../examples/plugins/theme-night) |
+| Blocks on the subscription page | `subBlocks` | [announcement](../../examples/plugins/announcement) |
+| A theme for the subscription page, or your own page from scratch | `theme` | [theme-night](../../examples/plugins/theme-night), [theme-hero](../../examples/plugins/theme-hero) |
 | Deliver messages to those the bot does not reach (e-mail, SMS) | `channel` | [email](../../examples/plugins/email) |
 | Decide who may sign up, which device may bind, what price to give | `beforeSignup`, `beforeDeviceBind`, `quotePrice` | [channel-gate](../../examples/plugins/channel-gate) |
 | Buttons and commands in the user bot | `bot` | [channel-gate](../../examples/plugins/channel-gate) |
@@ -43,6 +44,36 @@ export function onEvent(e) {
 }
 ```
 
+## Your own subscription page
+
+A theme changes the subscription page with no code — files in `theme/`:
+
+- **A look.** `theme/theme.css` over the panel's styles: colours, background, fonts. Example:
+  [theme-night](../../examples/plugins/theme-night).
+- **A page from scratch.** `theme/layout.html` and `theme/dialogs.html` are Go templates of
+  the whole page and its dialogs; `"theme": {"panel_styles": false}` drops the panel's
+  styles. Example: [theme-hero](../../examples/plugins/theme-hero).
+- **Single parts.** `theme/<section>.html` replaces one section — the header, the QR card,
+  the payment block; the rest stays the panel's. All 32 sections, described, are in the
+  [extension points](exports.md) ("The page's sections").
+
+```html
+<!-- theme/layout.html -->
+<main class="page">
+  <h1>{{.Name}}</h1>
+  <p>{{.Used}}{{if .HasLimit}} / {{.Limit}}{{end}}</p>
+  <img src="{{.SubURL}}/qr.png" alt="QR" />
+  <button type="button" data-action="copy" data-value="{{.SubURL}}">{{.L.CopyLink}}</button>
+</main>
+```
+
+The page's data — the user, traffic, links, plans, devices, texts in the reader's
+language — is in the [field reference](theme-data.md). Buttons work through `data-action`:
+the panel's script pays, opens apps, runs the connect wizard and the rest, and a theme has
+no script of its own. The panel checks a theme when it is installed: a misspelt field, a
+`<script>` or an outside address is an error naming the file. In full: the
+[extension points, "Your own page"](exports.md).
+
 ## Documentation
 
 0. **[The plugin editor in the panel](editor.md)** — the rule builder, the code editor, tests and
@@ -53,6 +84,7 @@ export function onEvent(e) {
    settings, points, resources.
 3. **[Extension points](exports.md)** — every export: when it is called, what it gets, what
    to return, time limits.
+   - [Subscription page fields](theme-data.md) — everything a theme template sees.
 4. **[Plugin API](api.md)** — `panel.config`, `log`, `kv`, `db`, `api`, `http.fetch`,
    `blob`, `crypto`, `t`.
 5. **[Testing and debugging](testing.md)** — `test.js`, mocks, `dev`, `validate`, the log in

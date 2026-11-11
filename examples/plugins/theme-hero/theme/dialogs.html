@@ -1,0 +1,114 @@
+{{/*
+  The page's dialogs, written from scratch. The page's script finds them by their
+  ids and classes (docs/plugins/exports.md, "Dialogs"): a .modal opens with .show,
+  closes on data-action="close" or a tap beside its card.
+*/}}
+<div id="apps" class="modal">
+  <div class="sheet">
+    <div class="sheet-h"><b>{{.L.PickApp}}</b><button type="button" class="x" data-action="close">✕</button></div>
+    {{range $i, $d := .DeepLinks}}
+    <a class="pick-app" href="{{$d.Href}}" data-i="{{$i}}" data-action="app"><b>{{$d.Label}}</b><small>{{$d.Platform}}</small></a>
+    {{end}}
+  </div>
+</div>
+
+{{if .Wizard}}
+<div id="wizard" class="modal">
+  <div class="sheet">
+    <div class="sheet-h"><b id="wz-title"></b><button type="button" class="x" data-action="close">✕</button></div>
+    <div class="wz-step" data-step="1">
+      {{range .Wizard}}<p class="dim wz-p" data-plat="{{.Key}}" hidden>{{.Hint1}}</p>{{end}}
+      <div class="chips">{{range .Wizard}}<button type="button" class="chip" data-plat="{{.Key}}" data-action="wz-plat" data-value="{{.Key}}">{{.Name}}</button>{{end}}</div>
+      {{range .Wizard}}{{if .Links}}
+      <div class="wz-p" data-plat="{{.Key}}" hidden>
+        {{range .Links}}<button type="button" class="b b-soft" data-action="external" data-value="{{.URL}}">{{.Label}}</button>{{end}}
+      </div>
+      {{end}}{{end}}
+    </div>
+    <div class="wz-step" data-step="2" hidden>
+      {{range .Wizard}}
+      <div class="wz-p" data-plat="{{.Key}}" hidden>
+        <p class="dim">{{.Hint2}}</p>
+        <a class="b" href="{{.Href}}" data-i="{{.AppIndex}}" data-action="app">{{.AddLabel}}</a>
+      </div>
+      {{end}}
+      <button type="button" class="b b-ghost" data-action="apps">{{.L.WzOther}}</button>
+    </div>
+    <div class="wz-step" data-step="3" hidden>
+      {{range .Wizard}}<p class="wz-p" data-plat="{{.Key}}" hidden>{{.Hint3}}</p>{{end}}
+    </div>
+    <div class="row">
+      <button type="button" class="b b-soft" id="wz-back" data-action="wz-go" data-value="-1">{{.L.WzBack}}</button>
+      <button type="button" class="b" id="wz-next" data-action="wz-go" data-value="1">{{.L.WzNext}}</button>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{if and .Billing.Show .Billing.Locked .Billing.Plans}}
+<div id="renewmodal" class="modal">
+  <div class="sheet">
+    <div class="sheet-h"><b>{{.L.RenewTitle}}</b><button type="button" class="x" data-action="close">✕</button></div>
+    {{range .Billing.Plans}}
+    {{if not .Options}}<p class="dim">{{if .OldPrice}}<s>{{.OldPrice}}</s> {{end}}{{.Label}}</p>{{end}}
+    {{if .Promo}}<p class="dim">{{.Promo}}</p>{{end}}
+    {{if .Options}}<select id="per-{{.ID}}" data-action="period" data-plan="{{.ID}}">{{range .Options}}<option value="{{.Periods}}" data-fb="{{if .FromBalance}}1{{end}}" data-btn="{{.Button}}">{{.Label}}</option>{{end}}</select>{{end}}
+    <button type="button" class="b" id="paybtn-{{.ID}}" data-action="buy-plan" data-plan="{{.ID}}" data-fb="{{if .FromBalance}}1{{end}}">{{if .Button}}{{.Button}}{{else}}{{$.L.Renew}}{{end}}</button>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{if and .Billing.Show .Billing.Changes}}
+<div id="changemodal" class="modal">
+  <div class="sheet">
+    <div class="sheet-h"><b>{{.L.ChangeTitle}}</b><button type="button" class="x" data-action="close">✕</button></div>
+    <p class="dim">{{.L.ChangeHint}}</p>
+    {{range .Billing.Changes}}
+    <div class="line">
+      <div class="line-t"><b>{{.Name}}</b><small>{{.Sub}} · {{.Badge}}</small></div>
+      <button type="button" class="b b-mini" data-action="change-plan" data-kind="{{.Kind}}" data-plan="{{.PlanID}}" data-fb="{{if .FromBalance}}1{{end}}" data-value="{{.Label}}">{{$.L.ChangeBtn}}</button>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{if and .Billing.Show (not .Billing.Locked) .Billing.Plans}}
+<div id="plansmodal" class="modal">
+  <div class="sheet">
+    <div class="sheet-h"><b>{{.L.PlansTitle}}</b><button type="button" class="x" data-action="close">✕</button></div>
+    {{range .Billing.Plans}}
+    <div class="pick" id="pick-{{.ID}}">
+      <button type="button" class="pick-head" data-action="pick-plan" data-plan="{{.ID}}">
+        <b>{{.Name}}</b><span>{{if .OldPrice}}<s>{{.OldPrice}}</s> {{end}}{{.Label}}</span>{{if .Promo}}<small>{{.Promo}}</small>{{end}}
+      </button>
+      <div class="pick-body" hidden>
+        {{if .Options}}<select id="per-{{.ID}}" data-action="period" data-plan="{{.ID}}">{{range .Options}}<option value="{{.Periods}}" data-fb="{{if .FromBalance}}1{{end}}" data-btn="{{.Button}}">{{.Label}}</option>{{end}}</select>{{end}}
+        {{if .Devices}}<select id="dev-{{.ID}}" data-action="devices" data-plan="{{.ID}}">{{range .Devices}}<option value="{{.Extra}}">{{.Label}}</option>{{end}}</select>{{end}}
+        <button type="button" class="b" id="paybtn-{{.ID}}" data-action="buy-plan" data-plan="{{.ID}}" data-fb="{{if .FromBalance}}1{{end}}">{{if .Button}}{{.Button}}{{else}}{{$.L.Pay}}{{end}}</button>
+      </div>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{if and .Billing.Providers (gt (len .Billing.Providers) 1)}}
+<div id="paymodal" class="modal">
+  <div class="sheet">
+    <div class="sheet-h"><b>{{.L.PayMethod}}</b><button type="button" class="x" data-action="close">✕</button></div>
+    {{range .Billing.Providers}}<button type="button" class="b b-soft" data-action="pay-with" data-value="{{.Key}}">{{.Label}}</button>{{end}}
+  </div>
+</div>
+{{end}}
+
+{{if .Billing.Show}}
+<div id="msgmodal" class="modal">
+  <div class="sheet">
+    <div class="sheet-h"><b id="msgmodal-title">{{.L.PayTitle}}</b><button type="button" class="x" data-action="close">✕</button></div>
+    <p id="msgmodal-body" dir="auto"></p>
+    <img id="msgmodal-img" class="payimg" alt="{{.L.ManualImage}}" hidden />
+  </div>
+</div>
+{{end}}

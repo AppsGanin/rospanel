@@ -153,6 +153,1440 @@
         }
       }
       {{end}}
+    </style>
+    {{if not .Access.NoPanelStyles}}{{template "core:styles" .}}{{end}}
+    {{if .Access.ThemeCSS}}<link rel="stylesheet" href="{{.Access.ThemeCSS}}" />{{end}}
+  </head>
+  <body>
+    {{template "layout" .}}
+    {{template "dialogs" .}}
+    <script>
+      var SUB_URL = "{{.SubURL}}";
+      // Telegram Mini App context: custom app schemes (happ://, v2rayng:// …) can't
+      // be launched from inside Telegram's webview, so we detect it and route links
+      // to the external browser instead.
+      var TG = (window.Telegram && window.Telegram.WebApp) || null;
+      // Telegram says what it is in two ways that need no SDK: it appends tgWebApp*
+      // to the launch URL, and its mobile webviews inject a proxy object. Both are
+      // checked because the SDK may simply not be there — /tg.js is proxied from
+      // telegram.org and that fetch can fail, which is the entire reason it is
+      // proxied. Deciding on the SDK alone meant that a failed fetch made the page
+      // conclude it was an ordinary browser, and every "open in app" button went dead
+      // in the one place they cannot work by themselves.
+      var TGPROXY = !!(window.TelegramWebviewProxy && window.TelegramWebviewProxy.postEvent);
+      var TGLAUNCH = /[?&#]tgWebApp(Data|Platform|Version)=/.test(location.hash + location.search);
+      var INTG = !!(TG && TG.platform && TG.platform !== "unknown") || TGPROXY || TGLAUNCH;
+
+      // The few SDK calls this page makes, spoken to Telegram's host directly when
+      // the SDK is absent — the same messages telegram-web-app.js posts. Returns
+      // false when nothing is listening, so every caller can fall back to plain
+      // navigation rather than swallowing the tap.
+      function tgEvent(type, data) {
+        data = data || {};
+        try {
+          if (TGPROXY) {
+            window.TelegramWebviewProxy.postEvent(type, JSON.stringify(data));
+            return true;
+          }
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage(
+              JSON.stringify({ eventType: type, eventData: data }),
+              "https://web.telegram.org"
+            );
+            return true;
+          }
+        } catch (e) {}
+        return false;
+      }
+      // Open a URL outside the webview, with the SDK if we have it and without if we
+      // don't. Reports whether anything took the request.
+      function tgOpen(url) {
+        if (TG) {
+          try {
+            if (url.indexOf("https://t.me/") === 0) TG.openTelegramLink(url);
+            else TG.openLink(url);
+            return true;
+          } catch (e) {}
+        }
+        if (url.indexOf("https://t.me/") === 0) {
+          var a = document.createElement("a");
+          a.href = url;
+          return tgEvent("web_app_open_tg_link", { path_full: a.pathname + a.search });
+        }
+        return tgEvent("web_app_open_link", { url: url });
+      }
+      if (INTG) {
+        if (TG) {
+          try {
+            TG.ready();
+            TG.expand();
+          } catch (e) {}
+        } else {
+          tgEvent("web_app_ready");
+          tgEvent("web_app_expand");
+        }
+      }
+      // The Telegram proxy button: in a browser tg:// opens the app; inside Telegram's own
+      // webview a custom scheme goes nowhere, so the host opens the t.me form of it.
+      function tgProxy(e, url) {
+        if (!INTG) return true;
+        e.preventDefault();
+        if (!tgOpen(url)) window.location = url;
+        return false;
+      }
+      // Open a URL the right way: in Telegram hand it to the host (external browser);
+      // in a normal browser just navigate.
+      function openExternal(url) {
+        if (INTG && tgOpen(url)) return;
+        window.location = url;
+      }
+      // The connect wizard. The platform is guessed from Telegram or the browser and
+      // can be switched; the steps are shown one at a time.
+      var WZ_STEP = 1;
+      var WZ_TITLES = [{{.L.WzStep1}}, {{.L.WzStep2}}, {{.L.WzStep3}}];
+      function wzDetect() {
+        var ua = navigator.userAgent || "";
+        var p = (TG && TG.platform) || "";
+        if (/iPhone|iPad|iPod/.test(ua) || p === "ios" || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "ios";
+        if (/Android/.test(ua) || p === "android") return /\bTV\b|AFT|BRAVIA|SMART-TV/i.test(ua) ? "tv" : "android";
+        if (/Mac OS X|Macintosh/.test(ua) || p === "macos") return "macos";
+        if (/Windows/.test(ua)) return "windows";
+        if (/Linux|X11/.test(ua)) return "linux";
+        return "windows";
+      }
+      function wzPlat(key) {
+        Array.prototype.forEach.call(document.querySelectorAll("#wizard .chip"), function (c) {
+          c.classList.toggle("on", c.getAttribute("data-plat") === key);
+        });
+        Array.prototype.forEach.call(document.querySelectorAll("#wizard .wz-p"), function (l) {
+          l.hidden = l.getAttribute("data-plat") !== key;
+        });
+      }
+      function wzShow() {
+        Array.prototype.forEach.call(document.querySelectorAll("#wizard .wz-step"), function (s) {
+          s.hidden = parseInt(s.getAttribute("data-step"), 10) !== WZ_STEP;
+        });
+        document.getElementById("wz-title").textContent = WZ_TITLES[WZ_STEP - 1];
+        document.getElementById("wz-back").style.visibility = WZ_STEP > 1 ? "visible" : "hidden";
+        document.getElementById("wz-next").textContent = WZ_STEP < 3 ? {{.L.WzNext}} : {{.L.WzDone}};
+      }
+      function wzGo(d) {
+        if (WZ_STEP === 3 && d > 0) {
+          document.getElementById("wizard").classList.remove("show");
+          return;
+        }
+        WZ_STEP = Math.min(3, Math.max(1, WZ_STEP + d));
+        wzShow();
+      }
+      function openWizard() {
+        WZ_STEP = 1;
+        // A platform the wizard does not offer (its client is off) starts on the first one.
+        var key = wzDetect();
+        if (!document.querySelector('#wizard .chip[data-plat="' + key + '"]')) {
+          var first = document.querySelector("#wizard .chip");
+          if (first) key = first.getAttribute("data-plat");
+        }
+        wzPlat(key);
+        wzShow();
+        document.getElementById("wizard").classList.add("show");
+      }
+      // Always show the app-picker modal in place (works inside Telegram too).
+      function openApps() {
+        document.getElementById("apps").classList.add("show");
+      }
+      // App tapped. In a normal browser the href (custom scheme) launches the app
+      // directly. Inside Telegram, openLink refuses non-http(s) schemes, so we open a
+      // tiny /app/<i> https page in the external browser — it bounces to the scheme
+      // and launches the app.
+      function appClick(e) {
+        if (!INTG) return true;
+        e.preventDefault();
+        document.getElementById("apps").classList.remove("show");
+        // Navigating there ourselves is the last resort rather than the plan: inside
+        // the webview the bounce page can't reach the scheme either. It is still
+        // better than a button that does nothing.
+        // The link itself: currentTarget is the document when a theme's link comes
+        // through the page's click handler (data-action="app").
+        var a = (e.target && e.target.closest && e.target.closest("[data-i]")) || e.currentTarget;
+        var bounce = SUB_URL + "/app/" + a.getAttribute("data-i");
+        if (!tgOpen(bounce)) window.location = bounce;
+        return false;
+      }
+      // copyIcon is copy for an icon button: it has no text to swap, so the icon turns
+      // into a tick for the same moment instead.
+      function copyIcon(t, el) {
+        navigator.clipboard.writeText(t).then(function () {
+          if (window.haptic) haptic("success");
+          el.classList.add("done");
+          setTimeout(function () {
+            el.classList.remove("done");
+          }, 1200);
+        });
+      }
+      // The Telegram button of the access card. Inside Telegram the page is open in the
+      // Telegram the account is linked to, where "change" would only reopen the same
+      // bot: it copies the link instead, to open in the other one. "Link" opens the bot
+      // the way Telegram opens its own links. A browser just follows the link.
+      function tgAccess(el, linked) {
+        if (!INTG) return true;
+        if (linked) {
+          navigator.clipboard.writeText(el.href).then(function () {
+            if (window.haptic) haptic("success");
+            var o = el.textContent;
+            el.textContent = {{.L.TGChangeCopied}};
+            setTimeout(function () {
+              el.textContent = o;
+            }, 2500);
+          });
+          return false;
+        }
+        openExternal(el.href);
+        return false;
+      }
+      // copyQuiet copies and leaves the button as it was: a haptic tick is the only sign.
+      function copyQuiet(t) {
+        navigator.clipboard.writeText(t).then(function () {
+          if (window.haptic) haptic("success");
+        });
+      }
+      function copy(t, el) {
+        navigator.clipboard.writeText(t).then(function () {
+          if (window.haptic) haptic("success");
+          var o = el.textContent;
+          el.textContent = {{.L.Copied}};
+          setTimeout(function () {
+            el.textContent = o;
+          }, 1200);
+        });
+      }
+      // The churn survey: a reason is sent as soon as it is picked; "other" also opens
+      // a line for a few words, sent with the button beside it.
+      {{with .Access.Churn}}
+      var CHURN_PATH = "{{.Path}}";
+      var CHURN_THANKS = {{.Thanks}};
+      {{else}}
+      var CHURN_PATH = "";
+      var CHURN_THANKS = "";
+      {{end}}
+      function churnPost(reason, comment) {
+        return fetch(CHURN_PATH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-RosPanel-Sub": "1" },
+          body: JSON.stringify({ reason: reason, comment: comment || "" }),
+        }).then(function (r) {
+          if (!r.ok) throw new Error(String(r.status));
+        });
+      }
+      function churnDone() {
+        var card = document.getElementById("churn-card");
+        if (card) card.innerHTML = "<p style=\"margin: 0\"></p>";
+        if (card) card.firstChild.textContent = CHURN_THANKS;
+      }
+      function churnPick(el, reason) {
+        if (!CHURN_PATH) return;
+        var chips = el.parentNode.querySelectorAll(".chip");
+        for (var i = 0; i < chips.length; i++) chips[i].classList.remove("on");
+        el.classList.add("on");
+        churnPost(reason).then(
+          function () {
+            if (reason === "other") {
+              var box = document.getElementById("churn-other");
+              box.hidden = false;
+              document.getElementById("churn-comment").focus();
+              return;
+            }
+            churnDone();
+          },
+          function () {
+            el.classList.remove("on");
+            alert({{.L.NetworkError}});
+          }
+        );
+      }
+      function churnSend(el) {
+        var text = document.getElementById("churn-comment").value.trim();
+        if (!text) return;
+        el.disabled = true;
+        churnPost("other", text).then(churnDone, function () {
+          el.disabled = false;
+          alert({{.L.NetworkError}});
+        });
+      }
+      // Reissuing the link: the old one stops working at once, so the page moves to
+      // the new address itself — this page lives at the old one.
+      var ROTATE_PATH = "{{.Access.RotatePath}}";
+      function rotateLink(el) {
+        if (!ROTATE_PATH) return;
+        askThen({{.L.RotateConfirm}}, function () {
+          doRotate(el);
+        });
+      }
+      function doRotate(el) {
+        var old = el.textContent;
+        el.textContent = "…";
+        el.disabled = true;
+        fetch(ROTATE_PATH, { method: "POST", headers: { "X-RosPanel-Sub": "1" } })
+          .then(function (r) {
+            return r.json().then(
+              function (d) { return { ok: r.ok, status: r.status, d: d }; },
+              function () { return { ok: false, status: r.status, d: {} }; }
+            );
+          })
+          .then(function (x) {
+            if (x.ok && x.d.url) {
+              location.replace(x.d.url);
+              return;
+            }
+            alert(x.status === 429 ? {{.Access.RotateWait}} : {{.L.RotateFailed}});
+            el.textContent = old;
+            el.disabled = false;
+          })
+          .catch(function () {
+            alert({{.L.NetworkError}});
+            el.textContent = old;
+            el.disabled = false;
+          });
+      }
+      // Unbinding your own device. The row is identified by the id the client sent,
+      // which is opaque text — so it travels in the body rather than the URL. A
+      // success reloads: the count in the header and the free-slot arithmetic both
+      // change, and re-rendering is cheaper than patching them by hand.
+      var UNBIND_PATH = "{{.Devices.UnbindPath}}";
+      function unbindDevice(el) {
+        if (!confirm({{.L.DeviceConfirm}})) return;
+        var row = el.closest("[data-hwid]");
+        var hwid = row ? row.getAttribute("data-hwid") : "";
+        if (!hwid) return;
+        var old = el.textContent;
+        el.textContent = "…";
+        el.disabled = true;
+        fetch(UNBIND_PATH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-RosPanel-Sub": "1" },
+          body: JSON.stringify({ hwid: hwid }),
+        })
+          .then(function (r) {
+            if (r.ok) {
+              location.reload();
+            } else {
+              alert({{.L.DeviceFailed}});
+              el.textContent = old;
+              el.disabled = false;
+            }
+          })
+          .catch(function () {
+            alert({{.L.NetworkError}});
+            el.textContent = old;
+            el.disabled = false;
+          });
+      }
+      var PAY_PATH = "{{.Billing.PayPath}}";
+      var CANCEL_PATH = "{{.Billing.CancelPath}}";
+      var ORDER_PATH = "{{.Billing.OrderPath}}";
+      // Poll for an automatic payment still being processed (after the user returns
+      // from the provider). Show a spinner while pending; reload once it clears so the
+      // new plan/expiry appears.
+      var pmWatching = false,
+        pmEverPending = false,
+        pmOrder = 0;
+      function checkOrder() {
+        if (!ORDER_PATH) return;
+        fetch(ORDER_PATH)
+          .then(function (r) {
+            return r.json();
+          })
+          .then(function (j) {
+            var el = document.getElementById("paywatch");
+            if (j && j.pending) {
+              pmEverPending = true;
+              pmOrder = j.order_id || pmOrder;
+              if (el) el.style.display = "flex";
+              setTimeout(checkOrder, 4000);
+            } else {
+              if (el) el.style.display = "none";
+              if (pmEverPending) {
+                pmEverPending = false;
+                // The order that was being watched went through: say so after the
+                // reload, which is what shows its effect.
+                if (j && j.done && j.done.order_id === pmOrder) {
+                  try {
+                    sessionStorage.setItem("rospanel.paidmsg", j.done.message);
+                  } catch (e) {}
+                }
+                location.reload();
+              } else {
+                pmWatching = false;
+              }
+            }
+          })
+          .catch(function () {
+            setTimeout(checkOrder, 8000);
+          });
+      }
+      function watchPayments() {
+        if (pmWatching) return;
+        pmWatching = true;
+        checkOrder();
+      }
+      watchPayments(); // covers returning to a page that already has a pending order
+      (function () {
+        var msg = null;
+        try {
+          msg = sessionStorage.getItem("rospanel.paidmsg");
+          sessionStorage.removeItem("rospanel.paidmsg");
+        } catch (e) {}
+        if (msg) showPayMsg(msg, {{.L.PaidTitle}});
+      })();
+      function cancelSub(el) {
+        if (
+          !confirm(
+            {{.L.CancelConfirm}},
+          )
+        )
+          return;
+        var old = el.textContent;
+        el.textContent = "…";
+        el.disabled = true;
+        fetch(CANCEL_PATH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-RosPanel-Sub": "1" },
+          body: "{}",
+        })
+          .then(function (r) {
+            if (r.ok) {
+              location.reload();
+            } else {
+              return r.json().then(function (j) {
+                alert(j.error || {{.L.CancelFailed}});
+                el.textContent = old;
+                el.disabled = false;
+              });
+            }
+          })
+          .catch(function () {
+            alert({{.L.NetworkError}});
+            el.textContent = old;
+            el.disabled = false;
+          });
+      }
+      // A theme's markup runs no script of its own: its controls say what they do in
+      // data-action, with data-value (and data-kind, data-plan, data-fb where a
+      // purchase takes them) for the argument — internal/sub/theme.go lists them. A
+      // handler that returns true lets a link go where it points.
+      var THEME_ACTS = {
+        copy: function (el, v) { copy(v, el); },
+        "copy-icon": function (el, v) { copyIcon(v, el); },
+        "copy-quiet": function (el, v) { copyQuiet(v); },
+        apps: function () { closeModals(); openApps(); },
+        app: function (el, v, e) { return appClick(e); },
+        close: function (el) { closeModal(el.closest(".modal")); },
+        wizard: function () { if (document.getElementById("wizard")) openWizard(); },
+        plans: function () { if (document.getElementById("plansmodal")) openPlans(); },
+        renew: function () { if (document.getElementById("renewmodal")) showModal("renewmodal"); },
+        change: function () { if (document.getElementById("changemodal")) showModal("changemodal"); },
+        tab: function (el, v) { if (window.showTab) window.showTab(v); },
+        rotate: function (el) { rotateLink(el); },
+        "unbind-device": function (el) { unbindDevice(el); },
+        churn: function (el, v) { churnPick(el, v); },
+        "churn-send": function (el) { churnSend(el); },
+        cancel: function (el) { cancelSub(el); },
+        promo: function (el) { applyPromo(el); },
+        topup: function (el) { topup(el); },
+        "buy-extra": function (el, v) {
+          var n = parseInt(v, 10) || 1;
+          var sel = el.id === "addn-btn" ? document.getElementById("addn") : null;
+          if (sel) n = parseInt(sel.value, 10) || 1;
+          buyExtra(el.getAttribute("data-kind") || "", parseInt(el.getAttribute("data-plan"), 10) || 0, n, el.getAttribute("data-fb") || "", el);
+        },
+        external: function (el, v) { if (/^https:\/\//.test(v)) openExternal(v); },
+        // Both navigate: only to the addresses the page's own buttons use.
+        "tg-proxy": function (el, v, e) { if (/^https:\/\//.test(v)) return tgProxy(e, v); },
+        "tg-access": function (el) {
+          if (/^https:\/\//.test(el.href || "")) return tgAccess(el, el.getAttribute("data-linked") === "1");
+        },
+        "wz-plat": function (el, v) { wzPlat(v); },
+        "wz-go": function (el, v) { wzGo(parseInt(v, 10) || 1); },
+        "pick-plan": function (el) { pickPlan(planOf(el)); },
+        "buy-plan": function (el) { buyPlan(planOf(el), el); },
+        "change-plan": function (el, v) {
+          askThen({{.L.ChangeConfirm}} + "\n" + v, function () {
+            buyExtra(el.getAttribute("data-kind") || "", planOf(el), 0, el.getAttribute("data-fb") || "", el);
+          });
+        },
+        "pay-with": function (el, v) { payWith(v, el); },
+      };
+      function planOf(el) {
+        return parseInt(el.getAttribute("data-plan"), 10) || 0;
+      }
+      function closeModal(m) {
+        if (!m) return;
+        if (m.id === "msgmodal") closeMsg();
+        else m.classList.remove("show");
+      }
+      function closeModals() {
+        Array.prototype.forEach.call(document.querySelectorAll(".modal.show"), closeModal);
+      }
+      document.addEventListener("click", function (e) {
+        // A dialog closes on a tap beside its card: the backdrop is the .modal itself.
+        if (e.target && e.target.classList && e.target.classList.contains("modal") && !e.target.hasAttribute("onclick")) {
+          closeModal(e.target);
+          return;
+        }
+        var el = e.target && e.target.closest ? e.target.closest("[data-action]") : null;
+        if (!el) return;
+        var fn = THEME_ACTS[el.getAttribute("data-action")];
+        if (!fn || el.tagName === "SELECT" || (el.tagName === "INPUT" && el.type === "checkbox")) return;
+        if (fn(el, el.getAttribute("data-value") || "", e) !== true) e.preventDefault();
+      });
+      // Switches and lists act when they change, not when clicked.
+      document.addEventListener("change", function (e) {
+        var el = e.target;
+        if (!el || !el.getAttribute) return;
+        switch (el.getAttribute("data-action")) {
+          case "auto-renew":
+            setAutoRenew(el);
+            break;
+          case "addn":
+            addnPicked();
+            break;
+          case "period":
+            periodPicked(planOf(el));
+            break;
+          case "devices":
+            devPicked(planOf(el));
+            break;
+        }
+      });
+      // Tabs. The chosen one survives the reloads the page does itself (after a
+      // payment, a promo code) — per browser tab, so a new visit starts on the
+      // subscription.
+      (function () {
+        var tabs = document.querySelectorAll(".tab");
+        if (!tabs.length) return;
+        var panes = document.querySelectorAll(".pane");
+        var each = function (list, fn) {
+          Array.prototype.forEach.call(list, fn);
+        };
+        function show(name) {
+          var found = false;
+          each(tabs, function (t) {
+            if (t.getAttribute("data-tab") === name) found = true;
+          });
+          if (!found) name = "sub";
+          each(tabs, function (t) {
+            var on = t.getAttribute("data-tab") === name;
+            t.classList.toggle("active", on);
+            t.setAttribute("aria-selected", on ? "true" : "false");
+          });
+          each(panes, function (p) {
+            p.hidden = p.getAttribute("data-pane") !== name;
+          });
+          try {
+            sessionStorage.setItem("rospanel.subtab", name);
+          } catch (e) {}
+        }
+        each(tabs, function (t) {
+          t.addEventListener("click", function () {
+            show(t.getAttribute("data-tab"));
+          });
+        });
+        var saved = null;
+        try {
+          saved = sessionStorage.getItem("rospanel.subtab");
+        } catch (e) {}
+        show(saved || "sub");
+        window.showTab = show;
+      })();
+      // Inside Telegram the page behaves like part of it: the header and the frame
+      // take the page's colour, the system Back button closes what is open (a dialog,
+      // then a tab other than the first), and taps that did something are felt.
+      (function () {
+        if (!TG) return;
+        var bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+        // Each on its own: a client that refuses one (before 6.9 the header takes only
+        // a theme key, not a colour) must not skip the rest.
+        var v = function (x) {
+          return TG.isVersionAtLeast && TG.isVersionAtLeast(x);
+        };
+        try {
+          if (bg && v("6.1")) TG.setHeaderColor(v("6.9") ? bg : "bg_color");
+        } catch (e) {}
+        try {
+          if (bg && v("6.1")) TG.setBackgroundColor(bg);
+        } catch (e) {}
+        try {
+          if (bg && v("7.10") && TG.setBottomBarColor) TG.setBottomBarColor(bg);
+        } catch (e) {}
+        if (!TG.BackButton || !(TG.isVersionAtLeast && TG.isVersionAtLeast("6.1"))) return;
+        var openModal = function () {
+          var open = document.querySelectorAll(".modal.show");
+          return open.length ? open[open.length - 1] : null;
+        };
+        var onFirstTab = function () {
+          var t = document.querySelector(".tab.active");
+          return !t || t.getAttribute("data-tab") === "sub";
+        };
+        var sync = function () {
+          try {
+            if (openModal() || !onFirstTab()) TG.BackButton.show();
+            else TG.BackButton.hide();
+          } catch (e) {}
+        };
+        TG.BackButton.onClick(function () {
+          var m = openModal();
+          if (m) {
+            m.classList.remove("show");
+          } else if (window.showTab) {
+            window.showTab("sub");
+          }
+          sync();
+        });
+        if (window.MutationObserver) {
+          new MutationObserver(sync).observe(document.body, {
+            subtree: true,
+            attributes: true,
+            attributeFilter: ["class"],
+          });
+        }
+        sync();
+      })();
+      // haptic makes a tap that did something felt, inside Telegram; nothing elsewhere.
+      function haptic(kind) {
+        try {
+          if (TG && TG.HapticFeedback) {
+            if (kind === "success" || kind === "error") TG.HapticFeedback.notificationOccurred(kind);
+            else TG.HapticFeedback.impactOccurred(kind || "light");
+          }
+        } catch (e) {}
+      }
+      var PAY_PROVIDERS = [
+        {{range $i, $p := .Billing.Providers}}{{if $i}}, {{end}}"{{$p.Key}}"{{end}}
+      ];
+      var PAY_PLAN = 0;
+      function showPayMsg(text, title, image) {
+        haptic(title === {{.L.Error}} ? "error" : "success");
+        var body = document.getElementById("msgmodal-body");
+        var head = document.getElementById("msgmodal-title");
+        var modal = document.getElementById("msgmodal");
+        var pic = document.getElementById("msgmodal-img");
+        if (pic) {
+          if (image) {
+            pic.src = image;
+            pic.hidden = false;
+          } else {
+            pic.hidden = true;
+            pic.removeAttribute("src");
+          }
+        }
+        if (body && modal) {
+          body.textContent = text;
+          if (head) head.textContent = title || {{.L.PayTitle}};
+          modal.classList.add("show");
+        } else {
+          alert(text);
+        }
+      }
+      // One provider → pay straight away; several → open the method-choice modal.
+      // A plan with several terms on offer: the chosen one, and the button that
+      // follows it (paying from the balance, or with money).
+      function planPeriods(planId) {
+        var s = document.getElementById("per-" + planId);
+        return s ? parseInt(s.value, 10) || 1 : 1;
+      }
+      function periodPicked(planId) {
+        var s = document.getElementById("per-" + planId),
+          b = document.getElementById("paybtn-" + planId);
+        if (!s || !b) return;
+        var o = s.options[s.selectedIndex];
+        b.textContent = o.getAttribute("data-btn");
+        b.setAttribute("data-fb", o.getAttribute("data-fb") || "");
+      }
+      // PAY_EXTRA rides along with the next payment: the devices a plan comes with, or
+      // what a change or an add-on buys. The server pays from the balance whatever it
+      // covers.
+      var PAY_EXTRA = {};
+      function showModal(id) {
+        var m = document.getElementById(id);
+        if (m) m.classList.add("show");
+      }
+      // openPlans shows the plans; with one there is nothing to pick, so it opens.
+      function openPlans() {
+        var m = document.getElementById("plansmodal");
+        if (!m) return;
+        var picks = m.querySelectorAll(".pick");
+        if (picks.length === 1) pickPlan(picks[0].id.slice(5));
+        m.classList.add("show");
+      }
+      function pickPlan(planId) {
+        var picks = document.querySelectorAll("#plansmodal .pick");
+        for (var i = 0; i < picks.length; i++) {
+          var on = picks[i].id === "pick-" + planId;
+          picks[i].classList.toggle("on", on);
+          picks[i].querySelector(".pick-body").hidden = !on;
+        }
+        haptic();
+      }
+      function buyPlan(planId, el) {
+        var n = planPeriods(planId);
+        var d = document.getElementById("dev-" + planId);
+        PAY_EXTRA = d ? { devices: parseInt(d.value, 10) || 0 } : {};
+        if (el.getAttribute("data-fb") === "1" && !(PAY_EXTRA.devices > 0)) payBalance(planId, el, n);
+        else pay(planId, el, n);
+      }
+      // Extra devices change the price the button was labelled with: from then on it
+      // just pays, and the server says what from.
+      function devPicked(planId) {
+        var d = document.getElementById("dev-" + planId),
+          b = document.getElementById("paybtn-" + planId);
+        if (!d || !b) return;
+        if (!b.hasAttribute("data-label0")) b.setAttribute("data-label0", b.textContent);
+        if ((parseInt(d.value, 10) || 0) > 0) b.textContent = {{.L.Pay}};
+        else b.textContent = b.getAttribute("data-label0");
+      }
+      // askThen asks before an action: Telegram's own dialog inside the Mini App (its
+      // webview may refuse window.confirm), the browser's elsewhere.
+      function askThen(msg, fn) {
+        var tg = TG;
+        if (tg && tg.showConfirm && tg.isVersionAtLeast && tg.isVersionAtLeast("6.2")) {
+          tg.showConfirm(msg, function (ok) {
+            if (ok) fn();
+          });
+        } else if (confirm(msg)) {
+          fn();
+        }
+      }
+      // The devices picker: the button follows the count (price, and whether the
+      // balance covers it).
+      function addnPicked() {
+        var s = document.getElementById("addn"),
+          b = document.getElementById("addn-btn");
+        if (!s || !b) return;
+        var o = s.options[s.selectedIndex];
+        b.textContent = o.getAttribute("data-btn");
+        b.setAttribute("data-fb", o.getAttribute("data-fb") || "");
+      }
+      function buyExtra(kind, planId, n, fb, el) {
+        PAY_EXTRA = { kind: kind };
+        if (kind === "devices") PAY_EXTRA.devices = n;
+        if (kind === "traffic") PAY_EXTRA.pack = n;
+        // An add-on is held to what it adds to, not only the term: a second tap then
+        // buys nothing.
+        if (kind === "devices" || kind === "traffic") PAY_EXTRA.expire_at = {{.Billing.Stamp}};
+        if (fb === "1") payBalance(planId, el, 1);
+        else pay(planId, el, 1);
+      }
+      var PAY_PERIODS = 1;
+      function pay(planId, el, periods) {
+        PAY_TOPUP = 0; // a top-up dialog closed without choosing leaves no trace
+        PAY_PERIODS = periods || 1;
+        if (PAY_PROVIDERS.length <= 1) {
+          startPay(planId, PAY_PROVIDERS[0] || "", el, PAY_PERIODS);
+        } else {
+          PAY_PLAN = planId;
+          document.getElementById("paymodal").classList.add("show");
+        }
+      }
+      var PAY_TOPUP = 0;
+      function payWith(provider, el) {
+        document.getElementById("paymodal").classList.remove("show");
+        if (PAY_TOPUP) {
+          var amount = PAY_TOPUP;
+          PAY_TOPUP = 0;
+          startTopup(amount, provider, el);
+          return;
+        }
+        startPay(PAY_PLAN, provider, el, PAY_PERIODS);
+      }
+      var WALLET_PATH = "{{.Billing.WalletPath}}";
+      // post sends a page action and hands back {ok, body}.
+      function post(path, data) {
+        return fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-RosPanel-Sub": "1" },
+          body: JSON.stringify(data),
+        }).then(function (r) {
+          return r.json().then(function (j) {
+            return { ok: r.ok, body: j || {} };
+          });
+        });
+      }
+      function busy(el) {
+        var old = el ? el.textContent : "";
+        if (el) {
+          el.textContent = "…";
+          el.disabled = true;
+        }
+        return function () {
+          if (el) {
+            el.textContent = old;
+            el.disabled = false;
+          }
+        };
+      }
+      var RELOAD_ON_CLOSE = false;
+      // closeMsg hides the message; a promo code that changed the page reloads it.
+      function closeMsg() {
+        document.getElementById("msgmodal").classList.remove("show");
+        if (RELOAD_ON_CLOSE) location.reload();
+      }
+      function payBalance(planId, el, periods) {
+        var reset = busy(el);
+        post(PAY_PATH, Object.assign({ plan_id: planId, balance: true, expire_at: {{.Billing.ExpireAt}}, periods: periods || 1 }, PAY_EXTRA))
+          .then(function (res) {
+            if (res.ok) {
+              location.reload();
+              return;
+            }
+            reset();
+            showPayMsg(res.body.error || {{.L.PayFailed}}, {{.L.Error}});
+          })
+          .catch(function () {
+            reset();
+            showPayMsg({{.L.NetworkError}}, {{.L.Error}});
+          });
+      }
+      function topup(el) {
+        var input = document.getElementById("topup-amount");
+        var amount = parseInt(input && input.value, 10);
+        if (!amount || amount < {{.Billing.TopupMin}} || amount > {{.Billing.TopupMax}}) {
+          if (input) input.focus();
+          return;
+        }
+        if (PAY_PROVIDERS.length <= 1) {
+          startTopup(amount, PAY_PROVIDERS[0] || "", el);
+        } else {
+          PAY_TOPUP = amount;
+          document.getElementById("paymodal").classList.add("show");
+        }
+      }
+      function startTopup(amount, provider, el) {
+        var reset = busy(el);
+        post(WALLET_PATH + "/topup", { amount: amount, provider: provider })
+          .then(function (res) {
+            reset();
+            if (res.ok && res.body.pay_url) {
+              openExternal(res.body.pay_url);
+              watchPayments();
+            } else if (res.ok && res.body.manual) {
+              showPayMsg(res.body.message || {{.L.OrderCreated}}, {{.L.OrderTitle}}, res.body.image);
+            } else {
+              showPayMsg(res.body.error || {{.L.PayFailed}}, {{.L.Error}});
+            }
+          })
+          .catch(function () {
+            reset();
+            showPayMsg({{.L.NetworkError}}, {{.L.Error}});
+          });
+      }
+      function applyPromo(el) {
+        var input = document.getElementById("promo-code");
+        var code = input ? input.value.trim() : "";
+        if (!code) {
+          if (input) input.focus();
+          return;
+        }
+        var reset = busy(el);
+        post(WALLET_PATH + "/promo", { code: code })
+          .then(function (res) {
+            reset();
+            if (res.ok) {
+              RELOAD_ON_CLOSE = true;
+              showPayMsg(res.body.message, {{.L.PromoTitle}});
+            } else {
+              showPayMsg(res.body.error || {{.L.PayFailed}}, {{.L.Error}});
+            }
+          })
+          .catch(function () {
+            reset();
+            showPayMsg({{.L.NetworkError}}, {{.L.Error}});
+          });
+      }
+      function setAutoRenew(box) {
+        box.disabled = true;
+        post(WALLET_PATH + "/autorenew", { on: box.checked })
+          .then(function (res) {
+            box.disabled = false;
+            if (!res.ok) {
+              box.checked = !box.checked;
+              showPayMsg(res.body.error || {{.L.PayFailed}}, {{.L.Error}});
+              return;
+            }
+            // What the renewal will do shows only while it is on.
+            var note = document.querySelector(".renew-note");
+            if (note) note.hidden = !box.checked;
+          })
+          .catch(function () {
+            box.disabled = false;
+            box.checked = !box.checked;
+            showPayMsg({{.L.NetworkError}}, {{.L.Error}});
+          });
+      }
+      function startPay(planId, provider, el, periods) {
+        var old = el ? el.textContent : "";
+        if (el) {
+          el.textContent = "…";
+          el.disabled = true;
+        }
+        var reset = function () {
+          if (el) {
+            el.textContent = old;
+            el.disabled = false;
+          }
+        };
+        fetch(PAY_PATH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-RosPanel-Sub": "1" },
+          body: JSON.stringify(
+            Object.assign({ plan_id: planId, provider: provider, periods: periods || 1, expire_at: {{.Billing.ExpireAt}} }, PAY_EXTRA),
+          ),
+        })
+          .then(function (r) {
+            return r.json().then(function (j) {
+              return { ok: r.ok, body: j };
+            });
+          })
+          .then(function (res) {
+            if (res.ok && res.body.pay_url) {
+              openExternal(res.body.pay_url);
+              reset();
+              watchPayments(); // show the processing state while the provider confirms
+            } else if (res.ok && res.body.manual) {
+              // Server reuses the pending order, so re-tapping is safe — just reopen
+              // the instructions modal.
+              reset();
+              showPayMsg(
+                res.body.message || {{.L.OrderCreated}},
+                {{.L.OrderTitle}},
+                res.body.image,
+              );
+            } else {
+              reset();
+              showPayMsg(
+                res.body.error || {{.L.PayFailed}},
+                {{.L.Error}},
+              );
+            }
+          })
+          .catch(function () {
+            reset();
+            showPayMsg({{.L.NetworkError}}, {{.L.Error}});
+          });
+      }
+    </script>
+  </body>
+</html>
+{{/* Sections a theme plugin may replace (internal/sub/theme.go): each named one
+     renders its core: original unless the theme has theme/<name>.html. */}}
+{{define "core:header"}}
+      <div class="logo">
+        <img class="logomark" src="{{.SubURL}}/logo.svg" alt="" />
+        {{if .IsDefault}}<span class="b">{{.L.DefaultBrand}}</span>{{else}}<span class="b">{{.BrandName}}</span>{{end}}
+      </div>
+      <h1>{{if .Name}}{{printf .L.GreetingName .Name}}{{else}}{{.L.Greeting}}{{end}} 👋</h1>
+{{end}}
+{{define "core:badges"}}
+      <div class="badges">
+        {{if .UserID}}<button type="button" class="badge gray uid" title="{{.L.Copy}}"
+          onclick="copyQuiet('{{.UserID}}')">{{.L.UserID}} <bdi>{{.UserID}}</bdi></button>{{end}}
+        <span class="badge {{.StatusClass}}">{{.StatusLabel}}</span>
+        {{if .Online}}<span class="badge green">{{.L.Online}}</span>{{else}}<span
+          class="badge gray"
+          >{{.L.Offline}}{{if .LastSeen}} · {{.LastSeen}}{{end}}</span
+        >{{end}}
+        <span class="badge brand"
+          >{{.L.Traffic}}{{.L.Colon}}<bdi>{{.Used}}{{if .HasLimit}} / {{.Limit}}{{end}}</bdi></span
+        >
+        {{if .HasReset}}<span class="badge gray">{{.L.TrafficUntil}} {{.ResetText}}</span>{{end}}
+        {{if .HasExpire}}<span class="badge gray">{{.Expire}}</span>{{end}}
+      </div>
+      {{if .HasLimit}}
+      <div class="bar"><div style="width:{{.UsedPct}}%"></div></div>
+      {{end}}
+{{end}}
+{{define "core:notices"}}
+      {{if .Access.Notices}}
+      <section class="notices" aria-label="{{.Access.NoticesLabel}}">
+        {{range .Access.Notices}}
+        <div class="notice-card {{.Kind}}">
+          <div class="notice-tags">
+            <span class="ntag">{{.Label}}</span>{{if .Scheduled}}<span class="ntag soft">{{.Scheduled}}</span>{{end}}
+          </div>
+          <div class="notice-title" dir="auto">{{.Title}}</div>
+          {{if .Body}}<div class="notice-body" dir="auto">{{.Body}}</div>{{end}}
+          <div class="notice-when">{{.When}}</div>
+        </div>
+        {{end}}
+        {{if .Access.StatusURL}}<a class="notice-more" href="{{.Access.StatusURL}}" target="_blank" rel="noopener">{{.Access.StatusMore}}</a>{{end}}
+      </section>
+      {{end}}
+{{end}}
+{{define "core:churn"}}
+        {{with .Access.Churn}}
+        <!-- Asked once the paid term lapsed: why it was not renewed. -->
+        <div class="card" id="churn-card" style="margin-bottom: 12px">
+          <p style="margin: 0" dir="auto">{{.Question}}</p>
+          <div class="wz-plats">
+            {{range .Reasons}}<button type="button" class="chip" onclick="churnPick(this, '{{.Key}}')">{{.Label}}</button>{{end}}
+          </div>
+          <div id="churn-other" class="inline-form" style="margin-top: 10px" hidden>
+            <input id="churn-comment" type="text" maxlength="500" autocomplete="off"
+              placeholder="{{.OtherPh}}" aria-label="{{.OtherPh}}" />
+            <button class="btn alt" onclick="churnSend(this)">{{.Send}}</button>
+          </div>
+        </div>
+        {{end}}
+{{end}}
+{{define "core:blocks"}}
+        {{range .Access.Blocks}}
+        {{if eq .Type "button"}}<a class="btn alt" style="margin: 0 0 12px" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Label}}</a>
+        {{else}}<div class="card plugin-block{{if eq .Type "notice"}} notice{{end}}" dir="auto" style="margin-bottom: 12px">{{.HTML}}</div>{{end}}
+        {{end}}
+{{end}}
+{{define "core:wizard"}}
+        {{if .Wizard}}
+        <button class="btn" style="margin: 0 0 12px" onclick="openWizard()">{{.L.WzOpen}}</button>
+        {{end}}
+{{end}}
+{{define "core:connect"}}
+        <div class="card">
+          <div class="qr"><img src="{{.SubURL}}/qr.png" alt="QR" /></div>
+          <p class="muted" style="text-align: center; margin: 0.8rem 0 0">
+            {{.L.ScanQR}}
+          </p>
+          <button class="btn" onclick="copy('{{.SubURL}}', this)">
+            {{.L.CopyLink}}
+          </button>
+          {{if .DeepLinks}}
+          <button
+            id="openapps-btn"
+            class="btn alt"
+            onclick="openApps()"
+          >
+            {{.L.OpenInApp}}
+          </button>
+          {{end}}
+          {{if .ShowDownload}}
+          <a
+            class="btn alt"
+            href="{{.SubURL}}?format=clash&amp;dl=1"
+            download="clash.yaml"
+          >
+            {{.L.DownloadClash}}
+          </a>
+          {{end}}
+        </div>
+{{end}}
+{{define "core:devices"}}
+        {{if .Devices.Show}}
+        <div class="card" id="devices-card">
+          <div class="lbl" style="margin-bottom: 8px">
+            {{.L.Devices}} <span class="muted">{{.Devices.CountText}}</span>
+          </div>
+          {{range .Devices.List}}
+          <div class="dev" data-hwid="{{.HWID}}">
+            <div class="dev-info">
+              <div class="dev-name">{{.Title}}</div>
+              <div class="muted dev-sub">
+                {{if .Sub}}{{.Sub}} · {{end}}{{.LastSeen}}
+              </div>
+              <!-- The id the client sent. Two identical phones look identical without
+                   it, and the person deciding which to remove needs to tell them
+                   apart — it is also what they would quote to support. -->
+              <div class="muted dev-id" title="{{.HWID}}">{{.HWID}}</div>
+            </div>
+            <button class="btn alt dev-del" onclick="unbindDevice(this)">
+              {{$.L.DeviceRemove}}
+            </button>
+          </div>
+          {{else}}
+          <p class="muted" style="margin: 0">{{.L.DevicesEmpty}}</p>
+          {{end}}
+          <p class="muted" style="margin: 10px 0 0">{{.L.DevicesHint}}</p>
+        </div>
+        {{end}}
+{{end}}
+{{define "core:awg"}}
+        {{if .AWG}}
+        <div class="card">
+          <details class="fold">
+          <summary><span>{{.L.AWGTitle}} <span class="fold-count">· {{len .AWG}}</span></span></summary>
+          <div class="app-row" style="margin: 0 0 10px">
+            <p class="muted" style="margin: 0">{{.L.AWGHint}}</p>
+            <a class="icon-btn" href="{{.L.AWGSite}}" target="_blank" rel="noopener noreferrer"
+               title="{{.L.AppLink}}" aria-label="{{.L.AppLink}} — {{.L.AWGTitle}}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 7.6v.2" /></svg>
+            </a>
+          </div>
+          {{range .AWG}}
+          <details>
+            <summary>{{.Label}}</summary>
+            <div class="qr"><img src="{{.QRURL}}" alt="QR" loading="lazy" /></div>
+            <a class="btn alt" href="{{.ConfURL}}" download>{{$.L.AWGDownload}} · {{.Label}}</a>
+          </details>
+          {{end}}
+          </details>
+        </div>
+        {{end}}
+{{end}}
+{{define "core:wg"}}
+        {{if .WG}}
+        <div class="card">
+          <details class="fold">
+          <summary><span>{{.L.WGTitle}} <span class="fold-count">· {{len .WG}}</span></span></summary>
+          <div class="app-row" style="margin: 0 0 10px">
+            <p class="muted" style="margin: 0">{{.L.WGHint}}</p>
+            <a class="icon-btn" href="{{.L.WGSite}}" target="_blank" rel="noopener noreferrer"
+               title="{{.L.AppLink}}" aria-label="{{.L.AppLink}} — {{.L.WGTitle}}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 7.6v.2" /></svg>
+            </a>
+          </div>
+          {{range .WG}}
+          <details>
+            <summary>{{.Label}}</summary>
+            <div class="qr"><img src="{{.QRURL}}" alt="QR" loading="lazy" /></div>
+            <a class="btn alt" href="{{.ConfURL}}" download>{{$.L.AWGDownload}} · {{.Label}}</a>
+          </details>
+          {{end}}
+          </details>
+        </div>
+        {{end}}
+{{end}}
+{{define "core:turn"}}
+        {{if .Turn}}
+        <div class="card">
+          <details class="fold">
+          <summary><span>{{.L.TurnTitle}} <span class="fold-count">· {{len .Turn}}</span></span></summary>
+          <p class="muted" style="margin: 0 0 10px">{{.L.TurnHint}}</p>
+          {{range .Turn}}
+          <details>
+            <summary>{{.Label}}</summary>
+            {{range .Apps}}
+            <div class="app-row">
+              <span class="muted">{{.Name}}</span>
+              <a class="icon-btn" href="{{.AppLink}}" target="_blank" rel="noopener noreferrer"
+                 title="{{$.L.AppLink}}" aria-label="{{$.L.AppLink}} — {{.Name}}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 7.6v.2" /></svg>
+              </a>
+            </div>
+            <a class="btn" href="{{.Href}}">{{$.L.OpenInApp}}</a>
+            <button class="btn alt" onclick="copy('{{.Link}}', this)">{{$.L.Copy}}</button>
+            {{end}}
+            <!-- What the apps take from the link, for setting a client up by hand. -->
+            <details>
+              <summary>{{$.L.TurnManual}}</summary>
+              <p class="muted" style="margin: 8px 0 4px">{{$.L.TurnPeer}}</p>
+              <div class="copy-row">
+                <code>{{.Peer}}</code>
+                <button class="icon-btn" type="button" title="{{$.L.Copy}}" aria-label="{{$.L.Copy}}" onclick="copyIcon('{{.Peer}}', this)">
+                  <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
+                  <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                </button>
+              </div>
+              {{if .Link}}
+              <p class="muted" style="margin: 12px 0 4px">{{$.L.TurnLink}}</p>
+              <div class="copy-row">
+                <code>{{.Link}}</code>
+                <button class="icon-btn" type="button" title="{{$.L.Copy}}" aria-label="{{$.L.Copy}}" onclick="copyIcon('{{.Link}}', this)">
+                  <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
+                  <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                </button>
+              </div>
+              {{else}}
+              <p class="muted" style="margin: 12px 0 4px">{{$.L.TurnNoLink}}</p>
+              {{end}}
+              <a class="btn alt" href="{{.ConfURL}}" download>{{$.L.AWGDownload}} · {{.Label}}</a>
+            </details>
+          </details>
+          {{end}}
+          </details>
+        </div>
+        {{end}}
+{{end}}
+{{define "core:configs"}}
+        {{if .ShowConfigs}}
+        <div class="card">
+          <details class="fold">
+          <summary><span>{{.L.SingleConfigs}} <span class="fold-count">· {{len .Links}}</span></span></summary>
+          {{range .Links}}
+          <details>
+            <summary>{{.Proto}}</summary>
+            <p><code>{{.URL}}</code></p>
+            {{if .Open}}<a class="btn" href="{{.Open}}">{{$.L.OpenInApp}}</a>{{end}}
+            <button class="btn alt" onclick="copy('{{.URL}}', this)">
+              {{$.L.Copy}} {{.Proto}}
+            </button>
+          </details>
+          {{end}}
+          </details>
+        </div>
+        {{end}}
+{{end}}
+{{define "core:tgproxy"}}
+        {{if .Telegram}}
+        <div class="card">
+          <details class="fold">
+          <summary><span>{{.L.TGProxyTitle}} <span class="fold-count">· {{len .Telegram}}</span></span></summary>
+          <p class="muted" style="margin: 0 0 10px">{{.L.TGProxyHint}}</p>
+          {{range .Telegram}}
+          <details>
+            <summary>{{.Label}}</summary>
+            <div class="qr"><img src="{{.QRURL}}" alt="QR" loading="lazy" /></div>
+            <a class="btn" href="{{.Link}}" onclick="return tgProxy(event, '{{.WebLink}}')">{{$.L.TGProxyAdd}}</a>
+            <button class="btn alt" onclick="copy('{{.Link}}', this)">{{$.L.Copy}}</button>
+          </details>
+          {{end}}
+          </details>
+        </div>
+        {{end}}
+{{end}}
+{{define "core:access"}}
+        <!-- The page's own address is the key to it: say so, and offer the bot to whoever
+             has not linked it. -->
+        <div class="card" id="access-card">
+          <div class="lbl" style="margin-bottom: 6px">{{.L.AccessTitle}}</div>
+          <p class="muted" style="margin: 0 0 10px">{{.L.AccessHint}}</p>
+          <button class="btn alt" onclick="copy('{{.SubURL}}', this)">{{.L.AccessCopy}}</button>
+          {{if .Access.TGLink}}
+          <a class="btn alt" style="margin-top: 14px" href="{{.Access.TGLink}}" target="_blank" rel="noopener noreferrer" onclick="return tgAccess(this, {{.Access.TGLinked}})">{{if .Access.TGLinked}}{{.L.TGChange}}{{else}}{{.L.TGBind}}{{end}}</a>
+          {{if not .Access.TGLinked}}<p class="muted" style="margin: 6px 0 0">{{.L.TGBindHint}}</p>{{end}}
+          {{end}}
+          {{if .Access.TGWait}}<p class="muted" style="margin: 14px 0 0">{{.Access.TGWait}}</p>{{end}}
+        </div>
+{{end}}
+{{define "core:rotate"}}
+        {{if .Access.RotatePath}}
+        <!-- Last, and apart: it breaks the link everywhere it was added. -->
+        <div class="card" id="rotate-card">
+          <div class="lbl" style="margin-bottom: 6px">{{.L.RotateTitle}}</div>
+          <p class="muted" style="margin: 0">{{.L.RotateHint}}</p>
+          <button class="btn danger" onclick="rotateLink(this)">{{.L.RotateLink}}</button>
+        </div>
+        {{end}}
+{{end}}
+{{define "core:plan"}}{{if .Billing.Show}}
+        <div class="card">
+          <div class="bill-cur">
+            <span class="muted">{{.L.CurrentPlan}}</span>
+            <span class="v"
+              >{{if .Billing.CurrentPlan}}{{.Billing.CurrentPlan}}{{else}}—{{end}}{{if
+              .Billing.ExpireText}} · {{.Billing.ExpireText}}{{end}}</span
+            >
+          </div>
+          {{if .Billing.RenewSwitch}}
+          <!-- Renewal belongs to the plan, not to the top-up below: it is what happens
+               to this subscription when its term ends. -->
+          <div class="renew">
+            <label class="check renew-switch">
+              <span>{{.L.AutoRenew}}</span>
+              <input type="checkbox" role="switch" {{if .Billing.AutoRenew}}checked{{end}} onchange="setAutoRenew(this)" />
+            </label>
+            {{if .Billing.RenewNote}}<p class="renew-note{{if .Billing.RenewShort}} short{{end}}"{{if not .Billing.AutoRenew}} hidden{{end}}>{{.Billing.RenewNote}}</p>{{end}}
+          </div>
+          {{end}}
+          {{if .Billing.Locked}}
+          <!-- An active plan: its renewal and a move to another plan, each in a dialog;
+               what can be added, and — quietly, last — cancelling it. -->
+          {{if or .Billing.Plans .Billing.Changes}}
+          <div class="btn-row">
+            {{if .Billing.Plans}}<button class="btn" onclick="showModal('renewmodal')">{{.L.Renew}}</button>{{end}}
+            {{if .Billing.Changes}}<button class="btn alt" onclick="showModal('changemodal')">{{.L.ChangeTitle}}</button>{{end}}
+          </div>
+          {{end}}
+          {{else if .Billing.Plans}}
+          <!-- The plans open in a dialog: one is picked, then its term and devices. -->
+          <button class="btn" onclick="openPlans()">{{if .Billing.CurrentPlan}}{{.L.PlanChange}}{{else}}{{.L.PlanPick}}{{end}}</button>
+          {{end}}
+          {{if .Billing.Addons}}
+          <div class="sect">
+            <div class="sect-title">{{.L.AddTitle}}</div>
+            <div class="sect-hint">{{.L.AddHint}}</div>
+            {{range .Billing.Addons}}
+            {{if .Counts}}
+            <div class="opt opt-col">
+              <div class="opt-info">
+                <div class="opt-name">{{.Name}}</div>
+                <div class="opt-sub">{{.Sub}}</div>
+              </div>
+              <div class="opt-row">
+                <select class="periods" id="addn" autocomplete="off" onchange="addnPicked()">
+                  {{range .Counts}}<option value="{{.N}}" data-btn="{{.Button}}" data-fb="{{if .FromBalance}}1{{end}}">{{.Label}}</option>{{end}}
+                </select>
+                <button class="btn alt" id="addn-btn" data-fb="{{if .FromBalance}}1{{end}}" onclick="buyExtra('{{.Kind}}', {{.PlanID}}, parseInt(document.getElementById('addn').value, 10) || 1, this.getAttribute('data-fb'), this)">{{.Badge}}</button>
+              </div>
+            </div>
+            {{else}}
+            <div class="opt">
+              <div class="opt-info">
+                <div class="opt-name">{{.Name}}</div>
+                <div class="opt-sub">{{.Sub}}</div>
+              </div>
+              <button class="btn alt" onclick="buyExtra('{{.Kind}}', {{.PlanID}}, {{.N}}, '{{if .FromBalance}}1{{end}}', this)">{{.Badge}}</button>
+            </div>
+            {{end}}
+            {{end}}
+          </div>
+          {{end}}
+          {{if .Billing.Cancelable}}
+          {{if not .Billing.Changes}}
+          <p class="muted" style="margin: 14px 0 0; font-size: 0.85rem">
+            {{.L.ChangePlanNote}}
+          </p>
+          {{end}}
+          <button class="linkbtn" onclick="cancelSub(this)">{{.L.CancelSub}}</button>
+          {{end}}
+        </div>
+{{end}}{{end}}
+{{define "core:promo"}}
+        {{if .Billing.Promo}}
+        <!-- Its own card: a code discounts a plan, adds days or credits the balance —
+             beside the top-up it read as a bonus to the top-up. -->
+        <div class="card">
+          <div class="lbl">{{.L.PromoTitle}}</div>
+          <div class="inline-form">
+            <input id="promo-code" type="text" autocomplete="off" autocapitalize="characters"
+              placeholder="{{.L.PromoPlaceholder}}" aria-label="{{.L.PromoPlaceholder}}" />
+            <button class="btn alt" onclick="applyPromo(this)">{{.L.PromoApply}}</button>
+          </div>
+        </div>
+        {{end}}
+{{end}}
+{{define "core:wallet"}}
+        {{if .Billing.Wallet}}
+        <div class="card">
+          <div class="bill-cur">
+            <span class="muted">{{.L.Balance}}</span>
+            <span class="v">{{.Billing.Balance}} ₽</span>
+            {{if .Billing.BonusDays}}<span class="muted" style="font-size: 0.85rem">{{.Billing.BonusDays}}</span>{{end}}
+          </div>
+          {{if .Billing.Topup}}
+          <div class="inline-form">
+            <input id="topup-amount" type="number" inputmode="numeric" min="{{.Billing.TopupMin}}" max="{{.Billing.TopupMax}}"
+              placeholder="{{.Billing.TopupHint}}" aria-label="{{.L.TopupAmount}}" />
+            <button class="btn" onclick="topup(this)">{{.L.Topup}}</button>
+          </div>
+          {{end}}
+        </div>
+        {{end}}
+{{end}}
+{{define "core:history"}}
+        {{if .Billing.History}}
+        <div class="card">
+          <div class="lbl" style="margin-bottom: 4px">{{.L.History}}</div>
+          {{range .Billing.History}}
+          <div class="tx">
+            <div class="tx-info">
+              <div class="tx-title">{{.Title}}</div>
+              <div class="muted tx-when">{{.When}}</div>
+            </div>
+            <div class="tx-amt{{if .In}} in{{end}}">{{.Amount}}</div>
+          </div>
+          {{end}}
+        </div>
+        {{end}}
+{{end}}
+{{define "core:referral"}}{{if .Billing.RefLink}}
+        <div class="card">
+          <div class="bill-cur">
+            <span class="v">{{.L.RefTitle}}</span>
+            <span class="muted" style="font-size: 0.85rem">{{.Billing.RefHint}}</span>
+          </div>
+          <div class="copy-row" style="margin-top: 8px">
+            <code>{{.Billing.RefLink}}</code>
+            <button class="icon-btn" type="button" title="{{.L.Copy}}" aria-label="{{.L.Copy}}" onclick="copyIcon('{{.Billing.RefLink}}', this)">
+              <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
+              <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>
+            </button>
+          </div>
+          {{if .Billing.RefShare}}
+          <button class="btn" onclick="openExternal('{{.Billing.RefShare}}')">{{.L.Share}}</button>
+          {{end}}
+          <p class="muted" style="margin: 10px 0 0; font-size: 0.85rem">{{.Billing.RefStats}}</p>
+        </div>
+{{end}}{{end}}
+{{define "core:invitees"}}
+        {{if .Billing.Invitees}}
+        <div class="card">
+          <div class="lbl" style="margin-bottom: 4px">{{.L.RefInvitees}}</div>
+          {{range .Billing.Invitees}}
+          <div class="tx">
+            <div class="tx-info">
+              <div class="tx-title">{{.Title}}</div>
+              {{if .When}}<div class="muted tx-when">{{.When}}</div>{{end}}
+            </div>
+            <div class="tx-amt{{if .In}} in{{end}}{{if .Muted}} muted{{end}}">{{.Amount}}</div>
+          </div>
+          {{end}}
+          {{if .Billing.InviteesMore}}<p class="muted" style="margin: 6px 0 0; font-size: 0.85rem">{{.Billing.InviteesMore}}</p>{{end}}
+        </div>
+        {{end}}
+{{end}}
+{{define "core:legal"}}
+      {{if .Access.Legal}}
+      <p class="muted legal">
+        {{range $i, $l := .Access.Legal}}{{if $i}} · {{end}}<a href="{{$l.URL}}" target="_blank" rel="noopener">{{$l.Title}}</a>{{end}}
+      </p>
+      {{end}}
+{{end}}
+{{define "core:tabs"}}
+      {{if .Billing.Show}}
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab active" data-tab="sub" role="tab" aria-selected="true">{{.L.TabSub}}</button>
+        <button type="button" class="tab" data-tab="pay" role="tab" aria-selected="false">{{.L.TabPay}}</button>
+        {{if .Billing.RefLink}}<button type="button" class="tab" data-tab="ref" role="tab" aria-selected="false">{{.L.TabRef}}</button>{{end}}
+      </div>
+      {{end}}
+{{end}}
+{{define "core:layout"}}
+    <div class="wrap">
+      {{template "header" .}}{{template "badges" .}}{{template "notices" .}}{{template "tabs" .}}
+      {{if .Billing.Show}}
+      <div id="paywatch" class="paywatch" style="display: none">
+        <span class="spinner"></span>
+        <span>{{.L.PayProcessing}}</span>
+      </div>
+      {{end}}
+      <section class="pane" data-pane="sub">
+        {{template "churn" .}}{{template "blocks" .}}{{template "wizard" .}}{{template "connect" .}}{{template "devices" .}}{{template "awg" .}}{{template "wg" .}}{{template "turn" .}}{{template "configs" .}}{{template "tgproxy" .}}{{template "access" .}}{{template "rotate" .}}
+      </section>
+      {{if .Billing.Show}}
+      <section class="pane" data-pane="pay" hidden>
+        {{template "plan" .}}{{template "promo" .}}{{template "wallet" .}}{{template "history" .}}
+      </section>
+      {{if .Billing.RefLink}}
+      <section class="pane" data-pane="ref" hidden>
+        {{template "referral" .}}{{template "invitees" .}}
+      </section>
+      {{end}}
+      {{end}}
+      {{template "legal" .}}
+    </div>
+{{end}}
+{{define "header"}}{{template "core:header" .}}{{end}}
+{{define "badges"}}{{template "core:badges" .}}{{end}}
+{{define "notices"}}{{template "core:notices" .}}{{end}}
+{{define "churn"}}{{template "core:churn" .}}{{end}}
+{{define "blocks"}}{{template "core:blocks" .}}{{end}}
+{{define "wizard"}}{{template "core:wizard" .}}{{end}}
+{{define "connect"}}{{template "core:connect" .}}{{end}}
+{{define "devices"}}{{template "core:devices" .}}{{end}}
+{{define "awg"}}{{template "core:awg" .}}{{end}}
+{{define "wg"}}{{template "core:wg" .}}{{end}}
+{{define "turn"}}{{template "core:turn" .}}{{end}}
+{{define "configs"}}{{template "core:configs" .}}{{end}}
+{{define "tgproxy"}}{{template "core:tgproxy" .}}{{end}}
+{{define "access"}}{{template "core:access" .}}{{end}}
+{{define "rotate"}}{{template "core:rotate" .}}{{end}}
+{{define "plan"}}{{template "core:plan" .}}{{end}}
+{{define "promo"}}{{template "core:promo" .}}{{end}}
+{{define "wallet"}}{{template "core:wallet" .}}{{end}}
+{{define "history"}}{{template "core:history" .}}{{end}}
+{{define "referral"}}{{template "core:referral" .}}{{end}}
+{{define "invitees"}}{{template "core:invitees" .}}{{end}}
+{{define "legal"}}{{template "core:legal" .}}{{end}}
+{{define "tabs"}}{{template "core:tabs" .}}{{end}}
+{{define "layout"}}{{template "core:layout" .}}{{end}}
+{{define "core:styles"}}
+    <style>
       * {
         box-sizing: border-box;
       }
@@ -1201,453 +2635,8 @@
         text-align: end;
       }
     </style>
-    {{if .Access.ThemeCSS}}<link rel="stylesheet" href="{{.Access.ThemeCSS}}" />{{end}}
-  </head>
-  <body>
-    <div class="wrap">
-      <div class="logo">
-        <img class="logomark" src="{{.SubURL}}/logo.svg" alt="" />
-        {{if .IsDefault}}<span class="b">{{.L.DefaultBrand}}</span>{{else}}<span class="b">{{.BrandName}}</span>{{end}}
-      </div>
-      <h1>{{if .Name}}{{printf .L.GreetingName .Name}}{{else}}{{.L.Greeting}}{{end}} 👋</h1>
-
-      <div class="badges">
-        {{if .UserID}}<button type="button" class="badge gray uid" title="{{.L.Copy}}"
-          onclick="copyQuiet('{{.UserID}}')">{{.L.UserID}} <bdi>{{.UserID}}</bdi></button>{{end}}
-        <span class="badge {{.StatusClass}}">{{.StatusLabel}}</span>
-        {{if .Online}}<span class="badge green">{{.L.Online}}</span>{{else}}<span
-          class="badge gray"
-          >{{.L.Offline}}{{if .LastSeen}} · {{.LastSeen}}{{end}}</span
-        >{{end}}
-        <span class="badge brand"
-          >{{.L.Traffic}}{{.L.Colon}}<bdi>{{.Used}}{{if .HasLimit}} / {{.Limit}}{{end}}</bdi></span
-        >
-        {{if .HasReset}}<span class="badge gray">{{.L.TrafficUntil}} {{.ResetText}}</span>{{end}}
-        {{if .HasExpire}}<span class="badge gray">{{.Expire}}</span>{{end}}
-      </div>
-      {{if .HasLimit}}
-      <div class="bar"><div style="width:{{.UsedPct}}%"></div></div>
-      {{end}}
-
-      {{if .Access.Notices}}
-      <section class="notices" aria-label="{{.Access.NoticesLabel}}">
-        {{range .Access.Notices}}
-        <div class="notice-card {{.Kind}}">
-          <div class="notice-tags">
-            <span class="ntag">{{.Label}}</span>{{if .Scheduled}}<span class="ntag soft">{{.Scheduled}}</span>{{end}}
-          </div>
-          <div class="notice-title" dir="auto">{{.Title}}</div>
-          {{if .Body}}<div class="notice-body" dir="auto">{{.Body}}</div>{{end}}
-          <div class="notice-when">{{.When}}</div>
-        </div>
-        {{end}}
-        {{if .Access.StatusURL}}<a class="notice-more" href="{{.Access.StatusURL}}" target="_blank" rel="noopener">{{.Access.StatusMore}}</a>{{end}}
-      </section>
-      {{end}}
-
-      {{if .Billing.Show}}
-      <div class="tabs" role="tablist">
-        <button type="button" class="tab active" data-tab="sub" role="tab" aria-selected="true">{{.L.TabSub}}</button>
-        <button type="button" class="tab" data-tab="pay" role="tab" aria-selected="false">{{.L.TabPay}}</button>
-        {{if .Billing.RefLink}}<button type="button" class="tab" data-tab="ref" role="tab" aria-selected="false">{{.L.TabRef}}</button>{{end}}
-      </div>
-      <div id="paywatch" class="paywatch" style="display: none">
-        <span class="spinner"></span>
-        <span>{{.L.PayProcessing}}</span>
-      </div>
-      {{end}}
-
-      <section class="pane" data-pane="sub">
-        {{with .Access.Churn}}
-        <!-- Asked once the paid term lapsed: why it was not renewed. -->
-        <div class="card" id="churn-card" style="margin-bottom: 12px">
-          <p style="margin: 0" dir="auto">{{.Question}}</p>
-          <div class="wz-plats">
-            {{range .Reasons}}<button type="button" class="chip" onclick="churnPick(this, '{{.Key}}')">{{.Label}}</button>{{end}}
-          </div>
-          <div id="churn-other" class="inline-form" style="margin-top: 10px" hidden>
-            <input id="churn-comment" type="text" maxlength="500" autocomplete="off"
-              placeholder="{{.OtherPh}}" aria-label="{{.OtherPh}}" />
-            <button class="btn alt" onclick="churnSend(this)">{{.Send}}</button>
-          </div>
-        </div>
-        {{end}}
-        {{range .Access.Blocks}}
-        {{if eq .Type "button"}}<a class="btn alt" style="margin: 0 0 12px" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Label}}</a>
-        {{else}}<div class="card plugin-block{{if eq .Type "notice"}} notice{{end}}" dir="auto" style="margin-bottom: 12px">{{.HTML}}</div>{{end}}
-        {{end}}
-        {{if .Wizard}}
-        <button class="btn" style="margin: 0 0 12px" onclick="openWizard()">{{.L.WzOpen}}</button>
-        {{end}}
-        <div class="card">
-          <div class="qr"><img src="{{.SubURL}}/qr.png" alt="QR" /></div>
-          <p class="muted" style="text-align: center; margin: 0.8rem 0 0">
-            {{.L.ScanQR}}
-          </p>
-          <button class="btn" onclick="copy('{{.SubURL}}', this)">
-            {{.L.CopyLink}}
-          </button>
-          {{if .DeepLinks}}
-          <button
-            id="openapps-btn"
-            class="btn alt"
-            onclick="openApps()"
-          >
-            {{.L.OpenInApp}}
-          </button>
-          {{end}}
-          {{if .ShowDownload}}
-          <a
-            class="btn alt"
-            href="{{.SubURL}}?format=clash&amp;dl=1"
-            download="clash.yaml"
-          >
-            {{.L.DownloadClash}}
-          </a>
-          {{end}}
-        </div>
-
-        {{if .Devices.Show}}
-        <div class="card" id="devices-card">
-          <div class="lbl" style="margin-bottom: 8px">
-            {{.L.Devices}} <span class="muted">{{.Devices.CountText}}</span>
-          </div>
-          {{range .Devices.List}}
-          <div class="dev" data-hwid="{{.HWID}}">
-            <div class="dev-info">
-              <div class="dev-name">{{.Title}}</div>
-              <div class="muted dev-sub">
-                {{if .Sub}}{{.Sub}} · {{end}}{{.LastSeen}}
-              </div>
-              <!-- The id the client sent. Two identical phones look identical without
-                   it, and the person deciding which to remove needs to tell them
-                   apart — it is also what they would quote to support. -->
-              <div class="muted dev-id" title="{{.HWID}}">{{.HWID}}</div>
-            </div>
-            <button class="btn alt dev-del" onclick="unbindDevice(this)">
-              {{$.L.DeviceRemove}}
-            </button>
-          </div>
-          {{else}}
-          <p class="muted" style="margin: 0">{{.L.DevicesEmpty}}</p>
-          {{end}}
-          <p class="muted" style="margin: 10px 0 0">{{.L.DevicesHint}}</p>
-        </div>
-        {{end}}
-
-        {{if .AWG}}
-        <div class="card">
-          <details class="fold">
-          <summary><span>{{.L.AWGTitle}} <span class="fold-count">· {{len .AWG}}</span></span></summary>
-          <div class="app-row" style="margin: 0 0 10px">
-            <p class="muted" style="margin: 0">{{.L.AWGHint}}</p>
-            <a class="icon-btn" href="{{.L.AWGSite}}" target="_blank" rel="noopener noreferrer"
-               title="{{.L.AppLink}}" aria-label="{{.L.AppLink}} — {{.L.AWGTitle}}">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 7.6v.2" /></svg>
-            </a>
-          </div>
-          {{range .AWG}}
-          <details>
-            <summary>{{.Label}}</summary>
-            <div class="qr"><img src="{{.QRURL}}" alt="QR" loading="lazy" /></div>
-            <a class="btn alt" href="{{.ConfURL}}" download>{{$.L.AWGDownload}} · {{.Label}}</a>
-          </details>
-          {{end}}
-          </details>
-        </div>
-        {{end}}
-
-        {{if .WG}}
-        <div class="card">
-          <details class="fold">
-          <summary><span>{{.L.WGTitle}} <span class="fold-count">· {{len .WG}}</span></span></summary>
-          <div class="app-row" style="margin: 0 0 10px">
-            <p class="muted" style="margin: 0">{{.L.WGHint}}</p>
-            <a class="icon-btn" href="{{.L.WGSite}}" target="_blank" rel="noopener noreferrer"
-               title="{{.L.AppLink}}" aria-label="{{.L.AppLink}} — {{.L.WGTitle}}">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 7.6v.2" /></svg>
-            </a>
-          </div>
-          {{range .WG}}
-          <details>
-            <summary>{{.Label}}</summary>
-            <div class="qr"><img src="{{.QRURL}}" alt="QR" loading="lazy" /></div>
-            <a class="btn alt" href="{{.ConfURL}}" download>{{$.L.AWGDownload}} · {{.Label}}</a>
-          </details>
-          {{end}}
-          </details>
-        </div>
-        {{end}}
-
-        {{if .Turn}}
-        <div class="card">
-          <details class="fold">
-          <summary><span>{{.L.TurnTitle}} <span class="fold-count">· {{len .Turn}}</span></span></summary>
-          <p class="muted" style="margin: 0 0 10px">{{.L.TurnHint}}</p>
-          {{range .Turn}}
-          <details>
-            <summary>{{.Label}}</summary>
-            {{range .Apps}}
-            <div class="app-row">
-              <span class="muted">{{.Name}}</span>
-              <a class="icon-btn" href="{{.AppLink}}" target="_blank" rel="noopener noreferrer"
-                 title="{{$.L.AppLink}}" aria-label="{{$.L.AppLink}} — {{.Name}}">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 7.6v.2" /></svg>
-              </a>
-            </div>
-            <a class="btn" href="{{.Href}}">{{$.L.OpenInApp}}</a>
-            <button class="btn alt" onclick="copy('{{.Link}}', this)">{{$.L.Copy}}</button>
-            {{end}}
-            <!-- What the apps take from the link, for setting a client up by hand. -->
-            <details>
-              <summary>{{$.L.TurnManual}}</summary>
-              <p class="muted" style="margin: 8px 0 4px">{{$.L.TurnPeer}}</p>
-              <div class="copy-row">
-                <code>{{.Peer}}</code>
-                <button class="icon-btn" type="button" title="{{$.L.Copy}}" aria-label="{{$.L.Copy}}" onclick="copyIcon('{{.Peer}}', this)">
-                  <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
-                  <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
-                </button>
-              </div>
-              {{if .Link}}
-              <p class="muted" style="margin: 12px 0 4px">{{$.L.TurnLink}}</p>
-              <div class="copy-row">
-                <code>{{.Link}}</code>
-                <button class="icon-btn" type="button" title="{{$.L.Copy}}" aria-label="{{$.L.Copy}}" onclick="copyIcon('{{.Link}}', this)">
-                  <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
-                  <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
-                </button>
-              </div>
-              {{else}}
-              <p class="muted" style="margin: 12px 0 4px">{{$.L.TurnNoLink}}</p>
-              {{end}}
-              <a class="btn alt" href="{{.ConfURL}}" download>{{$.L.AWGDownload}} · {{.Label}}</a>
-            </details>
-          </details>
-          {{end}}
-          </details>
-        </div>
-        {{end}}
-
-        {{if .ShowConfigs}}
-        <div class="card">
-          <details class="fold">
-          <summary><span>{{.L.SingleConfigs}} <span class="fold-count">· {{len .Links}}</span></span></summary>
-          {{range .Links}}
-          <details>
-            <summary>{{.Proto}}</summary>
-            <p><code>{{.URL}}</code></p>
-            {{if .Open}}<a class="btn" href="{{.Open}}">{{$.L.OpenInApp}}</a>{{end}}
-            <button class="btn alt" onclick="copy('{{.URL}}', this)">
-              {{$.L.Copy}} {{.Proto}}
-            </button>
-          </details>
-          {{end}}
-          </details>
-        </div>
-        {{end}}
-
-        {{if .Telegram}}
-        <div class="card">
-          <details class="fold">
-          <summary><span>{{.L.TGProxyTitle}} <span class="fold-count">· {{len .Telegram}}</span></span></summary>
-          <p class="muted" style="margin: 0 0 10px">{{.L.TGProxyHint}}</p>
-          {{range .Telegram}}
-          <details>
-            <summary>{{.Label}}</summary>
-            <div class="qr"><img src="{{.QRURL}}" alt="QR" loading="lazy" /></div>
-            <a class="btn" href="{{.Link}}" onclick="return tgProxy(event, '{{.WebLink}}')">{{$.L.TGProxyAdd}}</a>
-            <button class="btn alt" onclick="copy('{{.Link}}', this)">{{$.L.Copy}}</button>
-          </details>
-          {{end}}
-          </details>
-        </div>
-        {{end}}
-
-        <!-- The page's own address is the key to it: say so, and offer the bot to whoever
-             has not linked it. -->
-        <div class="card" id="access-card">
-          <div class="lbl" style="margin-bottom: 6px">{{.L.AccessTitle}}</div>
-          <p class="muted" style="margin: 0 0 10px">{{.L.AccessHint}}</p>
-          <button class="btn alt" onclick="copy('{{.SubURL}}', this)">{{.L.AccessCopy}}</button>
-          {{if .Access.TGLink}}
-          <a class="btn alt" style="margin-top: 14px" href="{{.Access.TGLink}}" target="_blank" rel="noopener noreferrer" onclick="return tgAccess(this, {{.Access.TGLinked}})">{{if .Access.TGLinked}}{{.L.TGChange}}{{else}}{{.L.TGBind}}{{end}}</a>
-          {{if not .Access.TGLinked}}<p class="muted" style="margin: 6px 0 0">{{.L.TGBindHint}}</p>{{end}}
-          {{end}}
-          {{if .Access.TGWait}}<p class="muted" style="margin: 14px 0 0">{{.Access.TGWait}}</p>{{end}}
-        </div>
-
-        {{if .Access.RotatePath}}
-        <!-- Last, and apart: it breaks the link everywhere it was added. -->
-        <div class="card" id="rotate-card">
-          <div class="lbl" style="margin-bottom: 6px">{{.L.RotateTitle}}</div>
-          <p class="muted" style="margin: 0">{{.L.RotateHint}}</p>
-          <button class="btn danger" onclick="rotateLink(this)">{{.L.RotateLink}}</button>
-        </div>
-        {{end}}
-      </section>
-
-      {{if .Billing.Show}}
-      <section class="pane" data-pane="pay" hidden>
-        <div class="card">
-          <div class="bill-cur">
-            <span class="muted">{{.L.CurrentPlan}}</span>
-            <span class="v"
-              >{{if .Billing.CurrentPlan}}{{.Billing.CurrentPlan}}{{else}}—{{end}}{{if
-              .Billing.ExpireText}} · {{.Billing.ExpireText}}{{end}}</span
-            >
-          </div>
-          {{if .Billing.RenewSwitch}}
-          <!-- Renewal belongs to the plan, not to the top-up below: it is what happens
-               to this subscription when its term ends. -->
-          <div class="renew">
-            <label class="check renew-switch">
-              <span>{{.L.AutoRenew}}</span>
-              <input type="checkbox" role="switch" {{if .Billing.AutoRenew}}checked{{end}} onchange="setAutoRenew(this)" />
-            </label>
-            {{if .Billing.RenewNote}}<p class="renew-note{{if .Billing.RenewShort}} short{{end}}"{{if not .Billing.AutoRenew}} hidden{{end}}>{{.Billing.RenewNote}}</p>{{end}}
-          </div>
-          {{end}}
-          {{if .Billing.Locked}}
-          <!-- An active plan: its renewal and a move to another plan, each in a dialog;
-               what can be added, and — quietly, last — cancelling it. -->
-          {{if or .Billing.Plans .Billing.Changes}}
-          <div class="btn-row">
-            {{if .Billing.Plans}}<button class="btn" onclick="showModal('renewmodal')">{{.L.Renew}}</button>{{end}}
-            {{if .Billing.Changes}}<button class="btn alt" onclick="showModal('changemodal')">{{.L.ChangeTitle}}</button>{{end}}
-          </div>
-          {{end}}
-          {{else if .Billing.Plans}}
-          <!-- The plans open in a dialog: one is picked, then its term and devices. -->
-          <button class="btn" onclick="openPlans()">{{if .Billing.CurrentPlan}}{{.L.PlanChange}}{{else}}{{.L.PlanPick}}{{end}}</button>
-          {{end}}
-          {{if .Billing.Addons}}
-          <div class="sect">
-            <div class="sect-title">{{.L.AddTitle}}</div>
-            <div class="sect-hint">{{.L.AddHint}}</div>
-            {{range .Billing.Addons}}
-            {{if .Counts}}
-            <div class="opt opt-col">
-              <div class="opt-info">
-                <div class="opt-name">{{.Name}}</div>
-                <div class="opt-sub">{{.Sub}}</div>
-              </div>
-              <div class="opt-row">
-                <select class="periods" id="addn" autocomplete="off" onchange="addnPicked()">
-                  {{range .Counts}}<option value="{{.N}}" data-btn="{{.Button}}" data-fb="{{if .FromBalance}}1{{end}}">{{.Label}}</option>{{end}}
-                </select>
-                <button class="btn alt" id="addn-btn" data-fb="{{if .FromBalance}}1{{end}}" onclick="buyExtra('{{.Kind}}', {{.PlanID}}, parseInt(document.getElementById('addn').value, 10) || 1, this.getAttribute('data-fb'), this)">{{.Badge}}</button>
-              </div>
-            </div>
-            {{else}}
-            <div class="opt">
-              <div class="opt-info">
-                <div class="opt-name">{{.Name}}</div>
-                <div class="opt-sub">{{.Sub}}</div>
-              </div>
-              <button class="btn alt" onclick="buyExtra('{{.Kind}}', {{.PlanID}}, {{.N}}, '{{if .FromBalance}}1{{end}}', this)">{{.Badge}}</button>
-            </div>
-            {{end}}
-            {{end}}
-          </div>
-          {{end}}
-          {{if .Billing.Cancelable}}
-          {{if not .Billing.Changes}}
-          <p class="muted" style="margin: 14px 0 0; font-size: 0.85rem">
-            {{.L.ChangePlanNote}}
-          </p>
-          {{end}}
-          <button class="linkbtn" onclick="cancelSub(this)">{{.L.CancelSub}}</button>
-          {{end}}
-        </div>
-
-        {{if .Billing.Promo}}
-        <!-- Its own card: a code discounts a plan, adds days or credits the balance —
-             beside the top-up it read as a bonus to the top-up. -->
-        <div class="card">
-          <div class="lbl">{{.L.PromoTitle}}</div>
-          <div class="inline-form">
-            <input id="promo-code" type="text" autocomplete="off" autocapitalize="characters"
-              placeholder="{{.L.PromoPlaceholder}}" aria-label="{{.L.PromoPlaceholder}}" />
-            <button class="btn alt" onclick="applyPromo(this)">{{.L.PromoApply}}</button>
-          </div>
-        </div>
-        {{end}}
-        {{if .Billing.Wallet}}
-        <div class="card">
-          <div class="bill-cur">
-            <span class="muted">{{.L.Balance}}</span>
-            <span class="v">{{.Billing.Balance}} ₽</span>
-            {{if .Billing.BonusDays}}<span class="muted" style="font-size: 0.85rem">{{.Billing.BonusDays}}</span>{{end}}
-          </div>
-          {{if .Billing.Topup}}
-          <div class="inline-form">
-            <input id="topup-amount" type="number" inputmode="numeric" min="{{.Billing.TopupMin}}" max="{{.Billing.TopupMax}}"
-              placeholder="{{.Billing.TopupHint}}" aria-label="{{.L.TopupAmount}}" />
-            <button class="btn" onclick="topup(this)">{{.L.Topup}}</button>
-          </div>
-          {{end}}
-        </div>
-        {{end}}
-        {{if .Billing.History}}
-        <div class="card">
-          <div class="lbl" style="margin-bottom: 4px">{{.L.History}}</div>
-          {{range .Billing.History}}
-          <div class="tx">
-            <div class="tx-info">
-              <div class="tx-title">{{.Title}}</div>
-              <div class="muted tx-when">{{.When}}</div>
-            </div>
-            <div class="tx-amt{{if .In}} in{{end}}">{{.Amount}}</div>
-          </div>
-          {{end}}
-        </div>
-        {{end}}
-      </section>
-      {{if .Billing.RefLink}}
-      <section class="pane" data-pane="ref" hidden>
-        <div class="card">
-          <div class="bill-cur">
-            <span class="v">{{.L.RefTitle}}</span>
-            <span class="muted" style="font-size: 0.85rem">{{.Billing.RefHint}}</span>
-          </div>
-          <div class="copy-row" style="margin-top: 8px">
-            <code>{{.Billing.RefLink}}</code>
-            <button class="icon-btn" type="button" title="{{.L.Copy}}" aria-label="{{.L.Copy}}" onclick="copyIcon('{{.Billing.RefLink}}', this)">
-              <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
-              <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>
-            </button>
-          </div>
-          {{if .Billing.RefShare}}
-          <button class="btn" onclick="openExternal('{{.Billing.RefShare}}')">{{.L.Share}}</button>
-          {{end}}
-          <p class="muted" style="margin: 10px 0 0; font-size: 0.85rem">{{.Billing.RefStats}}</p>
-        </div>
-        {{if .Billing.Invitees}}
-        <div class="card">
-          <div class="lbl" style="margin-bottom: 4px">{{.L.RefInvitees}}</div>
-          {{range .Billing.Invitees}}
-          <div class="tx">
-            <div class="tx-info">
-              <div class="tx-title">{{.Title}}</div>
-              {{if .When}}<div class="muted tx-when">{{.When}}</div>{{end}}
-            </div>
-            <div class="tx-amt{{if .In}} in{{end}}{{if .Muted}} muted{{end}}">{{.Amount}}</div>
-          </div>
-          {{end}}
-          {{if .Billing.InviteesMore}}<p class="muted" style="margin: 6px 0 0; font-size: 0.85rem">{{.Billing.InviteesMore}}</p>{{end}}
-        </div>
-        {{end}}
-      </section>
-      {{end}}
-      {{end}}
-
-      {{if .Access.Legal}}
-      <p class="muted legal">
-        {{range $i, $l := .Access.Legal}}{{if $i}} · {{end}}<a href="{{$l.URL}}" target="_blank" rel="noopener">{{$l.Title}}</a>{{end}}
-      </p>
-      {{end}}
-
+{{end}}
+{{define "core:dialog-apps"}}
     <div
       id="apps"
       class="modal"
@@ -1671,7 +2660,8 @@
         </div>
       </div>
     </div>
-
+{{end}}
+{{define "core:dialog-wizard"}}
     {{if .Wizard}}
     <!-- Connect in three steps: the app for this device, the subscription added to
          it with one tap, then connecting. -->
@@ -1713,7 +2703,8 @@
       </div>
     </div>
     {{end}}
-
+{{end}}
+{{define "core:dialog-renew"}}
     {{if and .Billing.Show .Billing.Locked .Billing.Plans}}
     <div id="renewmodal" class="modal" onclick="if (event.target === this) this.classList.remove('show');">
       <div class="modal-card">
@@ -1736,7 +2727,8 @@
       </div>
     </div>
     {{end}}
-
+{{end}}
+{{define "core:dialog-change"}}
     {{if and .Billing.Show .Billing.Changes}}
     <div id="changemodal" class="modal" onclick="if (event.target === this) this.classList.remove('show');">
       <div class="modal-card">
@@ -1758,7 +2750,8 @@
       </div>
     </div>
     {{end}}
-
+{{end}}
+{{define "core:dialog-plans"}}
     {{if and .Billing.Show (not .Billing.Locked) .Billing.Plans}}
     <div
       id="plansmodal"
@@ -1803,7 +2796,8 @@
       </div>
     </div>
     {{end}}
-
+{{end}}
+{{define "core:dialog-pay"}}
     {{if and .Billing.Providers (gt (len .Billing.Providers) 1)}}
     <div
       id="paymodal"
@@ -1828,7 +2822,8 @@
       </div>
     </div>
     {{end}}
-
+{{end}}
+{{define "core:dialog-msg"}}
     {{if .Billing.Show}}
     <div
       id="msgmodal"
@@ -1850,827 +2845,13 @@
       </div>
     </div>
     {{end}}
-    <script>
-      var SUB_URL = "{{.SubURL}}";
-      // Telegram Mini App context: custom app schemes (happ://, v2rayng:// …) can't
-      // be launched from inside Telegram's webview, so we detect it and route links
-      // to the external browser instead.
-      var TG = (window.Telegram && window.Telegram.WebApp) || null;
-      // Telegram says what it is in two ways that need no SDK: it appends tgWebApp*
-      // to the launch URL, and its mobile webviews inject a proxy object. Both are
-      // checked because the SDK may simply not be there — /tg.js is proxied from
-      // telegram.org and that fetch can fail, which is the entire reason it is
-      // proxied. Deciding on the SDK alone meant that a failed fetch made the page
-      // conclude it was an ordinary browser, and every "open in app" button went dead
-      // in the one place they cannot work by themselves.
-      var TGPROXY = !!(window.TelegramWebviewProxy && window.TelegramWebviewProxy.postEvent);
-      var TGLAUNCH = /[?&#]tgWebApp(Data|Platform|Version)=/.test(location.hash + location.search);
-      var INTG = !!(TG && TG.platform && TG.platform !== "unknown") || TGPROXY || TGLAUNCH;
-
-      // The few SDK calls this page makes, spoken to Telegram's host directly when
-      // the SDK is absent — the same messages telegram-web-app.js posts. Returns
-      // false when nothing is listening, so every caller can fall back to plain
-      // navigation rather than swallowing the tap.
-      function tgEvent(type, data) {
-        data = data || {};
-        try {
-          if (TGPROXY) {
-            window.TelegramWebviewProxy.postEvent(type, JSON.stringify(data));
-            return true;
-          }
-          if (window.parent && window.parent !== window) {
-            window.parent.postMessage(
-              JSON.stringify({ eventType: type, eventData: data }),
-              "https://web.telegram.org"
-            );
-            return true;
-          }
-        } catch (e) {}
-        return false;
-      }
-      // Open a URL outside the webview, with the SDK if we have it and without if we
-      // don't. Reports whether anything took the request.
-      function tgOpen(url) {
-        if (TG) {
-          try {
-            if (url.indexOf("https://t.me/") === 0) TG.openTelegramLink(url);
-            else TG.openLink(url);
-            return true;
-          } catch (e) {}
-        }
-        if (url.indexOf("https://t.me/") === 0) {
-          var a = document.createElement("a");
-          a.href = url;
-          return tgEvent("web_app_open_tg_link", { path_full: a.pathname + a.search });
-        }
-        return tgEvent("web_app_open_link", { url: url });
-      }
-      if (INTG) {
-        if (TG) {
-          try {
-            TG.ready();
-            TG.expand();
-          } catch (e) {}
-        } else {
-          tgEvent("web_app_ready");
-          tgEvent("web_app_expand");
-        }
-      }
-      // The Telegram proxy button: in a browser tg:// opens the app; inside Telegram's own
-      // webview a custom scheme goes nowhere, so the host opens the t.me form of it.
-      function tgProxy(e, url) {
-        if (!INTG) return true;
-        e.preventDefault();
-        if (!tgOpen(url)) window.location = url;
-        return false;
-      }
-      // Open a URL the right way: in Telegram hand it to the host (external browser);
-      // in a normal browser just navigate.
-      function openExternal(url) {
-        if (INTG && tgOpen(url)) return;
-        window.location = url;
-      }
-      // The connect wizard. The platform is guessed from Telegram or the browser and
-      // can be switched; the steps are shown one at a time.
-      var WZ_STEP = 1;
-      var WZ_TITLES = [{{.L.WzStep1}}, {{.L.WzStep2}}, {{.L.WzStep3}}];
-      function wzDetect() {
-        var ua = navigator.userAgent || "";
-        var p = (TG && TG.platform) || "";
-        if (/iPhone|iPad|iPod/.test(ua) || p === "ios" || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "ios";
-        if (/Android/.test(ua) || p === "android") return /\bTV\b|AFT|BRAVIA|SMART-TV/i.test(ua) ? "tv" : "android";
-        if (/Mac OS X|Macintosh/.test(ua) || p === "macos") return "macos";
-        if (/Windows/.test(ua)) return "windows";
-        if (/Linux|X11/.test(ua)) return "linux";
-        return "windows";
-      }
-      function wzPlat(key) {
-        Array.prototype.forEach.call(document.querySelectorAll("#wizard .chip"), function (c) {
-          c.classList.toggle("on", c.getAttribute("data-plat") === key);
-        });
-        Array.prototype.forEach.call(document.querySelectorAll("#wizard .wz-p"), function (l) {
-          l.hidden = l.getAttribute("data-plat") !== key;
-        });
-      }
-      function wzShow() {
-        Array.prototype.forEach.call(document.querySelectorAll("#wizard .wz-step"), function (s) {
-          s.hidden = parseInt(s.getAttribute("data-step"), 10) !== WZ_STEP;
-        });
-        document.getElementById("wz-title").textContent = WZ_TITLES[WZ_STEP - 1];
-        document.getElementById("wz-back").style.visibility = WZ_STEP > 1 ? "visible" : "hidden";
-        document.getElementById("wz-next").textContent = WZ_STEP < 3 ? {{.L.WzNext}} : {{.L.WzDone}};
-      }
-      function wzGo(d) {
-        if (WZ_STEP === 3 && d > 0) {
-          document.getElementById("wizard").classList.remove("show");
-          return;
-        }
-        WZ_STEP = Math.min(3, Math.max(1, WZ_STEP + d));
-        wzShow();
-      }
-      function openWizard() {
-        WZ_STEP = 1;
-        // A platform the wizard does not offer (its client is off) starts on the first one.
-        var key = wzDetect();
-        if (!document.querySelector('#wizard .chip[data-plat="' + key + '"]')) {
-          var first = document.querySelector("#wizard .chip");
-          if (first) key = first.getAttribute("data-plat");
-        }
-        wzPlat(key);
-        wzShow();
-        document.getElementById("wizard").classList.add("show");
-      }
-      // Always show the app-picker modal in place (works inside Telegram too).
-      function openApps() {
-        document.getElementById("apps").classList.add("show");
-      }
-      // App tapped. In a normal browser the href (custom scheme) launches the app
-      // directly. Inside Telegram, openLink refuses non-http(s) schemes, so we open a
-      // tiny /app/<i> https page in the external browser — it bounces to the scheme
-      // and launches the app.
-      function appClick(e) {
-        if (!INTG) return true;
-        e.preventDefault();
-        document.getElementById("apps").classList.remove("show");
-        // Navigating there ourselves is the last resort rather than the plan: inside
-        // the webview the bounce page can't reach the scheme either. It is still
-        // better than a button that does nothing.
-        var bounce = SUB_URL + "/app/" + e.currentTarget.getAttribute("data-i");
-        if (!tgOpen(bounce)) window.location = bounce;
-        return false;
-      }
-      // copyIcon is copy for an icon button: it has no text to swap, so the icon turns
-      // into a tick for the same moment instead.
-      function copyIcon(t, el) {
-        navigator.clipboard.writeText(t).then(function () {
-          if (window.haptic) haptic("success");
-          el.classList.add("done");
-          setTimeout(function () {
-            el.classList.remove("done");
-          }, 1200);
-        });
-      }
-      // The Telegram button of the access card. Inside Telegram the page is open in the
-      // Telegram the account is linked to, where "change" would only reopen the same
-      // bot: it copies the link instead, to open in the other one. "Link" opens the bot
-      // the way Telegram opens its own links. A browser just follows the link.
-      function tgAccess(el, linked) {
-        if (!INTG) return true;
-        if (linked) {
-          navigator.clipboard.writeText(el.href).then(function () {
-            if (window.haptic) haptic("success");
-            var o = el.textContent;
-            el.textContent = {{.L.TGChangeCopied}};
-            setTimeout(function () {
-              el.textContent = o;
-            }, 2500);
-          });
-          return false;
-        }
-        openExternal(el.href);
-        return false;
-      }
-      // copyQuiet copies and leaves the button as it was: a haptic tick is the only sign.
-      function copyQuiet(t) {
-        navigator.clipboard.writeText(t).then(function () {
-          if (window.haptic) haptic("success");
-        });
-      }
-      function copy(t, el) {
-        navigator.clipboard.writeText(t).then(function () {
-          if (window.haptic) haptic("success");
-          var o = el.textContent;
-          el.textContent = {{.L.Copied}};
-          setTimeout(function () {
-            el.textContent = o;
-          }, 1200);
-        });
-      }
-      // The churn survey: a reason is sent as soon as it is picked; "other" also opens
-      // a line for a few words, sent with the button beside it.
-      {{with .Access.Churn}}
-      var CHURN_PATH = "{{.Path}}";
-      var CHURN_THANKS = {{.Thanks}};
-      {{else}}
-      var CHURN_PATH = "";
-      var CHURN_THANKS = "";
-      {{end}}
-      function churnPost(reason, comment) {
-        return fetch(CHURN_PATH, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-RosPanel-Sub": "1" },
-          body: JSON.stringify({ reason: reason, comment: comment || "" }),
-        }).then(function (r) {
-          if (!r.ok) throw new Error(String(r.status));
-        });
-      }
-      function churnDone() {
-        var card = document.getElementById("churn-card");
-        if (card) card.innerHTML = "<p style=\"margin: 0\"></p>";
-        if (card) card.firstChild.textContent = CHURN_THANKS;
-      }
-      function churnPick(el, reason) {
-        if (!CHURN_PATH) return;
-        var chips = el.parentNode.querySelectorAll(".chip");
-        for (var i = 0; i < chips.length; i++) chips[i].classList.remove("on");
-        el.classList.add("on");
-        churnPost(reason).then(
-          function () {
-            if (reason === "other") {
-              var box = document.getElementById("churn-other");
-              box.hidden = false;
-              document.getElementById("churn-comment").focus();
-              return;
-            }
-            churnDone();
-          },
-          function () {
-            el.classList.remove("on");
-            alert({{.L.NetworkError}});
-          }
-        );
-      }
-      function churnSend(el) {
-        var text = document.getElementById("churn-comment").value.trim();
-        if (!text) return;
-        el.disabled = true;
-        churnPost("other", text).then(churnDone, function () {
-          el.disabled = false;
-          alert({{.L.NetworkError}});
-        });
-      }
-      // Reissuing the link: the old one stops working at once, so the page moves to
-      // the new address itself — this page lives at the old one.
-      var ROTATE_PATH = "{{.Access.RotatePath}}";
-      function rotateLink(el) {
-        if (!ROTATE_PATH) return;
-        askThen({{.L.RotateConfirm}}, function () {
-          doRotate(el);
-        });
-      }
-      function doRotate(el) {
-        var old = el.textContent;
-        el.textContent = "…";
-        el.disabled = true;
-        fetch(ROTATE_PATH, { method: "POST", headers: { "X-RosPanel-Sub": "1" } })
-          .then(function (r) {
-            return r.json().then(
-              function (d) { return { ok: r.ok, status: r.status, d: d }; },
-              function () { return { ok: false, status: r.status, d: {} }; }
-            );
-          })
-          .then(function (x) {
-            if (x.ok && x.d.url) {
-              location.replace(x.d.url);
-              return;
-            }
-            alert(x.status === 429 ? {{.Access.RotateWait}} : {{.L.RotateFailed}});
-            el.textContent = old;
-            el.disabled = false;
-          })
-          .catch(function () {
-            alert({{.L.NetworkError}});
-            el.textContent = old;
-            el.disabled = false;
-          });
-      }
-      // Unbinding your own device. The row is identified by the id the client sent,
-      // which is opaque text — so it travels in the body rather than the URL. A
-      // success reloads: the count in the header and the free-slot arithmetic both
-      // change, and re-rendering is cheaper than patching them by hand.
-      var UNBIND_PATH = "{{.Devices.UnbindPath}}";
-      function unbindDevice(el) {
-        if (!confirm({{.L.DeviceConfirm}})) return;
-        var row = el.closest(".dev");
-        var hwid = row ? row.getAttribute("data-hwid") : "";
-        if (!hwid) return;
-        var old = el.textContent;
-        el.textContent = "…";
-        el.disabled = true;
-        fetch(UNBIND_PATH, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-RosPanel-Sub": "1" },
-          body: JSON.stringify({ hwid: hwid }),
-        })
-          .then(function (r) {
-            if (r.ok) {
-              location.reload();
-            } else {
-              alert({{.L.DeviceFailed}});
-              el.textContent = old;
-              el.disabled = false;
-            }
-          })
-          .catch(function () {
-            alert({{.L.NetworkError}});
-            el.textContent = old;
-            el.disabled = false;
-          });
-      }
-      var PAY_PATH = "{{.Billing.PayPath}}";
-      var CANCEL_PATH = "{{.Billing.CancelPath}}";
-      var ORDER_PATH = "{{.Billing.OrderPath}}";
-      // Poll for an automatic payment still being processed (after the user returns
-      // from the provider). Show a spinner while pending; reload once it clears so the
-      // new plan/expiry appears.
-      var pmWatching = false,
-        pmEverPending = false,
-        pmOrder = 0;
-      function checkOrder() {
-        if (!ORDER_PATH) return;
-        fetch(ORDER_PATH)
-          .then(function (r) {
-            return r.json();
-          })
-          .then(function (j) {
-            var el = document.getElementById("paywatch");
-            if (j && j.pending) {
-              pmEverPending = true;
-              pmOrder = j.order_id || pmOrder;
-              if (el) el.style.display = "flex";
-              setTimeout(checkOrder, 4000);
-            } else {
-              if (el) el.style.display = "none";
-              if (pmEverPending) {
-                pmEverPending = false;
-                // The order that was being watched went through: say so after the
-                // reload, which is what shows its effect.
-                if (j && j.done && j.done.order_id === pmOrder) {
-                  try {
-                    sessionStorage.setItem("rospanel.paidmsg", j.done.message);
-                  } catch (e) {}
-                }
-                location.reload();
-              } else {
-                pmWatching = false;
-              }
-            }
-          })
-          .catch(function () {
-            setTimeout(checkOrder, 8000);
-          });
-      }
-      function watchPayments() {
-        if (pmWatching) return;
-        pmWatching = true;
-        checkOrder();
-      }
-      watchPayments(); // covers returning to a page that already has a pending order
-      (function () {
-        var msg = null;
-        try {
-          msg = sessionStorage.getItem("rospanel.paidmsg");
-          sessionStorage.removeItem("rospanel.paidmsg");
-        } catch (e) {}
-        if (msg) showPayMsg(msg, {{.L.PaidTitle}});
-      })();
-      function cancelSub(el) {
-        if (
-          !confirm(
-            {{.L.CancelConfirm}},
-          )
-        )
-          return;
-        var old = el.textContent;
-        el.textContent = "…";
-        el.disabled = true;
-        fetch(CANCEL_PATH, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-RosPanel-Sub": "1" },
-          body: "{}",
-        })
-          .then(function (r) {
-            if (r.ok) {
-              location.reload();
-            } else {
-              return r.json().then(function (j) {
-                alert(j.error || {{.L.CancelFailed}});
-                el.textContent = old;
-                el.disabled = false;
-              });
-            }
-          })
-          .catch(function () {
-            alert({{.L.NetworkError}});
-            el.textContent = old;
-            el.disabled = false;
-          });
-      }
-      // Tabs. The chosen one survives the reloads the page does itself (after a
-      // payment, a promo code) — per browser tab, so a new visit starts on the
-      // subscription.
-      (function () {
-        var tabs = document.querySelectorAll(".tab");
-        if (!tabs.length) return;
-        var panes = document.querySelectorAll(".pane");
-        var each = function (list, fn) {
-          Array.prototype.forEach.call(list, fn);
-        };
-        function show(name) {
-          var found = false;
-          each(tabs, function (t) {
-            if (t.getAttribute("data-tab") === name) found = true;
-          });
-          if (!found) name = "sub";
-          each(tabs, function (t) {
-            var on = t.getAttribute("data-tab") === name;
-            t.classList.toggle("active", on);
-            t.setAttribute("aria-selected", on ? "true" : "false");
-          });
-          each(panes, function (p) {
-            p.hidden = p.getAttribute("data-pane") !== name;
-          });
-          try {
-            sessionStorage.setItem("rospanel.subtab", name);
-          } catch (e) {}
-        }
-        each(tabs, function (t) {
-          t.addEventListener("click", function () {
-            show(t.getAttribute("data-tab"));
-          });
-        });
-        var saved = null;
-        try {
-          saved = sessionStorage.getItem("rospanel.subtab");
-        } catch (e) {}
-        show(saved || "sub");
-        window.showTab = show;
-      })();
-      // Inside Telegram the page behaves like part of it: the header and the frame
-      // take the page's colour, the system Back button closes what is open (a dialog,
-      // then a tab other than the first), and taps that did something are felt.
-      (function () {
-        if (!TG) return;
-        var bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
-        // Each on its own: a client that refuses one (before 6.9 the header takes only
-        // a theme key, not a colour) must not skip the rest.
-        var v = function (x) {
-          return TG.isVersionAtLeast && TG.isVersionAtLeast(x);
-        };
-        try {
-          if (bg && v("6.1")) TG.setHeaderColor(v("6.9") ? bg : "bg_color");
-        } catch (e) {}
-        try {
-          if (bg && v("6.1")) TG.setBackgroundColor(bg);
-        } catch (e) {}
-        try {
-          if (bg && v("7.10") && TG.setBottomBarColor) TG.setBottomBarColor(bg);
-        } catch (e) {}
-        if (!TG.BackButton || !(TG.isVersionAtLeast && TG.isVersionAtLeast("6.1"))) return;
-        var openModal = function () {
-          var open = document.querySelectorAll(".modal.show");
-          return open.length ? open[open.length - 1] : null;
-        };
-        var onFirstTab = function () {
-          var t = document.querySelector(".tab.active");
-          return !t || t.getAttribute("data-tab") === "sub";
-        };
-        var sync = function () {
-          try {
-            if (openModal() || !onFirstTab()) TG.BackButton.show();
-            else TG.BackButton.hide();
-          } catch (e) {}
-        };
-        TG.BackButton.onClick(function () {
-          var m = openModal();
-          if (m) {
-            m.classList.remove("show");
-          } else if (window.showTab) {
-            window.showTab("sub");
-          }
-          sync();
-        });
-        if (window.MutationObserver) {
-          new MutationObserver(sync).observe(document.body, {
-            subtree: true,
-            attributes: true,
-            attributeFilter: ["class"],
-          });
-        }
-        sync();
-      })();
-      // haptic makes a tap that did something felt, inside Telegram; nothing elsewhere.
-      function haptic(kind) {
-        try {
-          if (TG && TG.HapticFeedback) {
-            if (kind === "success" || kind === "error") TG.HapticFeedback.notificationOccurred(kind);
-            else TG.HapticFeedback.impactOccurred(kind || "light");
-          }
-        } catch (e) {}
-      }
-      var PAY_PROVIDERS = [
-        {{range $i, $p := .Billing.Providers}}{{if $i}}, {{end}}"{{$p.Key}}"{{end}}
-      ];
-      var PAY_PLAN = 0;
-      function showPayMsg(text, title, image) {
-        haptic(title === {{.L.Error}} ? "error" : "success");
-        var body = document.getElementById("msgmodal-body");
-        var head = document.getElementById("msgmodal-title");
-        var modal = document.getElementById("msgmodal");
-        var pic = document.getElementById("msgmodal-img");
-        if (pic) {
-          if (image) {
-            pic.src = image;
-            pic.hidden = false;
-          } else {
-            pic.hidden = true;
-            pic.removeAttribute("src");
-          }
-        }
-        if (body && modal) {
-          body.textContent = text;
-          if (head) head.textContent = title || {{.L.PayTitle}};
-          modal.classList.add("show");
-        } else {
-          alert(text);
-        }
-      }
-      // One provider → pay straight away; several → open the method-choice modal.
-      // A plan with several terms on offer: the chosen one, and the button that
-      // follows it (paying from the balance, or with money).
-      function planPeriods(planId) {
-        var s = document.getElementById("per-" + planId);
-        return s ? parseInt(s.value, 10) || 1 : 1;
-      }
-      function periodPicked(planId) {
-        var s = document.getElementById("per-" + planId),
-          b = document.getElementById("paybtn-" + planId);
-        if (!s || !b) return;
-        var o = s.options[s.selectedIndex];
-        b.textContent = o.getAttribute("data-btn");
-        b.setAttribute("data-fb", o.getAttribute("data-fb") || "");
-      }
-      // PAY_EXTRA rides along with the next payment: the devices a plan comes with, or
-      // what a change or an add-on buys. The server pays from the balance whatever it
-      // covers.
-      var PAY_EXTRA = {};
-      function showModal(id) {
-        var m = document.getElementById(id);
-        if (m) m.classList.add("show");
-      }
-      // openPlans shows the plans; with one there is nothing to pick, so it opens.
-      function openPlans() {
-        var m = document.getElementById("plansmodal");
-        if (!m) return;
-        var picks = m.querySelectorAll(".pick");
-        if (picks.length === 1) pickPlan(picks[0].id.slice(5));
-        m.classList.add("show");
-      }
-      function pickPlan(planId) {
-        var picks = document.querySelectorAll("#plansmodal .pick");
-        for (var i = 0; i < picks.length; i++) {
-          var on = picks[i].id === "pick-" + planId;
-          picks[i].classList.toggle("on", on);
-          picks[i].querySelector(".pick-body").hidden = !on;
-        }
-        haptic();
-      }
-      function buyPlan(planId, el) {
-        var n = planPeriods(planId);
-        var d = document.getElementById("dev-" + planId);
-        PAY_EXTRA = d ? { devices: parseInt(d.value, 10) || 0 } : {};
-        if (el.getAttribute("data-fb") === "1" && !(PAY_EXTRA.devices > 0)) payBalance(planId, el, n);
-        else pay(planId, el, n);
-      }
-      // Extra devices change the price the button was labelled with: from then on it
-      // just pays, and the server says what from.
-      function devPicked(planId) {
-        var d = document.getElementById("dev-" + planId),
-          b = document.getElementById("paybtn-" + planId);
-        if (!d || !b) return;
-        if (!b.hasAttribute("data-label0")) b.setAttribute("data-label0", b.textContent);
-        if ((parseInt(d.value, 10) || 0) > 0) b.textContent = {{.L.Pay}};
-        else b.textContent = b.getAttribute("data-label0");
-      }
-      // askThen asks before an action: Telegram's own dialog inside the Mini App (its
-      // webview may refuse window.confirm), the browser's elsewhere.
-      function askThen(msg, fn) {
-        var tg = TG;
-        if (tg && tg.showConfirm && tg.isVersionAtLeast && tg.isVersionAtLeast("6.2")) {
-          tg.showConfirm(msg, function (ok) {
-            if (ok) fn();
-          });
-        } else if (confirm(msg)) {
-          fn();
-        }
-      }
-      // The devices picker: the button follows the count (price, and whether the
-      // balance covers it).
-      function addnPicked() {
-        var s = document.getElementById("addn"),
-          b = document.getElementById("addn-btn");
-        if (!s || !b) return;
-        var o = s.options[s.selectedIndex];
-        b.textContent = o.getAttribute("data-btn");
-        b.setAttribute("data-fb", o.getAttribute("data-fb") || "");
-      }
-      function buyExtra(kind, planId, n, fb, el) {
-        PAY_EXTRA = { kind: kind };
-        if (kind === "devices") PAY_EXTRA.devices = n;
-        if (kind === "traffic") PAY_EXTRA.pack = n;
-        // An add-on is held to what it adds to, not only the term: a second tap then
-        // buys nothing.
-        if (kind === "devices" || kind === "traffic") PAY_EXTRA.expire_at = {{.Billing.Stamp}};
-        if (fb === "1") payBalance(planId, el, 1);
-        else pay(planId, el, 1);
-      }
-      var PAY_PERIODS = 1;
-      function pay(planId, el, periods) {
-        PAY_TOPUP = 0; // a top-up dialog closed without choosing leaves no trace
-        PAY_PERIODS = periods || 1;
-        if (PAY_PROVIDERS.length <= 1) {
-          startPay(planId, PAY_PROVIDERS[0] || "", el, PAY_PERIODS);
-        } else {
-          PAY_PLAN = planId;
-          document.getElementById("paymodal").classList.add("show");
-        }
-      }
-      var PAY_TOPUP = 0;
-      function payWith(provider, el) {
-        document.getElementById("paymodal").classList.remove("show");
-        if (PAY_TOPUP) {
-          var amount = PAY_TOPUP;
-          PAY_TOPUP = 0;
-          startTopup(amount, provider, el);
-          return;
-        }
-        startPay(PAY_PLAN, provider, el, PAY_PERIODS);
-      }
-      var WALLET_PATH = "{{.Billing.WalletPath}}";
-      // post sends a page action and hands back {ok, body}.
-      function post(path, data) {
-        return fetch(path, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-RosPanel-Sub": "1" },
-          body: JSON.stringify(data),
-        }).then(function (r) {
-          return r.json().then(function (j) {
-            return { ok: r.ok, body: j || {} };
-          });
-        });
-      }
-      function busy(el) {
-        var old = el ? el.textContent : "";
-        if (el) {
-          el.textContent = "…";
-          el.disabled = true;
-        }
-        return function () {
-          if (el) {
-            el.textContent = old;
-            el.disabled = false;
-          }
-        };
-      }
-      var RELOAD_ON_CLOSE = false;
-      // closeMsg hides the message; a promo code that changed the page reloads it.
-      function closeMsg() {
-        document.getElementById("msgmodal").classList.remove("show");
-        if (RELOAD_ON_CLOSE) location.reload();
-      }
-      function payBalance(planId, el, periods) {
-        var reset = busy(el);
-        post(PAY_PATH, Object.assign({ plan_id: planId, balance: true, expire_at: {{.Billing.ExpireAt}}, periods: periods || 1 }, PAY_EXTRA))
-          .then(function (res) {
-            if (res.ok) {
-              location.reload();
-              return;
-            }
-            reset();
-            showPayMsg(res.body.error || {{.L.PayFailed}}, {{.L.Error}});
-          })
-          .catch(function () {
-            reset();
-            showPayMsg({{.L.NetworkError}}, {{.L.Error}});
-          });
-      }
-      function topup(el) {
-        var input = document.getElementById("topup-amount");
-        var amount = parseInt(input && input.value, 10);
-        if (!amount || amount < {{.Billing.TopupMin}} || amount > {{.Billing.TopupMax}}) {
-          if (input) input.focus();
-          return;
-        }
-        if (PAY_PROVIDERS.length <= 1) {
-          startTopup(amount, PAY_PROVIDERS[0] || "", el);
-        } else {
-          PAY_TOPUP = amount;
-          document.getElementById("paymodal").classList.add("show");
-        }
-      }
-      function startTopup(amount, provider, el) {
-        var reset = busy(el);
-        post(WALLET_PATH + "/topup", { amount: amount, provider: provider })
-          .then(function (res) {
-            reset();
-            if (res.ok && res.body.pay_url) {
-              openExternal(res.body.pay_url);
-              watchPayments();
-            } else if (res.ok && res.body.manual) {
-              showPayMsg(res.body.message || {{.L.OrderCreated}}, {{.L.OrderTitle}}, res.body.image);
-            } else {
-              showPayMsg(res.body.error || {{.L.PayFailed}}, {{.L.Error}});
-            }
-          })
-          .catch(function () {
-            reset();
-            showPayMsg({{.L.NetworkError}}, {{.L.Error}});
-          });
-      }
-      function applyPromo(el) {
-        var input = document.getElementById("promo-code");
-        var code = input ? input.value.trim() : "";
-        if (!code) {
-          if (input) input.focus();
-          return;
-        }
-        var reset = busy(el);
-        post(WALLET_PATH + "/promo", { code: code })
-          .then(function (res) {
-            reset();
-            if (res.ok) {
-              RELOAD_ON_CLOSE = true;
-              showPayMsg(res.body.message, {{.L.PromoTitle}});
-            } else {
-              showPayMsg(res.body.error || {{.L.PayFailed}}, {{.L.Error}});
-            }
-          })
-          .catch(function () {
-            reset();
-            showPayMsg({{.L.NetworkError}}, {{.L.Error}});
-          });
-      }
-      function setAutoRenew(box) {
-        box.disabled = true;
-        post(WALLET_PATH + "/autorenew", { on: box.checked })
-          .then(function (res) {
-            box.disabled = false;
-            if (!res.ok) {
-              box.checked = !box.checked;
-              showPayMsg(res.body.error || {{.L.PayFailed}}, {{.L.Error}});
-              return;
-            }
-            // What the renewal will do shows only while it is on.
-            var note = document.querySelector(".renew-note");
-            if (note) note.hidden = !box.checked;
-          })
-          .catch(function () {
-            box.disabled = false;
-            box.checked = !box.checked;
-            showPayMsg({{.L.NetworkError}}, {{.L.Error}});
-          });
-      }
-      function startPay(planId, provider, el, periods) {
-        var old = el ? el.textContent : "";
-        if (el) {
-          el.textContent = "…";
-          el.disabled = true;
-        }
-        var reset = function () {
-          if (el) {
-            el.textContent = old;
-            el.disabled = false;
-          }
-        };
-        fetch(PAY_PATH, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-RosPanel-Sub": "1" },
-          body: JSON.stringify(
-            Object.assign({ plan_id: planId, provider: provider, periods: periods || 1, expire_at: {{.Billing.ExpireAt}} }, PAY_EXTRA),
-          ),
-        })
-          .then(function (r) {
-            return r.json().then(function (j) {
-              return { ok: r.ok, body: j };
-            });
-          })
-          .then(function (res) {
-            if (res.ok && res.body.pay_url) {
-              openExternal(res.body.pay_url);
-              reset();
-              watchPayments(); // show the processing state while the provider confirms
-            } else if (res.ok && res.body.manual) {
-              // Server reuses the pending order, so re-tapping is safe — just reopen
-              // the instructions modal.
-              reset();
-              showPayMsg(
-                res.body.message || {{.L.OrderCreated}},
-                {{.L.OrderTitle}},
-                res.body.image,
-              );
-            } else {
-              reset();
-              showPayMsg(
-                res.body.error || {{.L.PayFailed}},
-                {{.L.Error}},
-              );
-            }
-          })
-          .catch(function () {
-            reset();
-            showPayMsg({{.L.NetworkError}}, {{.L.Error}});
-          });
-      }
-    </script>
-  </body>
-</html>
+{{end}}
+{{define "core:dialogs"}}{{template "dialog-apps" .}}{{template "dialog-wizard" .}}{{template "dialog-renew" .}}{{template "dialog-change" .}}{{template "dialog-plans" .}}{{template "dialog-pay" .}}{{template "dialog-msg" .}}{{end}}
+{{define "dialogs"}}{{template "core:dialogs" .}}{{end}}
+{{define "dialog-apps"}}{{template "core:dialog-apps" .}}{{end}}
+{{define "dialog-wizard"}}{{template "core:dialog-wizard" .}}{{end}}
+{{define "dialog-renew"}}{{template "core:dialog-renew" .}}{{end}}
+{{define "dialog-change"}}{{template "core:dialog-change" .}}{{end}}
+{{define "dialog-plans"}}{{template "core:dialog-plans" .}}{{end}}
+{{define "dialog-pay"}}{{template "core:dialog-pay" .}}{{end}}
+{{define "dialog-msg"}}{{template "core:dialog-msg" .}}{{end}}

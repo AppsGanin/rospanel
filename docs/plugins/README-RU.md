@@ -15,7 +15,8 @@
 | Добавить способ оплаты | `payment` | [lava](../../examples/plugins/lava) |
 | Принимать запросы из интернета: магазин, форма, OAuth | `onHttp` | [shop-webhook](../../examples/plugins/shop-webhook) |
 | Показать данные в карточке пользователя, кнопки, виджеты на обзоре | `userFields`, `onAction`, `widget` | [email](../../examples/plugins/email) |
-| Блоки и тема на странице подписки | `subBlocks`, `theme` | [announcement](../../examples/plugins/announcement), [theme-night](../../examples/plugins/theme-night) |
+| Блоки на странице подписки | `subBlocks` | [announcement](../../examples/plugins/announcement) |
+| Тема страницы подписки или своя страница с нуля | `theme` | [theme-night](../../examples/plugins/theme-night), [theme-hero](../../examples/plugins/theme-hero) |
 | Доставлять сообщения тем, кого не достаёт бот (почта, SMS) | `channel` | [email](../../examples/plugins/email) |
 | Решать, кого пускать к регистрации, какое устройство привязать, какую цену дать | `beforeSignup`, `beforeDeviceBind`, `quotePrice` | [channel-gate](../../examples/plugins/channel-gate) |
 | Кнопки и команды в пользовательском боте | `bot` | [channel-gate](../../examples/plugins/channel-gate) |
@@ -43,6 +44,36 @@ export function onEvent(e) {
 }
 ```
 
+## Своя страница подписки
+
+Тема меняет страницу подписки без кода — файлами в `theme/`:
+
+- **Оформление.** `theme/theme.css` поверх стилей панели: цвета, фон, шрифты. Пример —
+  [theme-night](../../examples/plugins/theme-night).
+- **Своя страница с нуля.** `theme/layout.html` и `theme/dialogs.html` — шаблоны Go всей
+  страницы и её диалогов, `"theme": {"panel_styles": false}` убирает стили панели. Пример —
+  [theme-hero](../../examples/plugins/theme-hero).
+- **Отдельные части.** `theme/<секция>.html` заменяет одну секцию — шапку, карточку с QR,
+  блок оплаты; остальное остаётся панельным. Все 32 секции с описанием — в
+  [точках расширения](exports-RU.md) («Секции страницы»).
+
+```html
+<!-- theme/layout.html -->
+<main class="page">
+  <h1>{{.Name}}</h1>
+  <p>{{.Used}}{{if .HasLimit}} / {{.Limit}}{{end}}</p>
+  <img src="{{.SubURL}}/qr.png" alt="QR" />
+  <button type="button" data-action="copy" data-value="{{.SubURL}}">{{.L.CopyLink}}</button>
+</main>
+```
+
+Данные страницы — пользователь, трафик, ссылки, тарифы, устройства, тексты на языке
+читателя — в [справочнике полей](theme-data.md). Кнопки работают через `data-action`:
+оплата, приложения, мастер подключения и остальное выполняет скрипт панели, а своего
+скрипта в теме нет. Панель проверяет тему при установке: опечатка в поле, `<script>` или
+внешний адрес — ошибка с указанием файла. Полностью — в
+[точках расширения, раздел «Своя страница»](exports-RU.md).
+
 ## Документация
 
 0. **[Редактор плагинов в панели](editor-RU.md)** — конструктор правил, редактор кода, тесты и
@@ -53,6 +84,7 @@ export function onEvent(e) {
    точки, ресурсы.
 3. **[Точки расширения](exports-RU.md)** — каждый экспорт: когда вызывается, что получает,
    что вернуть, лимиты времени.
+   - [Поля страницы подписки](theme-data.md) — всё, что видит шаблон темы.
 4. **[API плагина](api-RU.md)** — `panel.config`, `log`, `kv`, `db`, `api`, `http.fetch`,
    `blob`, `crypto`, `t`.
 5. **[Тесты и отладка](testing-RU.md)** — `test.js`, моки, `dev`, `validate`, лог в панели.

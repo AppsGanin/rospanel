@@ -129,8 +129,11 @@ type Provides struct {
 	Bot          *Bot        `json:"bot,omitempty"`
 	Price        bool        `json:"price,omitempty"`
 	Subscription bool        `json:"subscription,omitempty"`
-	Theme        bool        `json:"theme,omitempty"` // theme/theme.css restyles the subscription page
+	Theme        *Theme      `json:"theme,omitempty"` // theme/ restyles or replaces the subscription page (theme.go)
 }
+
+// ThemeOn says whether the plugin is a theme of the subscription page.
+func (p Provides) ThemeOn() bool { return p.Theme != nil && p.Theme.On }
 
 // CronJob runs the export of the same name on a schedule.
 type CronJob struct {
@@ -251,7 +254,7 @@ func (m *Manifest) declared() []string {
 	add(pr.Bot != nil, "bot")
 	add(pr.Price, "price")
 	add(pr.Subscription, "subscription")
-	add(pr.Theme, "theme")
+	add(pr.ThemeOn(), "theme")
 	return out
 }
 

@@ -11,7 +11,7 @@ plugin.json              манифест (обязателен)
 main.js                  весь код, один ES-модуль (обязателен, до 2 МБ)
 migrations/NNNN*.sql     своя база, применяется по порядку имён (до 100 файлов, 256 КБ каждый)
 i18n/<язык>.json         строки для panel.t(): {"ключ": "текст"} (до 256 КБ)
-theme/theme.css, …       тема страницы подписки (см. «Точки расширения»)
+theme/theme.css, *.html  тема или своя страница подписки (см. «Точки расширения»)
 README.md                показывается в панели (до 256 КБ)
 icon.svg                 значок (до 128 КБ)
 LICENSE, CHANGELOG.md
@@ -169,7 +169,7 @@ NAT64, 6to4 и site-local (защита от подмены DNS).
 | `channel` | `{"label": …}` | `channel.send` | `users.view` |
 | `price` | `true` | `quotePrice` | `billing.manage` |
 | `subscription` | `true` | `transformSubscription` | `users.manage` |
-| `theme` | `true` | — (нужен `theme/theme.css`) | — |
+| `theme` | `true` или `{"panel_styles": false}` — без стилей панели | — (нужен `theme/theme.css` или `theme/<секция>.html`) | `users.view` с разметкой |
 
 Если `main.js` не экспортирует то, что объявлено, плагин не включится: «main.js does not export
 what plugin.json declares: …». Объявленная точка, которой нет в этой версии панели, — ошибка

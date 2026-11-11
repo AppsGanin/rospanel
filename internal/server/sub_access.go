@@ -35,8 +35,18 @@ func (rt *Router) buildAccess(r *http.Request, u model.User, set *model.Settings
 		a.Churn = sub.NewChurn(sub.URL(set, u.SubToken)+"/churn", lang)
 	}
 	if rt.plugins != nil {
-		if t, ok := rt.plugins.Theme(); ok {
-			a.ThemeCSS = sub.URL(set, u.SubToken) + "/theme/" + manifest.ThemeCSS + "?v=" + t.Version
+		if t, files, ok := rt.plugins.ThemeFiles(); ok {
+			base := sub.URL(set, u.SubToken) + "/theme/"
+			a.NoPanelStyles = !t.PanelStyles
+			if _, css := files[manifest.ThemeCSS]; css {
+				a.ThemeCSS = base + manifest.ThemeCSS + "?v=" + t.Version
+			}
+			for name := range files {
+				if sub.IsThemeTemplate(name) {
+					a.Markup = &sub.ThemeMarkup{Key: t.Plugin + "@" + t.Version, Files: files, Base: base, Version: t.Version}
+					break
+				}
+			}
 		}
 	}
 	for _, b := range rt.pluginBlocks(r.Context(), u, lang) {

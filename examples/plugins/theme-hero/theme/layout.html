@@ -1,0 +1,217 @@
+{{/*
+  The whole page, written from scratch: no section of the panel's is used. What the
+  page shows is its data (docs/plugins/theme-data.md); what its buttons do is
+  data-action (docs/plugins/exports.md, "Theme markup"). The tabs are .tab[data-tab]
+  over .pane[data-pane]; the dialogs are in dialogs.html.
+*/}}
+<div class="shell">
+  <header class="top">
+    <img class="top-logo" src="{{.SubURL}}/logo.svg" alt="" />
+    <span class="top-brand">{{if .IsDefault}}{{.L.DefaultBrand}}{{else}}{{.BrandName}}{{end}}</span>
+    {{if .UserID}}<button type="button" class="top-id" data-action="copy-quiet" data-value="{{.UserID}}" title="{{.L.Copy}}">#{{.UserID}}</button>{{end}}
+  </header>
+
+  <section class="hello">
+    <p class="hello-k">{{.StatusLabel}}{{if .Online}} · {{.L.Online}}{{end}}</p>
+    <h1 class="hello-h">{{if .Name}}{{printf .L.GreetingName .Name}}{{else}}{{.L.Greeting}}{{end}}</h1>
+    <div class="ring" style="--p: {{.UsedPct}}">
+      <div class="ring-in">
+        <b>{{.Used}}</b>
+        <span>{{if .HasLimit}}{{.Limit}}{{else}}∞{{end}}</span>
+      </div>
+    </div>
+    <div class="facts">
+      {{if .HasExpire}}<span class="fact st-{{.StatusClass}}">{{.Expire}}</span>{{end}}
+      {{if .HasReset}}<span class="fact">{{.L.TrafficUntil}} {{.ResetText}}</span>{{end}}
+      {{if and (not .Online) .LastSeen}}<span class="fact">{{.L.Offline}} · {{.LastSeen}}</span>{{end}}
+    </div>
+  </section>
+
+  {{range .Access.Notices}}
+  <div class="note note-{{.Kind}}">
+    <b dir="auto">{{.Label}}{{if .Scheduled}} · {{.Scheduled}}{{end}}: {{.Title}}</b>
+    {{if .Body}}<p dir="auto">{{.Body}}</p>{{end}}
+    <small>{{.When}}</small>
+  </div>
+  {{end}}
+  {{if and .Access.Notices .Access.StatusURL}}<a class="note-more" href="{{.Access.StatusURL}}" target="_blank" rel="noopener">{{.Access.StatusMore}}</a>{{end}}
+
+  {{if .Billing.Show}}
+  <nav class="seg" role="tablist">
+    <button type="button" class="tab active" data-tab="sub" role="tab">{{.L.TabSub}}</button>
+    <button type="button" class="tab" data-tab="pay" role="tab">{{.L.TabPay}}</button>
+    {{if .Billing.RefLink}}<button type="button" class="tab" data-tab="ref" role="tab">{{.L.TabRef}}</button>{{end}}
+  </nav>
+  <div id="paywatch" class="paywatch" style="display: none">{{.L.PayProcessing}}</div>
+  {{end}}
+
+  <section class="pane" data-pane="sub">
+    {{with .Access.Churn}}
+    <div class="panel">
+      <p dir="auto">{{.Question}}</p>
+      <div class="chips">{{range .Reasons}}<button type="button" class="chip" data-action="churn" data-value="{{.Key}}">{{.Label}}</button>{{end}}</div>
+      <div id="churn-other" class="row" hidden>
+        <input id="churn-comment" type="text" maxlength="500" placeholder="{{.OtherPh}}" aria-label="{{.OtherPh}}" />
+        <button type="button" class="b b-soft" data-action="churn-send">{{.Send}}</button>
+      </div>
+    </div>
+    {{end}}
+
+    {{range .Access.Blocks}}
+    {{if eq .Type "button"}}<a class="b b-soft" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Label}}</a>
+    {{else}}<div class="panel{{if eq .Type "notice"}} panel-hi{{end}}" dir="auto">{{.HTML}}</div>{{end}}
+    {{end}}
+
+    <div class="panel connect">
+      <img class="qr" src="{{.SubURL}}/qr.png" alt="QR" />
+      <p class="dim">{{.L.ScanQR}}</p>
+      <button type="button" class="b" data-action="copy" data-value="{{.SubURL}}">{{.L.CopyLink}}</button>
+      {{if .DeepLinks}}<button type="button" class="b b-soft" data-action="apps">{{.L.OpenInApp}}</button>{{end}}
+      {{if .Wizard}}<button type="button" class="b b-ghost" data-action="wizard">{{.L.WzOpen}}</button>{{end}}
+      {{if .ShowDownload}}<a class="b b-ghost" href="{{.SubURL}}?format=clash&amp;dl=1" download="clash.yaml">{{.L.DownloadClash}}</a>{{end}}
+    </div>
+
+    {{if .Devices.Show}}
+    <div class="panel">
+      <h2>{{.L.Devices}} <span class="dim">{{.Devices.CountText}}</span></h2>
+      {{range .Devices.List}}
+      <div class="line" data-hwid="{{.HWID}}">
+        <div class="line-t"><b>{{.Title}}</b><small>{{if .Sub}}{{.Sub}} · {{end}}{{.LastSeen}}</small></div>
+        <button type="button" class="b b-mini" data-action="unbind-device">{{$.L.DeviceRemove}}</button>
+      </div>
+      {{else}}
+      <p class="dim">{{.L.DevicesEmpty}}</p>
+      {{end}}
+    </div>
+    {{end}}
+
+    {{if or .ShowConfigs .AWG .WG .Turn .Telegram}}
+    <details class="more">
+      <summary>{{.L.SingleConfigs}}</summary>
+      {{if .ShowConfigs}}{{range .Links}}
+      <div class="line">
+        <div class="line-t"><b>{{.Proto}}</b><code>{{.URL}}</code></div>
+        <button type="button" class="b b-mini" data-action="copy" data-value="{{.URL}}">{{$.L.Copy}}</button>
+      </div>
+      {{end}}{{end}}
+      {{range .AWG}}
+      <div class="line">
+        <div class="line-t"><b>{{$.L.AWGTitle}}</b><small>{{.Label}}</small></div>
+        <a class="b b-mini" href="{{.ConfURL}}" download>{{$.L.AWGDownload}}</a>
+      </div>
+      {{end}}
+      {{range .WG}}
+      <div class="line">
+        <div class="line-t"><b>{{$.L.WGTitle}}</b><small>{{.Label}}</small></div>
+        <a class="b b-mini" href="{{.ConfURL}}" download>{{$.L.AWGDownload}}</a>
+      </div>
+      {{end}}
+      {{range .Turn}}
+      <div class="line">
+        <div class="line-t"><b>{{$.L.TurnTitle}}</b><small>{{.Label}}</small></div>
+        {{if .Link}}<button type="button" class="b b-mini" data-action="copy" data-value="{{.Link}}">{{$.L.Copy}}</button>{{end}}
+        <a class="b b-mini" href="{{.ConfURL}}" download>{{$.L.AWGDownload}}</a>
+      </div>
+      {{end}}
+      {{range .Telegram}}
+      <div class="line">
+        <div class="line-t"><b>{{$.L.TGProxyTitle}}</b><small>{{.Label}}</small></div>
+        <a class="b b-mini" href="{{.Link}}" data-action="tg-proxy" data-value="{{.WebLink}}">{{$.L.TGProxyAdd}}</a>
+      </div>
+      {{end}}
+    </details>
+    {{end}}
+
+    <div class="panel">
+      <h2>{{.L.AccessTitle}}</h2>
+      <p class="dim">{{.L.AccessHint}}</p>
+      <button type="button" class="b b-soft" data-action="copy" data-value="{{.SubURL}}">{{.L.AccessCopy}}</button>
+      {{if .Access.TGLink}}<a class="b b-ghost" href="{{.Access.TGLink}}" target="_blank" rel="noopener noreferrer" data-action="tg-access" data-linked="{{if .Access.TGLinked}}1{{end}}">{{if .Access.TGLinked}}{{.L.TGChange}}{{else}}{{.L.TGBind}}{{end}}</a>{{end}}
+      {{if .Access.TGWait}}<p class="dim">{{.Access.TGWait}}</p>{{end}}
+      {{if .Access.RotatePath}}<button type="button" class="b b-danger" data-action="rotate">{{.L.RotateLink}}</button>{{end}}
+    </div>
+  </section>
+
+  {{if .Billing.Show}}
+  <section class="pane" data-pane="pay" hidden>
+    <div class="panel">
+      <p class="dim">{{.L.CurrentPlan}}</p>
+      <h2>{{if .Billing.CurrentPlan}}{{.Billing.CurrentPlan}}{{else}}—{{end}} <span class="dim">{{.Billing.ExpireText}}</span></h2>
+      {{if .Billing.RenewSwitch}}
+      <label class="switch">
+        <span>{{.L.AutoRenew}}</span>
+        {{if .Billing.AutoRenew}}<input type="checkbox" role="switch" data-action="auto-renew" checked />{{else}}<input type="checkbox" role="switch" data-action="auto-renew" />{{end}}
+      </label>
+      {{if .Billing.RenewNote}}{{if .Billing.AutoRenew}}<p class="renew-note dim">{{.Billing.RenewNote}}</p>{{else}}<p class="renew-note dim" hidden>{{.Billing.RenewNote}}</p>{{end}}{{end}}
+      {{end}}
+      {{if .Billing.Locked}}
+      {{if .Billing.Plans}}<button type="button" class="b" data-action="renew">{{.L.Renew}}</button>{{end}}
+      {{if .Billing.Changes}}<button type="button" class="b b-soft" data-action="change">{{.L.ChangeTitle}}</button>{{end}}
+      {{else if .Billing.Plans}}
+      <button type="button" class="b" data-action="plans">{{if .Billing.CurrentPlan}}{{.L.PlanChange}}{{else}}{{.L.PlanPick}}{{end}}</button>
+      {{end}}
+      {{range .Billing.Addons}}
+      <div class="line">
+        <div class="line-t"><b>{{.Name}}</b><small>{{.Sub}}</small></div>
+        {{if .Counts}}
+        <select id="addn" data-action="addn">{{range .Counts}}<option value="{{.N}}" data-btn="{{.Button}}" data-fb="{{if .FromBalance}}1{{end}}">{{.Label}}</option>{{end}}</select>
+        <button type="button" class="b b-mini" id="addn-btn" data-action="buy-extra" data-kind="{{.Kind}}" data-plan="{{.PlanID}}" data-fb="{{if .FromBalance}}1{{end}}">{{.Badge}}</button>
+        {{else}}
+        <button type="button" class="b b-mini" data-action="buy-extra" data-kind="{{.Kind}}" data-plan="{{.PlanID}}" data-value="{{.N}}" data-fb="{{if .FromBalance}}1{{end}}">{{.Badge}}</button>
+        {{end}}
+      </div>
+      {{end}}
+      {{if .Billing.Cancelable}}<button type="button" class="b b-ghost" data-action="cancel">{{.L.CancelSub}}</button>{{end}}
+    </div>
+
+    {{if .Billing.Promo}}
+    <div class="panel row">
+      <input id="promo-code" type="text" autocomplete="off" placeholder="{{.L.PromoPlaceholder}}" aria-label="{{.L.PromoPlaceholder}}" />
+      <button type="button" class="b b-soft" data-action="promo">{{.L.PromoApply}}</button>
+    </div>
+    {{end}}
+
+    {{if .Billing.Wallet}}
+    <div class="panel">
+      <p class="dim">{{.L.Balance}}</p>
+      <h2>{{.Billing.Balance}} ₽ <span class="dim">{{.Billing.BonusDays}}</span></h2>
+      {{if .Billing.Topup}}
+      <div class="row">
+        <input id="topup-amount" type="number" min="{{.Billing.TopupMin}}" max="{{.Billing.TopupMax}}" placeholder="{{.Billing.TopupHint}}" aria-label="{{.L.TopupAmount}}" />
+        <button type="button" class="b" data-action="topup">{{.L.Topup}}</button>
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+
+    {{if .Billing.History}}
+    <div class="panel">
+      <h2>{{.L.History}}</h2>
+      {{range .Billing.History}}
+      <div class="line"><div class="line-t"><b>{{.Title}}</b><small>{{.When}}</small></div><span class="amt{{if .In}} in{{end}}">{{.Amount}}</span></div>
+      {{end}}
+    </div>
+    {{end}}
+  </section>
+
+  {{if .Billing.RefLink}}
+  <section class="pane" data-pane="ref" hidden>
+    <div class="panel">
+      <h2>{{.L.RefTitle}}</h2>
+      <p class="dim">{{.Billing.RefHint}}</p>
+      <code class="ref">{{.Billing.RefLink}}</code>
+      <button type="button" class="b" data-action="copy" data-value="{{.Billing.RefLink}}">{{.L.Copy}}</button>
+      {{if .Billing.RefShare}}<button type="button" class="b b-soft" data-action="external" data-value="{{.Billing.RefShare}}">{{.L.Share}}</button>{{end}}
+      <p class="dim">{{.Billing.RefStats}}</p>
+      {{range .Billing.Invitees}}
+      <div class="line"><div class="line-t"><b>{{.Title}}</b><small>{{.When}}</small></div><span class="amt{{if .In}} in{{end}}">{{.Amount}}</span></div>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+  {{end}}
+
+  {{if .Access.Legal}}
+  <footer class="foot">{{range $i, $l := .Access.Legal}}{{if $i}} · {{end}}<a href="{{$l.URL}}" target="_blank" rel="noopener">{{$l.Title}}</a>{{end}}</footer>
+  {{end}}
+</div>

@@ -11,7 +11,7 @@ plugin.json              the manifest (required)
 main.js                  all the code, one ES module (required, up to 2 MB)
 migrations/NNNN*.sql     its own database, applied in name order (up to 100 files, 256 KB each)
 i18n/<lang>.json         strings for panel.t(): {"key": "text"} (up to 256 KB)
-theme/theme.css, …       a theme of the subscription page (see "Extension points")
+theme/theme.css, *.html  a theme or your own subscription page (see "Extension points")
 README.md                shown in the panel (up to 256 KB)
 icon.svg                 the icon (up to 128 KB)
 LICENSE, CHANGELOG.md
@@ -170,7 +170,7 @@ sees the new `panel.config`.
 | `channel` | `{"label": …}` | `channel.send` | `users.view` |
 | `price` | `true` | `quotePrice` | `billing.manage` |
 | `subscription` | `true` | `transformSubscription` | `users.manage` |
-| `theme` | `true` | — (needs `theme/theme.css`) | — |
+| `theme` | `true`, or `{"panel_styles": false}` to drop the panel's stylesheet | — (needs `theme/theme.css` or `theme/<section>.html`) | `users.view` with markup |
 
 If `main.js` does not export what is declared, the plugin will not switch on: "main.js does
 not export what plugin.json declares: …". Declaring a point this panel version does not have

@@ -3816,7 +3816,7 @@ export interface PluginManifest {
     bot?: { menu?: boolean; commands?: string[] }
     price?: boolean
     subscription?: boolean
-    theme?: boolean
+    theme?: boolean | { panel_styles?: boolean }
   }
   db_quota_mb?: number
   memory_mb?: number

@@ -455,8 +455,8 @@ body { background-image: url(bg.webp); }
 .btn.alt { color: var(--ink); }
 ```
 
-- **What a theme changes.** Only the look: the page and all it does (payments, devices,
-  Telegram) stay the panel's.
+- **What `theme.css` changes.** Only the look: the page and all it does (payments, devices,
+  Telegram) stay the panel's. To change the markup too, see "Your own page" below.
 - **Variables.** `--brand`, `--brand-dark`, `--on-brand`, `--accent-fg`, `--bg`, `--surface`,
   `--ink`, `--muted`, `--success-fg`, `--warning-fg`, `--danger-fg`. The page's classes
   (`.btn`, `.btn.alt` …) can be styled too, but they may change between versions.
@@ -473,3 +473,152 @@ body { background-image: url(bg.webp); }
 
 A theme's `main.js` can be empty: `export {};`. An example —
 [examples/plugins/theme-night](../../examples/plugins/theme-night).
+
+### Your own page — theme/&lt;section&gt;.html
+
+A theme can replace the subscription page's markup — one part of it, or the whole page,
+written from scratch. `theme/<section>.html` is a Go template rendered in that section's
+place with the page's data. The panel keeps the `<head>` (fonts, the operator's colours as
+CSS variables) and the script that pays, binds devices and opens apps; everything the
+reader sees can be the theme's own. With markup, `theme.css` is optional.
+
+A page from scratch is two templates, its stylesheet, and the panel's styles switched off:
+
+```json
+"provides": {"theme": {"panel_styles": false}}
+```
+
+```
+theme/layout.html    the page: everything between <body> and the dialogs
+theme/dialogs.html   the dialogs: apps, connect wizard, plans, payment, messages
+theme/theme.css      the whole page's look
+```
+
+`"panel_styles": false` leaves the panel's stylesheet out; the fonts (Mulish) and the
+operator's colours as CSS variables stay. With `"theme": true` the theme's styles go over the
+panel's.
+
+```html
+<main class="page">
+  <h1>{{.Name}}</h1>
+  <img src="{{.SubURL}}/qr.png" alt="QR" />
+  <button type="button" data-action="copy" data-value="{{.SubURL}}">{{.L.CopyLink}}</button>
+  {{if .DeepLinks}}<button type="button" data-action="apps">{{.L.OpenInApp}}</button>{{end}}
+</main>
+```
+
+#### The page's sections
+
+The page renders two sections: `layout` (everything visible) and `dialogs` (the pop-ups).
+They call the rest in order. Each section decides for itself whether it is needed — empty
+when it has nothing to show — so your own `layout` can call the ones it wants, with no
+conditions.
+
+| Section | What is in it | Shown when |
+|---|---|---|
+| `layout` | the whole page: the sections below, the tab panes, `#paywatch` | always |
+| `header` | logo, panel name, greeting | always |
+| `badges` | ID, status, online, traffic, term, traffic bar | always |
+| `notices` | incidents and maintenance from the status page | some are current |
+| `tabs` | the "Subscription / Payment / Referrals" tabs | selling is on |
+| **"Subscription" pane** | | |
+| `churn` | the "why not renewed" survey | the term ended, not answered yet |
+| `blocks` | other plugins' blocks (`subBlocks`) | plugins gave some |
+| `wizard` | the "Connect in 3 steps" button | some app is on |
+| `connect` | QR, copy link, "Open in app", Clash config | always |
+| `devices` | bound devices and removing them | the operator shows them |
+| `awg` | AmneziaWG configs per server | the user has AmneziaWG |
+| `wg` | WireGuard configs | the user has WireGuard |
+| `turn` | WireGuard over TURN: app links, manual setup | the user has TURN |
+| `configs` | single links per protocol | the operator shows them |
+| `tgproxy` | Telegram proxies | the user has MTProto |
+| `access` | "Access to your account": copy link, link Telegram | always |
+| `rotate` | "Issue a new link" | the operator allows it |
+| **"Payment" pane** | | |
+| `plan` | current plan, auto-renewal, renew and change, add-ons, cancel | selling is on |
+| `promo` | the promo code field | promo codes are on |
+| `wallet` | balance and top-up | the balance is on |
+| `history` | money history | there is some |
+| **"Referrals" pane** | | |
+| `referral` | invite link, "Share", stats | referrals are on |
+| `invitees` | the invited | there are some |
+| — | | |
+| `legal` | links to the terms and the privacy policy | documents are set |
+| `dialogs` | every dialog below | always |
+| `dialog-apps` | picking an app | always |
+| `dialog-wizard` | the three-step connect wizard | the wizard is on |
+| `dialog-renew` | renewing the plan | a plan is active and on sale |
+| `dialog-change` | changing the plan | there is one to change to |
+| `dialog-plans` | picking a plan, term and device count | no active plan |
+| `dialog-pay` | picking a payment method | more than one |
+| `dialog-msg` | payment messages: success, error, details | selling is on |
+
+The tab panes are `<section class="pane" data-pane="sub|pay|ref">` in `layout`: your own
+`layout` places them. The page renders the dialogs after `layout`; do not call `dialogs`
+from your `layout`, or they appear twice.
+
+- **Sections** — in the table above. A theme replaces any of them.
+  `{{template "core:<section>" .}}` renders the panel's original (inside `with`, hand it
+  `$`); a section nobody calls is not shown; an empty file hides its section.
+- **Data.** Every field the page has, with its type and meaning:
+  [theme-data.md](theme-data.md) (generated from the panel's code). A misspelt field is an
+  install error that names it. `{{$.Asset "bg.webp"}}` is the address of a theme file.
+- **Buttons.** No script, `onclick` or forms: a control says what it does in
+  `data-action`, with `data-value` (and `data-plan`, `data-kind`, `data-fb`) for what it takes.
+
+  | `data-action` | Does | Takes |
+  |---|---|---|
+  | `copy`, `copy-icon`, `copy-quiet` | copy: the button says so in its text / with a `.done` class / says nothing | `data-value` |
+  | `apps`, `app` | open the apps dialog; an app's link in it (on `<a href>`: outside Telegram the link itself opens) | `data-i` on `app`: the app's index in `.DeepLinks` |
+  | `wizard`, `wz-plat`, `wz-go` | open the connect wizard; pick a platform; step | `data-value`: platform, `1` / `-1` |
+  | `close` | close the dialog it is in (a tap beside the card does too) | — |
+  | `tab` | switch the pane (`.tab[data-tab]` buttons switch by themselves) | `sub`, `pay`, `ref` |
+  | `plans`, `renew`, `change` | open the plans / renewal / plan change dialog | — |
+  | `pick-plan`, `buy-plan` | open a plan in the plans dialog; pay for it | `data-plan`, `data-fb` |
+  | `period`, `devices` (on `<select>`) | the term / device count picked | `data-plan` |
+  | `change-plan`, `buy-extra` | move to a plan; buy an add-on | `data-kind`, `data-plan`, `data-fb`, `data-value` |
+  | `addn` (on `<select id="addn">`) | the add-on device count picked | — |
+  | `pay-with` | pay with a provider | `data-value`: its key |
+  | `promo`, `topup` | apply `#promo-code`; top up by `#topup-amount` | — |
+  | `auto-renew` (on a checkbox) | switch renewal from the balance | — |
+  | `cancel` | cancel the plan | — |
+  | `unbind-device` | release the device of the nearest `[data-hwid]` | — |
+  | `churn`, `churn-send` | answer the survey (the answers are `.chip` siblings); send `#churn-comment` | `data-value`: the reason's key |
+  | `rotate` | reissue the link | — |
+  | `tg-access`, `tg-proxy` (on `<a>`) | link Telegram (`href` is `.Access.TGLink`); add a Telegram proxy (`href` is its `tg://` link) | `data-linked="1"` when linked; `data-value`: the proxy's `https://` web link |
+  | `external` | open an `https://` address outside Telegram's webview | `data-value` |
+
+- **What the script finds by id.** Panes: `.pane[data-pane="sub|pay|ref"]`; the payment
+  spinner `#paywatch`. Dialogs are `.modal` and open with `.show`: `#apps`, `#wizard`
+  (with `#wz-title`, `#wz-back`, `#wz-next`, `.wz-step[data-step]`, `.wz-p[data-plat]`,
+  `.chip[data-plat]`), `#renewmodal`, `#changemodal`, `#plansmodal` (each plan
+  `.pick#pick-<id>` with a `.pick-body`), `#paymodal`, `#msgmodal` (`#msgmodal-title`,
+  `#msgmodal-body`, `#msgmodal-img`). In a plan: `#per-<id>`, `#dev-<id>`, `#paybtn-<id>`;
+  add-ons `#addn`, `#addn-btn`; the renewal note `.renew-note`; the survey `#churn-other`
+  (shown for "other") and `#churn-comment`; `#promo-code`, `#topup-amount`. Without the panel's styles, the theme
+  styles `.modal`, `.modal.show`, `.tab.active` and `[hidden]` itself.
+- **Markup.** Text, layout, lists, tables, `img`, `button`, `label`, `input` (text, number,
+  checkbox, search, hidden), `select`, `details` and inline SVG; any other element is
+  refused, `script`, `style`, `iframe`, `form`, `meta` and `link` among them. Also refused:
+  `on*` handlers, `javascript:` and `data:` links, `srcset`, `url()` and `@import` in
+  `style="…"`. `src` is `{{$.Asset "…"}}`, `{{.SubURL}}/…` or `data:image/…`; a link is
+  `https://`, `http://`, `mailto:`, `tg://`, `#…`, a path `/…` or data (`{{…}}`); an SVG
+  `<use>` is `href="#id"`. No `name` attribute (it would replace the page script's own).
+- **Templates.** Go `html/template`: data is escaped for where it lands. Functions: `and`,
+  `or`, `not`, `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `len`, `index`, `slice`, `print`,
+  `printf`, `println`, `html`, `js`, `urlquery`. No `{{define}}`, `{{block}}` or `call`;
+  sections may not call each other in a circle.
+  - `{{if}}`, `{{range}}`, `{{with}}` and `{{template}}` go around whole elements. An `{{if}}`
+    may also sit inside an attribute's value (`class="b{{if .Online}} on{{end}}"`), but not
+    in an address or a style, and never between attributes: for `checked` or `hidden`,
+    choose between two whole elements.
+  - `range` only over the page's lists, at most two deep, and no `{{template}}` inside one.
+- **Permission.** `users.view`: the markup renders the user's page, their link in it.
+- **If it breaks.** A theme that cannot render never reaches readers: they get the
+  panel's own page.
+  - A panel update the theme no longer fits (a field gone) stops the plugin with the
+    reason, like any plugin that fails to start; the operator is told.
+  - A theme that fails on one reader's data (`index` past a list's end) is written to the
+    panel's log once, and that reader gets the panel's page.
+
+An example of a whole page — [examples/plugins/theme-hero](../../examples/plugins/theme-hero).

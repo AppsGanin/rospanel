@@ -1,0 +1,24 @@
+{
+  "id": "theme-hero",
+  "version": "2.1.1",
+  "api": 1,
+  "panel": ">=5.16.0",
+  "name": {
+    "ru": "Тема «Витрина» для страницы подписки",
+    "en": "“Showcase” theme for the subscription page"
+  },
+  "description": {
+    "ru": "Страница подписки, свёрстанная с нуля: своя разметка всех частей и диалогов, свой CSS. Пример для тех, кто делает свою страницу.",
+    "en": "The subscription page written from scratch: its own markup for every part and dialog, its own CSS. An example for building your own page."
+  },
+  "author": "RosPanel",
+  "license": "MIT",
+  "permissions": [
+    "users.view"
+  ],
+  "provides": {
+    "theme": {
+      "panel_styles": false
+    }
+  }
+}

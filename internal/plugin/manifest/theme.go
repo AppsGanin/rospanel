@@ -1,12 +1,19 @@
 package manifest
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"maps"
 	"path"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/sub"
 )
 
 // A theme restyles the panel's subscription page: theme/theme.css and the files it
@@ -25,9 +32,50 @@ const (
 )
 
 var (
-	themeFileRe = regexp.MustCompile(`^theme/[a-z0-9][a-z0-9._-]{0,63}\.(css|png|jpg|jpeg|webp|gif|svg|woff2|woff)$`)
+	themeFileRe = regexp.MustCompile(`^theme/[a-z0-9][a-z0-9._-]{0,63}\.(css|html|png|jpg|jpeg|webp|gif|svg|woff2|woff)$`)
 	cssComment  = regexp.MustCompile(`(?s)/\*.*?\*/`)
 )
+
+// Theme is provides.theme: true for a theme over the panel's stylesheet, or
+// {"panel_styles": false} for one that styles the whole page itself — the panel then
+// keeps only its fonts and the operator's colours (CSS variables) on the page.
+type Theme struct {
+	On          bool
+	PanelStyles bool
+}
+
+// UnmarshalJSON takes true, false or {"panel_styles": bool}.
+func (t *Theme) UnmarshalJSON(b []byte) error {
+	switch strings.TrimSpace(string(b)) {
+	case "true":
+		*t = Theme{On: true, PanelStyles: true}
+		return nil
+	case "false", "null":
+		*t = Theme{}
+		return nil
+	}
+	var o struct {
+		PanelStyles *bool `json:"panel_styles"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&o); err != nil {
+		return fmt.Errorf(`provides.theme: true or {"panel_styles": false}: %w`, err)
+	}
+	*t = Theme{On: true, PanelStyles: o.PanelStyles == nil || *o.PanelStyles}
+	return nil
+}
+
+// MarshalJSON writes it back in the form it was given.
+func (t Theme) MarshalJSON() ([]byte, error) {
+	switch {
+	case !t.On:
+		return []byte("false"), nil
+	case t.PanelStyles:
+		return []byte("true"), nil
+	}
+	return []byte(`{"panel_styles":false}`), nil
+}
 
 // ThemeTypes are the content types the panel serves a theme's files with.
 var ThemeTypes = map[string]string{
@@ -39,7 +87,7 @@ var ThemeTypes = map[string]string{
 // them; Read calls it for names under theme/.
 func (pkg *Package) readTheme(p *Problems, name string, b []byte) {
 	if !themeFileRe.MatchString(name) {
-		p.addf("%s: a theme file is theme/<name>.css|png|jpg|jpeg|webp|gif|svg|woff2|woff (a-z, 0-9, . _ -)", name)
+		p.addf("%s: a theme file is theme/<name>.css|html|png|jpg|jpeg|webp|gif|svg|woff2|woff (a-z, 0-9, . _ -)", name)
 		return
 	}
 	if len(b) > maxThemeFile {
@@ -59,10 +107,10 @@ func (pkg *Package) readTheme(p *Problems, name string, b []byte) {
 
 // checkTheme runs once every file is read.
 func (pkg *Package) checkTheme(p *Problems) {
-	wants := pkg.Manifest != nil && pkg.Manifest.Provides.Theme
+	wants := pkg.Manifest != nil && pkg.Manifest.Provides.ThemeOn()
 	if len(pkg.Theme) == 0 {
 		if wants {
-			p.addf("provides.theme: theme/%s is missing", ThemeCSS)
+			p.addf("provides.theme: theme/%s is missing (or a theme/<section>.html)", ThemeCSS)
 		}
 		return
 	}
@@ -79,9 +127,22 @@ func (pkg *Package) checkTheme(p *Problems) {
 	if total > maxThemeTotal {
 		p.addf("theme/: %d KB, at most %d KB together", total>>10, maxThemeTotal>>10)
 	}
+	markup := slices.ContainsFunc(slices.Collect(maps.Keys(pkg.Theme)), sub.IsThemeTemplate)
+	if markup {
+		for _, problem := range sub.CheckTheme(pkg.Theme) {
+			p.addf("%s", problem)
+		}
+		// The markup renders the user's own page, their subscription link in it: the
+		// consent screen says so the way it does for the API.
+		if pkg.Manifest != nil && !slices.Contains(pkg.Manifest.Permissions, model.PermUsersView) {
+			p.addf("theme/*.html: add %q to permissions (the markup renders the user's subscription page)", model.PermUsersView)
+		}
+	}
 	css, ok := pkg.Theme[ThemeCSS]
 	if !ok {
-		p.addf("theme/: theme/%s is missing", ThemeCSS)
+		if !markup {
+			p.addf("theme/: theme/%s is missing", ThemeCSS)
+		}
 		return
 	}
 	for _, problem := range CheckThemeCSS(string(css), pkg.Theme) {
