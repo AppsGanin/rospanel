@@ -99,12 +99,14 @@ def site_path(target: str) -> str | None:
         return f"{GITHUB}/blob/main/{base}"
     if base and not base.startswith(("http://", "https://", "/", "#")):
         # Any other repository file (a fixture, a script) is not part of the site;
-        # point at the repository instead of shipping a broken link.
-        return f"{GITHUB}/blob/main/{base}"
+        # point at the repository instead of shipping a broken link — a folder (an
+        # example plugin) as GitHub's tree view, a file as its blob view.
+        kind = "tree" if (ROOT / base).is_dir() else "blob"
+        return f"{GITHUB}/{kind}/main/{base}{tail}"
     return None
 
 
-def rewrite_links(text: str, page_dir: str) -> str:
+def rewrite_links(text: str, page_dir: str, src_dir: str = "") -> str:
     def repl(match: re.Match[str]) -> str:
         target = match.group(1)
         title = match.group(2) or ""
@@ -112,10 +114,18 @@ def rewrite_links(text: str, page_dir: str) -> str:
             return match.group(0)
         if target.startswith("#"):
             return f"](#{clean_anchor(target[1:])}){title}"
+        # A link out of docs/ (docs/plugins' "../../examples/plugins/lava") is
+        # relative to the page's own folder in the repository: resolve it to a
+        # repository path, or it reaches GitHub as ".../blob/main/../../examples".
+        if target.startswith("../") and src_dir:
+            base, sep, anchor = target.partition("#")
+            norm = posixpath.normpath(posixpath.join(src_dir, base))
+            if not norm.startswith(("docs/", "..")) and norm != "docs":
+                target = norm + (sep + anchor if sep else "")
         # Sibling links in docs/plugins/ ("api.md", "tutorial.md") are relative to
         # that folder in the repository, but the site path needs the prefix — for the
         # Russian pages too, which are written into the plugins/ru/ subdirectory.
-        if page_dir in ("plugins", "plugins/ru") and "/" not in target and target.endswith(".md"):
+        if page_dir in ("plugins", "plugins/ru") and "/" not in target and target.partition("#")[0].endswith(".md"):
             target = "docs/plugins/" + target
         site = site_path(target)
         if site is None:
@@ -177,7 +187,7 @@ def url_depth(dst: Path) -> int:
 
 def write_page(src: Path, dst: Path, page_dir: str = "") -> None:
     text = src.read_text(encoding="utf-8")
-    text = rewrite_links(text, page_dir)
+    text = rewrite_links(text, page_dir, src.parent.relative_to(ROOT).as_posix())
     # The READMEs open with a raw <div align="center">; without markdown="1"
     # Python-Markdown treats everything under it as raw HTML and the page shows
     # literal `# Heading` and `![badge](...)` instead of rendering them.
