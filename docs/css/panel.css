@@ -40,6 +40,12 @@
   filter: brightness(0) invert(1);
 }
 
+/* The hidden ¶ after a centered heading took width and pushed the title left of
+   the logo above it; out of flow it still shows on hover, right after the text. */
+.md-typeset [align="center"] .headerlink {
+  position: absolute;
+}
+
 .md-typeset h1,
 .md-typeset h2 {
   color: #0a1b2e;
