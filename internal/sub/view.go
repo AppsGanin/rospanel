@@ -10,6 +10,7 @@ import (
 // the raw numbers behind them. Actions — paying, topping up, a promo code — go
 // through the API, not the page's own endpoints.
 type View struct {
+	UserID      int64  `json:"user_id"`
 	Name        string `json:"name"`
 	Status      string `json:"status"` // active | disabled | expired | limited | device_limited
 	StatusLabel string `json:"status_label"`
@@ -159,7 +160,7 @@ func PageView(u model.User, local *model.Settings, servers []Server, billing Bil
 		return View{}, err
 	}
 	v := View{
-		Name: u.Name, Status: u.Status, StatusLabel: d.StatusLabel, Online: d.Online, LastSeenAt: u.LastSeen,
+		UserID: u.ID, Name: u.Name, Status: u.Status, StatusLabel: d.StatusLabel, Online: d.Online, LastSeenAt: u.LastSeen,
 		UsedBytes: u.UsedUp + u.UsedDown, LimitBytes: u.DataLimit, UsedPct: d.UsedPct,
 		ExpireAt: u.ExpireAt, HoldSeconds: u.HoldSeconds,
 		Texts:  ViewTexts{Used: d.Used, Limit: d.Limit, Expire: d.Expire, Reset: d.ResetText, LastSeen: d.LastSeen},

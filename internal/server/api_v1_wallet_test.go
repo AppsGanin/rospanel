@@ -159,6 +159,7 @@ func TestAPISubscriptionView(t *testing.T) {
 	}
 	var got struct {
 		Data struct {
+			UserID      int64  `json:"user_id"`
 			Name        string `json:"name"`
 			StatusLabel string `json:"status_label"`
 			LimitBytes  int64  `json:"limit_bytes"`
@@ -177,7 +178,7 @@ func TestAPISubscriptionView(t *testing.T) {
 		t.Fatalf("view: %d %s", rec.Code, rec.Body.String())
 	}
 	d := got.Data
-	if d.Name != "viewer" || d.LimitBytes != 10<<30 || d.SubURL == "" || len(d.Apps) == 0 ||
+	if d.UserID != u.ID || d.Name != "viewer" || d.LimitBytes != 10<<30 || d.SubURL == "" || len(d.Apps) == 0 ||
 		d.Apps[0].URL == "" || d.Texts.Limit == "" || d.StatusLabel != "Активно" {
 		t.Fatalf("view = %+v", d)
 	}

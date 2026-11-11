@@ -3526,6 +3526,10 @@
           "used_pct": {
             "type": "integer"
           },
+          "user_id": {
+            "format": "int64",
+            "type": "integer"
+          },
           "wg": {
             "items": {
               "$ref": "#/components/schemas/ViewAWG"
@@ -3534,6 +3538,7 @@
           }
         },
         "required": [
+          "user_id",
           "name",
           "status",
           "status_label",
