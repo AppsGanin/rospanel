@@ -88,6 +88,7 @@ const EMPTY_HWID: HWIDSettings = {
   enabled: false,
   require: true,
   fallback_limit: 0,
+  ip_fallback_limit: 0,
   ttl_days: 30,
   count_mode: "auto",
 };
@@ -452,6 +453,19 @@ export function SubscriptionsPanel() {
         }
       >
         <SettingRow hint={t("subs.hwidHint")} />
+        <SettingRow
+          label={t("subs.ipFallback")}
+          hint={t("subs.ipFallbackHint")}
+          field={
+            <TextInput
+              type="number"
+              value={String(h.ip_fallback_limit ?? 0)}
+              onChange={(v) =>
+                patchHwid({ ip_fallback_limit: Math.min(100, Math.max(0, Number(v) || 0)) })
+              }
+            />
+          }
+        />
         {h.enabled && (
           <>
             <ToggleRow

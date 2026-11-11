@@ -147,6 +147,10 @@ func (m *Manager) ImportUsers(ctx context.Context, req ImportRequest) (*ImportRe
 			fail(name, codeOf(err))
 			continue
 		}
+		if err := ValidateHWIDLimit(importedHWID(c)); err != nil {
+			fail(name, codeOf(err))
+			continue
+		}
 		password := strings.TrimSpace(c.Password)
 		if password == "" {
 			if password, err = auth.RandomPassword(); err != nil {
@@ -171,7 +175,7 @@ func (m *Manager) ImportUsers(ctx context.Context, req ImportRequest) (*ImportRe
 			Name: name, UUID: id.String(), Password: password, SubToken: subToken,
 			DataLimit: c.DataLimit, ExpireAt: c.ExpireAt, HoldSeconds: importedHold(c),
 			UsedUp: max(c.UsedUp, 0), UsedDown: max(c.UsedDown, 0),
-			DeviceLimit: c.DeviceLimit, SpeedLimit: max(c.SpeedLimit, 0),
+			DeviceLimit: c.DeviceLimit, HWIDLimit: importedHWID(c), SpeedLimit: max(c.SpeedLimit, 0),
 			ResetPeriod: resetPeriodOr(c.ResetPeriod), Enabled: c.Enabled,
 			Note: strings.TrimSpace(c.Note), Tags: userTags,
 			WGPrivateKey: strings.TrimSpace(c.WGPrivate),
@@ -251,7 +255,7 @@ func (m *Manager) ExportUsers() (*importer.Export, error) {
 			Name: u.Name, UUID: u.UUID, Password: u.Password,
 			DataLimit: u.DataLimit, ExpireAt: u.ExpireAt, HoldSeconds: u.HoldSeconds,
 			UsedUp: u.UsedUp, UsedDown: u.UsedDown,
-			DeviceLimit: u.DeviceLimit, Enabled: u.Enabled,
+			DeviceLimit: u.DeviceLimit, HWIDLimit: &u.HWIDLimit, Enabled: u.Enabled,
 			Note: u.Note, Issues: []string{},
 			SubToken: u.SubToken, WGPrivate: u.WGPrivateKey,
 			SpeedLimit: u.SpeedLimit, ResetPeriod: u.ResetPeriod, Tags: u.Tags,
@@ -270,4 +274,13 @@ func importedHold(c importer.Candidate) int64 {
 		return 0
 	}
 	return min(c.HoldSeconds, int64(maxExtendDays)*86400)
+}
+
+// importedHWID is the HWID limit an imported user gets: the file's own, or — from an
+// export made before the two limits were split — the device limit, which capped both.
+func importedHWID(c importer.Candidate) int {
+	if c.HWIDLimit != nil {
+		return *c.HWIDLimit
+	}
+	return c.DeviceLimit
 }

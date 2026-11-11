@@ -17,7 +17,10 @@ export interface User {
   created_at: string
   reset_period: string
   last_seen: number
-  device_limit: number
+  device_limit: number // -1 none, 0 the panel default, N
+  ip_limit: number // the address cap in force (0 = none)
+  // Installs that may fetch the subscription: -1 none, 0 the panel default, N.
+  hwid_limit: number
   active_devices: number
   speed_limit: number // kbit/s, 0 = unlimited
   // The measure the panel holds against the user for blocklist traffic, and
@@ -120,6 +123,8 @@ export interface DeviceList {
   devices: Device[]
   limit: number // 0 = unlimited
   enabled: boolean // device binding switched on panel-wide
+  default_limit: number // what the panel default amounts to
+  ip_default_limit: number // the panel's address default (0 = none)
 }
 
 export const getUserDevices = (id: number) => api<DeviceList>(`api/users/${id}/devices`)
@@ -538,6 +543,7 @@ export interface UserLimitsSave {
   data_limit: number
   device_limit: number
   speed_limit?: number
+  hwid_limit?: number
   term?: {
     expire_at: number
     hold_seconds: number
@@ -552,6 +558,7 @@ export const setUserLimits = (id: number, s: UserLimitsSave) =>
       data_limit: s.data_limit,
       device_limit: s.device_limit,
       speed_limit: s.speed_limit,
+      hwid_limit: s.hwid_limit,
       ...(s.term ?? {}),
     }),
   })
@@ -1135,7 +1142,8 @@ export interface SubApp {
 export interface HWIDSettings {
   enabled: boolean
   require: boolean // refuse clients that send no x-hwid at all
-  fallback_limit: number // cap for users whose own device limit is 0
+  fallback_limit: number // cap for users whose own HWID limit is 0
+  ip_fallback_limit: number // address cap for users whose device limit is 0 (0 = none)
   ttl_days: number // forget a device after N days of silence (0 = never)
   // Which counter enforces the device limit: "auto" (addresses only while HWID is not
   // authoritative), "hwid" or "both".
@@ -2268,6 +2276,7 @@ export interface TariffPlan {
   period_days: number
   data_limit: number
   device_limit: number
+  hwid_limit: number // -1 none, 0 the panel default, N
   speed_limit: number // kbit/s, 0 = unlimited
   // The plan's own quota-refill cycle: daily | weekly | monthly | yearly, or "" for
   // the derived default (free: every plan duration; paid: none inside the period).

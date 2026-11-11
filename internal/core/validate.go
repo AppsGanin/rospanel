@@ -27,10 +27,21 @@ func validateUserLimits(dataLimit, expireAt int64, deviceLimit int) error {
 		return invalidCode("err.badTrafficLimit", "некорректный лимит трафика")
 	case expireAt < 0 || expireAt > maxExpireAt:
 		return invalidCode("err.badExpiryDate", "некорректная дата истечения")
-	case deviceLimit < 0:
-		return invalidCode("err.deviceLimitNegative", "лимит устройств не может быть отрицательным")
+	case deviceLimit < model.IPLimitUnlimited:
+		return invalidCode("err.deviceLimitNegative", "лимит устройств: -1 (без лимита), 0 (по умолчанию) или число")
 	case deviceLimit > model.MaxDeviceLimit:
 		return invalidCode("err.deviceLimitTooHigh", "лимит устройств не может быть больше {{max}}",
+			map[string]any{"max": model.MaxDeviceLimit})
+	}
+	return nil
+}
+
+// ValidateHWIDLimit refuses an HWID limit outside -1 (none), 0 (the panel default)
+// and 1..MaxDeviceLimit. Exported for the handlers that judge a whole save before
+// writing any of it.
+func ValidateHWIDLimit(n int) error {
+	if n < model.HWIDLimitUnlimited || n > model.MaxDeviceLimit {
+		return invalidCode("err.badHWIDLimit", "лимит HWID: -1 (без лимита), 0 (по умолчанию) или от 1 до {{max}}",
 			map[string]any{"max": model.MaxDeviceLimit})
 	}
 	return nil

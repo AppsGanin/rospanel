@@ -5,6 +5,8 @@ import {
   fmtSpeed,
   gbToBytes,
   groupSpeedCap,
+  hwidLimitOptions,
+  ipLimitOptions,
   quotaOptions,
   resetPeriods,
   speedLimitOptions,
@@ -20,6 +22,7 @@ export const EMPTY_PLAN = (): TariffPlan => ({
   period_days: 30,
   data_limit: 0,
   device_limit: 0,
+  hwid_limit: 0,
   speed_limit: 0,
   reset_period: "",
   sort_order: 0,
@@ -29,17 +32,6 @@ export const EMPTY_PLAN = (): TariffPlan => ({
   device_max: 0,
 });
 
-
-// devices() are the plan presets; the editor also takes any other number up to
-// MAX_DEVICE_LIMIT (see CustomizableSelect).
-const devices = () => [
-  { value: "0", label: i18n.t("common.unlimited") },
-  { value: "1", label: "1" },
-  { value: "2", label: "2" },
-  { value: "3", label: "3" },
-  { value: "5", label: "5" },
-  { value: "10", label: "10" },
-];
 
 const periods = () => [
   { value: "0", label: i18n.t("bill.unlimitedTerm") },
@@ -69,11 +61,9 @@ export function planSummary(p: TariffPlan): string {
     parts.push(`${i18n.t("bill.free")} · ${periodLabel(p.period_days)}`);
   }
   parts.push(p.data_limit ? fmtBytes(p.data_limit) : i18n.t("bill.infTraffic"));
-  parts.push(
-    p.device_limit
-      ? i18n.t("bill.nDevices", { count: p.device_limit })
-      : i18n.t("bill.infDevices"),
-  );
+  // 0 is the panel default, which the summary does not know.
+  if (p.device_limit > 0) parts.push(i18n.t("bill.nDevices", { count: p.device_limit }));
+  else if (p.device_limit < 0) parts.push(i18n.t("bill.infDevices"));
   // Only when the plan promises one: "unlimited speed" is the norm and would just
   // make every summary longer.
   if (p.speed_limit > 0) parts.push(fmtSpeed(p.speed_limit));
@@ -192,11 +182,19 @@ export function PlanForm({
             number up to the panel's ceiling, the same as the user card. */}
         <CustomizableSelect
           label={t("userDetail.deviceLimit")}
-          data={devices()}
+          data={ipLimitOptions()}
           value={String(plan.device_limit)}
           max={MAX_DEVICE_LIMIT}
           format={(n) => t("bill.nDevices", { count: n })}
           onChange={(v) => patch({ device_limit: Number(v) })}
+        />
+        <CustomizableSelect
+          label={t("userDetail.hwidLimit")}
+          data={hwidLimitOptions()}
+          value={String(plan.hwid_limit ?? 0)}
+          max={MAX_DEVICE_LIMIT}
+          format={(n) => t("bill.nDevices", { count: n })}
+          onChange={(v) => patch({ hwid_limit: Number(v) })}
         />
         <Select
           label={t("userDetail.speedLimit")}
@@ -223,14 +221,14 @@ export function PlanForm({
               type="number"
               label={t("bill.devicePrice")}
               value={String(plan.device_price ?? 0)}
-              disabled={!plan.device_limit || !plan.period_days}
+              disabled={plan.device_limit <= 0 || !plan.period_days}
               onChange={(v) => patch({ device_price: Math.max(0, Math.floor(Number(v) || 0)) })}
             />
             <TextInput
               type="number"
               label={t("bill.deviceMax")}
               value={String(plan.device_max ?? 0)}
-              disabled={!plan.device_limit || !plan.period_days}
+              disabled={plan.device_limit <= 0 || !plan.period_days}
               onChange={(v) => patch({ device_max: Math.max(0, Math.floor(Number(v) || 0)) })}
             />
           </div>

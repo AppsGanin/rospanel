@@ -72,7 +72,7 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 	if p.PeriodDays < 0 || p.PeriodDays > maxPlanPeriodDays {
 		return invalidCode("err.planPeriodRange", "срок действия: от 0 до {{max}} дней", map[string]any{"max": maxPlanPeriodDays})
 	}
-	if p.DataLimit < 0 || p.DeviceLimit < 0 || p.SpeedLimit < 0 {
+	if p.DataLimit < 0 || p.DeviceLimit < model.IPLimitUnlimited || p.SpeedLimit < 0 {
 		return invalidCode("err.planLimitsNegative", "лимиты тарифа не могут быть отрицательными")
 	}
 	if p.DevicePrice < 0 || p.DevicePrice > promoValueMaxRub || p.DeviceMax < 0 || p.DeviceMax > model.MaxDeviceLimit {
@@ -82,8 +82,11 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 	// Extra devices exist only on a paid plan with a term and a device cap; on any
 	// other they are dropped rather than refused, so a plan made unlimited, lifetime
 	// or free can still be saved.
-	if p.DeviceLimit == 0 || p.PeriodDays == 0 || p.PriceRub == 0 {
+	if p.DeviceLimit <= 0 || p.PeriodDays == 0 || p.PriceRub == 0 {
 		p.DevicePrice, p.DeviceMax = 0, 0
+	}
+	if err := ValidateHWIDLimit(p.HWIDLimit); err != nil {
+		return err
 	}
 	if p.DeviceLimit > model.MaxDeviceLimit {
 		return invalidCode("err.deviceLimitTooHigh", "лимит устройств не может быть больше {{max}}",
@@ -605,6 +608,7 @@ func planLimits(userID int64, plan *model.TariffPlan, expireAt int64, freeReset 
 		DataLimit:   plan.DataLimit,
 		ExpireAt:    expireAt,
 		DeviceLimit: plan.DeviceLimit,
+		HWIDLimit:   plan.HWIDLimit,
 		SpeedLimit:  plan.SpeedLimit,
 		ResetPeriod: planResetPeriod(plan, freeReset),
 		ResetAnchor: now,
@@ -824,6 +828,15 @@ func (m *Manager) planWriteForDays(u model.User, planID int64, extendFromCurrent
 	}
 	w.ExtraDevices = min(max(devices, 0), plan.DeviceMax)
 	w.DeviceLimit += w.ExtraDevices
+	// Onto the HWID limit too. A plan on the panel default gets that default as a
+	// number to add to, or the devices bought would not change what the user may
+	// bind; "none" has nothing to add to.
+	if w.ExtraDevices > 0 && w.HWIDLimit >= 0 {
+		if w.HWIDLimit == 0 {
+			w.HWIDLimit = set.DeviceCap(model.User{})
+		}
+		w.HWIDLimit += w.ExtraDevices
+	}
 	// A different plan means a different quota, so the counter starts over. Without
 	// this the expiry path is a trap: EnforceBilling hands the user the free plan with
 	// a fresh 30-day cycle, the 20 GB they spent on the paid one stays on the counter,
@@ -1084,6 +1097,7 @@ func (m *Manager) cancelUserPlan(ctx context.Context, userID int64, lapse bool) 
 		DataLimit:   u.DataLimit,
 		ExpireAt:    now, // expire immediately: there is no free plan to fall back to
 		DeviceLimit: u.DeviceLimit,
+		HWIDLimit:   u.HWIDLimit,
 		ResetPeriod: "none",
 		ResetAnchor: now,
 		TrialUsed:   u.TrialUsed,

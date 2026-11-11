@@ -35,7 +35,8 @@ import {
 } from './api'
 import {
   dateToUnixEndOfDay,
-  deviceLimitOptions,
+  ipLimitOptions,
+  hwidLimitOptions,
   fmtBytes,
   fmtDuration,
   fmtExpire,
@@ -198,6 +199,7 @@ export function UserDetail({
   const [dHoldEdited, setDHoldEdited] = useState(false)
   const [dLimitGb, setDLimitGb] = useState('0')
   const [dDeviceLimit, setDDeviceLimit] = useState('0')
+  const [dHWIDLimit, setDHWIDLimit] = useState('0')
   const [dSpeedLimit, setDSpeedLimit] = useState('0')
   const [dReset, setDReset] = useState('none')
   const [savingLimits, setSavingLimits] = useState(false)
@@ -348,6 +350,7 @@ export function UserDetail({
     setDHoldEdited(false)
     setDLimitGb(user && user.data_limit ? String(user.data_limit / (1024 * 1024 * 1024)) : '0')
     setDDeviceLimit(String(user?.device_limit ?? 0))
+    setDHWIDLimit(String(user?.hwid_limit ?? 0))
     setDSpeedLimit(String(user?.speed_limit ?? 0))
     setDReset(user?.reset_period || 'none')
   }
@@ -383,6 +386,7 @@ export function UserDetail({
         (termDirty ||
           gbToBytes(Number(dLimitGb)) !== user.data_limit ||
           Number(dDeviceLimit) !== (user.device_limit ?? 0) ||
+          Number(dHWIDLimit) !== (user.hwid_limit ?? 0) ||
           Number(dSpeedLimit) !== (user.speed_limit ?? 0) ||
           dReset !== (user.reset_period || 'none'))))
 
@@ -393,7 +397,8 @@ export function UserDetail({
     if (!user) return
     setSavingLimits(true)
     try {
-      if (dPlan !== String(user.plan_id || 0)) await setUserPlan(user.id, Number(dPlan))
+      const planChanged = dPlan !== String(user.plan_id || 0)
+      if (planChanged) await setUserPlan(user.id, Number(dPlan))
       if (dPlan === '0') {
         // The term only when it was edited: an untouched one is left to the server,
         // which may know better by now. A hold goes with no date, a date with no hold.
@@ -404,6 +409,12 @@ export function UserDetail({
           // overruling a blocklist throttle, and a quota save is not that.
           speed_limit:
             Number(dSpeedLimit) !== (user.speed_limit ?? 0) ? Number(dSpeedLimit) : undefined,
+          // Also after a move off a tariff: that write reset it, and the form still
+          // shows the number it had.
+          hwid_limit:
+            planChanged || Number(dHWIDLimit) !== (user.hwid_limit ?? 0)
+              ? Number(dHWIDLimit)
+              : undefined,
           term: termDirty
             ? {
                 expire_at: dTerm === 'hold' ? 0 : dateToUnixEndOfDay(dExpire),
@@ -560,7 +571,7 @@ export function UserDetail({
             <p className="warning-tint rounded-lg px-3 py-2 text-xs text-warning">
               {t('userDetail.bannerDeviceLimit', {
                 active: user.active_devices,
-                limit: user.device_limit,
+                limit: user.ip_limit,
               })}
             </p>
           )}
@@ -717,8 +728,8 @@ export function UserDetail({
             </StateRow>
             <StateRow label={t('userDetail.devices')}>
               <Mono className={user.status === 'device_limited' ? 'text-warning' : undefined}>
-                {user.device_limit > 0
-                  ? `${user.active_devices}/${user.device_limit}`
+                {user.ip_limit > 0
+                  ? `${user.active_devices}/${user.ip_limit}`
                   : String(activeConnCount)}
               </Mono>
             </StateRow>
@@ -753,10 +764,10 @@ export function UserDetail({
             title={t('userDetail.devices')}
             aside={
               <span className="text-xs text-ink-muted">
-                {user.device_limit > 0
+                {user.ip_limit > 0
                   ? t('userDetail.activeOfLimit', {
                       active: activeConnCount,
-                      limit: user.device_limit,
+                      limit: user.ip_limit,
                       total: deviceConns.length,
                     })
                   : t('userDetail.activeTotal', {
@@ -990,7 +1001,7 @@ export function UserDetail({
               hint={t('userDetail.deviceLimitHint')}
               field={
                 <CustomizableSelect
-                  data={deviceLimitOptions()}
+                  data={ipLimitOptions(bound?.ip_default_limit ?? 0)}
                   value={dDeviceLimit}
                   format={(n) => t('devices.count', { count: n })}
                   max={MAX_DEVICE_LIMIT}
@@ -999,6 +1010,22 @@ export function UserDetail({
                 />
               }
             />
+            {bound?.enabled && (
+              <SettingRow
+                label={t('userDetail.hwidLimit')}
+                hint={t('userDetail.hwidLimitHint')}
+                field={
+                  <CustomizableSelect
+                    data={hwidLimitOptions(bound.default_limit)}
+                    value={dHWIDLimit}
+                    format={(n) => t('devices.count', { count: n })}
+                    max={MAX_DEVICE_LIMIT}
+                    onChange={setDHWIDLimit}
+                    disabled={planManaged}
+                  />
+                }
+              />
+            )}
             <SettingRow
               label={t('userDetail.speedLimit')}
               hint={

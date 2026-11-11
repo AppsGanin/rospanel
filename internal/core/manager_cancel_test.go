@@ -338,3 +338,80 @@ func TestMigratePlanUsers(t *testing.T) {
 		t.Fatalf("to should have 3, got %d", n)
 	}
 }
+
+// A plan ended with no free plan to fall back to keeps the user's device limits —
+// both of them, not only the address one.
+func TestCancelWithoutFreePlanKeepsBothDeviceLimits(t *testing.T) {
+	t.Parallel()
+	st, err := store.Open(filepath.Join(t.TempDir(), "cancel-limits.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+	m := &Manager{store: st}
+	set, _ := st.GetSettings()
+	set.BillingFreePlanID = 0 // nothing to fall back to
+	if err := st.SetBillingSettings(set); err != nil {
+		t.Fatal(err)
+	}
+	plan := &model.TariffPlan{Slug: "cl", Name: "CL", PriceRub: 199, PeriodDays: 30,
+		DeviceLimit: 3, HWIDLimit: 2, Enabled: true}
+	if err := st.SaveTariffPlan(plan); err != nil {
+		t.Fatal(err)
+	}
+	u, err := st.CreateUser("u", "uuid", "pw", "tok", 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ApplyPlanToUser(context.Background(), u.ID, plan.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.cancelUserPlan(context.Background(), u.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.GetUser(u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DeviceLimit != 3 || got.HWIDLimit != 2 {
+		t.Fatalf("after cancel: device %d hwid %d, want 3 and 2", got.DeviceLimit, got.HWIDLimit)
+	}
+}
+
+// A plan bought with extra devices, whose HWID limit is the panel default: the
+// devices go onto that default as a number, as they go onto the address limit.
+func TestPlanWithDevicesRaisesADefaultHWIDLimit(t *testing.T) {
+	t.Parallel()
+	st, err := store.Open(filepath.Join(t.TempDir(), "plan-hwid.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+	m := &Manager{store: st}
+	set, _ := st.GetSettings()
+	set.HWIDFallbackLimit = 1
+	if err := st.SetHWIDSettings(set); err != nil {
+		t.Fatal(err)
+	}
+	plan := &model.TariffPlan{Slug: "pd", Name: "PD", PriceRub: 199, PeriodDays: 30,
+		DeviceLimit: 2, DevicePrice: 50, DeviceMax: 5, Enabled: true}
+	if err := st.SaveTariffPlan(plan); err != nil {
+		t.Fatal(err)
+	}
+	u, err := st.CreateUser("u", "uuid", "pw", "tok", 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, _, err := m.planWriteForDays(*u, plan.ID, false, true, -1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.DeviceLimit != 4 || w.HWIDLimit != 3 {
+		t.Fatalf("device %d hwid %d, want 2+2 and the default 1 + 2", w.DeviceLimit, w.HWIDLimit)
+	}
+	// Without devices bought, the user stays on the default and follows it.
+	w, _, err = m.planWriteForDays(*u, plan.ID, false, true, -1, 0)
+	if err != nil || w.HWIDLimit != 0 {
+		t.Fatalf("no devices bought: hwid %d (%v), want 0", w.HWIDLimit, err)
+	}
+}

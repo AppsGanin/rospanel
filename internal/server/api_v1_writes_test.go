@@ -186,7 +186,7 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 			body: map[string]any{
 				"name": "Landed", "slug": "landed", "price_rub": float64(499),
 				"period_days": float64(31), "data_limit": float64(1 << 30),
-				"device_limit": float64(5), "speed_limit": float64(2048), "reset_period": "monthly",
+				"device_limit": float64(5), "hwid_limit": float64(4), "speed_limit": float64(2048), "reset_period": "monthly",
 				"sort_order": float64(3), "enabled": true, "group_ids": []any{},
 				"device_price": float64(50), "device_max": float64(3),
 			},
@@ -201,7 +201,7 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 				return map[string]any{
 					"name": p.Name, "slug": p.Slug, "price_rub": float64(p.PriceRub),
 					"period_days": float64(p.PeriodDays), "data_limit": float64(p.DataLimit),
-					"device_limit": float64(p.DeviceLimit), "speed_limit": float64(p.SpeedLimit),
+					"device_limit": float64(p.DeviceLimit), "hwid_limit": float64(p.HWIDLimit), "speed_limit": float64(p.SpeedLimit),
 					"reset_period": p.ResetPeriod,
 					"sort_order":   float64(p.SortOrder), "enabled": p.Enabled,
 					"group_ids":    len(p.GroupIDs) == 0,

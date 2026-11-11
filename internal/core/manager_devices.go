@@ -259,3 +259,26 @@ func (m *Manager) SetDeviceCountMode(mode string) error {
 	m.TriggerUserSync()
 	return nil
 }
+
+// SetUserHWIDLimit changes how many installs may fetch a user's subscription: 0 = the
+// panel-wide default, model.HWIDLimitUnlimited = the built-in ceiling, 1..MaxDeviceLimit
+// = that many. It touches only the HWID roster's cap, never the address limit, and
+// releases nobody already bound: a lowered cap refuses the next new install.
+func (m *Manager) SetUserHWIDLimit(ctx context.Context, id int64, n int) error {
+	if err := ValidateHWIDLimit(n); err != nil {
+		return err
+	}
+	u, err := m.store.GetUser(id)
+	if err != nil {
+		return err
+	}
+	if u.HWIDLimit == n {
+		return nil
+	}
+	if err := m.store.SetUserHWIDLimit(id, n); err != nil {
+		return err
+	}
+	m.audit(ctx, id, model.EventUserLimits, map[string]any{"hwid_limit": n, "was": u.HWIDLimit})
+	m.emitUserWebhook(model.WebhookUserLimitsChanged, id, nil)
+	return nil
+}

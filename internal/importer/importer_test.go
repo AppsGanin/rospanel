@@ -206,6 +206,10 @@ func TestParseXUIDatabase(t *testing.T) {
 		eve.SubToken != "abc123subid" || len(eve.Issues) != 0 {
 		t.Errorf("eve: %+v", eve)
 	}
+	// 3x-ui's limitIp is an address limit; the HWID one takes the panel default.
+	if eve.HWIDLimit == nil || *eve.HWIDLimit != 0 {
+		t.Errorf("eve hwid %v, want the default 0", eve.HWIDLimit)
+	}
 	frank := users[1]
 	// -2592000000 ms is "30 days, starting on the first connection".
 	if frank.Enabled || frank.ExpireAt != 0 || frank.HoldSeconds != 30*86400 || frank.Password == "" {
@@ -262,6 +266,11 @@ func TestParseRosPanelExport(t *testing.T) {
 		u.WGPrivate != "wgkey" || u.SpeedLimit != 2048 || u.ResetPeriod != "monthly" ||
 		len(u.Tags) != 2 || len(u.Issues) != 0 {
 		t.Errorf("round trip lost something: %+v", u)
+	}
+	// An export from before the limits were split has no hwid_limit: nil, so the
+	// import follows device_limit; and its device_limit is taken as written.
+	if u.HWIDLimit != nil {
+		t.Errorf("hwid_limit %v from a file without one", *u.HWIDLimit)
 	}
 
 	// A file from a newer panel is refused rather than half-read.
@@ -340,8 +349,31 @@ func TestParseRemnawaveJSONDump(t *testing.T) {
 	u := users[0]
 	if u.Name != "alice" || u.UUID != "73ab3f5f-209b-4423-9fad-263e5baa37c4" ||
 		u.Password != "tp" || u.DataLimit != 10737418240 || u.UsedDown != 4242 ||
-		u.ExpireAt != 1780272000 || u.DeviceLimit != 2 || u.Note != "vip client" ||
+		u.ExpireAt != 1780272000 || u.Note != "vip client" ||
 		u.SubToken != "abc123" || !u.Enabled || len(u.Tags) != 1 || u.Tags[0] != "reseller" {
 		t.Errorf("alice: %+v", u)
+	}
+	// Remnawave's limit is an HWID one; it has no address limit to bring.
+	if u.HWIDLimit == nil || *u.HWIDLimit != 2 || u.DeviceLimit != -1 {
+		t.Errorf("alice limits: device %d hwid %v, want -1 and 2", u.DeviceLimit, u.HWIDLimit)
+	}
+}
+
+// A foreign source's "no address limit" (0) is "none" here, not the panel default.
+func TestParseForeignNoLimitIsNone(t *testing.T) {
+	body := `[{"username":"bob","uuid":"11111111-2222-4333-8444-555555555555","status":"ACTIVE",
+		"trafficLimitBytes":0,"expireAt":"2030-01-01T00:00:00.000Z","shortUuid":"s1",
+		"subscriptionUrl":"https://x/sub/bobtok","vlessUuid":"11111111-2222-4333-8444-555555555555",
+		"trojanPassword":"p","userTraffic":{"usedTrafficBytes":0}}]`
+	path := filepath.Join(t.TempDir(), "rw.json")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	src, users, err := Parse(path)
+	if err != nil || src != SourceRemnawave || len(users) != 1 {
+		t.Fatalf("parse: %v %s %d", err, src, len(users))
+	}
+	if u := users[0]; u.DeviceLimit != -1 || u.HWIDLimit == nil || *u.HWIDLimit != 0 {
+		t.Errorf("bob limits: device %d hwid %v, want -1 and the default 0", u.DeviceLimit, u.HWIDLimit)
 	}
 }

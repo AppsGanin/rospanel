@@ -207,7 +207,20 @@ export function eventDetails(e: UserEvent): string {
         );
       }
       const devices = num(d, "device_limit");
-      if (devices) parts.push(i18n.t("events.det.devices", { count: devices }));
+      if (devices > 0) parts.push(i18n.t("events.det.devices", { count: devices }));
+      else if (devices < 0) parts.push(`IP: ${i18n.t("devices.unlimited")}`);
+      if (has(d, "hwid_limit")) {
+        const hw = num(d, "hwid_limit");
+        parts.push(
+          `HWID: ${
+            hw > 0
+              ? i18n.t("devices.count", { count: hw })
+              : hw < 0
+                ? i18n.t("devices.unlimited")
+                : i18n.t("devices.defaultBare")
+          }`,
+        );
+      }
       const days = num(d, "extended_days");
       if (days) parts.push(i18n.t("events.det.extendedDays", { count: days }));
       const hours = num(d, "compensated_hours");

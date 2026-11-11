@@ -59,10 +59,33 @@ export const quotaOptions = () => [
   { value: '500', label: i18n.t('quota.gb', { n: 500 }) },
 ]
 
-// Per-user simultaneous device cap options ("0" = unlimited), used by the user
-// detail editor.
-export const deviceLimitOptions = () => [
-  { value: '0', label: i18n.t('devices.unlimited') },
+// The IP limit picker: the panel default ("none" when it sets none; the bare word
+// where the default is not known), none, or a count.
+export const ipLimitOptions = (def?: number) => [
+  {
+    value: '0',
+    label:
+      def === undefined
+        ? i18n.t('devices.defaultBare')
+        : def > 0
+          ? i18n.t('devices.default', { n: def })
+          : i18n.t('devices.defaultNone'),
+  },
+  { value: '-1', label: i18n.t('devices.unlimited') },
+  ...[1, 2, 3, 5, 10].map((n) => ({
+    value: String(n),
+    label: i18n.t('devices.count', { count: n }),
+  })),
+]
+
+// The HWID limit picker: the panel default (its number shown when known), none, or a
+// count.
+export const hwidLimitOptions = (def?: number) => [
+  {
+    value: '0',
+    label: def ? i18n.t('devices.default', { n: def }) : i18n.t('devices.defaultBare'),
+  },
+  { value: '-1', label: i18n.t('devices.unlimited') },
   ...[1, 2, 3, 5, 10].map((n) => ({
     value: String(n),
     label: i18n.t('devices.count', { count: n }),

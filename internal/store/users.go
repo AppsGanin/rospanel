@@ -16,7 +16,7 @@ const userCols = `id, name, uuid, password, sub_token, enabled,
 	plan_id, trial_used, tg_link_code, tg_link_code_at, notified_status,
 	notified_expire_at, notified_quota_at, device_over_since, note, tags, wg_private_key,
 	abuse_action, abuse_until, abuse_prev_speed, abuse_warned_day, hold_seconds, awg_slot,
-	extra_devices, pack_data, hook_expire_at, hook_quota_at, hook_expire_stage, mailing_off, lang`
+	extra_devices, pack_data, hook_expire_at, hook_quota_at, hook_expire_stage, mailing_off, lang, hwid_limit`
 
 // Lookups by a column whose index is partial. SQLite uses a partial index only when
 // the query's own WHERE implies the index's, and to the planner "sub_token = ?" does
@@ -57,9 +57,9 @@ func (s *Store) CreateUserOnHold(name, uuid, password, subToken string, dataLimi
 func (s *Store) createUser(name, uuid, password, subToken string, dataLimit, expireAt, holdSeconds int64, deviceLimit int) (*model.User, error) {
 	var id int64
 	err := s.db.QueryRow(
-		`INSERT INTO users (name, uuid, password, sub_token, data_limit, expire_at, hold_seconds, device_limit)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-		name, uuid, encField(password), subToken, dataLimit, expireAt, holdSeconds, deviceLimit,
+		`INSERT INTO users (name, uuid, password, sub_token, data_limit, expire_at, hold_seconds, device_limit, hwid_limit)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		name, uuid, encField(password), subToken, dataLimit, expireAt, holdSeconds, deviceLimit, deviceLimit,
 	).Scan(&id)
 	if err != nil {
 		return nil, err
@@ -84,6 +84,7 @@ type ImportedUser struct {
 	UsedUp      int64
 	UsedDown    int64
 	DeviceLimit int
+	HWIDLimit   int
 	SpeedLimit  int
 	ResetPeriod string
 	Enabled     bool
@@ -115,14 +116,15 @@ func (s *Store) ImportUser(in ImportedUser) (*model.User, error) {
 	// The cycle starts at the import, which is the only moment this panel knows about.
 	err := s.db.QueryRow(
 		`INSERT INTO users (name, uuid, password, sub_token, enabled, data_limit, expire_at, hold_seconds,
-		   used_up, used_down, device_limit, speed_limit, reset_period, last_reset_at, note, tags, wg_private_key)
+		   used_up, used_down, device_limit, speed_limit, reset_period, last_reset_at, note, tags, wg_private_key,
+		   hwid_limit)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, CASE WHEN ? > 0 THEN 0 ELSE ? END, ?, ?, ?, ?, ?,
 		   CASE WHEN ? = 'none' THEN 0 ELSE unixepoch() END,
-		   ?, ?, ?) RETURNING id`,
+		   ?, ?, ?, ?) RETURNING id`,
 		in.Name, in.UUID, encField(in.Password), in.SubToken, enabled, in.DataLimit, in.ExpireAt,
 		in.ExpireAt, max(in.HoldSeconds, 0),
 		in.UsedUp, in.UsedDown, in.DeviceLimit, in.SpeedLimit, period, period, in.Note,
-		model.EncodeTags(in.Tags), encField(in.WGPrivateKey),
+		model.EncodeTags(in.Tags), encField(in.WGPrivateKey), in.HWIDLimit,
 	).Scan(&id)
 	if err != nil {
 		return nil, err
@@ -211,7 +213,7 @@ const userStateCols = `id, name, enabled, plan_id, data_limit, expire_at, hold_s
 // userStates reads user states. byKey counts the devices of the users read from their
 // own rows rather than from the window of everyone online.
 func (s *Store) userStates(query string, byKey bool, args ...any) ([]model.User, error) {
-	countIP := s.ipCountsAsDevice() // one row of settings, from the read pool
+	countIP, ipDefault := s.ipRules() // one row of settings, from the read pool
 	now := s.nowUnix()
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -248,8 +250,9 @@ func (s *Store) userStates(query string, byKey bool, args ...any) ([]model.User,
 	for i := range out {
 		u := &out[i]
 		u.ActiveDevices = counts[u.ID]
+		u.IPLimit = model.EffectiveIPLimit(u.DeviceLimit, ipDefault)
 		u.Status = userStatus(u.Enabled, u.ExpireAt, u.UsedUp+u.UsedDown, u.DataLimit, now,
-			u.ActiveDevices, u.DeviceLimit, u.DeviceOverSince, countIP)
+			u.ActiveDevices, u.IPLimit, u.DeviceOverSince, countIP)
 	}
 	return out, nil
 }
@@ -280,13 +283,13 @@ const candidateMargin = 5
 // next pass, because an unnotified status stays unnotified.
 // TestEnforcementCandidatesMissNobody runs the pass both ways over random users.
 func (s *Store) EnforcementCandidates(now int64, r Reminders) ([]int64, error) {
-	return s.ids(`SELECT id FROM users
+	return s.ids(`SELECT id FROM users u
 		WHERE notified_status <> CASE
 		        WHEN enabled = 0 THEN 'disabled'
 		        WHEN expire_at > 0 AND expire_at <= ? THEN 'expired'
 		        WHEN data_limit > 0 AND used_up + used_down >= data_limit THEN 'limited'
 		        ELSE 'active' END
-		   OR (device_limit > 0 AND device_over_since <> 0 AND device_over_since <= ?)
+		   OR (`+ipLimitU+` > 0 AND device_over_since <> 0 AND device_over_since <= ?)
 		   OR (expire_at > ? AND expire_at <= ?)
 		   OR (tg_chat_id <> 0 AND expire_at > ? AND expire_at <= ? AND notified_expire_at <> expire_at)
 		   OR ((data_limit > 0 AND (used_up + used_down) * 100 >= data_limit * ?) <> (notified_quota_at <> 0))
@@ -441,6 +444,7 @@ type UserSummary struct {
 	UsedDown    int64
 	LastSeen    int64
 	DeviceLimit int
+	IPLimit     int // DeviceLimit resolved against the panel default (0 = none)
 	Status      string
 }
 
@@ -478,7 +482,7 @@ const userSummaryCols = `id, name, note, tags, enabled, data_limit, expire_at, h
 
 func (s *Store) userSummaries(query string, args ...any) ([]UserSummary, error) {
 	// One row of settings, from the read pool.
-	countIP := s.ipCountsAsDevice()
+	countIP, ipDefault := s.ipRules()
 	now := s.nowUnix()
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -499,9 +503,10 @@ func (s *Store) userSummaries(query string, args ...any) ([]UserSummary, error) 
 		}
 		u.Enabled = enabled != 0
 		u.Tags = model.DecodeTags(tags)
+		u.IPLimit = model.EffectiveIPLimit(u.DeviceLimit, ipDefault)
 		out = append(out, u)
 		over = append(over, overSince)
-		if deviceCountDecides(u.DeviceLimit, overSince, now, countIP) {
+		if deviceCountDecides(u.IPLimit, overSince, now, countIP) {
 			decides = append(decides, u.ID)
 		}
 	}
@@ -515,7 +520,7 @@ func (s *Store) userSummaries(query string, args ...any) ([]UserSummary, error) 
 	for i := range out {
 		u := &out[i]
 		u.Status = userStatus(u.Enabled, u.ExpireAt, u.UsedUp+u.UsedDown, u.DataLimit, now,
-			counts[u.ID], u.DeviceLimit, over[i], countIP)
+			counts[u.ID], u.IPLimit, over[i], countIP)
 	}
 	return out, nil
 }
@@ -620,9 +625,9 @@ func (s *Store) CountUsers(now int64) (UserCounts, error) {
 		       COALESCE(SUM(CASE WHEN u.enabled != 0
 		            AND (u.expire_at = 0 OR u.expire_at > ?)
 		            AND (u.data_limit = 0 OR u.used_up + u.used_down < u.data_limit)
-		            AND (u.device_limit = 0
+		            AND (`+ipLimitU+` = 0
 		                 OR NOT (SELECT ip_counts FROM device_count)
-		                 OR COALESCE(d.dev, 0) <= u.device_limit
+		                 OR COALESCE(d.dev, 0) <= `+ipLimitU+`
 		                 OR u.device_over_since = 0
 		                 OR u.device_over_since > ?)
 		           THEN 1 ELSE 0 END), 0),
@@ -664,6 +669,19 @@ func (s *Store) ipCountsAsDevice() bool {
 		return true
 	}
 	return n != 0
+}
+
+// ipRules is what decides a user's address limit, in one read: whether addresses
+// enforce it (ipCountsAsDevice) and the panel-wide cap for users whose device_limit
+// is 0 (0 = none). A read failure keeps enforcing and answers "no default", what
+// device_limit 0 always meant.
+func (s *Store) ipRules() (countIP bool, ipDefault int) {
+	var n, def int
+	if err := s.rdb.QueryRow(`WITH device_count AS (`+deviceCountCTE+`)
+		SELECT ip_counts, (SELECT ip_fallback_limit FROM settings WHERE id = 1) FROM device_count`).Scan(&n, &def); err != nil {
+		return true, 0
+	}
+	return n != 0, max(def, 0)
 }
 
 // deviceCountCTE yields one row, ip_counts, saying whether distinct source addresses
@@ -821,15 +839,21 @@ const liveUsersWhere = `WHERE u.enabled = 1
 		  AND (u.expire_at = 0 OR u.expire_at > ?)
 		  AND (u.data_limit = 0 OR u.used_up + u.used_down < u.data_limit)`
 
+// ipLimitU is the address cap in force for the user row u, 0 = none: their own
+// device_limit, none for model.IPLimitUnlimited, the panel default for 0.
+// model.EffectiveIPLimit is the same rule in Go.
+const ipLimitU = `(CASE WHEN u.device_limit > 0 THEN u.device_limit WHEN u.device_limit < 0 THEN 0
+	ELSE (SELECT ip_fallback_limit FROM settings WHERE id = 1) END)`
+
 // withinDeviceLimitExpr is true for a user their device limit does not exclude.
-const withinDeviceLimitExpr = `(u.device_limit = 0 OR NOT (SELECT ip_counts FROM device_count)
+const withinDeviceLimitExpr = `(` + ipLimitU + ` = 0 OR NOT (SELECT ip_counts FROM device_count)
 		       -- Not over the limit right now. Checked as well as the stamp, not instead
 		       -- of it, so a user who has fallen back under is admitted even if nothing
 		       -- has run to clear their stamp yet: an out-of-date stamp must never be
 		       -- able to hold someone out.
 		       OR (SELECT COUNT(DISTINCT c.ip) FROM connections c
 		           WHERE c.user_id = u.id AND c.last_seen > ?
-		             AND c.ip NOT LIKE '` + model.TunnelIPLike + `') <= u.device_limit
+		             AND c.ip NOT LIKE '` + model.TunnelIPLike + `') <= ` + ipLimitU + `
 		       -- Over, but not for long enough yet. See DeviceLimitGrace: an address
 		       -- left behind by a network change or a carrier's address rotation leaves
 		       -- the window before this expires, so it never costs anyone a cut.
@@ -1002,6 +1026,15 @@ func (s *Store) SetUserSpeedLimit(id int64, kbps int) error {
 
 func setUserSpeedLimitOn(ex execer, id int64, kbps int) error {
 	_, err := ex.Exec(`UPDATE users SET speed_limit = ? WHERE id = ?`, kbps, id)
+	return err
+}
+
+// SetUserHWIDLimit sets how many installs may fetch the user's subscription: 0 = the
+// panel-wide default, model.HWIDLimitUnlimited = the built-in ceiling, N = N. Its own
+// setter, like the speed: the quota writers are reached from callers that have no
+// opinion about it.
+func (s *Store) SetUserHWIDLimit(id int64, n int) error {
+	_, err := s.db.Exec(`UPDATE users SET hwid_limit = ? WHERE id = ?`, n, id)
 	return err
 }
 
@@ -1676,6 +1709,7 @@ func (s *Store) queryUsersOn(db *sql.DB, query string, args ...any) ([]model.Use
 			&u.NotifiedExpireAt, &u.NotifiedQuotaAt, &u.DeviceOverSince, &u.Note, &tags, &u.WGPrivateKey,
 			&u.AbuseAction, &u.AbuseUntil, &u.AbusePrevSpeed, &u.AbuseWarnedDay, &u.HoldSeconds, &u.AWGSlot,
 			&u.ExtraDevices, &u.PackData, &u.HookExpireAt, &u.HookQuotaAt, &u.HookExpireStage, &mailingOff, &u.Lang,
+			&u.HWIDLimit,
 		); err != nil {
 			return nil, err
 		}
@@ -1714,12 +1748,13 @@ func (s *Store) applyUserStatusOn(db *sql.DB, users []model.User, now int64) {
 	} else {
 		counts, _ = s.activeDeviceCounts(users, since)
 	}
-	countIP := s.ipCountsAsDevice()
+	countIP, ipDefault := s.ipRules()
 	for i := range users {
 		u := &users[i]
 		u.ActiveDevices = counts[u.ID]
+		u.IPLimit = model.EffectiveIPLimit(u.DeviceLimit, ipDefault)
 		u.Status = userStatus(u.Enabled, u.ExpireAt, u.UsedUp+u.UsedDown, u.DataLimit, now,
-			u.ActiveDevices, u.DeviceLimit, u.DeviceOverSince, countIP)
+			u.ActiveDevices, u.IPLimit, u.DeviceOverSince, countIP)
 	}
 }
 
@@ -1788,8 +1823,8 @@ func (s *Store) StampDeviceOverLimit(now int64) error {
 	if err != nil {
 		return err
 	}
-	rows, err := s.db.Query(`SELECT id, device_limit, device_over_since FROM users
-		WHERE device_limit > 0 OR device_over_since <> 0`)
+	rows, err := s.db.Query(`SELECT id, ` + ipLimitU + `, device_over_since FROM users u
+		WHERE ` + ipLimitU + ` > 0 OR device_over_since <> 0`)
 	if err != nil {
 		return err
 	}

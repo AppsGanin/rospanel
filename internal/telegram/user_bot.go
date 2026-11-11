@@ -890,12 +890,12 @@ func userSelfCard(u model.User, set *model.Settings, panel Panel, lang i18n.Lang
 	// set) and HWID binding (distinct installs, enforced when the feature is on). Show
 	// a line for each that applies, labelled so they don't read as one number — or, when
 	// only one is active, just that one.
-	ipLimited := u.DeviceLimit > 0
+	ipLimited := u.IPLimit > 0
 	if ipLimited && set.HWIDEnabled {
-		fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardDevicesIP", u.ActiveDevices, u.DeviceLimit))
+		fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardDevicesIP", u.ActiveDevices, u.IPLimit))
 		writeHWIDDeviceLine(&b, set, u, panel, lang, true)
 	} else if ipLimited {
-		fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardDevices", u.ActiveDevices, u.DeviceLimit))
+		fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardDevices", u.ActiveDevices, u.IPLimit))
 	} else if set.HWIDEnabled {
 		writeHWIDDeviceLine(&b, set, u, panel, lang, false)
 	}

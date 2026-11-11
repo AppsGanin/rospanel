@@ -118,6 +118,9 @@ func (rt *Router) setUserLimits(w http.ResponseWriter, r *http.Request, id int64
 		// body without it, and reading a missing field as 0 would silently lift
 		// everyone's cap the first time they change a quota.
 		SpeedLimit *int `json:"speed_limit"`
+		// HWIDLimit caps the HWID roster: -1 none, 0 the panel default, N. Pointer for
+		// the same reason as the speed: callers that predate it must not reset it.
+		HWIDLimit *int `json:"hwid_limit"`
 		// HoldSeconds is a term that starts on the first connection, in place of
 		// expire_at. 0 takes a pending one away.
 		HoldSeconds *int64 `json:"hold_seconds"`
@@ -131,9 +134,15 @@ func (rt *Router) setUserLimits(w http.ResponseWriter, r *http.Request, id int64
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.DeviceLimit < 0 {
-		writeErrCode(w, http.StatusBadRequest, "err.deviceLimitNegative2", "лимит устройств не может быть отрицательным")
+	if req.DeviceLimit < model.IPLimitUnlimited {
+		writeErrCode(w, http.StatusBadRequest, "err.deviceLimitNegative2", "лимит устройств: -1 (без лимита), 0 (по умолчанию) или число")
 		return
+	}
+	if req.HWIDLimit != nil {
+		if err := core.ValidateHWIDLimit(*req.HWIDLimit); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
 	}
 	expireAt, hold := int64(0), int64(0)
 	if req.ExpireAt != nil {
@@ -178,6 +187,12 @@ func (rt *Router) setUserLimits(w http.ResponseWriter, r *http.Request, id int64
 	}
 	if req.SpeedLimit != nil {
 		if err := rt.mgr.SetUserSpeedLimit(r.Context(), id, *req.SpeedLimit); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
+	}
+	if req.HWIDLimit != nil {
+		if err := rt.mgr.SetUserHWIDLimit(r.Context(), id, *req.HWIDLimit); err != nil {
 			writeManagerErr(w, err)
 			return
 		}

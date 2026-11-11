@@ -134,7 +134,7 @@ func compareStates(t *testing.T, whole, states []model.User) {
 			ID: u.ID, Name: u.Name, Enabled: u.Enabled, PlanID: u.PlanID, DataLimit: u.DataLimit,
 			ExpireAt: u.ExpireAt, HoldSeconds: u.HoldSeconds, UsedUp: u.UsedUp, UsedDown: u.UsedDown,
 			LastUp: u.LastUp, LastDown: u.LastDown, ResetPeriod: u.ResetPeriod, LastResetAt: u.LastResetAt,
-			DeviceLimit: u.DeviceLimit, DeviceOverSince: u.DeviceOverSince, TgChatID: u.TgChatID,
+			DeviceLimit: u.DeviceLimit, IPLimit: u.IPLimit, DeviceOverSince: u.DeviceOverSince, TgChatID: u.TgChatID,
 			NotifiedStatus: u.NotifiedStatus, NotifiedExpireAt: u.NotifiedExpireAt, NotifiedQuotaAt: u.NotifiedQuotaAt,
 			ActiveDevices: u.ActiveDevices, Status: u.Status,
 		}

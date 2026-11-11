@@ -276,7 +276,7 @@ func TestUserSummariesMatchWholeUsers(t *testing.T) {
 				ID: u.ID, Name: u.Name, Note: u.Note, Tags: u.Tags, Enabled: u.Enabled,
 				DataLimit: u.DataLimit, ExpireAt: u.ExpireAt, HoldSeconds: u.HoldSeconds,
 				UsedUp: u.UsedUp, UsedDown: u.UsedDown, LastSeen: u.LastSeen,
-				DeviceLimit: u.DeviceLimit, Status: u.Status,
+				DeviceLimit: u.DeviceLimit, IPLimit: u.IPLimit, Status: u.Status,
 			}
 			ids[i] = u.ID
 		}

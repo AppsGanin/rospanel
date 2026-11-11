@@ -522,7 +522,7 @@ func makeUserRow(u *store.UserSummary, groups []model.GroupRef, devices int) use
 		ID: u.ID, Name: u.Name, SystemEmail: model.UserEmail(u.ID), Status: u.Status,
 		Enabled: u.Enabled, DataLimit: u.DataLimit, ExpireAt: u.ExpireAt, HoldSeconds: u.HoldSeconds,
 		UsedUp: u.UsedUp, UsedDown: u.UsedDown, LastSeen: u.LastSeen,
-		DeviceLimit: u.DeviceLimit, ActiveDevices: devices, Tags: tags, Groups: groups,
+		DeviceLimit: u.IPLimit, ActiveDevices: devices, Tags: tags, Groups: groups,
 	}
 }
 

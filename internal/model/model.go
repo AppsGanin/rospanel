@@ -140,8 +140,19 @@ type User struct {
 	LastResetAt int64  `json:"-"`            // unix of the last automatic quota reset
 	LastSeen    int64  `json:"last_seen"`    // unix of last activity (0 = never); 0 ⇒ offline
 
-	DeviceLimit   int `json:"device_limit"`   // max concurrent devices (unique IPs), 0 = unlimited
+	// DeviceLimit caps concurrent addresses: 0 = the panel-wide default
+	// (Settings.IPFallbackLimit), IPLimitUnlimited = none, N = N.
+	DeviceLimit int `json:"device_limit"`
+	// IPLimit is the address cap in force, DeviceLimit resolved against the default
+	// (0 = none). Computed on read.
+	IPLimit       int `json:"ip_limit"`
 	ActiveDevices int `json:"active_devices"` // computed: distinct IPs seen within DeviceOnlineWindow
+
+	// HWIDLimit caps how many installs may fetch the subscription (the HWID roster):
+	// 0 = the panel-wide default (Settings.HWIDFallbackLimit), HWIDLimitUnlimited =
+	// up to MaxDevicesPerUser, N = N. Separate from DeviceLimit so "no limit by
+	// address" never silently means "the default HWID limit". A plan writes both.
+	HWIDLimit int `json:"hwid_limit"`
 
 	// DeviceOverSince is when this user first went over their device limit (0 = not
 	// over it). The limit only cuts them off once they have been over it for
@@ -297,7 +308,10 @@ type TariffPlan struct {
 	PeriodDays  int    `json:"period_days"`
 	DataLimit   int64  `json:"data_limit"`
 	DeviceLimit int    `json:"device_limit"`
-	SpeedLimit  int    `json:"speed_limit"` // kbit/s, 0 = unlimited
+	// HWIDLimit is the HWID limit the plan gives (see User.HWIDLimit): -1 none, 0 the
+	// panel default, N. Bought devices are added to it as to DeviceLimit.
+	HWIDLimit  int `json:"hwid_limit"`
+	SpeedLimit int `json:"speed_limit"` // kbit/s, 0 = unlimited
 	// ResetPeriod is the plan's own quota-refill cycle: daily | weekly | monthly |
 	// yearly, or "" for the derived default — a free plan refills every plan duration
 	// (a rolling days:N), a paid one runs its quota over the whole period it was
@@ -1190,7 +1204,8 @@ type Settings struct {
 	// Every panel that offers HWID limiting works this way.
 	HWIDEnabled       bool `json:"-"`
 	HWIDRequire       bool `json:"-"` // refuse clients that send no x-hwid (default on)
-	HWIDFallbackLimit int  `json:"-"` // cap for users whose own device_limit is 0
+	HWIDFallbackLimit int  `json:"-"` // cap for users whose own hwid_limit is 0
+	IPFallbackLimit   int  `json:"-"` // address cap for users whose own device_limit is 0 (0 = none)
 	HWIDTTLDays       int  `json:"-"` // forget a device after N days of silence (0 = never)
 	// DeviceCountMode picks which counter enforces DeviceLimit: "auto" (the default),
 	// "hwid" or "both". See CountsIPAsDevice.

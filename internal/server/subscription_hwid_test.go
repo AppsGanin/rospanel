@@ -22,6 +22,9 @@ func hwidUser(t *testing.T, mgr *core.Manager, st *store.Store, capacity int, re
 	if err := mgr.SetUserLimits(t.Context(), u.ID, 0, 0, capacity); err != nil {
 		t.Fatalf("set limits: %v", err)
 	}
+	if err := mgr.SetUserHWIDLimit(t.Context(), u.ID, capacity); err != nil {
+		t.Fatalf("set hwid limit: %v", err)
+	}
 	set, err := st.GetSettings()
 	if err != nil {
 		t.Fatalf("settings: %v", err)

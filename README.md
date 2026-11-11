@@ -350,7 +350,7 @@ checked every 10 seconds, on the master and on nodes. And,
 instead of an end date, a **term that starts on the first connection**: N days that do not run
 while a key sits unused and begin with its first connection (extending adds days to such a term,
 a tariff replaces it with its own), a
-**device limit** (see *Device binding* below for exactly what it counts) and a per-user
+**device limit** (see *Device limits* below for what each counts) and a per-user
 **speed cap**. Traffic accounting via Xray Stats, online status, connection
 list; expired users can be auto-deleted. Every user carries an operator's **note** (where they
 came from, what was agreed — panel and API only, never shown to the client) and **tags** (`vip`,
@@ -374,11 +374,13 @@ map** breaks down where clients connect from — distinct source IPs per **count
 same geoip database Xray routes with) and per **network operator / ASN** (from a free
 iptoasn table the panel fetches itself); no external service.
 
-**The device limit — what it counts.** A user's device limit (or the one their plan sets) is
-a **single number enforced two ways**. On its own it caps **concurrent unique source IPs**: a
-user connecting from more distinct addresses than the limit within the online window is
-dropped from the tunnels until they fall back under it — counted across **every server**
-(master and nodes), not per-server. `0` means no IP cap.
+**Device limits.** A user has two limits, set apart in the user card and in a tariff: **by IP**
+and **by HWID**. Each is *Default* (the panel-wide value from *Settings → Subscriptions*),
+*Unlimited* or a number. Extra devices bought on a tariff are added to both.
+
+**By IP.** Caps how many distinct source addresses a user connects from at once, counted across
+**every server** (master and nodes), not per server. Over the limit, the user is dropped from the
+tunnels until they fall back under it. The panel default is 0 — no limit.
 
 **The cut is not immediate.** The limit has to stay exceeded for two and a half minutes, a
 little longer than the online window; the panel checks device limits every 30 seconds, so
@@ -398,19 +400,17 @@ altogether — at the price of the only thing that caps how many places one link
 *once*, since HWID caps who may fetch the subscription, not who may connect. The default
 counts both.
 
-**Device binding (HWID).** Turn this on and the **same number** also caps distinct **installs**.
-Clients that follow the subscription-header convention (Happ, v2RayTun) send a stable install
-id; the panel binds it to the account on first fetch and counts it against the limit. Once the
-limit is full a NEW install is refused the subscription while the bound ones keep updating — the
-check and the insert are one transaction, so two clients cannot both take the last slot. (When a
-user's own limit is `0`, HWID uses a panel-wide fallback limit instead.) The devices are listed
-in the user card, in the **client bot** (as separate *by IP* and *by HWID* lines when both apply),
-and **on the subscription page**, where the owner can release one themselves instead of writing to
-support; an idle device frees its slot after a configurable TTL, and rotating the subscription
-link releases them all. Off by default (*Settings → Subscriptions*); once on, a client that sends
-**no** id gets no subscription at all — a cap you can dodge by switching to a quieter app is not a
-cap — with a switch to serve those clients anyway (counted by address, as before) if some of your
-users are on them.
+**By HWID.** Caps how many installs may fetch the subscription. Clients that follow the
+subscription-header convention (Happ, v2RayTun) send a stable install id; the panel binds it to
+the account on first fetch. Once the limit is full a NEW install is refused the subscription while
+the bound ones keep updating — the check and the insert are one transaction, so two clients cannot
+both take the last slot. *Unlimited* means up to 50. The devices are listed in the user card, in
+the **client bot** (as separate *by IP* and *by HWID* lines when both apply), and **on the
+subscription page**, where the owner can release one themselves instead of writing to support; an
+idle device frees its slot after a configurable TTL, and rotating the subscription link releases
+them all. Off by default (*Settings → Subscriptions*); once on, a client that sends **no** id gets
+no subscription at all — a cap you can dodge by switching to a quieter app is not a cap — with a
+switch to serve those clients anyway (limited by IP only).
 
 **Speed limit.** A per-user cap in kbit/s, set by hand or by the tariff. Xray has no
 per-user bandwidth limit, so it is enforced below it — the kernel's own scheduler (HTB),

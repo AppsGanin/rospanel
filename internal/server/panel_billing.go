@@ -265,10 +265,11 @@ func (rt *Router) savePayments(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rt *Router) saveTariffPlan(w http.ResponseWriter, r *http.Request) {
-	var p model.TariffPlan
+	p := model.TariffPlan{HWIDLimit: hwidUnsent}
 	if !decodeJSON(w, r, &p) {
 		return
 	}
+	planHWIDDefault(&p)
 	if err := rt.mgr.SaveTariffPlan(&p); err != nil {
 		writeManagerErr(w, err)
 		return

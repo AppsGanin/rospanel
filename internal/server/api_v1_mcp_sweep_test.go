@@ -679,6 +679,7 @@ func TestMCPUserWritesReachTheStore(t *testing.T) {
 		"expire_at":    {value: float64(2_000_000_000), read: func(u model.User) any { return float64(u.ExpireAt) }},
 		"device_limit": {value: float64(4), read: func(u model.User) any { return float64(u.DeviceLimit) }},
 		"speed_limit":  {value: float64(3072), read: func(u model.User) any { return float64(u.SpeedLimit) }},
+		"hwid_limit":   {value: float64(3), read: func(u model.User) any { return float64(u.HWIDLimit) }},
 		"note":         {value: "from the sweep", read: func(u model.User) any { return u.Note }},
 		// Mixed case and a stray space: the stored form is what the model normalises to.
 		"tags": {value: []any{"VIP", "beta "}, read: joined, want: "beta,vip"},
@@ -722,8 +723,9 @@ func TestMCPUserWritesReachTheStore(t *testing.T) {
 		"name": {value: "patched"}, "enabled": {value: false},
 		"data_limit": {value: float64(8192)}, "expire_at": {value: float64(2_100_000_000)},
 		"device_limit": {value: float64(7)}, "speed_limit": {value: float64(1536)},
-		"note": {value: "patched note"},
-		"tags": {value: []any{"gold"}, want: "gold"},
+		"hwid_limit": {value: float64(-1)},
+		"note":       {value: "patched note"},
+		"tags":       {value: []any{"gold"}, want: "gold"},
 	}
 	patchBody := map[string]any{}
 	for name, f := range patch {

@@ -162,6 +162,10 @@ func TestExportImportRoundTrip(t *testing.T) {
 	if err := src.SetUserSpeedLimit(ctx, u.ID, 4096); err != nil {
 		t.Fatal(err)
 	}
+	// Split from the address limit, so the round trip has to carry both.
+	if err := src.SetUserHWIDLimit(ctx, u.ID, model.HWIDLimitUnlimited); err != nil {
+		t.Fatal(err)
+	}
 	if err := src.SetResetPeriod(ctx, u.ID, "monthly"); err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +199,8 @@ func TestExportImportRoundTrip(t *testing.T) {
 	if after.Name != before.Name || after.UUID != before.UUID || after.Password != before.Password ||
 		after.SubToken != before.SubToken || after.DataLimit != before.DataLimit ||
 		after.ExpireAt != before.ExpireAt || after.UsedUp != before.UsedUp || after.UsedDown != before.UsedDown ||
-		after.DeviceLimit != before.DeviceLimit || after.SpeedLimit != before.SpeedLimit ||
+		after.DeviceLimit != before.DeviceLimit || after.HWIDLimit != before.HWIDLimit ||
+		after.SpeedLimit != before.SpeedLimit ||
 		after.ResetPeriod != before.ResetPeriod || after.Note != before.Note ||
 		strings.Join(after.Tags, ",") != strings.Join(before.Tags, ",") {
 		t.Errorf("round trip changed the user:\n before %+v\n after  %+v", before, after)

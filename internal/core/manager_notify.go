@@ -268,14 +268,14 @@ func (m *Manager) notifyStatusTransitions(users []model.User) {
 		case model.StatusDeviceLimited:
 			m.notifyAdminEvent(model.AdminEventDeviceLimited, fmt.Sprintf(
 				i18n.T(m.botLang(), "notify.adminDeviceLimited"),
-				m.adminUser(u), u.ActiveDevices, u.DeviceLimit))
+				m.adminUser(u), u.ActiveDevices, u.IPLimit))
 			if serr == nil {
 				m.notifyUserEvent(set, u, model.UserNotifyDeviceLimited, fmt.Sprintf(
 					i18n.T(m.userLang(u.TgChatID), "notify.userDeviceLimited"),
-					u.ActiveDevices, u.DeviceLimit))
+					u.ActiveDevices, u.IPLimit))
 			}
 			m.auditNamed(ctx, u.ID, u.Name, model.EventDeviceLimited, map[string]any{
-				"device_limit": u.DeviceLimit, "active_devices": u.ActiveDevices,
+				"device_limit": u.IPLimit, "active_devices": u.ActiveDevices,
 			})
 			m.EmitWebhook(model.WebhookUserDeviceLimit, m.userEventData(u))
 		case model.StatusDisabled:

@@ -72,18 +72,23 @@ const (
 // nothing: the fields a foreign panel has no equivalent for are simply empty when
 // the source is Marzban or 3x-ui.
 type Candidate struct {
-	Name        string   `json:"name"`
-	UUID        string   `json:"uuid"`
-	Password    string   `json:"password"`
-	DataLimit   int64    `json:"data_limit"`             // bytes, 0 = unlimited
-	ExpireAt    int64    `json:"expire_at"`              // unix seconds, 0 = never
-	HoldSeconds int64    `json:"hold_seconds,omitempty"` // a term starting on the first connection; only with no ExpireAt
-	UsedUp      int64    `json:"used_up"`
-	UsedDown    int64    `json:"used_down"`
-	DeviceLimit int      `json:"device_limit"`
-	Enabled     bool     `json:"enabled"`
-	Note        string   `json:"note"`
-	Issues      []string `json:"issues"`
+	Name        string `json:"name"`
+	UUID        string `json:"uuid"`
+	Password    string `json:"password"`
+	DataLimit   int64  `json:"data_limit"`             // bytes, 0 = unlimited
+	ExpireAt    int64  `json:"expire_at"`              // unix seconds, 0 = never
+	HoldSeconds int64  `json:"hold_seconds,omitempty"` // a term starting on the first connection; only with no ExpireAt
+	UsedUp      int64  `json:"used_up"`
+	UsedDown    int64  `json:"used_down"`
+	// DeviceLimit is the address limit in this panel's terms: -1 none, 0 the panel
+	// default, N. A foreign source's "no limit" arrives as -1 (see Parse).
+	DeviceLimit int `json:"device_limit"`
+	// HWIDLimit is the HWID limit, the same way. Absent in an export from before the
+	// two were split, where one device_limit capped both: it then follows DeviceLimit.
+	HWIDLimit *int     `json:"hwid_limit,omitempty"`
+	Enabled   bool     `json:"enabled"`
+	Note      string   `json:"note"`
+	Issues    []string `json:"issues"`
 
 	// Everything below is this panel's own (see Export); a foreign source leaves
 	// it blank and the import simply has nothing to apply.
@@ -104,7 +109,29 @@ const MaxJSON = 64 << 20
 
 // Parse detects what the file is and reads its users. The file is opened
 // read-only and never modified.
+//
+// A foreign panel's limits are put in this panel's terms here: its "no limit" is a
+// 0 that would read as "the panel default", so it becomes -1; and it has no HWID
+// limit of its own (Remnawave's is set by its reader), so that one takes the
+// default.
 func Parse(path string) (Source, []Candidate, error) {
+	src, users, err := parse(path)
+	if err != nil || src == SourceRosPanel {
+		return src, users, err
+	}
+	for i := range users {
+		c := &users[i]
+		if c.DeviceLimit <= 0 {
+			c.DeviceLimit = -1
+		}
+		if c.HWIDLimit == nil {
+			c.HWIDLimit = new(int)
+		}
+	}
+	return src, users, nil
+}
+
+func parse(path string) (Source, []Candidate, error) {
 	head, err := readHead(path, 16)
 	if err != nil {
 		return "", nil, err
@@ -708,8 +735,10 @@ func (u remnaUser) candidate() Candidate {
 	if u.Tag != nil && strings.TrimSpace(*u.Tag) != "" {
 		c.Tags = []string{strings.TrimSpace(*u.Tag)}
 	}
+	// Remnawave's limit is an HWID one; it has no address limit.
 	if u.HwidDeviceLimit != nil && *u.HwidDeviceLimit > 0 {
-		c.DeviceLimit = *u.HwidDeviceLimit
+		n := *u.HwidDeviceLimit
+		c.HWIDLimit = &n
 	}
 	c.SubToken = subToken(lastPathSegment(u.SubscriptionURL))
 	c.setCredentials(u.VlessUUID, u.TrojanPassword)

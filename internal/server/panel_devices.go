@@ -34,6 +34,9 @@ func (rt *Router) userDevices(w http.ResponseWriter, _ *http.Request, id int64) 
 		"devices": devices,
 		"limit":   set.DeviceCap(*u),
 		"enabled": set.HWIDEnabled,
+		// What "the panel default" amounts to, for the limit pickers' labels.
+		"default_limit":    set.DeviceCap(model.User{}),
+		"ip_default_limit": set.IPFallbackLimit,
 	})
 }
 
@@ -81,6 +84,9 @@ func (rt *Router) saveHWIDSettings(w http.ResponseWriter, r *http.Request) {
 		Require       bool `json:"require"`
 		FallbackLimit int  `json:"fallback_limit"`
 		TTLDays       int  `json:"ttl_days"`
+		// IPFallbackLimit is the address cap for users whose device_limit is 0
+		// (0 = none). Pointer: callers that predate it leave it alone.
+		IPFallbackLimit *int `json:"ip_fallback_limit"`
 		// CountMode rides along because it is the same screen and the same Save: which
 		// counter enforces the limit is a device setting, not a separate feature.
 		// Pointer, so "absent" and "empty" are distinguishable and this surface refuses
@@ -91,7 +97,8 @@ func (rt *Router) saveHWIDSettings(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.FallbackLimit < 0 || req.TTLDays < 0 {
+	if req.FallbackLimit < 0 || req.TTLDays < 0 ||
+		req.IPFallbackLimit != nil && (*req.IPFallbackLimit < 0 || *req.IPFallbackLimit > model.MaxDeviceLimit) {
 		writeErrCode(w, http.StatusBadRequest, "err.badValue", "значение не может быть отрицательным")
 		return
 	}
@@ -110,9 +117,18 @@ func (rt *Router) saveHWIDSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	set.HWIDEnabled, set.HWIDRequire = req.Enabled, req.Require
 	set.HWIDFallbackLimit, set.HWIDTTLDays = req.FallbackLimit, req.TTLDays
+	ipMoved := req.IPFallbackLimit != nil && *req.IPFallbackLimit != set.IPFallbackLimit
+	if req.IPFallbackLimit != nil {
+		set.IPFallbackLimit = *req.IPFallbackLimit
+	}
 	if err := rt.mgr.Store().SetHWIDSettings(set); err != nil {
 		writeManagerErr(w, err)
 		return
+	}
+	// The one exception to the note below: the address default decides who is in
+	// the config.
+	if ipMoved {
+		rt.mgr.TriggerUserSync()
 	}
 	// Deliberately no user sync: none of these settings reach the proxy config. They
 	// govern who may FETCH a subscription, which is decided per request against the
@@ -125,10 +141,11 @@ func (rt *Router) saveHWIDSettings(w http.ResponseWriter, r *http.Request) {
 // payload, not its own GET).
 func hwidSettingsView(set *model.Settings) map[string]any {
 	return map[string]any{
-		"enabled":        set.HWIDEnabled,
-		"require":        set.HWIDRequire,
-		"fallback_limit": set.HWIDFallbackLimit,
-		"ttl_days":       set.HWIDTTLDays,
-		"count_mode":     set.DeviceCountModeOr(),
+		"enabled":           set.HWIDEnabled,
+		"require":           set.HWIDRequire,
+		"fallback_limit":    set.HWIDFallbackLimit,
+		"ip_fallback_limit": set.IPFallbackLimit,
+		"ttl_days":          set.HWIDTTLDays,
+		"count_mode":        set.DeviceCountModeOr(),
 	}
 }

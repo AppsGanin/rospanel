@@ -137,26 +137,46 @@ func (s *Settings) CountsIPAsDevice() bool {
 // one token would otherwise insert a row per request forever.
 const MaxDevicesPerUser = 50
 
-// DeviceCap is the number of devices this user may bind: their own limit when they have
-// one, the panel-wide fallback when that is set, and MaxDevicesPerUser when neither is.
-//
-// It reuses users.device_limit deliberately — an operator sets "three devices" once and
-// both counters honour it, rather than the account carrying two limits that can disagree.
+// IPLimitUnlimited is the device_limit value for "no address limit", whatever the
+// panel default is.
+const IPLimitUnlimited = -1
+
+// EffectiveIPLimit resolves a stored device_limit against the panel default: the
+// address cap in force, 0 = none. ipLimitSQL in the store is the same rule in SQL.
+func EffectiveIPLimit(deviceLimit, fallback int) int {
+	switch {
+	case deviceLimit > 0:
+		return deviceLimit
+	case deviceLimit < 0:
+		return 0
+	default:
+		return max(fallback, 0)
+	}
+}
+
+// HWIDLimitUnlimited is the users.hwid_limit value for "no limit of their own and not
+// the default either": the user may bind up to MaxDevicesPerUser installs.
+const HWIDLimitUnlimited = -1
+
+// DeviceCap is the number of devices this user may bind: their own HWID limit when
+// they have one, MaxDevicesPerUser when it is HWIDLimitUnlimited, otherwise the
+// panel-wide fallback, and MaxDevicesPerUser when that is not set either.
 //
 // It never returns 0. The enforced number and the displayed number have to be the SAME
 // number: while this returned 0 for "unlimited", the store still refused the 51st device
 // and the refused user was told "51 / 0", with the operator's roster and the API both
 // reporting the limit as unlimited.
 func (s *Settings) DeviceCap(u User) int {
-	cap := s.HWIDFallbackLimit
-	if u.DeviceLimit > 0 {
-		cap = u.DeviceLimit
-	}
-	// Only "no number given" is replaced by the ceiling. An operator who deliberately
-	// allows 100 devices gets 100 — capping their explicit choice would be a silent
-	// policy change, and it is the UNSET case that was unbounded, not the set one.
-	if cap <= 0 {
+	switch {
+	case u.HWIDLimit > 0:
+		// An operator who deliberately allows 100 devices gets 100 — capping their
+		// explicit choice would be a silent policy change.
+		return u.HWIDLimit
+	case u.HWIDLimit < 0:
+		return MaxDevicesPerUser
+	case s.HWIDFallbackLimit > 0:
+		return s.HWIDFallbackLimit
+	default:
 		return MaxDevicesPerUser
 	}
-	return cap
 }

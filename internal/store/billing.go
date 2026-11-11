@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,7 +53,7 @@ func (s *Store) SetPlanUsersResetPeriod(planID int64, period string, now int64) 
 // ListTariffPlans returns plans sorted for display.
 func (s *Store) ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error) {
 	q := `SELECT id, slug, name, price_rub, period_days, data_limit, device_limit,
-	             speed_limit, reset_period, sort_order, enabled, device_price, device_max
+	             speed_limit, reset_period, sort_order, enabled, device_price, device_max, hwid_limit
 	      FROM tariff_plans`
 	if !includeDisabled {
 		q += ` WHERE enabled = 1`
@@ -63,7 +64,7 @@ func (s *Store) ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error
 
 func (s *Store) GetTariffPlan(id int64) (*model.TariffPlan, error) {
 	plans, err := s.scanPlans(`SELECT id, slug, name, price_rub, period_days, data_limit, device_limit,
-		speed_limit, reset_period, sort_order, enabled, device_price, device_max FROM tariff_plans WHERE id = ?`, id)
+		speed_limit, reset_period, sort_order, enabled, device_price, device_max, hwid_limit FROM tariff_plans WHERE id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -85,21 +86,21 @@ func (s *Store) SaveTariffPlan(p *model.TariffPlan) error {
 		if p.ID == 0 {
 			if err := tx.QueryRow(
 				`INSERT INTO tariff_plans (slug, name, price_rub, period_days, data_limit, device_limit,
-				 speed_limit, reset_period, is_free, sort_order, enabled, device_price, device_max)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+				 speed_limit, reset_period, is_free, sort_order, enabled, device_price, device_max, hwid_limit)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 				p.Slug, p.Name, p.PriceRub, p.PeriodDays, p.DataLimit, p.DeviceLimit,
 				p.SpeedLimit, p.ResetPeriod, boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled),
-				p.DevicePrice, p.DeviceMax,
+				p.DevicePrice, p.DeviceMax, p.HWIDLimit,
 			).Scan(&p.ID); err != nil {
 				return err
 			}
 		} else if _, err := tx.Exec(
 			`UPDATE tariff_plans SET slug=?, name=?, price_rub=?, period_days=?, data_limit=?,
 			 device_limit=?, speed_limit=?, reset_period=?, is_free=?, sort_order=?, enabled=?,
-			 device_price=?, device_max=? WHERE id=?`,
+			 device_price=?, device_max=?, hwid_limit=? WHERE id=?`,
 			p.Slug, p.Name, p.PriceRub, p.PeriodDays, p.DataLimit, p.DeviceLimit,
 			p.SpeedLimit, p.ResetPeriod, boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled),
-			p.DevicePrice, p.DeviceMax, p.ID,
+			p.DevicePrice, p.DeviceMax, p.HWIDLimit, p.ID,
 		); err != nil {
 			return err
 		}
@@ -272,7 +273,7 @@ func (s *Store) scanPlans(query string, args ...any) ([]model.TariffPlan, error)
 		var en int
 		if err := rows.Scan(
 			&p.ID, &p.Slug, &p.Name, &p.PriceRub, &p.PeriodDays, &p.DataLimit, &p.DeviceLimit,
-			&p.SpeedLimit, &p.ResetPeriod, &p.SortOrder, &en, &p.DevicePrice, &p.DeviceMax,
+			&p.SpeedLimit, &p.ResetPeriod, &p.SortOrder, &en, &p.DevicePrice, &p.DeviceMax, &p.HWIDLimit,
 		); err != nil {
 			return nil, err
 		}
@@ -329,6 +330,7 @@ type UserPlanWrite struct {
 	DataLimit   int64
 	ExpireAt    int64
 	DeviceLimit int
+	HWIDLimit   int // the HWID limit the plan gives, bought devices included
 	SpeedLimit  int // kbit/s cap the plan promises (0 = unlimited)
 	ResetPeriod string
 	ResetAnchor int64 // last_reset_at: when the rolling quota cycle starts counting
@@ -389,8 +391,15 @@ type AddonWrite struct {
 // plan (or the term) it was bought for.
 func applyAddonOn(ex execer, a AddonWrite) error {
 	where, wargs := addonWhere(a)
-	args := append([]any{a.AddDevices, a.AddDevices, a.AddData, a.AddData}, wargs...)
-	res, err := ex.Exec(`UPDATE users SET device_limit = device_limit + ?, extra_devices = extra_devices + ?,
+	args := append([]any{a.AddDevices, a.AddDevices, a.AddDevices, a.AddDevices, a.AddData, a.AddData}, wargs...)
+	// Bought devices go onto the HWID limit too. On the panel default they go onto
+	// that default, taken as a number (model.Settings.DeviceCap), or what was bought
+	// would not change what the user may bind; "none" has nothing to add to.
+	res, err := ex.Exec(`UPDATE users SET device_limit = device_limit + ?,
+	          hwid_limit = CASE WHEN hwid_limit > 0 THEN hwid_limit + ?
+	                            WHEN hwid_limit = 0 THEN `+hwidDefaultCapSQL+` + ?
+	                            ELSE hwid_limit END,
+	          extra_devices = extra_devices + ?,
 	          data_limit = data_limit + ?, pack_data = pack_data + ?
 	      WHERE `+where, args...)
 	if err != nil {
@@ -401,6 +410,10 @@ func applyAddonOn(ex execer, a AddonWrite) error {
 	}
 	return nil
 }
+
+// hwidDefaultCapSQL is model.Settings.DeviceCap for a user on the panel default.
+var hwidDefaultCapSQL = `(SELECT CASE WHEN hwid_fallback_limit > 0 THEN hwid_fallback_limit ELSE ` +
+	strconv.Itoa(model.MaxDevicesPerUser) + ` END FROM settings WHERE id = 1)`
 
 // addonWhere is the condition an add-on is written under: the plan (and term) it was
 // bought for, a cap and a quota to add to, room under the device cap, and the state it
@@ -450,8 +463,8 @@ func applyUserPlanOn(ex *sql.Tx, p UserPlanWrite) error {
 	if err := setUserLimitsOn(ex, p.UserID, p.DataLimit, p.ExpireAt, p.DeviceLimit); err != nil {
 		return err
 	}
-	if _, err := ex.Exec(`UPDATE users SET extra_devices = ?, pack_data = ? WHERE id = ?`,
-		p.ExtraDevices, p.PackData, p.UserID); err != nil {
+	if _, err := ex.Exec(`UPDATE users SET extra_devices = ?, pack_data = ?, hwid_limit = ? WHERE id = ?`,
+		p.ExtraDevices, p.PackData, p.HWIDLimit, p.UserID); err != nil {
 		return err
 	}
 	// A plan decides the term — a date, or none on a free plan — so a hold set by
@@ -863,11 +876,13 @@ func (s *Store) TakeBackAddon(userID, planID int64, devices int, data int64) (bo
 	res, err := s.db.Exec(
 		`UPDATE users SET
 		     device_limit = device_limit - min(?, extra_devices),
+		     hwid_limit = CASE WHEN hwid_limit > min(?, extra_devices) THEN hwid_limit - min(?, extra_devices)
+		                       ELSE hwid_limit END,
 		     extra_devices = extra_devices - min(?, extra_devices),
 		     data_limit = data_limit - min(?, pack_data),
 		     pack_data = pack_data - min(?, pack_data)
 		 WHERE id = ? AND plan_id = ? AND ((? > 0 AND extra_devices > 0) OR (? > 0 AND pack_data > 0))`,
-		devices, devices, data, data, userID, planID, devices, data)
+		devices, devices, devices, devices, data, data, userID, planID, devices, data)
 	if err != nil {
 		return false, err
 	}

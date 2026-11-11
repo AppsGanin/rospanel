@@ -118,7 +118,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       abuse_enabled, abuse_categories, abuse_custom, abuse_alert_min,
 		       abuse_warn_min, abuse_throttle_min, abuse_throttle_kbps, abuse_disable_min, abuse_hours,
 		       hwid_enabled, hwid_require, hwid_fallback_limit, hwid_ttl_days,
-		       device_count_mode,
+		       device_count_mode, ip_fallback_limit,
 		       sub_show_configs, status_enabled, status_path, sub_rules, maintenance_mode,
 		       probe_detect, watchdog_enabled, probe_block, sub_dpi,
 		       sub_order_mode, master_country, master_sort_weight, master_capacity, master_hide_when_full,
@@ -180,7 +180,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&st.AbuseMeasures.WarnMin, &st.AbuseMeasures.ThrottleMin, &st.AbuseMeasures.ThrottleKbps,
 		&st.AbuseMeasures.DisableMin, &st.AbuseMeasures.Hours,
 		&hwidEn, &hwidRequire, &st.HWIDFallbackLimit, &st.HWIDTTLDays,
-		&st.DeviceCountMode,
+		&st.DeviceCountMode, &st.IPFallbackLimit,
 		&subShowConfigs, &statusEn, &st.StatusPath, &subRulesJSON, &maintenanceMode,
 		&probeDetect, &watchdogEnabled, &probeBlock, &subDPIJSON,
 		&st.SubOrderMode, &st.MasterPlacement.Country, &st.MasterPlacement.Weight,
@@ -685,11 +685,11 @@ func (s *Store) SetHWIDSettings(st *model.Settings) error {
 	_, err := s.db.Exec(`
 		UPDATE settings SET
 			hwid_enabled = ?, hwid_require = ?,
-			hwid_fallback_limit = ?, hwid_ttl_days = ?,
+			hwid_fallback_limit = ?, hwid_ttl_days = ?, ip_fallback_limit = ?,
 			updated_at = unixepoch()
 		WHERE id = 1`,
 		boolToInt(st.HWIDEnabled), boolToInt(st.HWIDRequire),
-		st.HWIDFallbackLimit, st.HWIDTTLDays,
+		st.HWIDFallbackLimit, st.HWIDTTLDays, st.IPFallbackLimit,
 	)
 	return err
 }

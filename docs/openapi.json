@@ -3282,6 +3282,9 @@
             },
             "type": "array"
           },
+          "hwid_limit": {
+            "type": "integer"
+          },
           "id": {
             "format": "int64",
             "type": "integer"
@@ -3316,6 +3319,7 @@
           "period_days",
           "data_limit",
           "device_limit",
+          "hwid_limit",
           "speed_limit",
           "reset_period",
           "sort_order",
@@ -4336,6 +4340,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "hwid_limit": {
+            "type": "integer"
+          },
           "name": {
             "type": "string"
           },
@@ -4746,6 +4753,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "hwid_limit": {
+            "type": "integer"
+          },
           "lang": {
             "type": "string"
           },
@@ -5015,6 +5025,9 @@
           "hwid_ttl_days": {
             "type": "integer"
           },
+          "ip_fallback_limit": {
+            "type": "integer"
+          },
           "local_backup_cron": {
             "type": "string"
           },
@@ -5083,6 +5096,9 @@
           "hwid_ttl_days": {
             "type": "integer"
           },
+          "ip_fallback_limit": {
+            "type": "integer"
+          },
           "local_backup_cron": {
             "type": "string"
           },
@@ -5148,6 +5164,7 @@
           "hwid_enabled",
           "hwid_require",
           "hwid_fallback_limit",
+          "ip_fallback_limit",
           "hwid_ttl_days",
           "device_count_mode",
           "local_backup_cron",
@@ -5937,11 +5954,17 @@
             "format": "int64",
             "type": "integer"
           },
+          "hwid_limit": {
+            "type": "integer"
+          },
           "hysteria2": {
             "type": "string"
           },
           "id": {
             "format": "int64",
+            "type": "integer"
+          },
+          "ip_limit": {
             "type": "integer"
           },
           "lang": {
@@ -6053,7 +6076,9 @@
           "reset_period",
           "last_seen",
           "device_limit",
+          "ip_limit",
           "active_devices",
+          "hwid_limit",
           "speed_limit",
           "note",
           "tags",
@@ -7105,6 +7130,9 @@
                       "type": "integer"
                     },
                     "type": "array"
+                  },
+                  "hwid_limit": {
+                    "type": "integer"
                   },
                   "id": {
                     "format": "int64",
@@ -10939,6 +10967,9 @@
                   "hwid_ttl_days": {
                     "type": "integer"
                   },
+                  "ip_fallback_limit": {
+                    "type": "integer"
+                  },
                   "local_backup_cron": {
                     "type": "string"
                   },
@@ -11886,6 +11917,9 @@
                     "format": "int64",
                     "type": "integer"
                   },
+                  "hwid_limit": {
+                    "type": "integer"
+                  },
                   "name": {
                     "type": "string"
                   },
@@ -12137,6 +12171,9 @@
                   },
                   "hold_seconds": {
                     "format": "int64",
+                    "type": "integer"
+                  },
+                  "hwid_limit": {
                     "type": "integer"
                   },
                   "lang": {
