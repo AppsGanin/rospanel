@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.17.0](https://github.com/AppsGanin/rospanel/compare/v5.16.2...v5.17.0) (2026-11-12)
+
+
+### Features
+
+* **logs:** split the panel's log from its servers' logs ([89caf9e](https://github.com/AppsGanin/rospanel/commit/89caf9efab7804becf91244af1da43ccbef26fda))
+
 ## [5.16.2](https://github.com/AppsGanin/rospanel/compare/v5.16.1...v5.16.2) (2026-11-12)
 
 
