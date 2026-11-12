@@ -6696,7 +6696,7 @@
             }
           },
           {
-            "description": "page size (default 100, max 1000; \u003c=0 means everything from offset)",
+            "description": "page size (default 100, max 1000; <=0 means everything from offset)",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -7791,7 +7791,7 @@
       "get": {
         "parameters": [
           {
-            "description": "page size (default 100, max 1000; \u003c=0 means everything from offset)",
+            "description": "page size (default 100, max 1000; <=0 means everything from offset)",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -11181,7 +11181,7 @@
       "get": {
         "parameters": [
           {
-            "description": "page size (default 100, max 1000; \u003c=0 means everything from offset)",
+            "description": "page size (default 100, max 1000; <=0 means everything from offset)",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -11253,7 +11253,7 @@
       "get": {
         "parameters": [
           {
-            "description": "page size (default 100, max 1000; \u003c=0 means everything from offset)",
+            "description": "page size (default 100, max 1000; <=0 means everything from offset)",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -11526,7 +11526,7 @@
       "get": {
         "parameters": [
           {
-            "description": "page size (default 100, max 1000; \u003c=0 means everything from offset)",
+            "description": "page size (default 100, max 1000; <=0 means everything from offset)",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -11827,7 +11827,7 @@
             }
           },
           {
-            "description": "page size (\u003c=0 = all from offset)",
+            "description": "page size (<=0 = all from offset)",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -12513,7 +12513,7 @@
             }
           },
           {
-            "description": "page size (default 100, max 1000; \u003c=0 means everything from offset)",
+            "description": "page size (default 100, max 1000; <=0 means everything from offset)",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -12594,7 +12594,7 @@
             }
           },
           {
-            "description": "page size (default 100, max 1000; \u003c=0 means everything from offset)",
+            "description": "page size (default 100, max 1000; <=0 means everything from offset)",
             "in": "query",
             "name": "limit",
             "required": false,

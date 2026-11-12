@@ -3,7 +3,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -16,13 +15,11 @@ func main() {
 	base := flag.String("server", "http://localhost:8080", "server URL written into the spec")
 	flag.Parse()
 
-	spec := server.OpenAPISpec(*base)
-	body, err := json.MarshalIndent(spec, "", "  ")
+	body, err := server.OpenAPIDocument(*base)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	body = append(body, '\n')
 	if err := os.WriteFile(*out, body, 0o644); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

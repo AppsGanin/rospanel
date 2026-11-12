@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"testing"
 )
@@ -16,11 +15,10 @@ func TestDocsOpenAPIIsCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docs/openapi.json: %v", err)
 	}
-	got, err := json.MarshalIndent(OpenAPISpec("https://panel.example.com"), "", "  ")
+	got, err := OpenAPIDocument("https://panel.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
-	got = append(got, '\n')
 	if !bytes.Equal(want, got) {
 		t.Fatalf("docs/openapi.json is stale: run `go generate ./internal/server` and commit the result")
 	}
