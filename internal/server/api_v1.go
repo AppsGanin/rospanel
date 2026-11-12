@@ -345,6 +345,7 @@ func (rt *Router) apiMux() http.Handler {
 	nodeAudit("POST /v1/alerts/{id}", "apiAlertChanged", idFn(rt.apiUpdateAlert))
 	nodeAudit("DELETE /v1/alerts/{id}", "apiAlertDeleted", idFn(rt.apiDeleteAlert))
 	id("GET /v1/nodes/{id}/logs", rt.apiNodeLogs)
+	hf("GET /v1/logs", rt.apiPanelLogs)
 
 	// Custom inbounds. Every mutation opens, changes or closes a public listener on a
 	// server, so all three are audited the same way node mutations are.

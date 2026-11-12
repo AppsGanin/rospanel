@@ -2365,6 +2365,7 @@ const ar: Dict = {
     post_alerts_by_id: "تعديل قاعدة",
     delete_alerts_by_id: "حذف قاعدة",
     get_nodes_by_id_logs: "سجلات الخادم",
+    get_logs: "سجلات اللوحة",
     get_inbounds_catalog: "كتالوج أنواع الاتصالات",
     get_servers_by_id_inbounds: "قائمة اتصالات الخادم",
     post_servers_by_id_inbounds: "إضافة اتصال",

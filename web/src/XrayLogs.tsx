@@ -3,7 +3,7 @@ import { LogViewer } from './LogViewer'
 
 function classify(l: string): string {
   if (/\[error\]|failed|panic|rejected/i.test(l)) return 'error'
-  if (/\[warning\]/i.test(l)) return 'warning'
+  if (/\[warn(ing)?\]/i.test(l)) return 'warning'
   if (/accepted/i.test(l)) return 'access'
   return 'other'
 }
@@ -21,10 +21,11 @@ const FILTERS = () => [
   { value: 'error', label: i18n.t('logs.error') },
 ]
 
-export function XrayLogs({ onClose }: { onClose: () => void }) {
+// The master's server log: Xray's own lines and the panel's lines about this host.
+export function XrayLogs({ onClose, title }: { onClose: () => void; title?: string }) {
   return (
     <LogViewer
-      title={i18n.t('logs.xrayTitle')}
+      title={title ?? i18n.t('logs.xrayTitle')}
       streamUrl="api/xray/logs/stream"
       onClose={onClose}
       filters={FILTERS()}

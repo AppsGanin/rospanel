@@ -464,7 +464,10 @@ export function NodeCard({
         ))}
       {showingLogs &&
         (node.is_local ? (
-          <XrayLogs onClose={() => setShowingLogs(false)} />
+          <XrayLogs
+            title={t("nodes.logsOf", { name: serverName(node) })}
+            onClose={() => setShowingLogs(false)}
+          />
         ) : (
           <NodeLogsDialog node={node} onClose={() => setShowingLogs(false)} />
         ))}

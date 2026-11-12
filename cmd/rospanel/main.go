@@ -116,8 +116,29 @@ func main() {
 // repoints the standard log package at this handler; routing back through
 // log.Print would recurse into Handle and self-deadlock on the log mutex.
 type slogHandler struct {
-	w  io.Writer
+	w  io.Writer   // the panel's log
 	mu *sync.Mutex // serialises writes so concurrent records don't interleave
+}
+
+// serverFile is journald plus logs/server.log; serverOut adds the master's server
+// log in memory. Only the master routes there (see splitServerLog).
+var (
+	serverFile io.Writer = os.Stderr
+	serverOut  io.Writer = os.Stderr
+)
+
+// splitServerLog sends the master's lines about its servers to their own logs
+// (logbuf.Route) instead of the panel's. They keep journald and a file of their
+// own: in memory they share a ring with Xray's access lines, which push them out
+// within seconds on a busy box. Called before the handler sees a routed line.
+func splitServerLog(dataDir string) {
+	if sf, err := logbuf.NewRotatingFile(filepath.Join(dataDir, "logs", "server.log"), 10<<20, 5); err == nil {
+		serverFile = io.MultiWriter(os.Stderr, sf)
+	} else {
+		log.Printf("[WARN] server log file disabled: %v", err)
+	}
+	serverOut = io.MultiWriter(serverFile, logbuf.Server)
+	logbuf.SplitServer()
 }
 
 func newSlogHandler(w io.Writer) *slogHandler {
@@ -152,7 +173,12 @@ func (h *slogHandler) Handle(_ context.Context, r slog.Record) error {
 	b.WriteString(tag)
 	b.WriteByte(' ')
 	b.WriteString(r.Message)
+	var server int64
+	var hasServer bool
 	r.Attrs(func(a slog.Attr) bool {
+		if (a.Key == "node" || a.Key == "server") && a.Value.Kind() == slog.KindInt64 {
+			server, hasServer = a.Value.Int64(), true
+		}
 		b.WriteByte(' ')
 		b.WriteString(a.Key)
 		b.WriteByte('=')
@@ -164,9 +190,16 @@ func (h *slogHandler) Handle(_ context.Context, r slog.Record) error {
 		return true
 	})
 	b.WriteByte('\n')
+	w := h.w
+	switch logbuf.Route(r.Message, server, hasServer) {
+	case logbuf.ScopeServer:
+		w = serverOut
+	case logbuf.ScopeNode:
+		w = io.MultiWriter(serverFile, logbuf.Node(server))
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	_, err := io.WriteString(h.w, b.String())
+	_, err := io.WriteString(w, b.String())
 	return err
 }
 

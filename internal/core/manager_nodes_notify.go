@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/i18n"
+	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/sysstat"
 )
@@ -204,12 +205,14 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time, diskUsed, diskTota
 	switch {
 	case st.online && !online:
 		st.offlineAlerted, st.offlineSince = true, n.LastSeen
+		logWarn("node: went silent", "node", n.ID, "last_seen", time.Unix(n.LastSeen, 0).In(logbuf.Location()).Format(time.DateTime))
 		out = append(out, nodeAlertMsg{bit: model.AdminEventXrayDown, html: fmt.Sprintf(
 			i18n.T(lang, "notify.nodeOffline"),
 			nodeLabel(n, lang), fmtDowntime(now.Sub(time.Unix(n.LastSeen, 0)), lang)),
 			event: model.WebhookNodeDown, data: nodeEventData(n, map[string]any{"last_seen": n.LastSeen})})
 	case !st.online && online && st.offlineAlerted:
 		st.offlineAlerted = false
+		logInfo("node: back", "node", n.ID)
 		msg := i18n.T(lang, "notify.nodeBack") + "\n" + nodeLabel(n, lang)
 		var downFor int64
 		if st.offlineSince > 0 {

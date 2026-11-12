@@ -515,7 +515,8 @@ Telegram 只永久享受一次试用——被删除的账户不会获得第二�
 | `POST` | `/v1/alerts` | 添加规则：`name`、`metric`、`op`（`gt` / `lt`）、`threshold`、`for_secs`（条件持续多久后触发）、`node_id`（-1 表示每台服务器，0 表示主服务器）、`enabled`。 |
 | `POST` | `/v1/alerts/{id}` | 替换规则的设置。 |
 | `DELETE` | `/v1/alerts/{id}` | 删除规则；其历史会保留。 |
-| `GET` | `/v1/nodes/{id}/logs` | 节点的最近日志行。 |
+| `GET` | `/v1/nodes/{id}/logs` | 服务器的最近日志行（0 为主服务器）。 |
+| `GET` | `/v1/logs` | 面板自身的最近日志行。 |
 
 **注册节点** — body `{ "name": "NL #1", "host": "nl1.example.com" }`。响应携带节点 id、
 一次性加入令牌，以及可在全新 Ubuntu 服务器上直接运行的安装命令：
@@ -985,6 +986,7 @@ GET $BASE/v1/nodes/{id}/health → 单台服务器的诊断（id 0 = 主服务�
 POST $BASE/v1/nodes/{id}/reach → {"host": …, "port": 443, "countries": [{"code": "RU", "ok": 9, "blocked": 1, "failed": 0, "probes": […]}]}
 POST $BASE/v1/reach {"countries": ["RU", "CN", "IR"], "probes": 10, "every": 60, "threshold": 50}  (every 0 = 仅在需要时)
 GET $BASE/v1/nodes/{id}/logs   → 节点的最近日志行
+GET $BASE/v1/logs              → 面板自身的日志行
 GET $BASE/v1/backup/info       → 现在做一次备份会包含什么
 GET $BASE/v1/backup            → 下载该备份（.tar.gz 内容，不是 JSON）
 GET $BASE/v1/metrics           → Prometheus 导出格式（文本，不是 JSON）

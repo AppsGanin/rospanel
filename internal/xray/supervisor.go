@@ -175,6 +175,14 @@ type Supervisor struct {
 // LogTail returns the buffered recent Xray log lines.
 func (s *Supervisor) LogTail() []string { return s.logs.Tail() }
 
+// UseLogHub makes h this Xray's log: the master's server log (logbuf.Server), so the
+// panel's server-scope lines and Xray's own read as one. Call before Start.
+func (s *Supervisor) UseLogHub(h *logbuf.Hub) { s.logs = h }
+
+// LogSink is where a helper running beside Xray (opera-proxy) writes its lines, so
+// they show in this server's log rather than the panel's.
+func (s *Supervisor) LogSink() io.Writer { return s.logs }
+
 // SubscribeLogs returns a channel of new Xray log lines and an unsubscribe func.
 func (s *Supervisor) SubscribeLogs() (<-chan string, func()) { return s.logs.Subscribe() }
 
@@ -542,34 +550,10 @@ func (s *Supervisor) env() []string {
 	// runtime exceeds it rather than OOM-killing if the live heap genuinely needs
 	// more, so it can't break xray.
 	env = append(env, "GOMEMLIMIT="+strconv.FormatInt(MemoryLimit, 10))
-	if tz := childTZ(); tz != "" {
+	if tz := logbuf.ChildTZ(); tz != "" {
 		env = append(env, "TZ="+tz)
 	}
 	return env
-}
-
-// childTZ is the zone to run Xray in, so the timestamps it stamps on its OWN log
-// lines match the panel's — otherwise one log interleaves two zones (Xray in the
-// server's system zone, the panel in the operator's).
-//
-// Returns "" — leaving Xray on the server default — unless the zone is BOTH
-// configured by the operator and present in the system zoneinfo. That second check
-// matters: xray is a stock Go binary that (unlike ours) may not embed tzdata, and
-// Go silently falls back to UTC for a TZ it can't load. Setting a zone blindly
-// could therefore push Xray further from the operator's clock, not closer.
-func childTZ() string {
-	loc := logbuf.Location()
-	if loc == nil || loc == time.Local || loc == time.UTC {
-		return ""
-	}
-	name := loc.String()
-	if name == "" || name == "Local" {
-		return ""
-	}
-	if _, err := os.Stat(filepath.Join("/usr/share/zoneinfo", name)); err != nil {
-		return "" // host has no tzdata for it → don't risk Xray defaulting to UTC
-	}
-	return name
 }
 
 // LastApply is when a config was last applied, whether or not that required a

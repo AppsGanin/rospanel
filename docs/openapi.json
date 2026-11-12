@@ -9343,6 +9343,41 @@
         ]
       }
     },
+    "/v1/logs": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/apiNodeLogsResp"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "The panel's own recent log lines (users, billing, bots; servers' lines are under /v1/nodes/{id}/logs)",
+        "tags": [
+          "Nodes"
+        ]
+      }
+    },
     "/v1/metrics": {
       "get": {
         "responses": {
@@ -9863,7 +9898,7 @@
             "description": "Error"
           }
         },
-        "summary": "A node's recent log lines (collected on its next poll; `at` says how fresh)",
+        "summary": "A server's recent log lines: its Xray, helpers and what the panel did to it (0 is the master; a node's are collected on its next poll, `at` says how fresh)",
         "tags": [
           "Nodes"
         ]

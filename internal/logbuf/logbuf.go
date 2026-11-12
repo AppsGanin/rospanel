@@ -6,6 +6,8 @@
 package logbuf
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,6 +38,31 @@ func Location() *time.Location {
 		return l
 	}
 	return time.Local
+}
+
+// ChildTZ is the zone to run a child process (Xray, opera-proxy) in, so the
+// timestamps it stamps on its OWN log lines match the panel's — otherwise one log
+// interleaves two zones (the child in the server's system zone, the panel in the
+// operator's).
+//
+// Returns "" — leaving the child on the server default — unless the zone is BOTH
+// configured by the operator and present in the system zoneinfo. That second check
+// matters: xray is a stock Go binary that (unlike ours) may not embed tzdata, and
+// Go silently falls back to UTC for a TZ it can't load. Setting a zone blindly
+// could therefore push Xray further from the operator's clock, not closer.
+func ChildTZ() string {
+	loc := Location()
+	if loc == nil || loc == time.Local || loc == time.UTC {
+		return ""
+	}
+	name := loc.String()
+	if name == "" || name == "Local" {
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join("/usr/share/zoneinfo", name)); err != nil {
+		return "" // host has no tzdata for it → don't risk Xray defaulting to UTC
+	}
+	return name
 }
 
 // Hub keeps a ring of recent log lines and broadcasts new ones to subscribers.

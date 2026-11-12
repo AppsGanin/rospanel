@@ -2456,6 +2456,7 @@ const ru = {
     post_alerts_by_id: "Изменить правило",
     delete_alerts_by_id: "Удалить правило",
     get_nodes_by_id_logs: "Логи сервера",
+    get_logs: "Логи панели",
     get_inbounds_catalog: "Каталог типов подключений",
     get_servers_by_id_inbounds: "Список подключений сервера",
     post_servers_by_id_inbounds: "Добавить подключение",

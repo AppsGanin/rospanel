@@ -3,6 +3,7 @@ package server
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/AppsGanin/rospanel/internal/backup"
 	"github.com/AppsGanin/rospanel/internal/core"
@@ -163,6 +164,16 @@ func (rt *Router) apiNodeHealth(w http.ResponseWriter, _ *http.Request, id int64
 type apiNodeLogsResp struct {
 	Lines []string `json:"lines"`
 	At    int64    `json:"at"`
+}
+
+// apiPanelLogs returns the panel's own recent log lines — its business, not its
+// servers' (those are under /v1/nodes/{id}/logs, the master as 0).
+func (rt *Router) apiPanelLogs(w http.ResponseWriter, _ *http.Request) {
+	lines := rt.mgr.AppLogTail()
+	if lines == nil {
+		lines = []string{}
+	}
+	writeAPIData(w, http.StatusOK, apiNodeLogsResp{Lines: lines, At: time.Now().Unix()})
 }
 
 // apiNodeLogs pulls a node's recent log lines through the panel. The node answers on

@@ -348,7 +348,8 @@ GET $BASE/healthz
 | `POST` | `/v1/alerts` | افزودن یک قاعده: `name`، `metric`، `op` (`gt` / `lt`)، `threshold`، `for_secs` (چه مدت شرط برقرار بماند تا فعال شود)، `node_id` (-1 همهٔ سرورها، 0 مستر)، `enabled`. |
 | `POST` | `/v1/alerts/{id}` | جایگزینی تنظیمات یک قاعده. |
 | `DELETE` | `/v1/alerts/{id}` | حذف یک قاعده؛ تاریخچه‌اش می‌ماند. |
-| `GET` | `/v1/nodes/{id}/logs` | تازه‌ترین سطرهای لاگ یک نود. |
+| `GET` | `/v1/nodes/{id}/logs` | تازه‌ترین سطرهای لاگ یک سرور (۰ سرور اصلی است). |
+| `GET` | `/v1/logs` | تازه‌ترین سطرهای لاگ خود پنل. |
 
 **ثبت نود** — بدنه `{ "name": "NL #1", "host": "nl1.example.com" }`. پاسخ شناسهٔ نود، توکن پیوند یک‌بارمصرف و دستور نصب آمادهٔ اجرا برای یک سرور تازهٔ Ubuntu را می‌آورد:
 
@@ -690,6 +691,7 @@ GET $BASE/v1/nodes/{id}/health → تشخیصی یک سرور (id صفر = مس�
 POST $BASE/v1/nodes/{id}/reach → {"host": …, "port": 443, "countries": [{"code": "RU", "ok": 9, "blocked": 1, "failed": 0, "probes": […]}]}
 POST $BASE/v1/reach {"countries": ["RU", "CN", "IR"], "probes": 10, "every": 60, "threshold": 50}  (every صفر = فقط وقتی درخواست شود)
 GET $BASE/v1/nodes/{id}/logs   → تازه‌ترین سطرهای لاگ یک نود
+GET $BASE/v1/logs              → سطرهای لاگ خود پنل
 GET $BASE/v1/backup/info       → آنچه یک پشتیبان گرفته‌شده در همین لحظه خواهد داشت
 GET $BASE/v1/backup            → دانلود همان پشتیبان (بدنهٔ .tar.gz، نه JSON)
 GET $BASE/v1/metrics           → خروجی Prometheus (متن، نه JSON)

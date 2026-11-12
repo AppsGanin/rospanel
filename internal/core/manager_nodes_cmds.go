@@ -232,8 +232,10 @@ func (m *Manager) RequestAllNodesUpdate() (int, error) {
 
 // RequestNodeLogs returns a server's recent log tail.
 //
-// For the panel's own machine that is simply the in-memory ring every log line goes
-// through. For a node it is a request: the panel marks that someone is watching,
+// For the panel's own machine that is the server log in memory: Xray and the panel's
+// lines about the host. For a node it is what the node sent, followed by the panel's
+// own lines about it (what it pushed there, when it went silent). Getting what the
+// node sent is a request: the panel marks that someone is watching,
 // wakes the node's held poll, and the tail arrives on the sync that follows.
 //
 // It waits briefly for that to happen rather than answering empty and expecting the
@@ -243,8 +245,23 @@ func (m *Manager) RequestAllNodesUpdate() (int, error) {
 func (m *Manager) RequestNodeLogs(id int64) ([]string, int64) {
 	if id == model.LocalNodeID {
 		// The master never syncs with itself; its logs are right here.
-		return logbuf.Default.Tail(), time.Now().Unix()
+		return logbuf.Server.Tail(), time.Now().Unix()
 	}
+	lines, at := m.waitNodeLogs(id)
+	return withPanelLines(lines, logbuf.Node(id).Tail()), at
+}
+
+// withPanelLines puts the panel's own lines about a node after what the node sent,
+// under a marker, without touching the stored tail.
+func withPanelLines(node, panel []string) []string {
+	if len(panel) == 0 {
+		return node
+	}
+	return append(append(append(make([]string, 0, len(node)+1+len(panel)), node...), "--- panel ---"), panel...)
+}
+
+// waitNodeLogs asks a node for its log tail and waits briefly for it to arrive.
+func (m *Manager) waitNodeLogs(id int64) ([]string, int64) {
 
 	m.nodeLogsMu.Lock()
 	m.nodeLogsWanted[id] = time.Now().Unix()

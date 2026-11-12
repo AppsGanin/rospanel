@@ -9,6 +9,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/decoy"
+	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/store"
@@ -596,18 +597,22 @@ func (m *Manager) DeleteNode(id int64) error {
 	if err := m.store.DeleteNode(id); err != nil {
 		return err
 	}
+	logbuf.ForgetNode(id)
+	// The cleanup below is the panel's own bookkeeping and the node's log is gone, so
+	// its failures name the node as "deleted_node", which keeps them in the panel's log.
+	//
 	// A node row is tombstoned rather than removed, but its custom inbounds are not
 	// carried by that row — they are their own table keyed by server id. Left behind
 	// they would be orphans the fleet-wide readers still hand out, and a re-created
 	// node reusing the id would silently inherit them.
 	inbounds, _ := m.store.Inbounds(id) // for grant cleanup below, before they're gone
 	if err := m.store.DeleteServerInbounds(id); err != nil {
-		logErr("inbounds: cleanup after node delete failed", "node", id, "err", err)
+		logErr("inbounds: cleanup after node delete failed", "deleted_node", id, "err", err)
 	}
 	// Sweep group grants that referenced this node's built-in lanes and its inbounds,
 	// so a group doesn't keep tokens for a server that no longer exists.
 	if err := m.store.DeleteServerGrants(id); err != nil {
-		logErr("groups: builtin grant cleanup after node delete failed", "node", id, "err", err)
+		logErr("groups: builtin grant cleanup after node delete failed", "deleted_node", id, "err", err)
 	}
 	for _, in := range inbounds {
 		if err := m.store.DeleteInboundGrants(in.ID); err != nil {

@@ -577,7 +577,8 @@ enabled node automatically, and each server can be edited independently.
 | `POST` | `/v1/alerts` | Add a rule: `name`, `metric`, `op` (`gt` / `lt`), `threshold`, `for_secs` (how long the condition holds before it fires), `node_id` (-1 every server, 0 the master), `enabled`. |
 | `POST` | `/v1/alerts/{id}` | Replace a rule's settings. |
 | `DELETE` | `/v1/alerts/{id}` | Delete a rule; its history stays. |
-| `GET` | `/v1/nodes/{id}/logs` | A node's recent log lines. |
+| `GET` | `/v1/nodes/{id}/logs` | A server's recent log lines (0 is the master). |
+| `GET` | `/v1/logs` | The panel's own recent log lines. |
 
 **Register a node** — body `{ "name": "NL #1", "host": "nl1.example.com" }`. The
 response carries the node id, the one-time join token and the ready-to-run install
@@ -1107,6 +1108,7 @@ GET $BASE/v1/nodes/{id}/health → one server's diagnostics (id 0 = the master)
 POST $BASE/v1/nodes/{id}/reach → {"host": …, "port": 443, "countries": [{"code": "RU", "ok": 9, "blocked": 1, "failed": 0, "probes": […]}]}
 POST $BASE/v1/reach {"countries": ["RU", "CN", "IR"], "probes": 10, "every": 60, "threshold": 50}  (every 0 = only on demand)
 GET $BASE/v1/nodes/{id}/logs   → a node's recent log lines
+GET $BASE/v1/logs              → the panel's own log lines
 GET $BASE/v1/backup/info       → what a backup taken now would contain
 GET $BASE/v1/backup            → download that backup (.tar.gz body, not JSON)
 GET $BASE/v1/metrics           → Prometheus exposition (text, not JSON)

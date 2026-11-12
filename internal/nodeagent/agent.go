@@ -567,7 +567,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		keyPath:      filepath.Join(dataDir, "certs", "key.pem"),
 		acmeDir:      filepath.Join(dataDir, "acme"),
 		geoDir:       filepath.Join(dataDir, "geo"),
-		operaSup:     opera.New(filepath.Join(operaDir, "opera-proxy")),
+		operaSup:     opera.New(filepath.Join(operaDir, "opera-proxy"), sup.LogSink()),
 		operaDir:     operaDir,
 		state:        loadState(dataDir),
 		sys:          sysstat.New(dataDir),

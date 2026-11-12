@@ -2457,6 +2457,7 @@ const fa: Dict = {
     post_alerts_by_id: "ویرایش قاعده",
     delete_alerts_by_id: "حذف قاعده",
     get_nodes_by_id_logs: "لاگ‌های سرور",
+    get_logs: "لاگ‌های پنل",
     get_inbounds_catalog: "فهرست انواع ورودی",
     get_servers_by_id_inbounds: "فهرست ورودی‌های سرور",
     post_servers_by_id_inbounds: "افزودن ورودی",

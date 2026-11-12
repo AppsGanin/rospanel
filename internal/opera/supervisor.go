@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
 	"net"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
+
+	"github.com/AppsGanin/rospanel/internal/logbuf"
 )
 
 // restartDelay is how long the supervisor waits before relaunching a crashed
@@ -20,6 +22,7 @@ const restartDelay = 5 * time.Second
 // replaces any running instance, Stop terminates it and disables restarts.
 type Supervisor struct {
 	binPath string
+	sink    io.Writer // the server's log (where Xray's lines go), not the panel's
 
 	mu      sync.Mutex
 	cmd     *exec.Cmd
@@ -31,8 +34,13 @@ type Supervisor struct {
 	active  bool // whether opera-proxy should be running (gates auto-restart)
 }
 
-// New builds a supervisor for the opera-proxy binary at binPath.
-func New(binPath string) *Supervisor { return &Supervisor{binPath: binPath} }
+// New builds a supervisor for the opera-proxy binary at binPath. Everything it
+// logs — the helper's output and its start/exit/restart — goes to sink, the
+// server's log next to Xray's, and to stderr for journald; never to the panel's
+// log. A nil sink means stderr only.
+func New(binPath string, sink io.Writer) *Supervisor {
+	return &Supervisor{binPath: binPath, sink: sink}
+}
 
 // Start launches opera-proxy bound to 127.0.0.1:port for the given Opera VPN
 // region, replacing any instance already running.
@@ -88,7 +96,13 @@ func (s *Supervisor) spawnLocked() error {
 	cmd := exec.Command(s.binPath,
 		"-country", s.country,
 		"-bind-address", fmt.Sprintf("127.0.0.1:%d", s.port),
+		// Warnings and up: at info it logs every CONNECT, and the lane health probe
+		// alone makes one every 20 seconds.
+		"-verbosity", "30",
 	)
+	if tz := logbuf.ChildTZ(); tz != "" {
+		cmd.Env = append(os.Environ(), "TZ="+tz) // its own timestamps in the panel's zone
+	}
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	if err := cmd.Start(); err != nil {
@@ -98,10 +112,10 @@ func (s *Supervisor) spawnLocked() error {
 	s.cmd = cmd
 	s.done = done
 	s.running = true
-	go logLines(stdout)
-	go logLines(stderr)
+	go s.logLines(stdout)
+	go s.logLines(stderr)
 	go s.monitor(cmd, epoch, done)
-	log.Printf("opera: started (pid %d, country %s, 127.0.0.1:%d)", cmd.Process.Pid, s.country, s.port)
+	s.event("started (pid %d, country %s, 127.0.0.1:%d)", cmd.Process.Pid, s.country, s.port)
 	return nil
 }
 
@@ -117,7 +131,7 @@ func (s *Supervisor) monitor(cmd *exec.Cmd, epoch int, done chan struct{}) {
 	}
 	s.running = false // exited; stays down through the restart delay
 	s.mu.Unlock()
-	log.Printf("opera: exited (%v) — restarting in %s", err, restartDelay)
+	s.event("exited (%v) — restarting in %s", err, restartDelay)
 	time.Sleep(restartDelay)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -125,7 +139,7 @@ func (s *Supervisor) monitor(cmd *exec.Cmd, epoch int, done chan struct{}) {
 		return
 	}
 	if err := s.spawnLocked(); err != nil {
-		log.Printf("opera: restart failed: %v", err)
+		s.event("restart failed: %v", err)
 	}
 }
 
@@ -145,11 +159,31 @@ func (s *Supervisor) WaitReady(port int, timeout time.Duration) error {
 	return fmt.Errorf("opera-proxy did not become ready on %s within %s", addr, timeout)
 }
 
-// logLines forwards a child output stream to the standard logger, prefixed.
-func logLines(r io.Reader) {
+// event records a lifecycle line (start, exit, restart), stamped like the panel's
+// own lines; the helper's output carries its own time.
+func (s *Supervisor) event(format string, args ...any) {
+	ts := time.Now().In(logbuf.Location()).Format("2006/01/02 15:04:05.000000")
+	line := ts + " [INFO] opera: " + fmt.Sprintf(format, args...)
+	fmt.Fprintln(os.Stderr, line)
+	if s.sink != nil {
+		fmt.Fprintln(s.sink, line)
+	}
+}
+
+// write puts one line in the server's log and on stderr, prefixed.
+func (s *Supervisor) write(msg string) {
+	line := "opera: " + msg
+	fmt.Fprintln(os.Stderr, line)
+	if s.sink != nil {
+		fmt.Fprintln(s.sink, line)
+	}
+}
+
+// logLines forwards a child output stream line by line.
+func (s *Supervisor) logLines(r io.Reader) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 16*1024), 64*1024)
 	for sc.Scan() {
-		log.Printf("opera: %s", sc.Text())
+		s.write(sc.Text())
 	}
 }

@@ -2457,6 +2457,7 @@ const en: Dict = {
     post_alerts_by_id: "Change a rule",
     delete_alerts_by_id: "Delete a rule",
     get_nodes_by_id_logs: "Server logs",
+    get_logs: "Panel logs",
     get_inbounds_catalog: "Inbound type catalog",
     get_servers_by_id_inbounds: "List a server's inbounds",
     post_servers_by_id_inbounds: "Add an inbound",

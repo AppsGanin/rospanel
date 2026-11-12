@@ -2456,6 +2456,7 @@ const zh: Dict = {
     post_alerts_by_id: "修改规则",
     delete_alerts_by_id: "删除规则",
     get_nodes_by_id_logs: "服务器日志",
+    get_logs: "面板日志",
     get_inbounds_catalog: "入站类型目录",
     get_servers_by_id_inbounds: "服务器的入站列表",
     post_servers_by_id_inbounds: "添加入站",

@@ -146,6 +146,7 @@ var apiRoutePerms = map[string][]string{
 	"POST /v1/alerts/{id}":                    {model.PermServersManage},
 	"DELETE /v1/alerts/{id}":                  {model.PermServersManage},
 	"GET /v1/nodes/{id}/logs":                 {model.PermLogs},
+	"GET /v1/logs":                            {model.PermLogs},
 	"GET /v1/inbounds/catalog":                {model.PermServersView},
 	"GET /v1/servers/{id}/inbounds":           {model.PermServersView},
 	"POST /v1/servers/{id}/inbounds":          {model.PermServersManage},

@@ -29,6 +29,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/h2fix"
 	"github.com/AppsGanin/rospanel/internal/hostfw"
 	"github.com/AppsGanin/rospanel/internal/http80"
+	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/naive"
 	"github.com/AppsGanin/rospanel/internal/netinfo"
@@ -50,6 +51,7 @@ import (
 // generate the Xray config, start the background loops and serve the admin API +
 // masquerade/subscription surface until a termination signal arrives.
 func runServer(dataDir string) {
+	splitServerLog(dataDir) // the master: lines about its servers go to their logs
 	log.Printf("startup: RosPanel %s booting (data dir %s)", version.Version, dataDir)
 	logMemoryLimit(tuning.SetMemoryLimit(panelMemoryShare, xray.MemoryLimit))
 	adminAddr := env("ROSPANEL_ADMIN_ADDR", "127.0.0.1:8080")
@@ -195,6 +197,7 @@ func runServer(dataDir string) {
 	// not hold up its start.
 
 	sup := xray.NewSupervisor(xrayBin, xrayConfig, geoDir)
+	sup.UseLogHub(logbuf.Server) // Xray and the panel's lines about this host, one log
 	// The TCP-TLS lane's public port belongs to the front, which answers plain HTTP the
 	// way the decoy's claimed Caddy would and hands everything else to Xray on loopback
 	// (see tlsfront). Taken before the first reconcile starts Xray, which then no longer

@@ -491,7 +491,10 @@ func apiSpecRoutes() []oaRoute {
 			resp: t(model.AlertRule{})},
 		{method: "DELETE", path: "/v1/alerts/{id}", tag: "Alerts", summary: "Delete an alert rule (its history stays)"},
 		{method: "GET", path: "/v1/nodes/{id}/logs", tag: "Nodes",
-			summary: "A node's recent log lines (collected on its next poll; `at` says how fresh)",
+			summary: "A server's recent log lines: its Xray, helpers and what the panel did to it (0 is the master; a node's are collected on its next poll, `at` says how fresh)",
+			resp:    t(apiNodeLogsResp{})},
+		{method: "GET", path: "/v1/logs", tag: "Nodes",
+			summary: "The panel's own recent log lines (users, billing, bots; servers' lines are under /v1/nodes/{id}/logs)",
 			resp:    t(apiNodeLogsResp{})},
 
 		// Custom inbounds. {id} is a SERVER id on the list/create pair (0 = the panel's

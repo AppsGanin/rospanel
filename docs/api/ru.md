@@ -638,7 +638,8 @@ HWID, кнопка Happ — это зашифрованная ссылка, ко
 | `POST` | `/v1/alerts` | Добавить правило: `name`, `metric`, `op` (`gt` / `lt`), `threshold`, `for_secs` (сколько условие держится до срабатывания), `node_id` (-1 — каждый сервер, 0 — мастер), `enabled`. |
 | `POST` | `/v1/alerts/{id}` | Заменить настройки правила. |
 | `DELETE` | `/v1/alerts/{id}` | Удалить правило; его история остаётся. |
-| `GET` | `/v1/nodes/{id}/logs` | Последние строки лога ноды. |
+| `GET` | `/v1/nodes/{id}/logs` | Последние строки лога сервера (0 — мастер). |
+| `GET` | `/v1/logs` | Последние строки лога самой панели. |
 
 **Регистрация ноды** — тело `{ "name": "NL #1", "host": "nl1.example.com" }`. Ответ
 несёт id ноды, одноразовый join-токен и готовую команду установки для свежего
@@ -1201,6 +1202,7 @@ GET $BASE/v1/nodes/{id}/health → диагностика одного серв�
 POST $BASE/v1/nodes/{id}/reach → {"host": …, "port": 443, "countries": [{"code": "RU", "ok": 9, "blocked": 1, "failed": 0, "probes": […]}]}
 POST $BASE/v1/reach {"countries": ["RU", "CN", "IR"], "probes": 10, "every": 60, "threshold": 50}  (every 0 = только по запросу)
 GET $BASE/v1/nodes/{id}/logs   → последние строки лога ноды
+GET $BASE/v1/logs              → строки лога самой панели
 GET $BASE/v1/backup/info       → что содержал бы бэкап, сделанный сейчас
 GET $BASE/v1/backup            → скачать этот бэкап (тело .tar.gz, не JSON)
 GET $BASE/v1/metrics           → выдача для Prometheus (текст, не JSON)

@@ -603,7 +603,9 @@ one); it bends only the quota, never the per-node byte statistics.
 Every server is configured separately (protocols, egress, DNS, REALITY keys, domain and TLS,
 geo databases, decoy). A node is **the same binary** in node mode: the panel generates its
 config, a local `xray -test` with rollback guards against version mismatches, and updates run
-from the UI with SHA256 verification.
+from the UI with SHA256 verification. Each server keeps its own **log**: Xray, the helpers beside
+it and what the panel did to that server, including when a node went silent and came back; the
+panel's log holds only the panel's own events.
 
 #### 💳 Plans and payments (optional)
 
