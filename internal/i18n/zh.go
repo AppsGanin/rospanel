@@ -498,7 +498,7 @@ var zh = map[string]string{
 	"notify.configRolledBack":          "↩️ <b>配置已回滚</b>\n%s\nXray 无法以当前配置启动，面板已恢复到上一个可用配置。原因：\n<code>%s</code>\n您最近一次的设置更改未生效——请前往检查。",
 	"notify.diskLow":                   "⚠️ <b>磁盘空间不足</b>\n%s\n剩余 %d%%（%s / %s）。磁盘写满后，面板将停止记录流量和同步用户。",
 	"notify.diskBack":                  "✅ <b>磁盘空间已恢复</b>\n%s\n剩余 %d%%。",
-	"notify.nodeOffline":               "⚠️ <b>与服务器失去联系</b>\n%s\n已 %s 无响应——其用户无法使用服务。",
+	"notify.nodeOffline":               "⚠️ <b>与服务器失去联系</b>\n%s\n已 %s 无响应——用户变更无法送达。",
 	"notify.nodeTrafficOver":           "📊 <b>服务器已达流量限额</b>\n%s\n已用 %s / %s（按%s计）。",
 	"notify.nodeTrafficBack":           "✅ <b>服务器流量额度已恢复</b>\n%s\n新周期已用 %s / %s。",
 	"notify.trafficPeriodMonth":        "月",

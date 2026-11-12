@@ -20,7 +20,8 @@ func (a *Agent) dumpOnSignal(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ch:
-			slog.Info("node: goroutines dumped on request", "stacks", a.dumpStacks())
+			path, loop := a.dumpStacks()
+			slog.Info("node: goroutines dumped on request", "stacks", path, "sync_loop", loop)
 		}
 	}
 }

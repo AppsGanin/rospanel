@@ -384,6 +384,7 @@ func Run(ctx context.Context, dataDir string) error {
 	}()
 	a.syncBeat(0)
 	go a.watchSyncStall(ctx, syncStallLimit, stallCheckEvery, a.exitOnStall)
+	go a.watchSyncStall(ctx, syncSlowLimit, stallCheckEvery, a.noteSlowSync)
 	stopped := make(chan struct{})
 	defer close(stopped)
 	go a.exitIfStopHangs(ctx, stopDeadline, stopped)

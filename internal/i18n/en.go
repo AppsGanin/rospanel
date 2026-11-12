@@ -500,7 +500,7 @@ var en = map[string]string{
 	"notify.configRolledBack":          "↩️ <b>Configuration rolled back</b>\n%s\nXray refused to start with the current configuration, so the panel restored the last one that worked. Reason:\n<code>%s</code>\nYour most recent settings change did not take — go and check it.",
 	"notify.diskLow":                   "⚠️ <b>Running out of disk space</b>\n%s\n%d%% free (%s of %s). When it fills up, the panel stops recording traffic and syncing users.",
 	"notify.diskBack":                  "✅ <b>Disk space recovered</b>\n%s\n%d%% free.",
-	"notify.nodeOffline":               "⚠️ <b>No contact with the server</b>\n%s\nSilent for %s — its users are not being served.",
+	"notify.nodeOffline":               "⚠️ <b>No contact with the server</b>\n%s\nSilent for %s — user changes do not reach it.",
 	"notify.nodeTrafficOver":           "📊 <b>Server reached its traffic limit</b>\n%s\n%s of %s for the %s.",
 	"notify.nodeTrafficBack":           "✅ <b>Server has traffic allowance again</b>\n%s\n%s of %s used in the new period.",
 	"notify.trafficPeriodMonth":        "month",
