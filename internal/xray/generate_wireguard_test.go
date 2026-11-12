@@ -131,7 +131,7 @@ func TestPlanUserChangesTakesWireGuardPeers(t *testing.T) {
 }
 
 // A plain WireGuard inbound is Xray's own listener on the public port, all interfaces,
-// at WireGuard's own MTU, with the same peers as a TURN lane's.
+// at the panel's configured MTU, with the same peers as a TURN lane's.
 func TestWireGuardDirectInboundShape(t *testing.T) {
 	wg := model.Inbound{ID: 22, Enabled: true, Name: "WG", Protocol: model.InbWireGuard, Port: 51820,
 		Opts: model.InboundOpts{WGPrivateKey: testWGKey(9), WGPublicKey: testWGKey(10)}}

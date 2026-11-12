@@ -38,6 +38,10 @@ func TestTwoDevicesHandshakeOnGeneratedParameters(t *testing.T) {
 }
 
 func handshakeOnce(t *testing.T, p Params) {
+	handshakeWith(t, p, nil)
+}
+
+func handshakeWith(t *testing.T, p Params, after func(*device.Device, Config)) {
 	t.Helper()
 	srvPriv, srvPub, err := GenerateKey()
 	if err != nil {
@@ -88,6 +92,9 @@ func handshakeOnce(t *testing.T, p Params) {
 		}
 		for _, line := range strings.Split(dump, "\n") {
 			if hs, ok := strings.CutPrefix(line, "last_handshake_time_sec="); ok && hs != "0" {
+				if after != nil {
+					after(srv, srvCfg)
+				}
 				return
 			}
 		}

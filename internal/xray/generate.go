@@ -1064,9 +1064,9 @@ func customShadowsocksClients(in model.Inbound, users []model.User) []Shadowsock
 // 1280: its DTLS and the TURN channel framing ride inside the path MTU as well.
 const WireGuardTURNMTU = 1280
 
-// WireGuardMTU is the tunnel MTU of a plain WireGuard inbound, on both ends: WireGuard's
-// own default, which fits a 1500-byte path over IPv6 with nothing wrapped around it.
-const WireGuardMTU = 1420
+// WireGuardMTU is the tunnel MTU of a plain WireGuard inbound, on both ends.
+// It leaves additional headroom for paths with a reduced MTU.
+const WireGuardMTU = 1280
 
 // customWireGuardPeers builds a WireGuard inbound's peers from the users' tunnel
 // identities — the same key and address they have on AmneziaWG. A user without one is

@@ -119,6 +119,7 @@ func TestAWGThroneLink(t *testing.T) {
 	p, _ := awg.FromModel(s.AWGParams)
 	q := pu.Query()
 	if pu.Scheme != "wg" || pu.Port() != strconv.Itoa(s.AWGPort) || q.Get("enable_amnezia") != "true" ||
+		q.Get("mtu") != "1280" ||
 		q.Get("h1") != p.H1.String() || q.Get("s3") != strconv.Itoa(p.S3) ||
 		q.Get("content_padding_addition") != p.Padding.String() || q.Get("i1") != "" {
 		t.Fatalf("link %s", l)

@@ -29,9 +29,9 @@ import (
 // Iface is the tunnel interface name on every server.
 const Iface = "awg0"
 
-// DefaultMTU is what AmneziaWG clients default to; the junk headers ride inside
-// the UDP payload, so the tunnel MTU is WireGuard's.
-const DefaultMTU = 1420
+// DefaultMTU leaves room for AWG's transport padding as well as the outer
+// IP/UDP/WireGuard headers. WireGuard's usual 1420 leaves no such room on IPv6.
+const DefaultMTU = 1280
 
 // DefaultDNS is what clients resolve through inside the tunnel unless the
 // operator says otherwise.
@@ -186,6 +186,12 @@ type Params struct {
 
 // IsZero reports an unset parameter block (a server that has never had AWG on).
 func (p Params) IsZero() bool { return p == Params{} }
+
+// wireEqual ignores the display name of the imitation profile.
+func (p Params) wireEqual(other Params) bool {
+	p.Imitation, other.Imitation = "", ""
+	return p == other
+}
 
 // NeedsAgent31 reports whether this block can only be carried by a node agent
 // that understands AmneziaWG 3.1. It is true as soon as anything 3.1 is set —
@@ -447,8 +453,8 @@ type Config struct {
 
 // UAPI renders the whole configuration in WireGuard's cross-platform IPC form
 // with the AmneziaWG extensions — the form amneziawg-go's IpcSet reads. Peers
-// replace whatever the device held, so applying the same Config twice is a no-op
-// and a user removed from the list is gone from the device.
+// replace whatever the device held, discarding existing sessions. The driver
+// uses this for initial configuration and peerUpdates for live changes.
 func (c Config) UAPI() (string, error) {
 	priv, err := keyHex(c.PrivateKey)
 	if err != nil {
@@ -674,7 +680,7 @@ func EndpointIP(endpoint string) string {
 // and runs (and hands out configs) on a developer's machine.
 type Device interface {
 	// Apply brings the tunnel to cfg: starts it if needed, restarts it if the key
-	// or port changed, otherwise replaces the peer list in place.
+	// or wire parameters changed, otherwise updates only the changed peers.
 	Apply(cfg Config) error
 	// Stats reads every peer's counters.
 	Stats() (map[string]PeerStat, error)

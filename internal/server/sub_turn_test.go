@@ -234,7 +234,7 @@ func TestPlainWireGuardEndpointsAndPageCard(t *testing.T) {
 	if conf.Code != http.StatusOK {
 		t.Fatalf("config: %d %s", conf.Code, body)
 	}
-	for _, want := range []string{"[Interface]", "MTU = 1420", "PublicKey = " + view.Opts.WGPublicKey,
+	for _, want := range []string{"[Interface]", "MTU = 1280", "PublicKey = " + view.Opts.WGPublicKey,
 		"Endpoint = vpn.example.com:" + strconv.Itoa(port)} {
 		if !strings.Contains(body, want) {
 			t.Errorf("config lacks %q:\n%s", want, body)

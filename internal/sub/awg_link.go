@@ -101,6 +101,7 @@ func AWGThroneLink(u model.User, s *model.Settings) string {
 		"private_key=" + u.WGPrivateKey,
 		"local_address=" + addr.String() + "/32",
 		"public_key=" + s.AWGPublicKey,
+		"mtu=" + strconv.Itoa(awg.DefaultMTU),
 		"persistent_keepalive_interval=" + strconv.Itoa(awg.Keepalive),
 		"enable_amnezia=true",
 		"jc=" + strconv.Itoa(p.Jc), "jmin=" + strconv.Itoa(p.Jmin), "jmax=" + strconv.Itoa(p.Jmax),

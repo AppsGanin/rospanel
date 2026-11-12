@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 
@@ -32,6 +33,7 @@ type linuxDevice struct {
 	privKey string
 	lastErr string
 	last    *Config // what the last Apply asked for; nil after Close
+	applied *Config // last successful apply; retained peers keep their live sessions
 }
 
 // New returns the tunnel driver for this platform.
@@ -40,6 +42,7 @@ func New() Device { return &linuxDevice{} }
 func (d *linuxDevice) Apply(cfg Config) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	cfg.Peers = slices.Clone(cfg.Peers)
 	d.last = &cfg
 	return d.applyLast()
 }
@@ -68,16 +71,21 @@ func (d *linuxDevice) apply(cfg Config) error {
 	if err != nil {
 		return err
 	}
-	// A new key or port means a new socket and a new identity: tear down and start
-	// over rather than trying to change them under a live device.
-	if d.dev != nil && (d.port != cfg.ListenPort || d.privKey != cfg.PrivateKey) {
+	mtu := cfg.MTU
+	if mtu <= 0 {
+		mtu = DefaultMTU
+	}
+	oldMTU := DefaultMTU
+	if d.applied != nil && d.applied.MTU > 0 {
+		oldMTU = d.applied.MTU
+	}
+	// Changing wire parameters requires new client profiles anyway. Recreate the
+	// device so optional fields removed from the config are actually cleared.
+	if d.dev != nil && (d.port != cfg.ListenPort || d.privKey != cfg.PrivateKey ||
+		d.applied != nil && (!d.applied.Params.wireEqual(cfg.Params) || oldMTU != mtu)) {
 		d.closeLocked()
 	}
 	if d.dev == nil {
-		mtu := cfg.MTU
-		if mtu <= 0 {
-			mtu = DefaultMTU
-		}
 		t, err := tun.CreateTUN(Iface, mtu)
 		if err != nil {
 			return fmt.Errorf("awg: create tun %s: %w (the service needs CAP_NET_ADMIN and /dev/net/tun)", Iface, err)
@@ -97,12 +105,22 @@ func (d *linuxDevice) apply(cfg Config) error {
 			return err
 		}
 		d.dev, d.tun, d.port, d.privKey = dev, t, cfg.ListenPort, cfg.PrivateKey
+		d.applied = &cfg
 		slog.Info("awg: tunnel up", "iface", Iface, "port", cfg.ListenPort, "peers", len(cfg.Peers))
 		return nil
 	}
-	if err := d.dev.IpcSet(uapi); err != nil {
-		return fmt.Errorf("awg: update peers: %w", err)
+	if d.applied != nil {
+		uapi, err = peerUpdates(d.applied.Peers, cfg.Peers)
+		if err != nil {
+			return err
+		}
 	}
+	if uapi != "" {
+		if err := d.dev.IpcSet(uapi); err != nil {
+			return fmt.Errorf("awg: update peers: %w", err)
+		}
+	}
+	d.applied = &cfg
 	return nil
 }
 
@@ -201,7 +219,7 @@ func (d *linuxDevice) closeLocked() {
 		return
 	}
 	d.dev.Close() // closes the TUN too
-	d.dev, d.tun = nil, nil
+	d.dev, d.tun, d.applied = nil, nil, nil
 	_ = exec.Command("nft", "delete", "table", "inet", nftTable).Run()
 	slog.Info("awg: tunnel down", "iface", Iface)
 }

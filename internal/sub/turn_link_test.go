@@ -266,7 +266,7 @@ func TestWingsVImportLink(t *testing.T) {
 	}
 }
 
-// A plain WireGuard inbound's file points at the server itself, with WireGuard's own MTU
+// A plain WireGuard inbound's file points at the server itself, with the panel's MTU
 // and no TURN-client endpoint.
 func TestWireGuardClientConf(t *testing.T) {
 	priv, _, _ := awg.GenerateKey()
@@ -277,7 +277,7 @@ func TestWireGuardClientConf(t *testing.T) {
 		Opts: model.InboundOpts{WGPublicKey: serverPub}}
 	conf := WireGuardClientConf(u, s, in)
 	for _, want := range []string{
-		"PrivateKey = " + priv, "Address = 10.66.0.5/32", "DNS = 9.9.9.9", "MTU = 1420",
+		"PrivateKey = " + priv, "Address = 10.66.0.5/32", "DNS = 9.9.9.9", "MTU = 1280",
 		"PublicKey = " + serverPub, "AllowedIPs = 0.0.0.0/0, ::/0", "Endpoint = vpn.example.com:51820",
 	} {
 		if !strings.Contains(conf, want) {

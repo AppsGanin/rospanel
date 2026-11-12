@@ -615,9 +615,9 @@ func WireGuardClientConf(u model.User, s *model.Settings, in model.Inbound) stri
 	}.Render()
 }
 
-// WireGuardMTU is the tunnel MTU of a plain WireGuard inbound's client: WireGuard's own
-// default, matching the server end (xray.WireGuardMTU).
-const WireGuardMTU = 1420
+// WireGuardMTU is the tunnel MTU of a plain WireGuard inbound's client,
+// matching the server end (xray.WireGuardMTU).
+const WireGuardMTU = 1280
 
 // TurnMTU is the tunnel MTU on the client end of a TURN lane: vk-turn-proxy and Free
 // Turn Proxy both ask for 1280, their DTLS, mask and TURN framing riding inside the

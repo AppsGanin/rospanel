@@ -221,7 +221,7 @@ func TestUAPIAndClientConfig(t *testing.T) {
 
 	conf := ClientConfig{PrivateKey: cPriv, Address: addr, Params: params, ServerPublicKey: sPub, Endpoint: "vpn.example.com:51820"}.Render()
 	for _, want := range []string{
-		"[Interface]", "PrivateKey = " + cPriv, "Address = 10.66.0.8/32", "DNS = " + DefaultDNS, "MTU = 1420",
+		"[Interface]", "PrivateKey = " + cPriv, "Address = 10.66.0.8/32", "DNS = " + DefaultDNS, "MTU = 1280",
 		"Jc = 4", "H4 = 14", "[Peer]", "PublicKey = " + sPub, "AllowedIPs = 0.0.0.0/0, ::/0",
 		"Endpoint = vpn.example.com:51820", "PersistentKeepalive = 25",
 	} {
