@@ -6,10 +6,13 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"syscall"
 	"time"
 
 	apicommon "github.com/enfein/mieru/v3/apis/common"
 	"github.com/enfein/mieru/v3/pkg/sockopts"
+
+	"github.com/AppsGanin/rospanel/internal/tuning"
 )
 
 // A mieru client proves who it is once per TCP connection — the underlay its sessions
@@ -123,7 +126,15 @@ type listenerFactory struct {
 }
 
 func newListenerFactory(reg *rawConns) listenerFactory {
-	return listenerFactory{base: &net.ListenConfig{Control: sockopts.DefaultListenerControl()}, reg: reg}
+	lc := tuning.TCPListenConfig()
+	control, reuse := lc.Control, sockopts.DefaultListenerControl()
+	lc.Control = func(network, address string, c syscall.RawConn) error {
+		if err := reuse(network, address, c); err != nil {
+			return err
+		}
+		return control(network, address, c)
+	}
+	return listenerFactory{base: &lc, reg: reg}
 }
 
 func (f listenerFactory) Listen(ctx context.Context, network, address string) (net.Listener, error) {

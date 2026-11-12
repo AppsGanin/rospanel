@@ -29,6 +29,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/AppsGanin/rospanel/internal/tuning"
 )
 
 const (
@@ -159,7 +161,7 @@ func (f *Front) run(port int, stop chan struct{}) {
 	addr := fmt.Sprintf(":%d", port)
 	var ln net.Listener
 	for warned := false; ; {
-		l, err := net.Listen("tcp", addr)
+		l, err := tuning.ListenTCP(addr)
 		if err == nil {
 			ln = l
 			break

@@ -28,6 +28,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/tuning"
 	"github.com/AppsGanin/rospanel/internal/vlessin"
 )
 
@@ -203,7 +204,7 @@ func (s *Server) Apply(l Listen, addr string, users []User) error {
 
 // startLocked listens on l. Caller holds mu.
 func (s *Server) startLocked(l Listen) error {
-	ln, err := net.Listen("tcp", ":"+strconv.Itoa(l.Port))
+	ln, err := tuning.ListenTCP(":" + strconv.Itoa(l.Port))
 	if err != nil {
 		return fmt.Errorf("mtproto: listen on %d: %w", l.Port, err)
 	}

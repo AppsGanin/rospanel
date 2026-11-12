@@ -1,6 +1,5 @@
-// Package tuning applies host-level network optimizations recommended for an
-// Xray server — currently enabling the TCP BBR congestion-control algorithm,
-// which noticeably improves throughput on lossy/long-haul links.
+// Package tuning applies host-level network and memory tuning and TCP socket
+// defaults for a proxy server. BBR improves throughput on lossy/long-haul links.
 //
 // See https://xtls.github.io/en/document/level-0/ch07-xray-server.html (7.7).
 package tuning

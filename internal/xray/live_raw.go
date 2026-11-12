@@ -236,6 +236,7 @@ func diffUsers(cur, next []any) (userChange, bool) {
 // through ApplyRaw: validated, and Xray restarted with it, which is always the right
 // end state.
 func (s *Supervisor) ApplyRawLive(apiAddr string, data []byte) (RawApply, error) {
+	data = tcpDefaults(data)
 	attempted := false
 	if s.Running() && s.bin != "" {
 		live, done, err := s.tryLiveUsers(apiAddr, data)

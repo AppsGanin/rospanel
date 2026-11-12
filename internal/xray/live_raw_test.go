@@ -308,7 +308,7 @@ func TestApplyRawLiveChangesUsersWithoutRestart(t *testing.T) {
 	if n := countLines(t, starts, "start"); n != 1 {
 		t.Fatalf("a users-only change restarted xray (%d starts)", n)
 	}
-	if got, _ := os.ReadFile(cfgPath); string(got) != string(b.json(t)) {
+	if got, _ := os.ReadFile(cfgPath); string(got) != string(tcpDefaults(b.json(t))) {
 		t.Fatal("the live-applied config was not recorded for the next start")
 	}
 	calls, _ := os.ReadFile(apiLog)
@@ -352,7 +352,7 @@ func TestApplyRawLiveChangesUsersWithoutRestart(t *testing.T) {
 		t.Fatalf("refused live update: %v %v, want the restart fallback", how, err)
 	}
 	waitFor(t, "the fallback restart", func() bool { return countLines(t, starts, "start") == 3 && sup.Running() })
-	if got, _ := os.ReadFile(cfgPath); string(got) != string(d.json(t)) {
+	if got, _ := os.ReadFile(cfgPath); string(got) != string(tcpDefaults(d.json(t))) {
 		t.Fatal("the fallback did not apply the pushed config")
 	}
 
@@ -367,7 +367,7 @@ func TestApplyRawLiveChangesUsersWithoutRestart(t *testing.T) {
 		t.Fatal("a config xray refused was reported applied")
 	}
 	waitFor(t, "the restore restart", func() bool { return countLines(t, starts, "start") == 4 && sup.Running() })
-	if got, _ := os.ReadFile(cfgPath); string(got) != string(d.json(t)) {
+	if got, _ := os.ReadFile(cfgPath); string(got) != string(tcpDefaults(d.json(t))) {
 		t.Fatal("a refused config replaced the one on disk")
 	}
 }
@@ -407,7 +407,7 @@ func TestApplyRawLiveChangesHysteriaUsersWithoutARebuild(t *testing.T) {
 	if n := countLines(t, filepath.Join(dir, "starts.log"), "start"); n != 1 {
 		t.Errorf("xray was started %d times, want once", n)
 	}
-	if got, _ := os.ReadFile(filepath.Join(dir, "config.json")); string(got) != string(b.json(t)) {
+	if got, _ := os.ReadFile(filepath.Join(dir, "config.json")); string(got) != string(tcpDefaults(b.json(t))) {
 		t.Error("the live-applied config was not recorded for the next start")
 	}
 

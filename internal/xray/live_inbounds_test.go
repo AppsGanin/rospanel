@@ -135,7 +135,7 @@ func TestApplyRawLiveChangesInboundsWithoutRestart(t *testing.T) {
 	if !strings.Contains(string(adi), `"custom-1"`) || !strings.Contains(string(adi), `"u2"`) {
 		t.Errorf("adi was handed %s, want custom-1 with its users", adi)
 	}
-	if onDisk, _ := os.ReadFile(cfgPath); string(onDisk) != string(added) {
+	if onDisk, _ := os.ReadFile(cfgPath); string(onDisk) != string(tcpDefaults(added)) {
 		t.Error("the config on disk is not the one now running")
 	}
 

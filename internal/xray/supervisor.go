@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -513,6 +514,26 @@ const MemoryLimit = 256 << 20
 
 func (s *Supervisor) env() []string {
 	env := os.Environ()
+	// Xray only calls Dialer.SetMultipathTCP when its option is true. A false
+	// option otherwise inherits GODEBUG, and MPTCP refuses TCP_USER_TIMEOUT.
+	// Keep the default on ordinary TCP; explicit tcpMptcp=true still opts in.
+	var debug string
+	env = slices.DeleteFunc(env, func(kv string) bool {
+		v, ok := strings.CutPrefix(kv, "GODEBUG=")
+		if ok {
+			debug = v
+		}
+		return ok
+	})
+	var options []string
+	for _, option := range strings.Split(debug, ",") {
+		key, _, _ := strings.Cut(option, "=")
+		if option != "" && key != "multipathtcp" {
+			options = append(options, option)
+		}
+	}
+	options = append(options, "multipathtcp=0")
+	env = append(env, "GODEBUG="+strings.Join(options, ","))
 	if s.assetDir != "" {
 		env = append(env, "XRAY_LOCATION_ASSET="+s.assetDir)
 	}
@@ -662,7 +683,7 @@ func (s *Supervisor) ValidateConfig(cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	return s.ValidateBytes(data)
+	return s.ValidateBytes(tcpDefaults(data))
 }
 
 // Apply writes the config atomically (validating first when possible) and
@@ -682,6 +703,8 @@ func (s *Supervisor) Apply(cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
+
+	data = tcpDefaults(data)
 
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
@@ -789,6 +812,7 @@ func (s *Supervisor) runningMatchesDisk() bool {
 // through the Config struct. Same validate → atomic swap → restart, with the same
 // rollback backup, so a config the node's Xray can't parse never kills it.
 func (s *Supervisor) ApplyRaw(data []byte) error {
+	data = tcpDefaults(data)
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
 
@@ -886,6 +910,8 @@ func (s *Supervisor) WriteConfig(cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
+	data = tcpDefaults(data)
+
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(s.configPath), 0o700); err != nil {
