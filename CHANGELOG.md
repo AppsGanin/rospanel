@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.16.1](https://github.com/AppsGanin/rospanel/compare/v5.16.0...v5.16.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **awg:** keep live sessions on peer changes, MTU 1280 ([09bd757](https://github.com/AppsGanin/rospanel/commit/09bd757ea588f7ead878c07b83443e5cd2d60fdd))
+* **net:** close TCP connections to vanished or stalled peers ([18bce05](https://github.com/AppsGanin/rospanel/commit/18bce0573a3262906572ad7b3c77cb45315431c4))
+
 ## [5.16.0](https://github.com/AppsGanin/rospanel/compare/v5.15.0...v5.16.0) (2026-11-11)
 
 
