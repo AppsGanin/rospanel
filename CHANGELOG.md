@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.16.2](https://github.com/AppsGanin/rospanel/compare/v5.16.1...v5.16.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* **node:** write the goroutines down after 3 min of sync silence ([bffb5b5](https://github.com/AppsGanin/rospanel/commit/bffb5b512aeaf5324de8de895d70564159b4f919))
+
 ## [5.16.1](https://github.com/AppsGanin/rospanel/compare/v5.16.0...v5.16.1) (2026-11-12)
 
 
