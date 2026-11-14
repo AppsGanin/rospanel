@@ -95,6 +95,9 @@ func makeUserView(u model.User, set *model.Settings, userBotUsername string, cus
 		v.VLESS = link.VLESS(u, set)
 		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoVLESS, &u), v.VLESS})
 	}
+	if set.XHTTPOn() && access.AllowsBuiltin(model.LocalNodeID, model.LaneXHTTP) {
+		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoXHTTP, &u), link.XHTTP(u, set)})
+	}
 	if set.RealityEnabled && access.AllowsBuiltin(model.LocalNodeID, model.LaneReality) {
 		v.Reality = link.Reality(u, set)
 		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoReality, &u), v.Reality})

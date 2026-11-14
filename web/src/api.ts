@@ -1463,6 +1463,7 @@ export const saveSubSettings = (s: SubSettings) =>
 // SubProto is a protocol a response rule can give or hide (model.SubProtoKeys).
 export const SUB_PROTOS = [
   'vless',
+  'xhttp',
   'reality',
   'hysteria2',
   'naive',

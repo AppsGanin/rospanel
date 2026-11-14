@@ -46,6 +46,7 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns.MieruEnabled, ns.MieruPort, ns.MieruTransport, ns.MieruName = derefBool(n.MieruEnabled), 0, model.MieruTCP, ""
 	ns.AnyTLSEnabled, ns.AnyTLSName = derefBool(n.AnyTLSEnabled), ""
 	ns.TrustTunnelEnabled, ns.TrustTunnelName = derefBool(n.TrustTunnelEnabled), ""
+	ns.XHTTPEnabled, ns.XHTTPName = derefBool(n.XHTTPEnabled), "" // the path stays the panel's
 	ns.MTProtoEnabled, ns.MTProtoPort, ns.MTProtoName = derefBool(n.MTProtoEnabled), 0, ""
 	ns.MTProtoDomain = n.MTProtoDomain
 	// REALITY donor: the node's own if set, otherwise inherit the panel's (a node
@@ -130,6 +131,7 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 		ns.MieruName = c.MieruName
 		ns.AnyTLSName = c.AnyTLSName
 		ns.TrustTunnelName = c.TrustTunnelName
+		ns.XHTTPName = c.XHTTPName
 		ns.MTProtoPort = c.MTProtoPort
 		ns.MTProtoName = c.MTProtoName
 	}

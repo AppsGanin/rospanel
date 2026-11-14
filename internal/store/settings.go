@@ -74,7 +74,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	var routingCfg, subRulesJSON, subDPIJSON string
 	var reachCountries string
 	var mtprotoEn int
-	var masterHideFull, masterHideOver, awgEn, naiveEn, mieruEn, anytlsEn, ttEn, hideOffline, subHappCrypt, subTGBind, subTGRebind, subShowClash, tgMailingSwitch, subPageEnabled int
+	var masterHideFull, masterHideOver, awgEn, naiveEn, mieruEn, anytlsEn, ttEn, xhttpEn, hideOffline, subHappCrypt, subTGBind, subTGRebind, subShowClash, tgMailingSwitch, subPageEnabled int
 	var awgParamsJSON, connPolicyJSON string
 	var walletEn, refFirstOnly, winbackEn, churnSurvey, autoUpdateNodes, blacklistEn, planChange int
 	var trafficPacksJSON, customAppsJSON, appLinksJSON, wizardAppsJSON string
@@ -135,6 +135,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       naive_enabled, naive_name,
 		       mieru_enabled, mieru_port, mieru_transport, mieru_name,
 		       anytls_enabled, anytls_name, trusttunnel_enabled, trusttunnel_name,
+		       xhttp_enabled, xhttp_name, xhttp_path,
 		       reach_countries, reach_probes, reach_every, reach_threshold, reach_token,
 		       mtproto_enabled, mtproto_port, mtproto_name, mtproto_domain,
 		       sub_self_rotate, monthly_report_sent, sub_tg_rebind_hours, sub_page_enabled,
@@ -199,6 +200,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&naiveEn, &st.NaiveName,
 		&mieruEn, &st.MieruPort, &st.MieruTransport, &st.MieruName,
 		&anytlsEn, &st.AnyTLSName, &ttEn, &st.TrustTunnelName,
+		&xhttpEn, &st.XHTTPName, &st.XHTTPPath,
 		&reachCountries, &st.Reach.Probes, &st.Reach.Every, &st.Reach.Threshold, &st.Reach.Token,
 		&mtprotoEn, &st.MTProtoPort, &st.MTProtoName, &st.MTProtoDomain,
 		&st.SubSelfRotateHours, &st.MonthlyReportSent, &st.SubTGRebindHours, &subPageEnabled,
@@ -233,6 +235,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	st.MieruEnabled = mieruEn != 0
 	st.AnyTLSEnabled = anytlsEn != 0
 	st.TrustTunnelEnabled = ttEn != 0
+	st.XHTTPEnabled = xhttpEn != 0
 	st.MTProtoEnabled = mtprotoEn != 0
 	st.MieruTransport = model.MieruTransportOr(st.MieruTransport)
 	st.WalletEnabled = walletEn != 0
@@ -486,6 +489,9 @@ func (s *Store) SetFingerprints(vless, reality string) error {
 // SetAnyTLSName persists the AnyTLS lane's custom display name.
 func (s *Store) SetAnyTLSName(name string) error { return s.setSetting("anytls_name", name) }
 
+// SetXHTTPName persists the VLESS-XHTTP-TLS lane's custom display name.
+func (s *Store) SetXHTTPName(name string) error { return s.setSetting("xhttp_name", name) }
+
 // SetTrustTunnelName persists the TrustTunnel lane's custom display name.
 func (s *Store) SetTrustTunnelName(name string) error {
 	return s.setSetting("trusttunnel_name", name)
@@ -732,6 +738,7 @@ var protocolColumn = map[string]string{
 	"mieru":       "mieru_enabled",
 	"anytls":      "anytls_enabled",
 	"trusttunnel": "trusttunnel_enabled",
+	"xhttp":       "xhttp_enabled",
 	"mtproto":     "mtproto_enabled",
 }
 
@@ -1002,6 +1009,16 @@ func splitCountries(s string) []string {
 // SetTelegramMenuURL records the address the user bot's menu button was pointed at.
 func (s *Store) SetTelegramMenuURL(url string) error {
 	_, err := s.db.Exec(`UPDATE settings SET tg_menu_url = ? WHERE id = 1`, url)
+	return err
+}
+
+// EnsureXHTTPPath gives the VLESS-XHTTP-TLS lane its random path if it has none.
+func (s *Store) EnsureXHTTPPath(gen func() (string, error)) error {
+	path, err := gen()
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE settings SET xhttp_path = ? WHERE id = 1 AND xhttp_path = ''`, path)
 	return err
 }
 

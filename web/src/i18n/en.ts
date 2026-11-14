@@ -1554,6 +1554,7 @@ const en: Dict = {
     ruleProtoTap: "tap to switch",
     ruleProto: {
       vless: "VLESS-Vision",
+      xhttp: "VLESS-XHTTP-TLS",
       reality: "VLESS-XHTTP-REALITY",
       hysteria2: "Hysteria2",
       naive: "NaiveProxy",
@@ -3700,6 +3701,7 @@ const en: Dict = {
     mtprotoHint: "Telegram proxy with fake TLS on its own TCP port, a secret per user. The link is on the subscription page.",
     enableMtproto: "Turn MTProto on to set its port.",
     anytlsHint: "AnyTLS on the VLESS-TCP-TLS port: same certificate and decoy site, the user's UUID as the password. The link is handed out when the server's certificate is trusted.",
+    xhttpHint: "VLESS-XHTTP on the VLESS-TCP-TLS port: same certificate and decoy site, a secret path of its own (in the note).",
     trusttunnelHint: "TrustTunnel on the VLESS-TCP-TLS port over HTTP/2, login tt-u<id> and the user's UUID. Requires a domain with a trusted certificate: the app does not connect to an IP. The tt:// link is on the subscription page.",
     naiveHint: "NaiveProxy on the VLESS-TCP-TLS port: same certificate and decoy site, login u<id> and the user's UUID. The link is handed out when the server's certificate is trusted.",
     off: "disabled",
@@ -4131,8 +4133,6 @@ const en: Dict = {
     hasExtras: "Extra parameters are set — see “Edit”.",
     unsupportedBy:
       "Not supported by {{clients}} — it won't appear in their subscription. In the other formats it works as usual.",
-    comboUnsupported:
-      "This combination isn't supported by {{clients}} — it won't appear in their subscription. In the other clients it works as usual.",
     security: "Security",
     path: "Path",
     grpcService: "gRPC service",

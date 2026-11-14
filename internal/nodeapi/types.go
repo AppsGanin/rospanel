@@ -90,6 +90,9 @@ type SyncRequest struct {
 	Naive bool `json:"naive,omitempty"`
 	// TrustTunnel is Naive for TrustTunnel (internal/naive, tt.go).
 	TrustTunnel bool `json:"trusttunnel,omitempty"`
+	// XHTTP ⇒ this agent routes the VLESS-XHTTP-TLS path behind its decoy
+	// (internal/xhttpfront).
+	XHTTP bool `json:"xhttp,omitempty"`
 	// Mieru ⇒ this agent answers mieru on the port the panel gives it (MieruState),
 	// and MieruError is why its listener is not up, when it is not.
 	Mieru bool `json:"mieru,omitempty"`

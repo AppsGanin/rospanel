@@ -248,6 +248,8 @@ Clash Verge Rev、Mihomo Party、Sparkle、ClashMetaForAndroid、ClashMi）；�
 当证书受信任时，它会下发给 sing-box 客户端、Clash 配置（已支持它的 mihomo 内核）、v2rayN、Shadowrocket、
 Throne、Exclave、Karing 和 NekoBox。
 
+**VLESS-XHTTP-TLS** 是位于 VLESS-TCP-TLS 端口上的内置通道，在伪装站点之后使用独立的秘密路径，共用同一域名和证书。
+
 **TrustTunnel**（AdGuard 的协议）是位于 VLESS-TCP-TLS 端口上、基于 HTTP/2 的内置通道，与其共用证书和伪装站点：
 支持 TCP 和 UDP，登录名为 `tt-u<id>`，密码为用户的 UUID。需要拥有受信任证书的域名：应用无法通过 IP 连接。
 其应用（iOS、Android、macOS 版 TrustTunnel 及 CLI 客户端）从订阅页面导入 `tt://` 链接；Throne（1.2.0 起；Android 版 2.0.0 起）、Exclave（0.17.19 起）、LxBox（2.25.19 起）和 NyameBox（5.11.28 起）在订阅中获取该链接，1.19.21 起的 mihomo 内核在 Clash 配置中获取（ClashMetaForAndroid 2.11.24+、FlClash 0.8.93+、Clash Verge Rev 2.4.7+、Clash Party 1.9.3+、FlClashX、ClashMi）。

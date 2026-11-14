@@ -59,6 +59,9 @@ func shareLinks(u model.User, srv Server, f linkForms) []string {
 	if set.VLESSEnabled && srv.allowsBuiltin(model.LaneVLESS) {
 		links = append(links, link.VLESS(u, set))
 	}
+	if set.XHTTPOn() && srv.allowsBuiltin(model.LaneXHTTP) {
+		links = append(links, link.XHTTP(u, set))
+	}
 	// A REALITY lane with no public key cannot be dialled: the key is what the client
 	// authenticates the handshake with, and the panel mints it when the lane is first
 	// switched on. A node added before its keys landed would otherwise hand out a link

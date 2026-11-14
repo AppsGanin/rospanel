@@ -320,6 +320,9 @@ func (m *Manager) NodeLinkSettings() ([]*model.Settings, error) {
 		ns.AnyTLSEnabled = ns.AnyTLSEnabled && !ns.TLSInsecure && n.ServesAnyTLS
 		// TrustTunnel likewise (link.TrustTunnelOn).
 		ns.TrustTunnelEnabled = ns.TrustTunnelEnabled && !ns.TLSInsecure && n.ServesTrustTunnel
+		// VLESS-XHTTP-TLS needs the agent to route its path; an untrusted certificate is
+		// pinned in the link, as on VLESS-TCP-TLS.
+		ns.XHTTPEnabled = ns.XHTTPEnabled && n.ServesXHTTP
 		// mieru needs the agent to answer it, a port, and its listener up (as last said).
 		m.nodeGeoMu.Lock()
 		mieruDown := m.nodeMieruErr[n.ID] != ""

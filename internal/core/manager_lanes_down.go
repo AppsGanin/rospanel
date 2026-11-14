@@ -29,9 +29,9 @@ import (
 // laneHideAfter is how long a lane has to stay down before subscriptions drop it.
 const laneHideAfter = 2 * time.Minute
 
-// xrayLanes are the built-in lanes that need Xray: Naive, TrustTunnel, AnyTLS, mieru and MTProto
-// end in an Xray inbound too.
-var xrayLanes = []string{model.LaneVLESS, model.LaneReality, model.LaneHysteria,
+// xrayLanes are the built-in lanes that need Xray: VLESS-XHTTP-TLS, Naive, TrustTunnel, AnyTLS,
+// mieru and MTProto end in an Xray inbound too.
+var xrayLanes = []string{model.LaneVLESS, model.LaneXHTTP, model.LaneReality, model.LaneHysteria,
 	model.LaneNaive, model.LaneTrustTunnel, model.LaneAnyTLS, model.LaneMieru, model.LaneMTProto, model.SubProtoCustom}
 
 // inboundDownKey is the key of one custom inbound in lanesDown.

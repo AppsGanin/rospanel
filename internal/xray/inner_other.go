@@ -12,4 +12,5 @@ const (
 	RealityInnerAddr     = "127.0.0.1:18449" // 18447 is the decoy's HTTP/3
 	MTProtoInnerAddr     = "127.0.0.1:18448"
 	TrustTunnelInnerAddr = "127.0.0.1:18450"
+	XHTTPInnerAddr       = "127.0.0.1:18451"
 )

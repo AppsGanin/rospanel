@@ -166,6 +166,9 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 	if p := xray.InnerPort(xray.AnyTLSInnerAddr); p != 0 {
 		r.HoldTCP(p, "AnyTLS (internal)")
 	}
+	if p := xray.InnerPort(xray.XHTTPInnerAddr); p != 0 {
+		r.HoldTCP(p, "VLESS-XHTTP-TLS (internal)")
+	}
 	if p := xray.InnerPort(xray.MTProtoInnerAddr); p != 0 {
 		r.HoldTCP(p, "MTProto (internal)")
 	}

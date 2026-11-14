@@ -28,6 +28,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sysstat"
 	"github.com/AppsGanin/rospanel/internal/turnrelay"
+	"github.com/AppsGanin/rospanel/internal/xhttpfront"
 	"github.com/AppsGanin/rospanel/internal/xray"
 )
 
@@ -459,6 +460,9 @@ type Manager struct {
 	mtprotoErr atomic.Pointer[string]
 	// anytls is the master's AnyTLS lane (internal/anytls), behind the :443 fallback.
 	anytls *anytls.Server
+	// xhttp routes the VLESS-XHTTP-TLS lane's path on the TCP-TLS lane's port to its
+	// inbound, in front of the panel's handler (internal/xhttpfront).
+	xhttp *xhttpfront.Router
 
 	// nodeLogs holds the most recent log tail reported by each node, plus which
 	// nodes an operator is currently viewing (so the panel asks them for logs).
@@ -544,6 +548,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		nodeAWG:        map[int64]nodeAWGState{},
 		awg:            awg.New(),
 		naive:          naive.New(xray.NaiveInnerAddr),
+		xhttp:          xhttpfront.New(),
 		trusttunnel:    naive.NewTrustTunnel(xray.TrustTunnelInnerAddr),
 		mieru:          mieru.New(xray.MieruInnerAddr),
 		mtproto:        mtproto.New(xray.MTProtoInnerAddr),
@@ -1124,6 +1129,7 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 	m.syncMieru(set, cfg)
 	m.syncMTProto(set, cfg)
 	m.syncAnyTLS(cfg)
+	m.syncXHTTP(set, cfg)
 	m.syncHostFW(set, cfg) // a tunnel that failed to start may have come up here
 	return true, m.store.MarkConfigApplied()
 }
@@ -1203,6 +1209,7 @@ func (m *Manager) reconcileLocked() error {
 	m.syncMieru(set, cfg)
 	m.syncMTProto(set, cfg)
 	m.syncAnyTLS(cfg)
+	m.syncXHTTP(set, cfg)
 	m.syncHostFW(set, cfg)
 	return m.store.MarkConfigApplied()
 }

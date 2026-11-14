@@ -124,7 +124,9 @@ func tcpUserPorts(cfg []byte) map[string]uint16 {
 		switch in.StreamSettings.Network {
 		case "", "tcp", "raw":
 		default:
-			if in.StreamSettings.Security != "reality" {
+			// VLESS-XHTTP-TLS behind the front: each connection to it serves one client
+			// connection (internal/xhttpfront), with no CDN in between.
+			if in.Tag != TagXHTTP && in.StreamSettings.Security != "reality" {
 				continue
 			}
 		}

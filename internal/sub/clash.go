@@ -55,8 +55,14 @@ func clashProxies(u model.User, srv Server, caps clashCaps) []clashProxy {
 		n := link.LabelFor(model.ProtoVLESS, u, set)
 		out = append(out, clashProxy{n, clashVLESSLine(n, u.UUID, set, sv)})
 	}
+	if caps.xhttp && set.XHTTPOn() && srv.allowsBuiltin(model.LaneXHTTP) {
+		if p, ok := clashCustom(u, link.XHTTPInbound(set), set, sv); ok {
+			out = append(out, p)
+		}
+	}
 	// No public key, no dialable lane — see ShareLinks.
-	if set.RealityEnabled && set.RealityPublicKey != "" && srv.allowsBuiltin(model.LaneReality) {
+	// REALITY rides XHTTP too: only for a core that has it (clashXHTTP).
+	if caps.reality && set.RealityEnabled && set.RealityPublicKey != "" && srv.allowsBuiltin(model.LaneReality) {
 		n := link.LabelFor(model.ProtoReality, u, set)
 		out = append(out, clashProxy{n, clashRealityLine(n, u.UUID, set)})
 	}
@@ -93,7 +99,8 @@ func clashProxies(u model.User, srv Server, caps clashCaps) []clashProxy {
 		}
 	}
 	for _, in := range srv.Custom {
-		if !srv.allowsInbound(in.ID) || in.Opts.EncMode != "" && !caps.vlessEnc || in.Opts.PinCert && !caps.pin {
+		if !srv.allowsInbound(in.ID) || in.Opts.EncMode != "" && !caps.vlessEnc || in.Opts.PinCert && !caps.pin ||
+			in.Opts.Transport == model.TrXHTTP && !caps.xhttp {
 			continue
 		}
 		if p, ok := clashCustom(u, in, set, sv); ok {
@@ -102,7 +109,9 @@ func clashProxies(u model.User, srv Server, caps clashCaps) []clashProxy {
 	}
 	for _, r := range srv.relayEntries(u) {
 		if r.lane == model.LaneReality {
-			out = append(out, clashProxy{r.name, clashRealityLine(r.name, r.user.UUID, set)})
+			if caps.reality {
+				out = append(out, clashProxy{r.name, clashRealityLine(r.name, r.user.UUID, set)})
+			}
 		} else {
 			out = append(out, clashProxy{r.name, clashVLESSLine(r.name, r.user.UUID, set, sv)})
 		}
@@ -292,8 +301,9 @@ func ClashYAML(u model.User, set *model.Settings) string {
 
 // ClashYAMLMulti renders a Clash-Meta (Mihomo) config spanning every server: all
 // proxies under one select group. servers[0] is the local server (group title + rules).
+// It assumes a core with XHTTP, as clashXHTTP does for a client it cannot place.
 func ClashYAMLMulti(u model.User, servers []Server) string {
-	return clashYAML(u, servers, clashCaps{pin: true})
+	return clashYAML(u, servers, clashCaps{pin: true, xhttp: true, reality: true})
 }
 
 // ClashYAMLFor is ClashYAMLMulti for the client that asked: with the lanes its core
@@ -396,7 +406,7 @@ const (
 // (proxy node names). Falls back to the plain config if the template has no proxies
 // marker.
 func ClashWithTemplateMulti(u model.User, servers []Server, template string) string {
-	return clashWithTemplate(u, servers, template, clashCaps{pin: true})
+	return clashWithTemplate(u, servers, template, clashCaps{pin: true, xhttp: true, reality: true})
 }
 
 // ClashWithTemplateFor is ClashWithTemplateMulti for the client that asked (see

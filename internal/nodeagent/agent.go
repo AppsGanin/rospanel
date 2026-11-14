@@ -51,6 +51,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/turnrelay"
 	"github.com/AppsGanin/rospanel/internal/updater"
 	"github.com/AppsGanin/rospanel/internal/version"
+	"github.com/AppsGanin/rospanel/internal/xhttpfront"
 	"github.com/AppsGanin/rospanel/internal/xray"
 )
 
@@ -309,6 +310,9 @@ type Agent struct {
 	// anytls answers AnyTLS behind the decoy (internal/anytls); its users are
 	// anytls-in's clients in the config last applied.
 	anytls *anytls.Server
+	// xhttp routes the VLESS-XHTTP-TLS lane's path on the TCP-TLS lane's port to its
+	// inbound, in front of the decoy (internal/xhttpfront).
+	xhttp *xhttpfront.Router
 }
 
 // Run loads the node identity and runs the agent until the context is cancelled
@@ -582,6 +586,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		shaper:       shaper.New(),
 		awg:          awg.New(),
 		naive:        naive.New(xray.NaiveInnerAddr),
+		xhttp:        xhttpfront.New(),
 		trusttunnel:  naive.NewTrustTunnel(xray.TrustTunnelInnerAddr),
 		mieru:        mieru.New(xray.MieruInnerAddr),
 		mtproto:      mtproto.New(xray.MTProtoInnerAddr),
@@ -1221,6 +1226,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		TrustTunnel:  true,
 		Mieru:        true,
 		AnyTLS:       a.anytls != nil,
+		XHTTP:        a.xhttp != nil,
 		MieruError:   a.mieruError(),
 		MTProto:      a.mtproto != nil,
 		MTProtoError: a.mtprotoError(),
@@ -1457,6 +1463,7 @@ func (a *Agent) applyUsers(st *nodeapi.NodeState) error {
 	a.syncMieru(data, m.Mieru)
 	a.syncMTProto(data, m.MTProto)
 	a.syncAnyTLS(data)
+	a.syncXHTTP(data, public)
 	switch how {
 	case xray.RawUnchanged:
 		slog.Info("node: state applied without an Xray restart (config unchanged)")

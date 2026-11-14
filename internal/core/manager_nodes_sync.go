@@ -161,6 +161,7 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		ServesMieru:       req.Mieru,
 		ServesAnyTLS:      req.AnyTLS,
 		ServesTrustTunnel: req.TrustTunnel,
+		ServesXHTTP:       req.XHTTP,
 		ServesMTProto:     req.MTProto,
 	})
 

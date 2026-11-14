@@ -12,8 +12,9 @@ import (
 // the panel as before.
 // TrustTunnel sits in front of it on the same fallback (its own login keeps the two
 // apart), so one wrap answers both.
+// The VLESS-XHTTP-TLS lane's path comes first: it is that lane's alone (manager_xhttp.go).
 func (m *Manager) NaiveHandler(next http.Handler) http.Handler {
-	return m.trusttunnel.Wrap(m.naive.Wrap(next))
+	return m.xhttp.Wrap(m.trusttunnel.Wrap(m.naive.Wrap(next)))
 }
 
 // syncNaive hands the lane — and TrustTunnel, its twin — the users of the config just put in force, which ends the

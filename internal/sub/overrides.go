@@ -66,6 +66,8 @@ func (o Overrides) clash(c clashCaps) clashCaps {
 	c.mieru = c.mieru || o.on(model.LaneMieru)
 	c.anytls = c.anytls || o.on(model.LaneAnyTLS)
 	c.trusttunnel = c.trusttunnel || o.on(model.LaneTrustTunnel)
+	c.xhttp = c.xhttp || o.on(model.LaneXHTTP)
+	c.reality = c.reality || o.on(model.LaneReality)
 	c.vlessEnc = o.enc(c.vlessEnc)
 	return c
 }
@@ -96,16 +98,18 @@ func (o Overrides) enc(auto bool) bool {
 // access and to the server having them switched on, which this does not know.
 func Protocols(format, userAgent string, o Overrides) map[string]bool {
 	p := map[string]bool{
-		model.LaneVLESS: true, model.LaneReality: true, model.LaneHysteria: true, model.SubProtoCustom: true,
+		model.LaneVLESS: true, model.LaneXHTTP: true, model.LaneReality: true, model.LaneHysteria: true, model.SubProtoCustom: true,
 	}
 	switch format {
 	case model.SubActionClash:
 		c := o.clash(clashCapsFor(userAgent))
 		p[model.LaneAnyTLS], p[model.LaneMieru], p[model.LaneAWG], p[model.SubProtoVLESSEnc] = c.anytls, c.mieru, c.awg, c.vlessEnc
 		p[model.LaneTrustTunnel] = c.trusttunnel
+		p[model.LaneXHTTP], p[model.LaneReality] = c.xhttp, c.reality
 	case model.SubActionSingbox:
 		c := o.SingBox(SingBoxCapsFor(userAgent))
 		p[model.LaneNaive], p[model.LaneAnyTLS] = c.Naive, c.AnyTLS
+		p[model.LaneXHTTP] = false // sing-box has no XHTTP
 	case model.SubActionXrayJSON:
 		p[model.SubProtoVLESSEnc] = o.enc(VLESSEncLinkFor(userAgent) || xrayCoreHasVLESSEnc(userAgent))
 	default:

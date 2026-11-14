@@ -409,6 +409,12 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		listen, port := innerLaneListen(AnyTLSInnerAddr, inbounds)
 		inbounds = append(inbounds, innerInbound(TagAnyTLS, listen, port, laneClients(set.AnyTLSEnabled, model.LaneAnyTLS, users, opts.allowsBuiltin), sniff))
 	}
+	// VLESS-XHTTP-TLS: requests on its path reach the decoy through the TCP-TLS lane's
+	// fallback, and the panel's route there (internal/xhttpfront) relays them here.
+	if set.XHTTPOn() {
+		listen, port := innerLaneListen(XHTTPInnerAddr, inbounds)
+		inbounds = append(inbounds, xhttpInbound(listen, port, set.XHTTPPath, laneClients(true, model.LaneXHTTP, users, opts.allowsBuiltin), sniff))
+	}
 	// MTProto (its own port, see internal/mtproto): each Telegram connection enters
 	// here on its user's UUID, bound for a Telegram data centre.
 	if set.MTProtoEnabled {
@@ -618,6 +624,7 @@ const (
 	TagMieru       = "mieru-in"
 	TagAnyTLS      = "anytls-in"
 	TagMTProto     = "mtproto-in"
+	TagXHTTP       = "xhttp-in"
 )
 
 // ProtoWireGuard is Xray's name for the protocol of a WireGuard inbound, TURN-VK's and
@@ -664,6 +671,61 @@ func innerInbound(tag, listen string, port int, clients []VLESSClient, sniff *Sn
 		},
 		Sniffing: sniff,
 	}
+}
+
+// xhttpInbound is the VLESS-XHTTP-TLS lane's inbound: XHTTP on path, no TLS of its own —
+// the TCP-TLS lane's ended at the public port — and the client named by the PROXY line
+// the route in front writes (internal/xhttpfront).
+func xhttpInbound(listen string, port int, path string, clients []VLESSClient, sniff *Sniffing) Inbound {
+	return Inbound{
+		Tag:      TagXHTTP,
+		Listen:   listen,
+		Port:     port,
+		Protocol: "vless",
+		Settings: VLESSInboundSettings{Clients: clients, Decryption: "none"},
+		StreamSettings: &StreamSettings{
+			Network:       "xhttp",
+			XHTTPSettings: &XHTTPSettings{Path: path},
+			Sockopt:       acceptProxy,
+		},
+		Sniffing: sniff,
+	}
+}
+
+// XHTTPRoute is the path and inner address of the VLESS-XHTTP-TLS lane in cfg; ok is
+// false when the lane is off.
+func XHTTPRoute(cfg *Config) (path, addr string, ok bool) {
+	for _, in := range cfg.Inbounds {
+		if in.Tag == TagXHTTP && in.StreamSettings != nil && in.StreamSettings.XHTTPSettings != nil {
+			return in.StreamSettings.XHTTPSettings.Path, innerAddr(in.Listen, in.Port), true
+		}
+	}
+	return "", "", false
+}
+
+// XHTTPRouteRaw is XHTTPRoute for a config as JSON, the form a node receives.
+func XHTTPRouteRaw(data []byte) (path, addr string, ok bool) {
+	var doc struct {
+		Inbounds []struct {
+			Tag            string `json:"tag"`
+			Listen         string `json:"listen"`
+			Port           int    `json:"port"`
+			StreamSettings struct {
+				XHTTPSettings struct {
+					Path string `json:"path"`
+				} `json:"xhttpSettings"`
+			} `json:"streamSettings"`
+		} `json:"inbounds"`
+	}
+	if json.Unmarshal(data, &doc) != nil {
+		return "", "", false
+	}
+	for _, in := range doc.Inbounds {
+		if in.Tag == TagXHTTP && in.StreamSettings.XHTTPSettings.Path != "" {
+			return in.StreamSettings.XHTTPSettings.Path, innerAddr(in.Listen, in.Port), true
+		}
+	}
+	return "", "", false
 }
 
 // laneClients are the users an inner lane lets in: their UUID, no flow.
@@ -1165,6 +1227,10 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 		listen, port := InnerListen(MieruInnerAddr)
 		in = append(in, Inbound{Tag: TagMieru, Listen: listen, Port: port, Protocol: "vless", Settings: VLESSInboundSettings{Clients: mc, Decryption: "none"}})
 	}
+	if xc := laneClients(set.XHTTPOn(), model.LaneXHTTP, users, allowBuiltin); len(xc) > 0 {
+		listen, port := InnerListen(XHTTPInnerAddr)
+		in = append(in, Inbound{Tag: TagXHTTP, Listen: listen, Port: port, Protocol: "vless", Settings: VLESSInboundSettings{Clients: xc, Decryption: "none"}})
+	}
 	if ac := laneClients(set.AnyTLSEnabled, model.LaneAnyTLS, users, allowBuiltin); len(ac) > 0 {
 		listen, port := InnerListen(AnyTLSInnerAddr)
 		in = append(in, Inbound{Tag: TagAnyTLS, Listen: listen, Port: port, Protocol: "vless", Settings: VLESSInboundSettings{Clients: ac, Decryption: "none"}})
@@ -1267,6 +1333,9 @@ func EnabledInboundTags(set *model.Settings, custom []model.Inbound) []string {
 	}
 	if set.MieruEnabled {
 		tags = append(tags, TagMieru)
+	}
+	if set.XHTTPOn() {
+		tags = append(tags, TagXHTTP)
 	}
 	if set.AnyTLSEnabled {
 		tags = append(tags, TagAnyTLS)

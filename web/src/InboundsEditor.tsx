@@ -1298,14 +1298,13 @@ function InboundForm({
       )}
 
       {v.security === "tls" && !v.cdn_host && !isShadowsocks && !isWireGuard && (
-        <div className="flex flex-col gap-1">
-          <Switch
-            label={t("inb.pinCert")}
-            checked={v.pin_cert}
-            onChange={(x) => set("pin_cert", x)}
-          />
-          <p className="text-xs text-ink-muted">{t("inb.pinCertHint")}</p>
-        </div>
+        <label className="flex items-center justify-between gap-3">
+          <span className="text-sm">
+            {t("inb.pinCert")}
+            <span className="block text-xs text-ink-muted">{t("inb.pinCertHint")}</span>
+          </span>
+          <Switch label={t("inb.pinCert")} checked={v.pin_cert} onChange={(x) => set("pin_cert", x)} />
+        </label>
       )}
 
       {(v.protocol === "vless" || v.protocol === "trojan") && (
@@ -1326,12 +1325,6 @@ function InboundForm({
           </div>
           <p className="text-xs text-ink-muted">{t("inb.cdnHint")}</p>
         </div>
-      )}
-
-      {combo?.unsupported && combo.unsupported.length > 0 && (
-        <p className="rounded-lg warning-tint px-3 py-2 text-xs text-warning">
-          {t("inb.comboUnsupported", { clients: combo.unsupported.join(", ") })}
-        </p>
       )}
 
       {usesPath && (

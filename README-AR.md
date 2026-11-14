@@ -274,6 +274,8 @@ ClashMi)، ورابط `mierus://` لـ Shadowrocket وThrone وExclave وKaring.
 UUID الخاص بالمستخدم. يُقدَّم لعملاء sing-box، وملف تعريف Clash (أنوية mihomo التي تدعمه)، وv2rayN،
 وShadowrocket، وThrone، وExclave، وKaring، وNekoBox، حين تكون الشهادة موثوقة.
 
+**VLESS-XHTTP-TLS** مسار مدمج على منفذ VLESS-TCP-TLS، خلف موقع التمويه على مسار سري خاص به، بالنطاق والشهادة نفسيهما.
+
 **TrustTunnel** (بروتوكول AdGuard) مسار مدمج على منفذ VLESS-TCP-TLS عبر HTTP/2، خلف الشهادة نفسها
 وموقع التمويه نفسه: TCP وUDP، باسم الدخول `tt-u<id>` وكلمة المرور UUID المستخدم. يتطلب نطاقًا بشهادة
 موثوقة: لا تتصل التطبيقات عبر IP. تستورد تطبيقاته (TrustTunnel لـ iOS وAndroid وmacOS وعميل سطر الأوامر)

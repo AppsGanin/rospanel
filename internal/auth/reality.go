@@ -47,3 +47,13 @@ func RandomRealityPath() (string, error) {
 	}
 	return "/" + strings.ToLower(secretPathEnc.EncodeToString(b)), nil
 }
+
+// RandomXHTTPPath returns the VLESS-XHTTP-TLS lane's path ("/<random>"): the only thing
+// that tells its requests from the decoy site's behind the same port, so ~80 bits of it.
+func RandomXHTTPPath() (string, error) {
+	b := make([]byte, 10)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return "/" + strings.ToLower(secretPathEnc.EncodeToString(b)), nil
+}

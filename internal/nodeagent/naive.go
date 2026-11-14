@@ -16,7 +16,7 @@ func (a *Agent) naiveHandler(next http.Handler) http.Handler {
 	if a.trusttunnel != nil {
 		next = a.trusttunnel.Wrap(next)
 	}
-	return next
+	return a.xhttp.Wrap(next) // the VLESS-XHTTP-TLS lane's path is its alone (xhttp.go)
 }
 
 // syncNaive hands the lane naive-in's clients from the config just applied, which ends

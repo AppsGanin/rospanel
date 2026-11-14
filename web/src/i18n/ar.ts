@@ -1515,6 +1515,7 @@ const ar: Dict = {
     ruleProtoTap: "اضغط للتبديل",
     ruleProto: {
       vless: "VLESS-Vision",
+      xhttp: "VLESS-XHTTP-TLS",
       reality: "VLESS-XHTTP-REALITY",
       hysteria2: "Hysteria2",
       naive: "NaiveProxy",
@@ -3596,6 +3597,7 @@ const ar: Dict = {
     mtprotoHint: "وكيل Telegram مع fake TLS على منفذ TCP خاص به، ولكل مستخدم سرّه. الرابط في صفحة الاشتراك.",
     enableMtproto: "فعّل MTProto لتحديد منفذه.",
     anytlsHint: "AnyTLS على منفذ VLESS-TCP-TLS: الشهادة نفسها وموقع التمويه نفسه، وكلمة المرور هي UUID المستخدم. يُعطى الرابط عندما تكون شهادة الخادم موثوقة.",
+    xhttpHint: "VLESS-XHTTP على منفذ VLESS-TCP-TLS: الشهادة نفسها وموقع التمويه نفسه، ومسار سري خاص به (في الملاحظة).",
     trusttunnelHint: "TrustTunnel على منفذ VLESS-TCP-TLS عبر HTTP/2، باسم الدخول tt-u<id> وUUID المستخدم. يتطلب نطاقًا بشهادة موثوقة: لا يتصل التطبيق عبر IP. رابط tt:// في صفحة الاشتراك.",
     naiveHint: "NaiveProxy على منفذ VLESS-TCP-TLS: الشهادة نفسها وموقع التمويه نفسه، باسم الدخول u<id> وUUID المستخدم. يُعطى الرابط عندما تكون شهادة الخادم موثوقة.",
     off: "معطّل",
@@ -4014,7 +4016,6 @@ const ar: Dict = {
     noTls: "بلا TLS",
     hasExtras: "توجد معاملات إضافية — انظر «تعديل».",
     unsupportedBy: "غير مدعوم في {{clients}} — لن يظهر في اشتراكهم. في الصيغ الأخرى يعمل كالمعتاد.",
-    comboUnsupported: "هذا التركيب غير مدعوم في {{clients}} — لن يظهر في اشتراكهم. في العملاء الآخرين يعمل كالمعتاد.",
     security: "الأمان",
     path: "المسار",
     grpcService: "خدمة gRPC",

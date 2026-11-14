@@ -127,9 +127,13 @@ func TestXHTTPSkippedInSingBoxKeptInLinks(t *testing.T) {
 	if js := SingBoxJSONMulti(u, servers); strings.Contains(js, `"tag": "XH"`) {
 		t.Fatalf("xhttp must not appear in a sing-box profile:\n%s", js)
 	}
-	// mihomo does have xhttp for VLESS, so the same inbound belongs in the Clash file.
-	if yaml := ClashYAMLMulti(u, servers); !strings.Contains(yaml, "xhttp-opts") {
+	// mihomo has xhttp for VLESS since v1.19.22, so the same inbound belongs in its Clash
+	// file — and not in an older core's, which would dial it as plain TCP and never connect.
+	if yaml := ClashYAMLFor(u, servers, "mihomo/1.19.22"); !strings.Contains(yaml, "xhttp-opts") {
 		t.Fatalf("xhttp missing from clash output:\n%s", yaml)
+	}
+	if yaml := ClashYAMLFor(u, servers, "mihomo/1.19.21"); strings.Contains(yaml, "xhttp-opts") {
+		t.Fatalf("xhttp handed to a core without it:\n%s", yaml)
 	}
 }
 

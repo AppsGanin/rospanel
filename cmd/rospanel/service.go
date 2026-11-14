@@ -109,6 +109,10 @@ func runServer(dataDir string) {
 	if err := st.ReencryptSensitiveFields(); err != nil {
 		log.Printf("[WARN] reencrypt secrets: %v", err)
 	}
+	// The VLESS-XHTTP-TLS lane's secret path, made once, before any config is built.
+	if err := st.EnsureXHTTPPath(auth.RandomXHTTPPath); err != nil {
+		log.Printf("[WARN] xhttp path: %v", err)
+	}
 
 	// Port 80, before anything asks for a certificate. A host that serves a
 	// convincing site on 443 and refuses 80 outright is not a shape the real web has,

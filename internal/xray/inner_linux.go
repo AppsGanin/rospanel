@@ -11,4 +11,5 @@ const (
 	RealityInnerAddr     = "@rospanel-reality"
 	MTProtoInnerAddr     = "@rospanel-mtproto"
 	TrustTunnelInnerAddr = "@rospanel-trusttunnel"
+	XHTTPInnerAddr       = "@rospanel-xhttp"
 )

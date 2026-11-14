@@ -25,6 +25,7 @@ const (
 // keeping them here as the single source stops those copies from drifting apart.
 const (
 	ProtoVLESS       = "VLESS-TCP-TLS"
+	ProtoXHTTP       = "VLESS-XHTTP-TLS"
 	ProtoReality     = "VLESS-XHTTP-REALITY"
 	ProtoHysteria    = "HYSTERIA-UDP"
 	ProtoAWG         = "AMNEZIA-WG"
@@ -1046,6 +1047,12 @@ type Settings struct {
 	MieruPort      int    `json:"-"`
 	MieruTransport string `json:"-"`
 
+	// VLESS-XHTTP-TLS (internal/xhttpfront): on XHTTPPath behind the decoy on the
+	// VLESS-TCP-TLS port, with its domain and certificate, on each user's UUID. The path
+	// is one for the fleet; a node's switch is its own (Node.XHTTPEnabled).
+	XHTTPEnabled bool   `json:"-"`
+	XHTTPPath    string `json:"-"`
+
 	// AnyTLS (internal/anytls): through the decoy behind the VLESS-TCP-TLS port, on each
 	// user's UUID, like NaiveProxy. A node's switch is its own (Node.AnyTLSEnabled).
 	AnyTLSEnabled bool `json:"-"`
@@ -1238,6 +1245,7 @@ type Settings struct {
 	NaiveName       string `json:"-"`
 	MieruName       string `json:"-"`
 	AnyTLSName      string `json:"-"`
+	XHTTPName       string `json:"-"`
 	TrustTunnelName string `json:"-"`
 	MTProtoName     string `json:"-"`
 
@@ -2150,6 +2158,8 @@ func (s *Settings) ProtoLabelFor(proto string, u *User) string {
 		custom = s.MieruName
 	case ProtoAnyTLS:
 		custom = s.AnyTLSName
+	case ProtoXHTTP:
+		custom = s.XHTTPName
 	case ProtoTrustTunnel:
 		custom = s.TrustTunnelName
 	case ProtoMTProto:
@@ -2540,3 +2550,11 @@ const (
 // enough sessions can do it by chance. internal/mieru serves UDP; the panel does not
 // offer it until that is fixed upstream. The stored value is kept for then.
 func MieruTransportOr(string) string { return MieruTCP }
+
+// MinXHTTPPathLen is the shortest VLESS-XHTTP-TLS path the panel makes (auth.RandomXHTTPPath
+// gives 16 characters after the slash).
+const MinXHTTPPathLen = 16
+
+// XHTTPOn reports whether the VLESS-XHTTP-TLS lane runs: switched on, with a path. The
+// path is the lane's address behind the decoy, so without one there is nothing to route.
+func (s *Settings) XHTTPOn() bool { return s.XHTTPEnabled && s.XHTTPPath != "" }

@@ -1554,6 +1554,7 @@ const fa: Dict = {
     ruleProtoTap: "برای تغییر ضربه بزنید",
     ruleProto: {
       vless: "VLESS-Vision",
+      xhttp: "VLESS-XHTTP-TLS",
       reality: "VLESS-XHTTP-REALITY",
       hysteria2: "Hysteria2",
       naive: "NaiveProxy",
@@ -3700,6 +3701,7 @@ const fa: Dict = {
     mtprotoHint: "پروکسی Telegram با fake TLS روی پورت TCP جداگانه، با سکرت جدا برای هر کاربر. لینک در صفحهٔ اشتراک است.",
     enableMtproto: "برای تعیین پورت، MTProto را روشن کنید.",
     anytlsHint: "AnyTLS روی پورت VLESS-TCP-TLS: همان گواهی و سایت پوششی، UUID کاربر به‌عنوان رمز. لینک وقتی داده می‌شود که گواهی سرور معتبر باشد.",
+    xhttpHint: "VLESS-XHTTP روی پورت VLESS-TCP-TLS: همان گواهی و سایت پوششی، با مسیر مخفی خودش (در یادداشت).",
     trusttunnelHint: "TrustTunnel روی پورت VLESS-TCP-TLS با HTTP/2، نام کاربری tt-u<id> و UUID کاربر. دامنه با گواهی معتبر لازم است: برنامه با IP وصل نمی‌شود. لینک tt:// در صفحهٔ اشتراک است.",
     naiveHint: "NaiveProxy روی پورت VLESS-TCP-TLS: همان گواهی و سایت پوششی، نام کاربری u<id> و UUID کاربر. لینک وقتی داده می‌شود که گواهی سرور معتبر باشد.",
     off: "غیرفعال",
@@ -4131,8 +4133,6 @@ const fa: Dict = {
     hasExtras: "پارامترهای اضافه تنظیم شده‌اند — «ویرایش» را ببینید.",
     unsupportedBy:
       "توسط {{clients}} پشتیبانی نمی‌شود — در اشتراک آن‌ها نمایش داده نمی‌شود. در قالب‌های دیگر طبق معمول کار می‌کند.",
-    comboUnsupported:
-      "این ترکیب توسط {{clients}} پشتیبانی نمی‌شود — در اشتراک آن‌ها نمایش داده نمی‌شود. در کلاینت‌های دیگر طبق معمول کار می‌کند.",
     security: "امنیت",
     path: "مسیر (Path)",
     grpcService: "سرویس gRPC",

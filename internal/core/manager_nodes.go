@@ -472,6 +472,11 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 			return err
 		}
 	}
+	if on, ok := u.Protocols["xhttp"]; ok {
+		if err := m.store.SetNodeXHTTPEnabled(id, on); err != nil {
+			return err
+		}
+	}
 	if on, ok := u.Protocols["anytls"]; ok {
 		if err := m.store.SetNodeAnyTLSEnabled(id, on); err != nil {
 			return err
@@ -546,6 +551,7 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		MieruName:          connNames["mieru"],
 		AnyTLSName:         connNames["anytls"],
 		TrustTunnelName:    connNames["trusttunnel"],
+		XHTTPName:          connNames["xhttp"],
 		MTProtoPort:        mtprotoPort,
 		MTProtoName:        nodeMTProtoName(n),
 	}

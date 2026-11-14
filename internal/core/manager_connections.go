@@ -153,6 +153,16 @@ func buildConnectionsStatus(set *model.Settings) *ConnectionsStatus {
 				Fingerprint: set.VLESSFP(),
 			},
 			{
+				Key:         "xhttp",
+				Name:        model.ProtoXHTTP,
+				DisplayName: set.XHTTPName,
+				Transport:   "XHTTP",
+				Security:    "TLS",
+				Port:        strconv.Itoa(vlessPort),
+				Note:        set.XHTTPPath,
+				Enabled:     set.XHTTPEnabled,
+			},
+			{
 				Key:         "reality",
 				Name:        model.ProtoReality,
 				DisplayName: set.RealityName,
@@ -286,6 +296,7 @@ var connNameKeys = []struct{ key, proto string }{
 	{"mieru", model.ProtoMieru},
 	{"anytls", model.ProtoAnyTLS},
 	{"trusttunnel", model.ProtoTrustTunnel},
+	{"xhttp", model.ProtoXHTTP},
 }
 
 // validateConnNames trims and checks the custom node names, returning them keyed
@@ -630,6 +641,9 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 		return err
 	}
 	if err := m.store.SetTrustTunnelName(connNames["trusttunnel"]); err != nil {
+		return err
+	}
+	if err := m.store.SetXHTTPName(connNames["xhttp"]); err != nil {
 		return err
 	}
 	if err := m.store.SetHysteriaPorts(u.HysteriaPort, u.HopStart, u.HopEnd, interval, obfs); err != nil {

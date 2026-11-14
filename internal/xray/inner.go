@@ -8,9 +8,10 @@ import (
 
 // The lanes behind the panel's own listeners — the TCP-TLS lane behind the front,
 // naive-in behind the NaiveProxy handler, trusttunnel-in behind the TrustTunnel one, mieru-in behind the mieru server, anytls-in
-// behind the AnyTLS one, mtproto-in behind the Telegram proxy, and vless-reality-in
+// behind the AnyTLS one, mtproto-in behind the Telegram proxy, xhttp-in behind the XHTTP route
+// (internal/xhttpfront), and vless-reality-in
 // when its port is shared with that first one (see reality_share.go) — listen on
-// VLESSInnerAddr, NaiveInnerAddr, TrustTunnelInnerAddr, MieruInnerAddr, AnyTLSInnerAddr, MTProtoInnerAddr and
+// VLESSInnerAddr, NaiveInnerAddr, TrustTunnelInnerAddr, MieruInnerAddr, AnyTLSInnerAddr, MTProtoInnerAddr, XHTTPInnerAddr and
 // RealityInnerAddr:
 // abstract unix sockets on Linux (inner_linux.go), with no port to reserve or collide
 // with, nothing reachable from the network, and no file a crash can leave behind;

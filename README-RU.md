@@ -290,6 +290,8 @@ ClashMetaForAndroid, ClashMi), ссылка `mierus://` для Shadowrocket, Thr
 пароль — UUID пользователя. Его получают клиенты sing-box, Clash-профиль (ядра mihomo, которые его
 умеют), v2rayN, Shadowrocket, Throne, Exclave, Karing и NekoBox — при доверенном сертификате.
 
+**VLESS-XHTTP-TLS** — встроенный протокол на порту VLESS-TCP-TLS, за сайтом-приманкой на своём секретном пути, с тем же доменом и сертификатом.
+
 **TrustTunnel** (протокол AdGuard) — встроенный протокол на порту VLESS-TCP-TLS по HTTP/2, за тем
 же сертификатом и сайтом-приманкой: TCP и UDP, логин `tt-u<id>`, пароль — UUID пользователя. Нужен
 домен с доверенным сертификатом: по IP приложения не подключаются. Приложения (TrustTunnel для iOS,

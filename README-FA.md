@@ -281,6 +281,8 @@ Throne، Exclave و Karing.
 است. به کلاینت‌های sing-box، پروفایل Clash (هسته‌های mihomo که آن را دارند)، v2rayN، Shadowrocket،
 Throne، Exclave، Karing و NekoBox می‌رسد، وقتی گواهی معتبر باشد.
 
+**VLESS-XHTTP-TLS** یک مسیر داخلی روی پورت VLESS-TCP-TLS است، پشت سایت پوششی روی مسیر مخفی خودش، با همان دامنه و گواهی.
+
 **TrustTunnel** (پروتکل AdGuard) یک مسیر داخلی روی پورت VLESS-TCP-TLS با HTTP/2 است، پشت همان
 گواهی و سایت پوششی: TCP و UDP، نام کاربری `tt-u<id>` و رمز عبور UUID کاربر. دامنه با گواهی معتبر لازم
 است: برنامه‌ها با IP وصل نمی‌شوند. برنامه‌های آن (TrustTunnel برای iOS، Android، macOS و کلاینت خط فرمان)

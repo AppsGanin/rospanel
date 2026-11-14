@@ -294,6 +294,8 @@ Throne, Exclave and Karing.
 site; the password is the user's UUID. It goes to sing-box clients, the Clash profile (mihomo
 cores that have it), v2rayN, Shadowrocket, Throne, Exclave, Karing and NekoBox, when the certificate is trusted.
 
+**VLESS-XHTTP-TLS** is a built-in lane on the VLESS-TCP-TLS port, behind the decoy on a secret path of its own, with the same domain and certificate.
+
 **TrustTunnel** (AdGuard's protocol) is a built-in lane on the VLESS-TCP-TLS port over HTTP/2,
 behind the same certificate and decoy site: TCP and UDP, the login `tt-u<id>`, the password the
 user's UUID. Requires a domain with a trusted certificate: the apps do not connect to an IP. Its

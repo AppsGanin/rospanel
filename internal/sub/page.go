@@ -747,6 +747,9 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 		if s.VLESSEnabled && srv.allowsBuiltin(model.LaneVLESS) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoVLESS, &u), link.VLESS(u, s)})
 		}
+		if s.XHTTPOn() && srv.allowsBuiltin(model.LaneXHTTP) {
+			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoXHTTP, &u), link.XHTTP(u, s)})
+		}
 		if s.RealityEnabled && s.RealityPublicKey != "" && srv.allowsBuiltin(model.LaneReality) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoReality, &u), link.Reality(u, s)})
 		}

@@ -1554,6 +1554,7 @@ const ru = {
     ruleProtoTap: "нажмите, чтобы переключить",
     ruleProto: {
       vless: "VLESS-Vision",
+      xhttp: "VLESS-XHTTP-TLS",
       reality: "VLESS-XHTTP-REALITY",
       hysteria2: "Hysteria2",
       naive: "NaiveProxy",
@@ -3698,6 +3699,7 @@ const ru = {
     mtprotoHint: "Прокси для Telegram с fake TLS на своём TCP-порту, у каждого пользователя свой секрет. Ссылка — на странице подписки.",
     enableMtproto: "Включите MTProto, чтобы задать порт.",
     anytlsHint: "AnyTLS на порту VLESS-TCP-TLS: тот же сертификат и сайт-приманка, пароль — UUID пользователя. Ссылка выдаётся, когда сертификат сервера доверенный.",
+    xhttpHint: "VLESS-XHTTP на порту VLESS-TCP-TLS: тот же сертификат и сайт-приманка, свой секретный путь (в примечании).",
     trusttunnelHint: "TrustTunnel на порту VLESS-TCP-TLS по HTTP/2, логин tt-u<id> и UUID пользователя. Нужен домен с доверенным сертификатом: по IP приложение не подключается. Ссылка tt:// — на странице подписки.",
     naiveHint: "NaiveProxy на порту VLESS-TCP-TLS: тот же сертификат и сайт-приманка, логин u<id> и UUID пользователя. Ссылка выдаётся, когда сертификат сервера доверенный.",
     off: "выключен",
@@ -4131,8 +4133,6 @@ const ru = {
     hasExtras: "Заданы дополнительные параметры — смотри «Изменить».",
     unsupportedBy:
       "Не поддерживают {{clients}} — в их подписку не попадёт. В остальных форматах работает как обычно.",
-    comboUnsupported:
-      "Эту комбинацию не поддерживают {{clients}} — в их подписку она не попадёт. В остальных клиентах работает как обычно.",
     security: "Защита",
     path: "Путь",
     grpcService: "gRPC-сервис",
