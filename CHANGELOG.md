@@ -1,5 +1,19 @@
 # Changelog
 
+## [5.18.0](https://github.com/AppsGanin/rospanel/compare/v5.17.0...v5.18.0) (2026-11-14)
+
+
+### Features
+
+* **sub:** TrustTunnel in subscriptions; link list for Hiddify 5 and NyameBox ([305c73f](https://github.com/AppsGanin/rospanel/commit/305c73f2ad4b3bc9208973946516794adb152f00))
+* **xhttp:** VLESS-XHTTP-TLS lane on the VLESS-TCP-TLS port behind the decoy ([8f270d6](https://github.com/AppsGanin/rospanel/commit/8f270d668a6bc07918450bb511f9efb59a7b3427))
+
+
+### Bug Fixes
+
+* **inbounds:** show the label of the certificate-pin switch ([8f270d6](https://github.com/AppsGanin/rospanel/commit/8f270d668a6bc07918450bb511f9efb59a7b3427))
+* **sub:** leave XHTTP out of Clash only for cores known to lack it ([8f270d6](https://github.com/AppsGanin/rospanel/commit/8f270d668a6bc07918450bb511f9efb59a7b3427))
+
 ## [5.17.0](https://github.com/AppsGanin/rospanel/compare/v5.16.2...v5.17.0) (2026-11-12)
 
 
