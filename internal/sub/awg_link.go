@@ -142,8 +142,8 @@ func AWGThroneLink(u model.User, s *model.Settings) string {
 }
 
 // awgLinkFor is the AmneziaWG link form a subscription client imports, or nil: INCY
-// (AWGLinkFor) its amneziawg://, Throne from 1.3.0 (random trailers among the rest) its
-// wg://. The others with an AmneziaWG of their own speak 1.5 or 2.0 — Hiddify, Karing,
+// (AWGLinkFor) its amneziawg://, Throne from 1.3.0 (random trailers among the rest) and
+// Throne for Android from 2.0.0 its wg://. The others with an AmneziaWG of their own speak 1.5 or 2.0 — Hiddify, Karing,
 // NyameBox, v2RayTun — and cannot finish a handshake with a 3.1 server.
 func awgLinkFor(userAgent string) func(model.User, *model.Settings) string {
 	if AWGLinkFor(userAgent) {
@@ -151,6 +151,9 @@ func awgLinkFor(userAgent string) func(model.User, *model.Settings) string {
 	}
 	if m := throneUA.FindStringSubmatch(userAgent); m != nil && versionAtLeast(m[1:], 1, 3, 0) {
 		return AWGThroneLink
+	}
+	if m := throneAndroidUA.FindStringSubmatch(userAgent); m != nil && versionAtLeast(m[1:], 2, 0, 0) {
+		return AWGThroneLink // its WireGuard.kt reads Throne's wg:// keys, "+" "/" "=" literally
 	}
 	return nil
 }

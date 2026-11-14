@@ -1559,6 +1559,7 @@ const en: Dict = {
       naive: "NaiveProxy",
       anytls: "AnyTLS",
       mieru: "mieru",
+      trusttunnel: "TrustTunnel",
       awg: "AmneziaWG",
       custom: "Custom inbounds",
       vless_enc: "VLESS Encryption",

@@ -1559,6 +1559,7 @@ const fa: Dict = {
       naive: "NaiveProxy",
       anytls: "AnyTLS",
       mieru: "mieru",
+      trusttunnel: "TrustTunnel",
       awg: "AmneziaWG",
       custom: "ورودی‌های سفارشی",
       vless_enc: "VLESS Encryption",

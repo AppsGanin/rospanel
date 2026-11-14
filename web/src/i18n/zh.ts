@@ -1559,6 +1559,7 @@ const zh: Dict = {
       naive: "NaiveProxy",
       anytls: "AnyTLS",
       mieru: "mieru",
+      trusttunnel: "TrustTunnel",
       awg: "AmneziaWG",
       custom: "自定义入站",
       vless_enc: "VLESS Encryption",

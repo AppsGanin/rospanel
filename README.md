@@ -298,7 +298,7 @@ cores that have it), v2rayN, Shadowrocket, Throne, Exclave, Karing and NekoBox, 
 behind the same certificate and decoy site: TCP and UDP, the login `tt-u<id>`, the password the
 user's UUID. Requires a domain with a trusted certificate: the apps do not connect to an IP. Its
 apps (TrustTunnel for iOS, Android, macOS, the CLI client) import the `tt://` link from the
-subscription page.
+subscription page; Throne (from 1.2.0; Android from 2.0.0), Exclave (from 0.17.19), LxBox (from 2.25.19) and NyameBox (from 5.11.28) get it in the subscription, mihomo cores from 1.19.21 in Clash (ClashMetaForAndroid 2.11.24+, FlClash 0.8.93+, Clash Verge Rev 2.4.7+, Clash Party 1.9.3+, FlClashX, ClashMi).
 
 **MTProto (Telegram proxy)** is a built-in lane on a TCP port of its own, picked automatically, on
 by default: Telegram itself connects through the server, no VPN app needed. Fake TLS with a secret
@@ -491,6 +491,8 @@ matched against the request (User-Agent or an HWID header; contains, equals, pre
 forces a format, gives or hides individual protocols (the built-in lanes, custom inbounds, VLESS
 Encryption), or **blocks** the client (it is served the decoy). The first matching rule wins; no
 match falls through to detection by User-Agent. The editor shows what a given client would get.
+
+**Hiddify 5.5.5+** and **NyameBox 5.11.28+** get the link list instead of Clash, so NaiveProxy, AnyTLS, mieru (Hiddify) and TrustTunnel (NyameBox) reach them too.
 
 **A traffic limit per server** (on the server card, next to its capacity) is what the
 hosting sells you: a monthly or daily allowance in gigabytes. The month starts on the day the

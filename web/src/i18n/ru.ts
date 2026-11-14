@@ -1559,6 +1559,7 @@ const ru = {
       naive: "NaiveProxy",
       anytls: "AnyTLS",
       mieru: "mieru",
+      trusttunnel: "TrustTunnel",
       awg: "AmneziaWG",
       custom: "Свои инбаунды",
       vless_enc: "VLESS Encryption",

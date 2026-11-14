@@ -1468,6 +1468,7 @@ export const SUB_PROTOS = [
   'naive',
   'anytls',
   'mieru',
+  'trusttunnel',
   'awg',
   'custom',
   'vless_enc',

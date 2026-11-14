@@ -30,7 +30,7 @@ import (
 // enabled built-in lanes first, then each custom inbound in its display order.
 // Protocols switched off in the Connections panel are omitted.
 func ShareLinks(u model.User, srv Server) []string {
-	return shareLinks(u, srv, linkForms{naive: link.Naive, mieru: true, anytls: true, vlessEnc: true})
+	return shareLinks(u, srv, linkForms{naive: link.Naive, mieru: true, anytls: true, trusttunnel: link.TrustTunnel, vlessEnc: true})
 }
 
 // linkForms are the per-client link forms of the lanes not every client reads; a nil
@@ -40,10 +40,16 @@ type linkForms struct {
 	awg    func(model.User, *model.Settings) string
 	mieru  bool // the client imports mierus:// (MieruLinkFor)
 	anytls bool // the client imports anytls:// (AnyTLSLinkFor)
+	// trusttunnel: the tt:// form the client imports (trustTunnelLinkFor)
+	trusttunnel func(model.User, *model.Settings) string
 	// vlessEnc: the client hands a vless:// link's encryption to a core that speaks it
 	// (VLESSEncLinkFor); without it a VLESS Encryption inbound is left out, as a client
 	// dropping the parameter would only show an entry that never connects.
 	vlessEnc bool
+	// dropPinned leaves out a custom inbound that pins the certificate under a borrowed
+	// SNI (PinCert) for a client that cannot check that pin: without the pin, nothing
+	// verifies the borrowed name. nil keeps them all.
+	dropPinned func(model.Inbound) bool
 }
 
 // shareLinks is ShareLinks with the given forms of the client-dependent lanes.
@@ -72,13 +78,17 @@ func shareLinks(u model.User, srv Server, f linkForms) []string {
 	if f.mieru && link.MieruOn(set) && srv.allowsBuiltin(model.LaneMieru) {
 		links = append(links, link.Mieru(u, set))
 	}
+	if f.trusttunnel != nil && link.TrustTunnelOn(set) && srv.allowsBuiltin(model.LaneTrustTunnel) {
+		links = append(links, f.trusttunnel(u, set))
+	}
 	if f.awg != nil && set.AWGEnabled && set.AWGPort != 0 && set.AWGPublicKey != "" && srv.allowsBuiltin(model.LaneAWG) {
 		if l := f.awg(u, set); l != "" {
 			links = append(links, l)
 		}
 	}
 	for _, in := range srv.Custom {
-		if !srv.allowsInbound(in.ID) || in.Opts.EncMode != "" && !f.vlessEnc {
+		if !srv.allowsInbound(in.ID) || in.Opts.EncMode != "" && !f.vlessEnc ||
+			in.Opts.PinCert && f.dropPinned != nil && f.dropPinned(in) {
 			continue
 		}
 		if l := link.Custom(u, in, set); l != "" {
@@ -115,8 +125,22 @@ func ShareLinksFor(u model.User, servers []Server, userAgent string) []string {
 // ShareLinksRule is ShareLinksFor with a response rule's overrides (servers already
 // passed through Overrides.Apply).
 func ShareLinksRule(u model.User, servers []Server, userAgent string, o Overrides) []string {
+	links := shareLinksRule(u, servers, userAgent, o, dropPinnedFor(userAgent))
+	switch {
+	case HiddifyLinkList(userAgent):
+		return hiddifyLinks(links)
+	case NyameBoxLinkList(userAgent):
+		return nyameBoxLinks(links)
+	}
+	return links
+}
+
+// shareLinksRule is ShareLinksRule before the rewrites for a client's own link parser
+// (Hiddify, NyameBox): the Xray form, which the Xray JSON profile is built from.
+func shareLinksRule(u model.User, servers []Server, userAgent string, o Overrides, dropPinned func(model.Inbound) bool) []string {
 	f := o.links(linkForms{naive: NaiveLinkFor(userAgent), mieru: MieruLinkFor(userAgent), awg: awgLinkFor(userAgent),
-		anytls: AnyTLSLinkFor(userAgent), vlessEnc: VLESSEncLinkFor(userAgent)})
+		anytls: AnyTLSLinkFor(userAgent), trusttunnel: trustTunnelLinkFor(userAgent), vlessEnc: VLESSEncLinkFor(userAgent),
+		dropPinned: dropPinned})
 	var links []string
 	for _, srv := range servers {
 		links = append(links, shareLinks(u, srv, f)...)
@@ -124,12 +148,25 @@ func ShareLinksRule(u model.User, servers []Server, userAgent string, o Override
 	return links
 }
 
+// dropPinnedFor is which PinCert custom inbounds a client is not handed (linkForms):
+// Hiddify's hysteria2 reads no pin, NyameBox before 5.11.28.7 reads none at all.
+func dropPinnedFor(userAgent string) func(model.Inbound) bool {
+	switch {
+	case HiddifyLinkList(userAgent):
+		return func(in model.Inbound) bool { return in.Protocol == model.InbHysteria }
+	case NyameBoxLinkList(userAgent):
+		return func(model.Inbound) bool { return true }
+	}
+	return nil
+}
+
 // NaiveLinkFor is the NaiveProxy link form a subscription client imports, or nil for a
 // client that has none — checked against each client's own parser:
 //
 //   - Shadowrocket: its HTTP2 (NaiveProxy) type, http2://base64(…) — link.NaiveShadowrocket;
-//   - Throne (from 1.1.2, sing-box core): naive+https:// with uot=1, which it reads, so UDP
-//     rides the tunnel — link.NaiveUoT;
+//   - Throne (from 1.1.2, sing-box core) and Throne for Android (from 2.0.0): naive+https://
+//     with uot=1, which it reads, so UDP rides the tunnel — link.NaiveUoT;
+//   - Hiddify on the link list (HiddifyLinkList): naive+https://;
 //   - v2rayN from 7.20.0 (sing-box core), Karing, Exclave and NekoBox (with their naive plugin):
 //     naive+https:// — NekoBox when it asks for links (?format=), its User-Agent otherwise
 //     getting the Clash profile, which has no NaiveProxy.
@@ -143,11 +180,23 @@ func NaiveLinkFor(userAgent string) func(model.User, *model.Settings) string {
 		}
 		return nil
 	}
+	if m := throneAndroidUA.FindStringSubmatch(userAgent); m != nil {
+		if versionAtLeast(m[1:], 2, 0, 0) {
+			return link.NaiveUoT
+		}
+		return nil
+	}
 	if m := v2raynUA.FindStringSubmatch(userAgent); m != nil {
 		if versionAtLeast(m[1:], 7, 20, 0) {
 			return link.Naive
 		}
 		return nil
+	}
+	if HiddifyLinkList(userAgent) {
+		return link.Naive
+	}
+	if NyameBoxLinkList(userAgent) {
+		return link.NaiveUoT // its naive reads uot
 	}
 	switch {
 	case ua == "":

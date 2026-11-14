@@ -66,7 +66,7 @@ func XrayJSONRule(u model.User, servers []Server, dpi model.SubDPI, template, us
 		}
 		o[model.SubProtoVLESSEnc] = model.SubProtoOn
 	}
-	return xrayJSONTemplate(ShareLinksRule(u, servers, userAgent, o), dpi, template)
+	return xrayJSONTemplate(shareLinksRule(u, servers, userAgent, o, nil), dpi, template)
 }
 
 // xrayCoreHasVLESSEnc reports whether an app's bundled Xray core reads VLESS Encryption

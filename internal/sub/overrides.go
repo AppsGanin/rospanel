@@ -53,6 +53,9 @@ func (o Overrides) links(f linkForms) linkForms {
 	}
 	f.mieru = f.mieru || o.on(model.LaneMieru)
 	f.anytls = f.anytls || o.on(model.LaneAnyTLS)
+	if o.on(model.LaneTrustTunnel) && f.trusttunnel == nil {
+		f.trusttunnel = link.TrustTunnel
+	}
 	f.vlessEnc = o.enc(f.vlessEnc)
 	return f
 }
@@ -62,6 +65,7 @@ func (o Overrides) clash(c clashCaps) clashCaps {
 	c.awg = c.awg || o.on(model.LaneAWG)
 	c.mieru = c.mieru || o.on(model.LaneMieru)
 	c.anytls = c.anytls || o.on(model.LaneAnyTLS)
+	c.trusttunnel = c.trusttunnel || o.on(model.LaneTrustTunnel)
 	c.vlessEnc = o.enc(c.vlessEnc)
 	return c
 }
@@ -98,6 +102,7 @@ func Protocols(format, userAgent string, o Overrides) map[string]bool {
 	case model.SubActionClash:
 		c := o.clash(clashCapsFor(userAgent))
 		p[model.LaneAnyTLS], p[model.LaneMieru], p[model.LaneAWG], p[model.SubProtoVLESSEnc] = c.anytls, c.mieru, c.awg, c.vlessEnc
+		p[model.LaneTrustTunnel] = c.trusttunnel
 	case model.SubActionSingbox:
 		c := o.SingBox(SingBoxCapsFor(userAgent))
 		p[model.LaneNaive], p[model.LaneAnyTLS] = c.Naive, c.AnyTLS
@@ -105,9 +110,10 @@ func Protocols(format, userAgent string, o Overrides) map[string]bool {
 		p[model.SubProtoVLESSEnc] = o.enc(VLESSEncLinkFor(userAgent) || xrayCoreHasVLESSEnc(userAgent))
 	default:
 		f := o.links(linkForms{naive: NaiveLinkFor(userAgent), mieru: MieruLinkFor(userAgent), awg: awgLinkFor(userAgent),
-			anytls: AnyTLSLinkFor(userAgent), vlessEnc: VLESSEncLinkFor(userAgent)})
+			anytls: AnyTLSLinkFor(userAgent), trusttunnel: trustTunnelLinkFor(userAgent), vlessEnc: VLESSEncLinkFor(userAgent)})
 		p[model.LaneNaive], p[model.LaneAWG] = f.naive != nil, f.awg != nil
 		p[model.LaneMieru], p[model.LaneAnyTLS], p[model.SubProtoVLESSEnc] = f.mieru, f.anytls, f.vlessEnc
+		p[model.LaneTrustTunnel] = f.trusttunnel != nil
 	}
 	for k, v := range o {
 		if v == model.SubProtoOff {

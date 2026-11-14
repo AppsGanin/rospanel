@@ -75,6 +75,11 @@ func clashProxies(u model.User, srv Server, caps clashCaps) []clashProxy {
 		n := link.LabelFor(model.ProtoAnyTLS, u, set)
 		out = append(out, clashProxy{n, clashAnyTLSLine(n, u, set)})
 	}
+	// TrustTunnel likewise.
+	if caps.trusttunnel && link.TrustTunnelOn(set) && srv.allowsBuiltin(model.LaneTrustTunnel) {
+		n := link.LabelFor(model.ProtoTrustTunnel, u, set)
+		out = append(out, clashProxy{n, clashTrustTunnelLine(n, u, set)})
+	}
 	// mieru only for a client whose core has it.
 	if caps.mieru && link.MieruOn(set) && srv.allowsBuiltin(model.LaneMieru) {
 		n := link.LabelFor(model.ProtoMieru, u, set)

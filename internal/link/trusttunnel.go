@@ -2,7 +2,9 @@ package link
 
 import (
 	"encoding/base64"
+	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -76,4 +78,17 @@ func appendQUICVarint(b []byte, v uint64) []byte {
 		return append(b, byte(v>>56)|0xc0, byte(v>>48), byte(v>>40), byte(v>>32),
 			byte(v>>24), byte(v>>16), byte(v>>8), byte(v))
 	}
+}
+
+// TrustTunnelURL is a user's TrustTunnel link in the URL form NyameBox reads in place of
+// the deep link (its TrustTunnelBean: user:password@host:port, TLS from sni/alpn):
+// tt://<login>:<uuid>@<host>:<port>?sni=<name>&alpn=h2#<label>. HTTP/2, as TrustTunnel.
+func TrustTunnelURL(u model.User, set *model.Settings) string {
+	q := url.Values{}
+	q.Set("sni", NaiveServerName(set))
+	q.Set("alpn", "h2")
+	return fmt.Sprintf("tt://%s:%s@%s?%s#%s",
+		url.QueryEscape(model.TrustTunnelLogin(model.UserEmail(u.ID))), url.QueryEscape(u.UUID),
+		net.JoinHostPort(set.Host, strconv.Itoa(set.VLESSPort)), q.Encode(),
+		url.PathEscape(LabelFor(model.ProtoTrustTunnel, u, set)))
 }

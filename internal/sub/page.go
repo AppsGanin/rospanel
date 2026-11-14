@@ -756,8 +756,8 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 		if link.NaiveOn(s) && srv.allowsBuiltin(model.LaneNaive) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoNaive, &u), link.Naive(u, s)})
 		}
-		// TrustTunnel's apps import the tt:// link, not a subscription: it is on the
-		// page only (ShareLinks leaves it out).
+		// TrustTunnel's own apps import the tt:// link, not a subscription; the
+		// subscription carries it only for the clients that read it (TrustTunnelLinkFor).
 		if link.TrustTunnelOn(s) && srv.allowsBuiltin(model.LaneTrustTunnel) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoTrustTunnel, &u), link.TrustTunnel(u, s)})
 		}

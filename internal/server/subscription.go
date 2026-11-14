@@ -845,7 +845,7 @@ func isBrowser(r *http.Request) bool {
 var proxyClientUAs = []string{
 	"clash", "mihomo", "stash/",
 	"v2raytun", "hiddify", "karing", "nekobox", "nekoray", "throne/", "shadowrocket",
-	"quantumult", "loon/", "surge/", "foxray", "v2box", "incy",
+	"quantumult", "loon/", "surge/", "foxray", "v2box", "incy", "lxbox-android/",
 }
 
 // isProxyClientUA reports whether a User-Agent belongs to a known subscription client.
@@ -1243,6 +1243,10 @@ func subResponse(query, userAgent string, rule *model.SubRule, set *model.Settin
 // subFormatFor is the format a User-Agent gets with no ?format= and no rule.
 func subFormatFor(userAgent string) string {
 	ua := strings.ToLower(userAgent)
+	// Hiddify 5 and NyameBox ask for Clash but read more lanes from the link list.
+	if sub.HiddifyLinkList(userAgent) || sub.NyameBoxLinkList(userAgent) {
+		return "v2ray"
+	}
 	for _, k := range []string{"clash", "mihomo", "stash", "meta"} {
 		if strings.Contains(ua, k) {
 			return "clash"

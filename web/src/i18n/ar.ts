@@ -1520,6 +1520,7 @@ const ar: Dict = {
       naive: "NaiveProxy",
       anytls: "AnyTLS",
       mieru: "mieru",
+      trusttunnel: "TrustTunnel",
       awg: "AmneziaWG",
       custom: "اتصالات مخصصة (inbound)",
       vless_enc: "VLESS Encryption",

@@ -250,7 +250,7 @@ Throne、Exclave、Karing 和 NekoBox。
 
 **TrustTunnel**（AdGuard 的协议）是位于 VLESS-TCP-TLS 端口上、基于 HTTP/2 的内置通道，与其共用证书和伪装站点：
 支持 TCP 和 UDP，登录名为 `tt-u<id>`，密码为用户的 UUID。需要拥有受信任证书的域名：应用无法通过 IP 连接。
-其应用（iOS、Android、macOS 版 TrustTunnel 及 CLI 客户端）从订阅页面导入 `tt://` 链接。
+其应用（iOS、Android、macOS 版 TrustTunnel 及 CLI 客户端）从订阅页面导入 `tt://` 链接；Throne（1.2.0 起；Android 版 2.0.0 起）、Exclave（0.17.19 起）、LxBox（2.25.19 起）和 NyameBox（5.11.28 起）在订阅中获取该链接，1.19.21 起的 mihomo 内核在 Clash 配置中获取（ClashMetaForAndroid 2.11.24+、FlClash 0.8.93+、Clash Verge Rev 2.4.7+、Clash Party 1.9.3+、FlClashX、ClashMi）。
 
 **MTProto（Telegram 代理）** 是一条使用独立
 TCP端口的内置通道，端口自动选择，默认开启：Telegram 本身通过服务器连接，无需 VPN 应用。采用
@@ -373,6 +373,8 @@ sing-box 模板在保存时会被拒绝；之前已保存的此类模板会被�
 包含、等于、前缀、正则）。规则可以强制指定格式，提供或隐藏个别协议（内置通道、自定义入站、VLESS Encryption），
 或**屏蔽**该客户端（返回伪装站点）。第一条匹配的规则生效；没有匹配时按 User-Agent 自动识别。编辑器会显示
 某个客户端将得到的内容。
+
+**Hiddify 5.5.5+** 和 **NyameBox 5.11.28+** 获取链接列表而非 Clash 配置，因此也能收到 NaiveProxy、AnyTLS、mieru（Hiddify）和 TrustTunnel（NyameBox）。
 
 **按服务器的流量限额**（在服务器卡片上，容量旁边）对应主机商卖给你的流量：以 GB 计的月度或每日额度。
 月度周期从主机商开始计费的那一天起算（没有这一天的月份从该月最后一天开始）。面板统计它归属到该服务器的流量——
