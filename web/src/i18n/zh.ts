@@ -4057,6 +4057,7 @@ const zh: Dict = {
     laneGroupsHint: "未选择 — 通道适用于所有用户。",
     laneGroupsAll: "未设域名和 IP 时，通道接管分组成员的全部流量；其他用户按顺序继续匹配。",
     laneGroupsSome: "通道的域名和 IP 仅对分组成员生效。",
+    laneGroupsCatchAll: "分组成员的其余全部流量走此通道，其他人的流量直连。",
     laneGroupUnknown: "分组 {{id}}",
     deleteLane: "删除通道",
     addLane: "添加通道",

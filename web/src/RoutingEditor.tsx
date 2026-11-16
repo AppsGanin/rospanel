@@ -990,6 +990,7 @@ export function RoutingEditor({
                 )}
                 <LaneGroups
                   lane={lane}
+                  catchAll={lane.id === catchAll}
                   groups={groups}
                   onPatch={(p) => patchLane(lane.id, p)}
                 />
@@ -1097,10 +1098,12 @@ function CascadeFields({
 // only their connections, and with no domains or IPs it takes all of their traffic.
 function LaneGroups({
   lane,
+  catchAll,
   groups,
   onPatch,
 }: {
   lane: EgressLane;
+  catchAll: boolean;
   groups: Pick<GroupRef, "id" | "name">[];
   onPatch: (p: Partial<EgressLane>) => void;
 }) {
@@ -1137,7 +1140,9 @@ function LaneGroups({
       <p className="text-[11px] text-ink-muted">
         {selected.size === 0
           ? t("route.laneGroupsHint")
-          : takesAll
+          : catchAll
+            ? t("route.laneGroupsCatchAll")
+            : takesAll
             ? t("route.laneGroupsAll")
             : t("route.laneGroupsSome")}
       </p>

@@ -4082,6 +4082,7 @@ const en: Dict = {
     laneGroupsHint: "None selected — the lane applies to every user.",
     laneGroupsAll: "With no domains or IPs the lane takes all traffic of the groups' members; everyone else moves on down the order.",
     laneGroupsSome: "The lane's domains and IPs apply only to the groups' members.",
+    laneGroupsCatchAll: "All other traffic of the groups' members goes here; everyone else's leaves directly.",
     laneGroupUnknown: "Group {{id}}",
     deleteLane: "Delete the lane",
     addLane: "Add a lane",
