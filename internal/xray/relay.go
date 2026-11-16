@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -256,6 +257,17 @@ func relayRules(plans []relayPlan, target relayTarget, expand func([]string, boo
 // isRelayRule reports whether a rule tag is a relay rule's.
 func isRelayRule(tag string) bool { return strings.HasPrefix(tag, relayRulePrefix) }
 
+// scopeRulePrefix starts the tags of the rules of lanes scoped to groups (see
+// addScopedRules): their users, the groups' members, change in the running process
+// without a restart, like a relay rule's.
+const scopeRulePrefix = "scope-"
+
+// hasLiveUsers reports whether a rule's user list may change in the running process
+// without a restart: a relay rule's or a scoped lane's.
+func hasLiveUsers(tag string) bool {
+	return isRelayRule(tag) || strings.HasPrefix(tag, scopeRulePrefix)
+}
+
 // Changing who a relay rule lets through, in the running process.
 
 // ruleList is a config's routing rules as the routing API is handed them.
@@ -307,7 +319,7 @@ func ruleWithoutRelayUsers(r map[string]json.RawMessage) (rest, users []byte, er
 	if raw, ok := r["ruleTag"]; ok {
 		_ = json.Unmarshal(raw, &tag)
 	}
-	if !isRelayRule(tag) {
+	if !hasLiveUsers(tag) {
 		rest, err = json.Marshal(r)
 		return rest, nil, err
 	}
@@ -350,7 +362,7 @@ func stripRelayUsers(cfg map[string]any) {
 	rules, _ := routing["rules"].([]any)
 	for _, raw := range rules {
 		r, _ := raw.(map[string]any)
-		if tag, _ := r["ruleTag"].(string); isRelayRule(tag) {
+		if tag, _ := r["ruleTag"].(string); hasLiveUsers(tag) {
 			delete(r, "user")
 		}
 	}
@@ -408,6 +420,28 @@ func (s *Supervisor) replaceOwnRulesLocked(apiAddr string, rules ruleList) (err 
 	return nil
 }
 
+// tryLiveRuleUsers applies a config that differs from the one on disk in the user lists
+// of rules with live users alone (hasLiveUsers), through the routing API. live is false
+// when the config differs in anything else — users of an inbound included, which Apply
+// leaves to its restart. Caller holds runMu.
+func (s *Supervisor) tryLiveRuleUsers(apiAddr string, data []byte) (live bool, err error) {
+	cur, err := os.ReadFile(s.configPath)
+	if err != nil {
+		return false, nil
+	}
+	if changes, ok := planUserChanges(cur, data); !ok || len(changes) > 0 {
+		return false, nil
+	}
+	rules, changed, ok := relayRulesChanged(cur, data)
+	if !ok || !changed {
+		return false, nil
+	}
+	if err := s.replaceOwnRulesLocked(apiAddr, rules); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // SyncRelayRules brings the running process's relay rules to the users cfg gives them,
 // with no restart. The master calls it after its live user sync. An error means the
 // running routing differs from cfg in more than that, or the change failed: the full
@@ -422,7 +456,7 @@ func (s *Supervisor) SyncRelayRules(apiAddr string, cfg *Config) error {
 	}
 	wantRelay := false
 	for _, r := range cfg.Routing.Rules {
-		if isRelayRule(r.RuleTag) {
+		if hasLiveUsers(r.RuleTag) {
 			wantRelay = true
 			break
 		}
@@ -436,8 +470,9 @@ func (s *Supervisor) SyncRelayRules(apiAddr string, cfg *Config) error {
 		return errors.New("xray is not running")
 	}
 	replaced := p.hysteria != nil && p.hysteria.routable
-	if !wantRelay && !replaced && !bytes.Contains(p.cfg, []byte(`"`+relayRulePrefix)) {
-		return nil // no relay rule running, none wanted
+	if !wantRelay && !replaced && !bytes.Contains(p.cfg, []byte(`"`+relayRulePrefix)) &&
+		!bytes.Contains(p.cfg, []byte(`"`+scopeRulePrefix)) {
+		return nil // no rule with live users running, none wanted
 	}
 	data, err := json.Marshal(map[string]any{"routing": cfg.Routing})
 	if err != nil {

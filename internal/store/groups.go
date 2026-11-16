@@ -439,6 +439,25 @@ func (s *Store) GroupsForAllUsers() (map[int64][]model.GroupRef, error) {
 	return out, rows.Err()
 }
 
+// GroupMembers lists every group's members, ascending: what the egress lanes scoped to
+// groups (model.EgressLane.Groups) match. A group with no members is absent.
+func (s *Store) GroupMembers() (map[int64][]int64, error) {
+	rows, err := s.db.Query(`SELECT group_id, user_id FROM group_members ORDER BY group_id, user_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64][]int64{}
+	for rows.Next() {
+		var gid, uid int64
+		if err := rows.Scan(&gid, &uid); err != nil {
+			return nil, err
+		}
+		out[gid] = append(out[gid], uid)
+	}
+	return out, rows.Err()
+}
+
 // AccessMap resolves every user's access in one pass: userID → Access. A user with no
 // membership in a group that limits access is absent from the result, which
 // model.AccessOf reads as unrestricted — so the map only ever lists the users who ARE

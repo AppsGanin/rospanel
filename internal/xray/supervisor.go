@@ -742,6 +742,13 @@ func (s *Supervisor) Apply(cfg *Config) error {
 		if live, err = s.tryLiveInbounds(s.APIAddr(), data); err != nil {
 			slog.Warn("xray: live inbound change failed, restarting with the new config", "err", err)
 		}
+		// Who a relay rule or a lane scoped to groups lets through, and nothing else:
+		// a group's members changed, which restarting would cut everyone for.
+		if !live && err == nil {
+			if live, err = s.tryLiveRuleUsers(s.APIAddr(), data); err != nil {
+				slog.Warn("xray: live routing change failed, restarting with the new config", "err", err)
+			}
+		}
 	}
 
 	// Preserve the current config as a rollback point before overwriting.

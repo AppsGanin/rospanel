@@ -228,12 +228,24 @@ func nodeStructureKey(n *model.Node, x *nodeStateInputs, managerOpts xray.Option
 		// The node's Xray version is left out above, but whether it reads the udp hop
 		// mask is not: the config is written for it (generateNodeState).
 		LegacyHop bool
-	}{x.geoGen, set, node, x.inbounds, x.relays, x.proxies, opts, xray.PinnedVersion, x.opts.Cascade, x.opts.Bridges, nodeLegacyHop(n)}))
+		// Who the node's lanes scoped to groups match: in its routing rules, so in the
+		// structure, though read with the users.
+		Scoped map[int64][]int64
+	}{x.geoGen, set, node, x.inbounds, x.relays, x.proxies, opts, xray.PinnedVersion, x.opts.Cascade, x.opts.Bridges, nodeLegacyHop(n),
+		nodeScopedMembers(n, x.in.members)}))
 	if !d.ok {
 		return key, false
 	}
 	copy(key[:], d.h.Sum(nil))
 	return key, true
+}
+
+// nodeScopedMembers is what the node's own lanes read of the groups' members.
+func nodeScopedMembers(n *model.Node, members map[int64][]int64) map[int64][]int64 {
+	if n.Routing == nil {
+		return nil
+	}
+	return xray.ScopedMembers(n.Routing.Lanes, members)
 }
 
 // nodeLegacyHop reports whether the node's Xray predates the udp hop mask. A node

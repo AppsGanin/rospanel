@@ -1,7 +1,7 @@
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import i18n, { locale } from "./i18n";
-import { type EgressLane, type GeoFile, type RoutingConfig } from "./api";
+import { listGroups, type EgressLane, type GeoFile, type GroupRef, type RoutingConfig } from "./api";
 import { fmtBytes } from "./format";
 import { inPanelTz } from "./tz";
 import {
@@ -549,6 +549,14 @@ export function RoutingEditor({
 }) {
   const { t } = useTranslation();
   const set = onCfg;
+  // Access groups a lane can be scoped to. Reading them takes the groups permission;
+  // without it a scoped lane still lists its groups, by number.
+  const [groups, setGroups] = useState<Pick<GroupRef, "id" | "name">[]>([]);
+  useEffect(() => {
+    listGroups()
+      .then((g) => setGroups(g.map(({ id, name }) => ({ id, name }))))
+      .catch(() => {});
+  }, []);
 
   const moveLane = (i: number, dir: -1 | 1) => {
     const order = [...cfg.routing_order];
@@ -980,6 +988,11 @@ export function RoutingEditor({
                     {CATCH_ALL_NOTE}
                   </p>
                 )}
+                <LaneGroups
+                  lane={lane}
+                  groups={groups}
+                  onPatch={(p) => patchLane(lane.id, p)}
+                />
                 <TagsInput
                   label={t("route.laneDomains")}
                   value={lane.domains}
@@ -1076,6 +1089,58 @@ function CascadeFields({
         );
       })}
       <p className="text-[11px] text-ink-muted">{t("route.cascadeHint")}</p>
+    </div>
+  );
+}
+
+// LaneGroups scopes a lane to the members of some access groups: its rules then match
+// only their connections, and with no domains or IPs it takes all of their traffic.
+function LaneGroups({
+  lane,
+  groups,
+  onPatch,
+}: {
+  lane: EgressLane;
+  groups: Pick<GroupRef, "id" | "name">[];
+  onPatch: (p: Partial<EgressLane>) => void;
+}) {
+  const { t } = useTranslation();
+  const selected = new Set(lane.groups ?? []);
+  // A group the list does not show (deleted, or no permission to read groups) stays
+  // listed while it is selected, so the field says what is saved.
+  const shown = [
+    ...groups,
+    ...[...selected]
+      .filter((id) => !groups.some((g) => g.id === id))
+      .map((id) => ({ id, name: t("route.laneGroupUnknown", { id }) })),
+  ];
+  const takesAll = !lane.domains.some((d) => d.trim()) && !lane.ips.some((d) => d.trim());
+  if (shown.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="block text-xs text-ink-muted">{t("route.laneGroups")}</span>
+      <div className="flex max-h-36 flex-col gap-1.5 overflow-y-auto rounded-lg border border-gray-200/80 bg-white/50 p-2">
+        {shown.map((g) => (
+          <Checkbox
+            key={g.id}
+            label={g.name}
+            checked={selected.has(g.id)}
+            onChange={(on) => {
+              const next = new Set(selected);
+              if (on) next.add(g.id);
+              else next.delete(g.id);
+              onPatch({ groups: next.size > 0 ? [...next] : undefined });
+            }}
+          />
+        ))}
+      </div>
+      <p className="text-[11px] text-ink-muted">
+        {selected.size === 0
+          ? t("route.laneGroupsHint")
+          : takesAll
+            ? t("route.laneGroupsAll")
+            : t("route.laneGroupsSome")}
+      </p>
     </div>
   );
 }

@@ -90,6 +90,9 @@ func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
 		if err := e.Routing.ValidateLanes(); err != nil {
 			return fromFieldErr(err)
 		}
+		if err := m.pruneLaneGroups(e.Routing); err != nil {
+			return err
+		}
 		var prev *model.RoutingConfig
 		if cur, err := m.store.GetNode(id); err == nil && cur != nil {
 			prev = cur.Routing

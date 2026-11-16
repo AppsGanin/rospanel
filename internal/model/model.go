@@ -2320,6 +2320,34 @@ type EgressLane struct {
 	// URLs/Manual. The lane's traffic never leaves from here: with no exit judged alive
 	// it still goes to one, and with no exit at all it is dropped.
 	Via []CascadeExit `json:"via,omitempty"`
+
+	// Groups scopes the lane to the members of these access groups: its rules match
+	// only their connections, and a scoped lane with no domains or IPs takes all of
+	// their traffic. Empty means everyone. A group with no members (or one deleted
+	// since) adds nobody — a scoped lane never widens to everyone.
+	Groups []int64 `json:"groups,omitempty"`
+}
+
+// MaxLaneGroups caps the groups one lane may be scoped to.
+const MaxLaneGroups = 32
+
+// Scoped reports whether the lane applies only to members of some groups.
+func (l EgressLane) Scoped() bool { return len(l.Groups) > 0 }
+
+// TakesAll reports whether the lane names no destinations: scoped, it takes all of its
+// members' traffic at its place in the order.
+func (l EgressLane) TakesAll() bool {
+	for _, e := range l.Domains {
+		if strings.TrimSpace(e) != "" {
+			return false
+		}
+	}
+	for _, e := range l.IPs {
+		if strings.TrimSpace(e) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // CascadeExit is one server a cascade lane leaves through, and the lane of that server
@@ -2440,6 +2468,14 @@ func (rc *RoutingConfig) ValidateLanes() error {
 		seen[l.ID] = struct{}{}
 		if strings.TrimSpace(l.Name) == "" {
 			return fieldErr("err.laneNoName", "у полосы «{{id}}» не задано название", map[string]any{"id": l.ID})
+		}
+		if len(l.Groups) > MaxLaneGroups {
+			return fieldErr("err.laneTooManyGroups", "у полосы «{{id}}» слишком много групп: максимум {{max}}", map[string]any{"id": l.ID, "max": MaxLaneGroups})
+		}
+		for _, g := range l.Groups {
+			if g <= 0 {
+				return fieldErr("err.laneBadGroup", "у полосы «{{id}}» неверная группа", map[string]any{"id": l.ID})
+			}
 		}
 		for _, e := range l.Via {
 			switch e.BridgeOr() {

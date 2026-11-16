@@ -229,6 +229,7 @@ func (m *Manager) generateNodeState(n *model.Node, x *nodeStateInputs, users []m
 	opts := x.opts
 	opts.ServerID = n.ID
 	opts.Access = in.access
+	opts.GroupMembers = in.members
 	opts.LegacyUDPHop = nodeLegacyHop(n)
 	if x.inbErr != nil {
 		// Soft, as in genOptsFor: the built-in lanes still keep the server reachable.
@@ -354,6 +355,7 @@ type nodeInputs struct {
 	users   []model.User // read-only: copy before changing a user (see nodeAWGState)
 	ids     []int64      // the users' ids, in their order: what the next read compares
 	access  map[int64]model.Access
+	members map[int64][]int64 // group → its members (store.GroupMembers)
 	speed   map[string]int
 	blocked []string
 	banned  []string
@@ -428,6 +430,10 @@ func (m *Manager) readNodeInputsLocked(ws *workingSet) (*nodeInputs, error) {
 	if in.access, err = m.store.AccessMap(); err != nil {
 		return nil, fmt.Errorf("load access map: %w", err)
 	}
+	// Hard too: a lane scoped to groups would route nobody without them.
+	if in.members, err = m.store.GroupMembers(); err != nil {
+		return nil, fmt.Errorf("load group members: %w", err)
+	}
 	if len(capped) > 0 {
 		in.speed = make(map[string]int, len(capped))
 		for id, kbps := range capped {
@@ -491,7 +497,7 @@ func (m *Manager) fleetChanged(ws *workingSet) bool {
 func sameNodeInputs(a, b *nodeInputs) bool {
 	if len(a.users) != len(b.users) || !maps.Equal(a.speed, b.speed) || !slices.Equal(a.blocked, b.blocked) ||
 		!slices.Equal(a.banned, b.banned) ||
-		!reflect.DeepEqual(a.access, b.access) {
+		!reflect.DeepEqual(a.access, b.access) || !reflect.DeepEqual(a.members, b.members) {
 		return false
 	}
 	// The same users, reused rather than read again: there is nothing to walk.

@@ -566,6 +566,11 @@ bridge's key itself, and the exit takes it from the entry's addresses only. Traf
 the entry and never leaves for the internet from its address. An exit cannot be switched off or
 deleted while a cascade goes through it. Who gets the entry is up to the access groups.
 
+**Lanes for groups.** A lane can be limited to the members of chosen access groups: its domains and
+IPs then apply to their connections only, and a lane with neither takes all of their traffic at its
+place in the order. One entry server can send tariff A through one exit and tariff B through
+another, or send YouTube through a proxy for one group while everyone else goes direct.
+
 **Config snapshots** (a *Snapshots* tab in the server settings) give an undo history for the
 **whole server config** — protocols, ports, REALITY, routing, egress, DNS, decoy and inbounds:
 save a restore point by hand, and roll back to it if an edit breaks something. A rollback

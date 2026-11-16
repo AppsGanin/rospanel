@@ -241,6 +241,12 @@ func (m *Manager) genOptsFor(serverID int64) (xray.Options, error) {
 		return opts, fmt.Errorf("load access map: %w", err)
 	}
 	opts.Access = access
+	// Hard, like the access map: without the members a lane scoped to groups routes
+	// nobody, and their traffic leaves by the next lane — out of this server, for a
+	// cascade.
+	if opts.GroupMembers, err = m.store.GroupMembers(); err != nil {
+		return opts, fmt.Errorf("load group members: %w", err)
+	}
 	// Soft, like the custom inbounds below: the lanes themselves still work, the
 	// relayed servers wait for the next reload.
 	if opts.Relays, err = m.relaysFor(serverID); err != nil {
@@ -566,6 +572,9 @@ func (m *Manager) ApplyRouting(cfg model.RoutingConfig, warpEnabled, operaEnable
 	cfg.MigrateLanes()
 	if err := cfg.ValidateLanes(); err != nil {
 		return fromFieldErr(err)
+	}
+	if err := m.pruneLaneGroups(&cfg); err != nil {
+		return err
 	}
 	if cur, err := m.store.GetSettings(); err != nil {
 		return err

@@ -316,3 +316,25 @@ func groupErr(err error) error {
 	}
 	return err
 }
+
+// pruneLaneGroups drops the groups deleted since the routing editor was opened from the
+// lanes scoped to them. A lane left with none is refused rather than saved unscoped:
+// that would hand everyone the lane meant for a few.
+func (m *Manager) pruneLaneGroups(rc *model.RoutingConfig) error {
+	for i := range rc.Lanes {
+		l := &rc.Lanes[i]
+		if !l.Scoped() {
+			continue
+		}
+		ids, err := m.store.ExistingGroupIDs(l.Groups)
+		if err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			return invalidCode("err.laneGroupsGone", "группы полосы «{{name}}» удалены — выберите другие или уберите ограничение",
+				map[string]any{"name": l.Name})
+		}
+		l.Groups = ids
+	}
+	return nil
+}

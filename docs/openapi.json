@@ -970,6 +970,13 @@
           "enabled": {
             "type": "boolean"
           },
+          "groups": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "array"
+          },
           "id": {
             "type": "string"
           },

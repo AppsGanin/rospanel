@@ -1320,6 +1320,8 @@ export interface EgressLane {
   // A cascade: our own servers as the upstreams (0 = the master), each reached over
   // one of its built-in lanes (reality / vision / hysteria2).
   via?: { server: number; bridge?: string }[]
+  // Access groups the lane applies to; absent = everyone.
+  groups?: number[]
 }
 
 export interface RoutingConfig {
