@@ -86,7 +86,7 @@ LICENSE, CHANGELOG.md
 | `billing.view`, `billing.manage` | тарифы, заказы, баланс, промокоды; `manage` — менять ⚠️ |
 | `payments.manage` | настройки платёжных провайдеров ⚠️ |
 | `broadcasts.manage` | рассылки и сообщения пользователям |
-| `servers.view`, `servers.manage` | сервера и ноды |
+| `servers.view`, `servers.manage` | серверы и ноды |
 | `routing.view`, `routing.manage` | маршрутизация |
 | `settings.view`, `settings.manage` | настройки панели; `manage` — менять ⚠️ |
 | `security.view` | журнал входов и блокировок |
