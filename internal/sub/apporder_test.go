@@ -307,3 +307,16 @@ func allPlatforms(key string) map[string]string {
 	}
 	return m
 }
+
+// The Karing button turns on the x-hwid header at import.
+func TestKaringLinkSendsHWID(t *testing.T) {
+	for _, d := range DeepLinks("https://h/s/t", i18n.EN, &model.Settings{}) {
+		if d.Key == "karing" {
+			if want := "karing://install-config?url=https%3A%2F%2Fh%2Fs%2Ft&xhwid=true"; string(d.Href) != want {
+				t.Fatalf("karing link %q, want %q", d.Href, want)
+			}
+			return
+		}
+	}
+	t.Fatal("no karing link")
+}

@@ -270,7 +270,9 @@ func appCatalog(subURL string, lang i18n.Lang, set *model.Settings) []DeepLink {
 		{"incy", "INCY", allTV, template.URL("incy://import/" + subURL)},
 		{"v2raytun", "v2RayTun", allTV, template.URL("v2raytun://import/" + subURL)},
 		{"hiddify", "Hiddify", all, template.URL("hiddify://import/" + subURL)},
-		{"karing", "Karing", allTV, template.URL("karing://install-config?url=" + enc)},
+		// Karing sends its x-hwid header only when told to; xhwid=true turns that on
+		// at import, so the HWID limit sees the device from the first fetch.
+		{"karing", "Karing", allTV, template.URL("karing://install-config?url=" + enc + "&xhwid=true")},
 		{"singbox", "sing-box", all, template.URL("sing-box://import-remote-profile?url=" + enc)},
 		{"clash", "Clash Meta / Mihomo", "Windows · macOS · Linux · Android", template.URL("clash://install-config?url=" + enc)},
 		{"v2box", "V2Box", "iOS · macOS · Android", template.URL("v2box://install-sub?url=" + enc)},
