@@ -63,7 +63,7 @@ const ru = {
     more: "Ещё",
     users: "Пользователи",
     overview: "Дашборд",
-    servers: "Сервера",
+    servers: "Серверы",
     settings: "Настройки",
     admins: "Администраторы",
     credentials: "Учётные данные",
