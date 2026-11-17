@@ -2,12 +2,15 @@ package payments
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha1" //nolint:gosec // YooMoney signs its notifications with SHA-1
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -115,21 +118,35 @@ func (y *YooMoney) Status(context.Context, string) (Result, error) {
 	return Result{}, ErrNoStatusAPI
 }
 
-// Webhook checks the notification's SHA-1 and reports the transfer. A protected
-// transfer (codepro) or one held until the payer confirms it (unaccepted) is not
-// money on the wallet yet.
+// Webhook checks the notification's signature and reports the transfer. Two
+// formats exist: since 2026-05-18 YooMoney sends `sign` (HMAC-SHA256 over the
+// URL-encoded, alphabetically sorted parameter list minus sign itself) and no
+// longer sends the legacy `sha1_hash`, so both are accepted while the old one
+// still shows up. A protected transfer (codepro) or one held until the payer
+// confirms it (unaccepted) is not money on the wallet yet.
 func (y *YooMoney) Webhook(_ context.Context, body []byte, _ http.Header) (string, Result, error) {
 	f, err := url.ParseQuery(string(body))
 	if err != nil {
 		return "", Result{}, fmt.Errorf("YooMoney: malformed notification")
 	}
-	signed := strings.Join([]string{
-		f.Get("notification_type"), f.Get("operation_id"), f.Get("amount"), f.Get("currency"),
-		f.Get("datetime"), f.Get("sender"), f.Get("codepro"), y.secret, f.Get("label"),
-	}, "&")
-	sum := sha1.Sum([]byte(signed)) //nolint:gosec // provider-mandated signature algorithm
-	if y.secret == "" || !eqSig(hex.EncodeToString(sum[:]), f.Get("sha1_hash")) {
+	if y.secret == "" {
 		return "", Result{}, fmt.Errorf("YooMoney: bad signature")
+	}
+	if sig := f.Get("sign"); sig != "" {
+		mac := hmac.New(sha256.New, []byte(y.secret))
+		mac.Write([]byte(yooMoneySignString(f)))
+		if !eqSig(hex.EncodeToString(mac.Sum(nil)), sig) {
+			return "", Result{}, fmt.Errorf("YooMoney: bad signature")
+		}
+	} else {
+		signed := strings.Join([]string{
+			f.Get("notification_type"), f.Get("operation_id"), f.Get("amount"), f.Get("currency"),
+			f.Get("datetime"), f.Get("sender"), f.Get("codepro"), y.secret, f.Get("label"),
+		}, "&")
+		sum := sha1.Sum([]byte(signed)) //nolint:gosec // provider-mandated signature algorithm
+		if !eqSig(hex.EncodeToString(sum[:]), f.Get("sha1_hash")) {
+			return "", Result{}, fmt.Errorf("YooMoney: bad signature")
+		}
 	}
 	label := f.Get("label")
 	if label == "" {
@@ -159,4 +176,29 @@ func truncRunes(s string, n int) string {
 		return string(r[:n])
 	}
 	return s
+}
+
+// yooMoneySignString rebuilds the signed string of the current notification
+// format: every parameter except sign, sorted by key, values URL-encoded per
+// RFC 3986, joined as key=value pairs with &. Empty values stay as "key=".
+func yooMoneySignString(f url.Values) string {
+	keys := make([]string, 0, len(f))
+	for k := range f {
+		if k == "sign" {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+"="+rfc3986(f.Get(k)))
+	}
+	return strings.Join(parts, "&")
+}
+
+// rfc3986 percent-encodes a value the way YooMoney signs it: like
+// url.QueryEscape but with spaces as %20 rather than +.
+func rfc3986(s string) string {
+	return strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
 }
