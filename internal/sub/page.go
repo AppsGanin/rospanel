@@ -60,15 +60,25 @@ var (
 // custom app scheme (happ://, v2rayng://, …) can't be launched from inside the
 // Telegram webview — but the browser it lands in resolves the scheme and opens
 // the app. Href is template.URL so the scheme survives html/template's URL filter.
+// Inside the Telegram webview itself the auto-redirect is a dead end: the webview
+// swallows the custom scheme and is left on a blank document. There the page stays
+// put and shows the hand-off link as a big visible button — a user tap on it is
+// what lets the webview hand the scheme to the OS.
 var appRedirectTmpl = template.Must(template.New("appredir").Parse(
 	`<!doctype html><html lang="{{.Lang}}" dir="{{.Dir}}"><head><meta charset="utf-8">` +
 		`<meta name="viewport" content="width=device-width,initial-scale=1">` +
 		`<title>{{.Opening}}</title>` +
-		`<script>location.replace("{{.Href}}")</script>` +
-		`<meta http-equiv="refresh" content="0;url={{.Href}}"></head>` +
+		`<script>(function(){` +
+		`var tg=/Telegram/i.test(navigator.userAgent)||!!window.TelegramWebviewProxy||(window.Telegram&&window.Telegram.WebApp);` +
+		`if(tg){document.documentElement.className+=" tgwebview";}` +
+		`else{location.replace("{{.Href}}");}` +
+		`})();</script>` +
+		`<style>.tgwebview #go{display:inline-block;margin:12px 0;padding:14px 22px;border-radius:12px;` +
+		`background:#1c9ad6;color:#fff;font-weight:700;text-decoration:none;font-size:17px}</style>` +
+		`</head>` +
 		`<body style="font-family:sans-serif;padding:24px;color:#333">` +
 		`<p>{{.Opening}}<br>{{.IfNotOpened}} ` +
-		`<a href="{{.Href}}">{{.ClickHere}}</a>{{.Stop}}</p></body></html>`))
+		`<a id="go" href="{{.Href}}">{{.ClickHere}}</a>{{.Stop}}</p></body></html>`))
 
 // AppRedirect renders the deep-link hand-off page for one client's share link.
 func AppRedirect(href template.URL, lang i18n.Lang) ([]byte, error) {
