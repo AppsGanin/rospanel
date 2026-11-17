@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ABUSE_WINDOW_DAYS, AbuseList } from './AbuseList'
 import {
+  type DailyPoint,
   getStatsByUser,
   getStatsSeries,
   resetStats,
-  type DailyPoint,
   type UserTotal,
 } from './api'
+import { CascadeTrafficSplit } from './CascadeTrafficSplit'
+import { ConnectionCountries } from './CountryMap'
+import { ShareBar, TrafficArea } from './charts'
 import { fmtBytes, localDay, ranges } from './format'
 import { useAction, useRefreshTick, useShowMore } from './hooks'
-import { useCan } from './role'
-import { ShareBar, TrafficArea } from './charts'
-import { ABUSE_WINDOW_DAYS, AbuseList } from './AbuseList'
-import { ConnectionCountries } from './CountryMap'
 import { LaneTrafficSplit } from './LaneTrafficSplit'
 import { NodeTrafficSplit } from './NodeTrafficSplit'
+import { useCan } from './role'
 import { BlockedList, ProbeList } from './SecurityLists'
 import {
   Button,
@@ -179,6 +180,8 @@ export function StatsPanel() {
       <NodeTrafficSplit from={from} to={to} title={t('stats.byServer')} refresh={tick} />
 
       <LaneTrafficSplit from={from} to={to} refresh={tick} />
+
+      <CascadeTrafficSplit from={from} to={to} refresh={tick} />
 
       {/* Two short reports, side by side where there is room: neither fills a row. */}
       <div className="grid gap-3.5 lg:grid-cols-2">

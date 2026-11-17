@@ -136,6 +136,21 @@ func (rt *Router) statsLanes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rows)
 }
 
+// statsCascade is what each entry server sent through each exit server's cascade
+// bridge over the range.
+func (rt *Router) statsCascade(w http.ResponseWriter, r *http.Request) {
+	from, to, ok := rt.dateRange(w, r)
+	if !ok {
+		return
+	}
+	rows, err := rt.mgr.CascadeTrafficBreakdown(from, to)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
 func (rt *Router) statsByUser(w http.ResponseWriter, r *http.Request) {
 	from, to, ok := rt.dateRange(w, r)
 	if !ok {

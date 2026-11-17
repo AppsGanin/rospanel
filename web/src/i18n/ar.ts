@@ -1171,6 +1171,8 @@ const ar: Dict = {
     noCountryData: "لا توجد بيانات اتصال بعد.",
     byServer: "حسب الخادم",
     byProtocol: "حسب البروتوكول",
+    byCascade: "التسلسل",
+    byCascadeHint: "يحسبها خادم الخروج",
     allServers: "جميع الخوادم",
   },
 

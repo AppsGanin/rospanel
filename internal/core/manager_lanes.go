@@ -77,8 +77,8 @@ func (m *Manager) LaneTrafficBreakdown(from, to string) ([]LaneTraffic, error) {
 	}
 	out := make([]LaneTraffic, 0, len(totals))
 	for _, t := range totals {
-		if t.Up == 0 && t.Down == 0 {
-			continue
+		if _, bridge := xray.BridgeLaneEntry(t.Lane); bridge || (t.Up == 0 && t.Down == 0) {
+			continue // a bridge's bytes are in its lane already: CascadeTrafficBreakdown
 		}
 		node := nodes[t.NodeID]
 		if node == "" {
@@ -96,6 +96,58 @@ func (m *Manager) LaneTrafficBreakdown(from, to string) ([]LaneTraffic, error) {
 			return out[i].NodeID < out[j].NodeID
 		}
 		return out[i].Lane < out[j].Lane
+	})
+	return out, nil
+}
+
+// CascadeTraffic is what one entry server sent through one exit server over its
+// cascade bridge in a period, as the exit counted it.
+type CascadeTraffic struct {
+	ExitID    int64  `json:"exit_id"`
+	ExitName  string `json:"exit_name"`
+	EntryID   int64  `json:"entry_id"`
+	EntryName string `json:"entry_name"`
+	Up        int64  `json:"up"`
+	Down      int64  `json:"down"`
+}
+
+// CascadeTrafficBreakdown is the traffic of every cascade bridge between from and to,
+// busiest first. The bytes are the ones the entry's users already have counted, plus
+// the bridge protocol's own: they are the exit's load, not anyone's quota.
+func (m *Manager) CascadeTrafficBreakdown(from, to string) ([]CascadeTraffic, error) {
+	totals, err := m.store.LaneTrafficTotals(from, to)
+	if err != nil {
+		return nil, err
+	}
+	nodes, _ := m.store.NodeNames() // best-effort: a failure falls back to ids
+	if nodes == nil {
+		nodes = map[int64]string{}
+	}
+	nodes[model.LocalNodeID] = model.LocalNodeName
+	name := func(id int64) string {
+		if n := nodes[id]; n != "" {
+			return n
+		}
+		return fmt.Sprintf("server #%d", id)
+	}
+	out := []CascadeTraffic{}
+	for _, t := range totals {
+		entry, ok := xray.BridgeLaneEntry(t.Lane)
+		if !ok || (t.Up == 0 && t.Down == 0) {
+			continue
+		}
+		out = append(out, CascadeTraffic{ExitID: t.NodeID, ExitName: name(t.NodeID),
+			EntryID: entry, EntryName: name(entry), Up: t.Up, Down: t.Down})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		li, lj := out[i].Up+out[i].Down, out[j].Up+out[j].Down
+		if li != lj {
+			return li > lj
+		}
+		if out[i].ExitID != out[j].ExitID {
+			return out[i].ExitID < out[j].ExitID
+		}
+		return out[i].EntryID < out[j].EntryID
 	})
 	return out, nil
 }
@@ -138,7 +190,7 @@ func laneName(lane string, inbounds map[int64]string) string {
 const laneReportMax = int64(1) << 42 // 4 TiB
 
 // nodeLanes keeps the lanes of a node's report that can be its own: the built-in lanes,
-// the tunnel and the custom inbounds that server has — at most once each, within
+// the tunnel, the custom inbounds that server has, the cascade bridges of other servers — at most once each, within
 // laneReportMax. A node's report is untrusted input, and without this a compromised node
 // could fill the table with made-up lanes or overflow the sums the statistics read.
 // An error (the node's inbounds unreadable) is the report's to fail: it is then not
@@ -155,10 +207,20 @@ func (m *Manager) nodeLanes(nodeID int64, day string, in []nodeapi.LaneDelta) ([
 	for i := range list {
 		custom[list[i].Tag()] = true
 	}
+	var servers map[int64]string // the entries a bridge lane may name, read when one does
 	seen := map[string]bool{}
 	out := make([]store.LaneDelta, 0, len(in))
 	for _, l := range in {
 		builtin := l.Lane == xray.LaneAWG || (xray.IsLaneTag(l.Lane) && !strings.HasPrefix(l.Lane, "custom-"))
+		if entry, ok := xray.BridgeLaneEntry(l.Lane); ok && entry != nodeID {
+			if servers == nil {
+				if servers, err = m.store.NodeNames(); err != nil {
+					return nil, err
+				}
+				servers[model.LocalNodeID] = model.LocalNodeName
+			}
+			_, builtin = servers[entry]
+		}
 		if seen[l.Lane] || (!builtin && !custom[l.Lane]) {
 			continue
 		}

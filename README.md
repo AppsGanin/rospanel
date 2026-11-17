@@ -563,7 +563,8 @@ to this server and reach the internet through the chosen ones. That is the entry
 allow-lists, where a local server is reachable and one abroad is not. Each exit is reached over a
 connection of your choice: VLESS-XHTTP-REALITY, VLESS-TCP-TLS or Hysteria2. The panel makes the
 bridge's key itself, and the exit takes it from the entry's addresses only. Traffic is counted on
-the entry and never leaves for the internet from its address. An exit cannot be switched off or
+the entry and never leaves for the internet from its address. What each entry sent through an
+exit is in Users → Statistics, under "Cascades". An exit cannot be switched off or
 deleted while a cascade goes through it. Who gets the entry is up to the access groups.
 
 **Lanes for groups.** A lane can be limited to the members of chosen access groups: its domains and

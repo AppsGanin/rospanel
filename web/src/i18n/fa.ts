@@ -1209,6 +1209,8 @@ const fa: Dict = {
     noCountryData: "هنوز داده‌ای از اتصال‌ها نیست.",
     byServer: "بر اساس سرور",
     byProtocol: "بر اساس پروتکل",
+    byCascade: "آبشارها",
+    byCascadeHint: "شمارش در سرور خروجی",
     allServers: "همه سرورها",
   },
 

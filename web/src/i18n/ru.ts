@@ -1208,6 +1208,8 @@ const ru = {
     noCountryData: "Данных о подключениях пока нет.",
     byServer: "По серверам",
     byProtocol: "По протоколам",
+    byCascade: "Каскады",
+    byCascadeHint: "Считает выходной сервер",
     allServers: "Все серверы",
   },
 

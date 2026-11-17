@@ -619,6 +619,7 @@ func (rt *Router) panelMux() http.Handler {
 	canStatsOrUsersView("GET /api/stats/series", rt.statsSeries)
 	canStatsOrUsersView("GET /api/stats/nodes", rt.statsNodes)
 	canStatsView("GET /api/stats/lanes", rt.statsLanes)
+	canStatsView("GET /api/stats/cascade", rt.statsCascade)
 	canStatsView("GET /api/stats/users", rt.statsByUser)
 	canStatsView("GET /api/stats/abuse", rt.statsAbuse)
 	canStatsView("GET /api/stats/countries", rt.statsCountries)

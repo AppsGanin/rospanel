@@ -1209,6 +1209,8 @@ const zh: Dict = {
     noCountryData: "暂无连接数据。",
     byServer: "按服务器",
     byProtocol: "按协议",
+    byCascade: "级联",
+    byCascadeHint: "由出口服务器统计",
     allServers: "全部服务器",
   },
 

@@ -666,6 +666,20 @@ export const getLaneTraffic = (p: { from?: string; to?: string }) => {
   if (p.to) q.set('to', p.to)
   return api<LaneTraffic[]>('api/stats/lanes?' + q.toString())
 }
+export type CascadeTraffic = {
+  exit_id: number
+  exit_name: string
+  entry_id: number
+  entry_name: string
+  up: number
+  down: number
+}
+export const getCascadeTraffic = (p: { from?: string; to?: string }) => {
+  const q = new URLSearchParams()
+  if (p.from) q.set('from', p.from)
+  if (p.to) q.set('to', p.to)
+  return api<CascadeTraffic[]>('api/stats/cascade?' + q.toString())
+}
 export const getStatsByUser = (from?: string, to?: string) => {
   const q = new URLSearchParams()
   if (from) q.set('from', from)

@@ -2,6 +2,7 @@ package xray
 
 import (
 	"encoding/binary"
+	"strconv"
 	"strings"
 )
 
@@ -41,7 +42,33 @@ func (s *Supervisor) QueryLanesLive(apiAddr string) (map[string]Traffic, error) 
 	if err != nil {
 		return nil, err
 	}
-	return lanesOf(raw), nil
+	out := lanesOf(raw)
+	// The cascade bridges of an exit server, under their own keys (bridge-<entry>). A
+	// failed read leaves their counters for the next one; the lanes are already taken.
+	if bridges, err := api.queryStatsReset("user>>>" + BridgeLanePrefix); err == nil {
+		for key, t := range bridges {
+			if _, ok := BridgeLaneEntry(key); ok && (t.Up > 0 || t.Down > 0) {
+				out[key] = t
+			}
+		}
+	}
+	return out, nil
+}
+
+// BridgeLanePrefix starts the lane key of what an entry server sent through this exit
+// server over its cascade bridge: the bridge credential's own email (bridge-<entry id>,
+// model.BridgeEmail). Those bytes are inside the bridge lane's count too; this key says
+// which entry they came from.
+const BridgeLanePrefix = "bridge-"
+
+// BridgeLaneEntry is the entry server id of a bridge lane key.
+func BridgeLaneEntry(key string) (int64, bool) {
+	rest, ok := strings.CutPrefix(key, BridgeLanePrefix)
+	if !ok || rest == "" || strings.TrimLeft(rest, "0123456789") != "" || (len(rest) > 1 && rest[0] == '0') {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(rest, 10, 64)
+	return id, err == nil
 }
 
 // lanesOf keeps the lane inbounds and takes the shares of the lanes behind the TCP-TLS
@@ -106,7 +133,11 @@ func decodeInboundStats(msg []byte) (map[string]Traffic, error) {
 
 func foldInboundStat(out map[string]Traffic, name string, val int64) {
 	parts := strings.Split(name, ">>>")
-	if len(parts) != 4 || parts[0] != "inbound" || parts[2] != "traffic" {
+	if len(parts) != 4 || parts[2] != "traffic" {
+		return
+	}
+	// Inbound counters, and the user counters of the cascade bridges.
+	if parts[0] != "inbound" && (parts[0] != "user" || !strings.HasPrefix(parts[1], BridgeLanePrefix)) {
 		return
 	}
 	t := out[parts[1]]

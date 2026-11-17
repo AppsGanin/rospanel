@@ -38,7 +38,21 @@ func TestFoldInboundStat(t *testing.T) {
 	foldInboundStat(out, "inbound>>>vless-in>>>traffic>>>downlink", 9)
 	foldInboundStat(out, "user>>>u1>>>traffic>>>uplink", 100)
 	foldInboundStat(out, "outbound>>>direct>>>traffic>>>uplink", 100)
-	if len(out) != 1 || out["vless-in"] != (Traffic{Up: 7, Down: 9}) {
+	foldInboundStat(out, "user>>>bridge-3>>>traffic>>>downlink", 5)
+	if len(out) != 2 || out["vless-in"] != (Traffic{Up: 7, Down: 9}) || out["bridge-3"] != (Traffic{Down: 5}) {
 		t.Fatalf("folded %v", out)
+	}
+}
+
+func TestBridgeLaneEntry(t *testing.T) {
+	for key, want := range map[string]int64{"bridge-0": 0, "bridge-12": 12} {
+		if id, ok := BridgeLaneEntry(key); !ok || id != want {
+			t.Fatalf("%s: %d %v", key, id, ok)
+		}
+	}
+	for _, key := range []string{"bridge-", "bridge-01", "bridge--1", "bridge-1a", "u1", "vless-in", "bridge-99999999999999999999"} {
+		if _, ok := BridgeLaneEntry(key); ok {
+			t.Fatalf("%s accepted", key)
+		}
 	}
 }

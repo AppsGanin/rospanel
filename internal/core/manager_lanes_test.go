@@ -2,7 +2,10 @@ package core
 
 import (
 	"math"
+	"strconv"
 	"testing"
+
+	"github.com/AppsGanin/rospanel/internal/store"
 
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
@@ -53,12 +56,17 @@ func TestNodeLanesTakeOnlyTheNodesOwn(t *testing.T) {
 		{Lane: "custom-junk", Up: 9, Down: 9},   // not even an id
 		{Lane: "api", Up: 9, Down: 9},           // not a lane
 		{Lane: xray.TagNaive, Up: math.MaxInt64, Down: -5},
+		{Lane: xray.BridgeLanePrefix + strconv.FormatInt(other, 10), Up: 10, Down: 11}, // a cascade from other
+		{Lane: xray.BridgeLanePrefix + "0", Up: 12, Down: 13},                          // from the master
+		{Lane: xray.BridgeLanePrefix + strconv.FormatInt(own, 10), Up: 9, Down: 9},     // from itself
+		{Lane: xray.BridgeLanePrefix + "999999", Up: 9, Down: 9},                       // no such server
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := map[string][2]int64{
 		xray.TagVLESS: {1, 2}, xray.LaneAWG: {3, 4}, ownTag: {5, 6}, xray.TagNaive: {laneReportMax, 0},
+		xray.BridgeLanePrefix + strconv.FormatInt(other, 10): {10, 11}, xray.BridgeLanePrefix + "0": {12, 13},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("kept %+v, want %v", got, want)
@@ -89,5 +97,34 @@ func TestLocalLanesCarryWhatAWriteRefused(t *testing.T) {
 	}
 	if got[xray.TagVLESS] != [2]int64{15, 25} || got[xray.TagNaive] != [2]int64{1, 2} {
 		t.Fatalf("totals %v, want vless 15/25 and naive 1/2", got)
+	}
+}
+
+// A bridge's bytes are its exit's cascade traffic, named by both servers, and stay out
+// of the protocol split: the bridge lane already counted them.
+func TestCascadeTrafficKeptApartFromLanes(t *testing.T) {
+	t.Parallel()
+	m := nodeTestManager(t)
+	syncedNode(t, m.store, "exit", "26.10.10")
+	nodes, _ := m.store.ListNodes()
+	exit := nodes[0].ID
+	day := "2026-11-17"
+	if err := m.store.ApplyLaneTraffic([]store.LaneDelta{
+		{NodeID: exit, Lane: xray.TagReality, Day: day, Up: 100, Down: 200},
+		{NodeID: exit, Lane: xray.BridgeLanePrefix + "0", Day: day, Up: 40, Down: 50},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	lanes, err := m.LaneTrafficBreakdown(day, day)
+	if err != nil || len(lanes) != 1 || lanes[0].Lane != xray.TagReality {
+		t.Fatalf("lanes %+v %v", lanes, err)
+	}
+	cascade, err := m.CascadeTrafficBreakdown(day, day)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := CascadeTraffic{ExitID: exit, ExitName: "exit", EntryID: model.LocalNodeID, EntryName: model.LocalNodeName, Up: 40, Down: 50}
+	if len(cascade) != 1 || cascade[0] != want {
+		t.Fatalf("cascade %+v, want %+v", cascade, want)
 	}
 }

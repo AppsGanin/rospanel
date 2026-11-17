@@ -1209,6 +1209,8 @@ const en: Dict = {
     noCountryData: "No connection data yet.",
     byServer: "By server",
     byProtocol: "By protocol",
+    byCascade: "Cascades",
+    byCascadeHint: "Counted on the exit server",
     allServers: "All servers",
   },
 
