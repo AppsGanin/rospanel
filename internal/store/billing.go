@@ -809,7 +809,7 @@ func (s *Store) SetBillingSettings(st *model.Settings) error {
 		 wallet_enabled = ?, wallet_topup_min = ?, wallet_topup_max = ?, billing_periods = ?,
 		 ref_mode = ?, ref_percent = ?, ref_days = ?, ref_first_only = ?,
 		 winback_enabled = ?, winback_after_days = ?, winback_percent = ?, winback_valid_days = ?, churn_survey = ?,
-		 traffic_packs = ?, plan_change = ?,
+		 traffic_packs = ?, plan_change = ?, billing_return_url = ?,
 		 updated_at = unixepoch() WHERE id = 1`,
 		boolToInt(st.BillingEnabled),
 		st.BillingFreePlanID, st.BillingTrialPlanID, st.BillingPaymentNote,
@@ -817,7 +817,7 @@ func (s *Store) SetBillingSettings(st *model.Settings) error {
 		boolToInt(st.WalletEnabled), st.WalletTopupMin, st.WalletTopupMax, periodsJSON(st.BillingPeriods),
 		st.RefMode, st.RefPercent, st.RefDays, boolToInt(st.RefFirstOnly),
 		boolToInt(st.Winback.Enabled), st.Winback.AfterDays, st.Winback.Percent, st.Winback.ValidDays, boolToInt(st.ChurnSurvey),
-		packsJSON(st.TrafficPacks), boolToInt(st.PlanChange),
+		packsJSON(st.TrafficPacks), boolToInt(st.PlanChange), st.BillingReturnURL,
 	)
 	return err
 }

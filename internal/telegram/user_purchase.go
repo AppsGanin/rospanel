@@ -265,7 +265,7 @@ func (s *UserService) payPurchase(ctx context.Context, client *Client, chatID, m
 		s.edit(ctx, client, chatID, msgID, esc(msg), nav)
 		return
 	}
-	order, err := s.panel.StartPurchase(ctx, lang, u.ID, p, method, "https://t.me/")
+	order, err := s.panel.StartPurchase(ctx, lang, u.ID, p, method, "")
 	if err != nil {
 		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(core.UserError(err, lang)), nav)
 		return

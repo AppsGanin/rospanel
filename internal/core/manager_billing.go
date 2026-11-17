@@ -269,6 +269,10 @@ func (m *Manager) SaveBillingSettings(st *model.Settings) error {
 	if err := validateWalletSettings(st); err != nil {
 		return err
 	}
+	st.BillingReturnURL = strings.TrimSpace(st.BillingReturnURL)
+	if st.BillingReturnURL != "" && !model.ValidReturnURL(st.BillingReturnURL) {
+		return invalidCode("err.badReturnURL", "адрес возврата после оплаты — полный адрес http(s)")
+	}
 	if st.BillingFreePlanID != 0 && st.BillingFreePlanID == st.BillingTrialPlanID {
 		return invalidCode("err.freeAndTrialMustDiffer", "бесплатный и пробный тарифы должны быть разными: иначе после окончания пробного периода пользователю некуда переходить")
 	}

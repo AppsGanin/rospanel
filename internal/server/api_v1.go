@@ -1435,8 +1435,8 @@ func (rt *Router) apiManualImageURL(userID int64) string {
 	return rt.manualPayImageURL(*u, set)
 }
 
-// apiReturnURL is where a hosted payment sends the payer back: the caller's own, or
-// the user's subscription link — a browser opening it lands on the operator's own
+// apiReturnURL is where a hosted payment sends the payer back: the caller's own, the
+// operator's billing return address, or the user's subscription link — a browser opening it lands on the operator's own
 // page when one is set (Telegram is blocked for many payers).
 func (rt *Router) apiReturnURL(given string, userID int64) string {
 	if given != "" {
@@ -1445,6 +1445,9 @@ func (rt *Router) apiReturnURL(given string, userID int64) string {
 	set, err := rt.mgr.Settings()
 	if err != nil {
 		return ""
+	}
+	if set.BillingReturnURL != "" {
+		return set.BillingReturnURL
 	}
 	// No page behind the link (the panel's switched off, none of the operator's):
 	// "" sends the payer where the bot's own payments go.

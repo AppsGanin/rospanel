@@ -3559,6 +3559,9 @@
           "maintenance": {
             "type": "boolean"
           },
+          "miniapp_url": {
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -4270,6 +4273,9 @@
           },
           "ref_percent": {
             "type": "integer"
+          },
+          "return_url": {
+            "type": "string"
           },
           "topup_max": {
             "type": "integer"
@@ -7783,6 +7789,9 @@
                   },
                   "ref_percent": {
                     "type": "integer"
+                  },
+                  "return_url": {
+                    "type": "string"
                   },
                   "topup_max": {
                     "type": "integer"

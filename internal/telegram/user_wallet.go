@@ -321,7 +321,7 @@ func (s *UserService) startTopup(ctx context.Context, client *Client, chatID, ms
 		s.reply(ctx, client, chatID, msgID, esc(msg), back)
 		return
 	}
-	order, err := s.panel.StartTopup(ctx, lang, u.ID, amount, method, "https://t.me/")
+	order, err := s.panel.StartTopup(ctx, lang, u.ID, amount, method, "")
 	if err != nil {
 		s.reply(ctx, client, chatID, msgID, "⚠️ "+esc(core.UserError(err, lang)), back)
 		return

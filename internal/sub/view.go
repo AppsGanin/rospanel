@@ -25,8 +25,12 @@ type View struct {
 	// Texts are the figures above as the page words them.
 	Texts ViewTexts `json:"texts"`
 
-	SubURL string    `json:"sub_url"`
-	Apps   []ViewApp `json:"apps"` // one-tap import into each client
+	SubURL string `json:"sub_url"`
+	// MiniAppURL is the Telegram Mini App entrance of this install, when the operator
+	// has one configured — a page paying from inside the Mini App sends it back as
+	// the return URL so the payer lands where they started.
+	MiniAppURL string    `json:"miniapp_url,omitempty"`
+	Apps       []ViewApp `json:"apps"` // one-tap import into each client
 	// Links are every config the user may use, on every server — only while the page
 	// would list them (ShowConfigs): the operator's switch, and never under a required
 	// HWID, where a raw link would bypass the device cap. The apps import them anyway.
@@ -164,7 +168,7 @@ func PageView(u model.User, local *model.Settings, servers []Server, billing Bil
 		UsedBytes: u.UsedUp + u.UsedDown, LimitBytes: u.DataLimit, UsedPct: d.UsedPct,
 		ExpireAt: u.ExpireAt, HoldSeconds: u.HoldSeconds,
 		Texts:  ViewTexts{Used: d.Used, Limit: d.Limit, Expire: d.Expire, Reset: d.ResetText, LastSeen: d.LastSeen},
-		SubURL: d.SubURL, ShowConfigs: d.ShowConfigs, Maintenance: local.MaintenanceMode,
+		SubURL: d.SubURL, MiniAppURL: MiniAppURL(local), ShowConfigs: d.ShowConfigs, Maintenance: local.MaintenanceMode,
 		Apps: []ViewApp{}, Links: []ViewLink{}, AWG: []ViewAWG{}, WG: []ViewAWG{}, Turn: []ViewTurn{}, Telegram: []ViewTelegram{}, Blocks: []ViewBlock{},
 		Brand:   ViewBrand{Name: d.BrandName, Accent: d.Brand, Text: d.Ink, Muted: d.Muted, Bg: d.Bg, Surface: d.Surface},
 		Devices: devices,

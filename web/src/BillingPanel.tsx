@@ -88,6 +88,7 @@ function toCfg(d: BillingInfo, plans: TariffPlan[]): BillingInfo {
     churn_survey: !!d.churn_survey,
     traffic_packs: d.traffic_packs ?? [],
     plan_change: d.plan_change ?? true,
+    return_url: d.return_url ?? "",
     plans,
   };
 }
@@ -215,7 +216,8 @@ export function BillingPanel() {
     JSON.stringify(cfg.winback) !== JSON.stringify(saved.winback) ||
     cfg.churn_survey !== saved.churn_survey ||
     JSON.stringify(cfg.traffic_packs) !== JSON.stringify(saved.traffic_packs) ||
-    cfg.plan_change !== saved.plan_change;
+    cfg.plan_change !== saved.plan_change ||
+    cfg.return_url !== saved.return_url;
 
   // Which providers have unsaved edits (skip any whose server view we don't have).
   const dirtyProviders = (providers ?? []).filter(
@@ -288,6 +290,7 @@ export function BillingPanel() {
           churn_survey: cfg.churn_survey,
           traffic_packs: cfg.traffic_packs,
           plan_change: cfg.plan_change,
+          return_url: cfg.return_url.trim(),
         });
         setSaved({ ...cfg, plans: safePlans });
         // Tell the top nav to re-read billing_enabled so the payments menu item
@@ -399,6 +402,17 @@ export function BillingPanel() {
                 {t("bill.globalHint")}{" "}
                 <Trans i18nKey="bill.existingUsers" components={{ b: <b /> }} />
               </>
+            }
+          />
+          <SettingRow
+            label={t("bill.returnUrl")}
+            hint={t("bill.returnUrlHint")}
+            field={
+              <TextInput
+                value={cfg.return_url}
+                placeholder="https://…"
+                onChange={(v) => setCfg({ ...cfg, return_url: v })}
+              />
             }
           />
         </Panel>

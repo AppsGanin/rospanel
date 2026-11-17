@@ -1362,6 +1362,10 @@ type Settings struct {
 	// BillingManualLabel is its pay-button label; empty falls back to the dictionary.
 	BillingManualEnabled bool   `json:"-"`
 	BillingManualLabel   string `json:"-"`
+	// BillingReturnURL is where a payer lands after paying through a payment system
+	// when the flow brings no address of its own (the bot, an API call without one).
+	// Empty: the Mini App, else the user's subscription page.
+	BillingReturnURL string `json:"-"`
 
 	// WalletEnabled lets users keep a balance: top it up, pay for plans from it and
 	// have it renew their plan when it runs out. WalletTopupMin and WalletTopupMax
@@ -1923,6 +1927,16 @@ func ValidSubPageURL(raw string) bool {
 		return false
 	}
 	u, err := url.Parse(strings.ReplaceAll(raw, SubPageToken, "t"))
+	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.User == nil
+}
+
+// ValidReturnURL reports whether raw is an absolute http(s) address without
+// credentials, up to 2048 characters — what a payer may be sent back to.
+func ValidReturnURL(raw string) bool {
+	if len(raw) > 2048 || strings.ContainsAny(raw, " \t\r\n") {
+		return false
+	}
+	u, err := url.Parse(raw)
 	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.User == nil
 }
 

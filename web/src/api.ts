@@ -2428,6 +2428,7 @@ export interface BillingInfo {
   churn_survey: boolean // ask a user whose paid term lapsed why it was not renewed
   traffic_packs: TrafficPack[]
   plan_change: boolean // users may switch plans while one is active
+  return_url: string // where a payer from the bot lands after paying ("" = Mini App / sub page)
   plans: TariffPlan[]
   plan_users?: Record<string, number> // plan id → number of users on it
 }
@@ -2521,6 +2522,7 @@ export const saveBilling = (b: {
   churn_survey: boolean
   traffic_packs: TrafficPack[]
   plan_change: boolean
+  return_url: string
 }) =>
   api<{ ok: boolean }>('api/billing', {
     method: 'POST',
