@@ -41,7 +41,7 @@ var ThemeSections = append(append([]string{"layout"}, layoutSections...), append
 var (
 	layoutSections = []string{
 		"header", "badges", "notices", "tabs",
-		"churn", "blocks", "wizard", "connect", "devices", "awg", "wg", "turn", "configs", "tgproxy", "access", "rotate",
+		"churn", "blocks", "wizard", "connect", "devices", "tunnelkeys", "awg", "wg", "turn", "configs", "tgproxy", "access", "rotate",
 		"plan", "promo", "wallet", "history", "referral", "invitees", "legal",
 	}
 	dialogSections = []string{"dialog-apps", "dialog-wizard", "dialog-renew", "dialog-change", "dialog-plans", "dialog-pay", "dialog-msg"}
@@ -54,6 +54,7 @@ var ThemeActions = []string{
 	"unbind-device", "churn", "churn-send", "cancel", "promo", "topup", "buy-extra", "external",
 	"tg-proxy", "tg-access", "auto-renew", "addn",
 	"wz-plat", "wz-go", "pick-plan", "period", "devices", "buy-plan", "change-plan", "pay-with",
+	"tunnel-key", "tunnel-key-add", "tunnel-key-delete",
 }
 
 // ThemeMarkup is the active theme's markup, as the page renders it.

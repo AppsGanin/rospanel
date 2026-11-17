@@ -180,3 +180,46 @@ func (s *Settings) DeviceCap(u User) int {
 		return MaxDevicesPerUser
 	}
 }
+
+// AWGDevice is one extra AmneziaWG key of a user (migration 0147): a device of
+// theirs with its own key and its own address on the tunnel, next to the user's main
+// key. HWID is the subscription client it was made for, "" when made by hand.
+type AWGDevice struct {
+	ID         int64  `json:"id"`
+	UserID     int64  `json:"user_id"`
+	Name       string `json:"name"`
+	HWID       string `json:"hwid,omitempty"`
+	PrivateKey string `json:"-"`
+	Slot       int    `json:"-"`
+	CreatedAt  int64  `json:"created_at"`
+}
+
+// AWGKey is one tunnel identity: a private key and its slot on the subnet.
+type AWGKey struct {
+	ID   int64 // the AWGDevice it is; 0 for the user's main key
+	Key  string
+	Slot int
+}
+
+// AWGDeviceNameMax bounds a device's name, in runes.
+const AWGDeviceNameMax = 40
+
+// AWGKeyCap is how many tunnel keys a user may hold, their main one included: the
+// HWID device cap, one key per device.
+func (s *Settings) AWGKeyCap(u User) int { return s.DeviceCap(u) }
+
+// ActiveAWGDevices is how many of a user's device keys, oldest first, are in force
+// under a cap of keys that counts the main one: a cap lowered after the keys were
+// made (a cheaper plan) leaves the newest ones out rather than serving past it.
+func ActiveAWGDevices(n, capKeys int) int {
+	return max(0, min(n, capKeys-1))
+}
+
+// AWGIdentity is the key the user's AmneziaWG configs are written with: the one
+// picked for this request (a device's), else the user's main key.
+func (u *User) AWGIdentity() (key string, slot int) {
+	if u.AWGPick != nil {
+		return u.AWGPick.Key, u.AWGPick.Slot
+	}
+	return u.WGPrivateKey, u.AWGSlot
+}

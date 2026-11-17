@@ -125,8 +125,14 @@ func TestPlanUserChangesTakesWireGuardPeers(t *testing.T) {
 	if err != nil || len(live["custom-21"]) != 2 {
 		t.Fatalf("readWireGuardLive = %+v, %v", live, err)
 	}
-	if _, err := readWireGuardLive(doc("u1", "u1")); err == nil {
-		t.Error("a shared email must not be managed live")
+	// A user's main key and a device's share the email: both are that user's peers.
+	two, err := readWireGuardLive(doc("u1", "u1"))
+	if err != nil || len(two["custom-21"]["u1"]) != 2 {
+		t.Errorf("a user's two keys read back as %+v, %v", two, err)
+	}
+	// A device key added to a user is a live change, not a restart.
+	if changes, ok := planUserChanges(doc("u1", "u2"), doc("u1", "u1", "u2")); !ok || len(changes) != 1 || !changes[0].wireGuard {
+		t.Errorf("a device key: ok=%v changes=%+v", ok, changes)
 	}
 }
 

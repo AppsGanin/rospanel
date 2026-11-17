@@ -480,6 +480,131 @@
             el.disabled = false;
           });
       }
+      var AWG_ADD_PATH = "{{.Devices.AWG.AddPath}}";
+      var AWG_DELETE_PATH = "{{.Devices.AWG.DeletePath}}";
+      var AWG_PICK = {{.Devices.AWG.Pick}};
+      // A theme's picker cannot mark the chosen device itself (no branch inside a tag):
+      // the page does — the option of a list, the chip of a row.
+      document.addEventListener("DOMContentLoaded", function () {
+        var cur = AWG_PICK ? String(AWG_PICK) : "";
+        Array.prototype.forEach.call(document.querySelectorAll('[data-action="tunnel-key"]'), function (el) {
+          if (el.tagName === "SELECT") el.value = cur;
+          else el.classList.toggle("on", (el.getAttribute("data-value") || "") === cur);
+        });
+      });
+      // The AmneziaWG card's configs follow the key in ?k=; the page re-renders with it.
+      function pickAWGKey(id) {
+        var u = new URL(location.href);
+        if (id) u.searchParams.set("k", id); else u.searchParams.delete("k");
+        location.href = u.toString();
+      }
+      function awgKeyPost(path, body, el, done) {
+        var old = el.textContent;
+        el.textContent = "…";
+        el.disabled = true;
+        fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-RosPanel-Sub": "1" },
+          body: JSON.stringify(body),
+        })
+          .then(function (r) {
+            if (!r.ok) throw r;
+            return r.json();
+          })
+          .then(done)
+          .catch(function (e) {
+            el.textContent = old;
+            el.disabled = false;
+            if (!e || !e.status) {
+              alert({{.L.NetworkError}});
+              return;
+            }
+            // The panel says why (the device limit reached, say), in the reader's language.
+            e.json()
+              .then(function (j) { alert((j && j.error) || {{.L.AWGKeyFailed}}); })
+              .catch(function () { alert({{.L.AWGKeyFailed}}); });
+          });
+      }
+      // A device just made opens with its configs: the page comes back on #tdev-<id>.
+      // reloadAt loads the page afresh at u: one navigation, never two racing. A change
+      // of the fragment alone does not load anything, so then the page reloads itself.
+      function reloadAt(u) {
+        var here = new URL(location.href);
+        if (u.origin + u.pathname + u.search === here.origin + here.pathname + here.search) {
+          if (u.hash !== here.hash) history.replaceState(null, "", u.toString());
+          location.reload();
+          return;
+        }
+        location.href = u.toString();
+      }
+      function openTunnelDevice(id) {
+        var u = new URL(location.href);
+        u.searchParams.delete("k");
+        u.hash = "tdev-" + id;
+        reloadAt(u);
+      }
+      // tunnelTab shows one protocol of a device dialog.
+      function tunnelTab(btn) {
+        var d = btn.closest(".modal");
+        Array.prototype.forEach.call(d.querySelectorAll(".ttab"), function (t) {
+          var on = t === btn;
+          t.classList.toggle("active", on);
+          t.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        Array.prototype.forEach.call(d.querySelectorAll(".tpane"), function (p) {
+          p.hidden = p.getAttribute("data-p") !== btn.getAttribute("data-p");
+        });
+      }
+      // showTunnelQR opens the QR dialog for the config of the button's row.
+      function showTunnelQR(btn) {
+        var d = document.getElementById("tqr");
+        if (!d) return;
+        d.querySelector(".tqr-title").textContent = btn.getAttribute("data-label");
+        d.querySelector(".tqr-img").src = btn.getAttribute("data-qr");
+        d.querySelector(".tqr-dl").href = btn.getAttribute("data-conf");
+        d.classList.add("show");
+      }
+      // toggleTunnelRow opens or closes what sits under a TURN server's row: its
+      // apps and manual settings.
+      function toggleTunnelRow(btn) {
+        var qr = btn.closest(".tsrv").nextElementSibling;
+        qr.hidden = !qr.hidden;
+        btn.classList.toggle("on", !qr.hidden);
+        btn.setAttribute("aria-expanded", qr.hidden ? "false" : "true");
+      }
+      function addAWGKey(el) {
+        var name = prompt({{.L.AWGKeyName}}, "");
+        if (name === null) return;
+        awgKeyPost(AWG_ADD_PATH, { name: name }, el, function (r) {
+          if (document.getElementById("tdev-0")) openTunnelDevice(r.id);
+          else pickAWGKey(String(r.id));
+        });
+      }
+      document.addEventListener("DOMContentLoaded", function () {
+        Array.prototype.forEach.call(document.querySelectorAll(".modal.tdev"), function (d) {
+          document.body.appendChild(d);
+          var first = d.querySelector(".ttab");
+          if (first) tunnelTab(first);
+        });
+        var m = /^#(tdev-\d+)$/.exec(location.hash);
+        if (m) showModal(m[1]);
+      });
+      // id: the key to delete; none is the one picked. Deleting the picked one goes
+      // back to the main key.
+      function deleteAWGKey(el, id) {
+        id = parseInt(id, 10) || AWG_PICK;
+        if (!id || !confirm({{.L.AWGKeyConfirm}})) return;
+        awgKeyPost(AWG_DELETE_PATH, { id: id }, el, function () {
+          if (document.getElementById("tdev-0")) {
+            var u = new URL(location.href);
+            u.searchParams.delete("k");
+            u.hash = "";
+            reloadAt(u);
+            return;
+          }
+          pickAWGKey(id === AWG_PICK ? "" : AWG_PICK ? String(AWG_PICK) : "");
+        });
+      }
       var PAY_PATH = "{{.Billing.PayPath}}";
       var CANCEL_PATH = "{{.Billing.CancelPath}}";
       var ORDER_PATH = "{{.Billing.OrderPath}}";
@@ -614,6 +739,9 @@
           });
         },
         "pay-with": function (el, v) { payWith(v, el); },
+        "tunnel-key": function (el, v) { pickAWGKey(v); },
+        "tunnel-key-add": function (el) { addAWGKey(el); },
+        "tunnel-key-delete": function (el, v) { deleteAWGKey(el, v); },
       };
       function planOf(el) {
         return parseInt(el.getAttribute("data-plan"), 10) || 0;
@@ -654,6 +782,9 @@
             break;
           case "devices":
             devPicked(planOf(el));
+            break;
+          case "tunnel-key":
+            pickAWGKey(el.value);
             break;
         }
       });
@@ -1205,8 +1336,159 @@
         </div>
         {{end}}
 {{end}}
+{{define "core:tunnelkeys"}}
+        {{if .Devices.AWG.Show}}
+        <!-- AmneziaWG, WireGuard and TURN by device: each device has its own key, and
+             its configs open in a dialog of their own. A card apart from the subscription
+             devices: these are keys, not app installs, with a cap of their own. -->
+        <div class="card tunnel-keys">
+          <div class="tk-head">
+            <b>{{if .Turn}}{{.L.AWGKeyTurn}}{{else}}{{.L.AWGKey}}{{end}}</b>
+            <span class="badge brand">{{.Devices.AWG.Count}} / {{.Devices.AWG.Limit}}</span>
+          </div>
+          {{template "core:tunnel-list" .}}
+        </div>
+        {{end}}
+{{end}}
+{{define "core:tunnel-list"}}
+          {{range .Devices.AWG.All}}
+          <div class="dev">
+            {{if .Off}}
+            <div class="dev-info">
+              <div class="dev-name">{{.Name}}</div>
+              <div class="muted dev-sub">{{$.L.AWGKeyOff}}</div>
+            </div>
+            <button class="btn alt dev-del" type="button" onclick="deleteAWGKey(this, {{.ID}})">{{$.L.DeviceRemove}}</button>
+            {{else}}
+            <button class="dev-open" type="button" onclick="showModal('tdev-{{.ID}}')">
+              <span class="dev-info">
+                <span class="dev-name">{{.Name}}</span>
+                <span class="tk-protos">{{if .AWG}}<span>AmneziaWG</span>{{end}}{{if .WG}}<span>WireGuard</span>{{end}}{{if .Turn}}<span>TURN-VK</span>{{end}}</span>
+              </span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+            </button>
+            {{end}}
+          </div>
+          {{end}}
+          {{if .Devices.AWG.CanAdd}}
+          <button class="tk-add" type="button" onclick="addAWGKey(this)">+ {{.L.AWGKeyAdd}}</button>
+          {{end}}
+          {{if not .Devices.AWG.CanAdd}}
+          <p class="muted tk-hint">{{if eq .Devices.AWG.Limit 1}}{{.L.AWGKeysOne}}{{else}}{{.L.AWGKeysFull}}{{end}}</p>
+          {{end}}
+        <!-- One dialog per device: its AmneziaWG, WireGuard and TURN configs. Kept with
+             the list (a theme may replace the dialogs section); the page's script moves
+             them under <body>, where a fixed dialog is not clipped by a card. -->
+        {{range .Devices.AWG.All}}{{if not .Off}}
+        <div id="tdev-{{.ID}}" class="modal tdev" onclick="if (event.target === this) this.classList.remove('show');">
+          <div class="modal-card">
+            <div class="modal-head">
+              <b>{{.Name}}</b>
+              <button class="x" type="button" aria-label="{{$.L.Close}}" onclick="this.closest('.modal').classList.remove('show')">✕</button>
+            </div>
+            <!-- One tab per protocol the device has; the bar only when there are two. -->
+            {{if or (and .AWG .WG) (and .AWG .Turn) (and .WG .Turn)}}
+            <div class="ttabs" role="tablist">
+              {{if .AWG}}<button type="button" class="ttab" role="tab" data-p="awg" onclick="tunnelTab(this)">{{$.L.AWGTitle}}</button>{{end}}
+              {{if .WG}}<button type="button" class="ttab" role="tab" data-p="wg" onclick="tunnelTab(this)">{{$.L.WGTitle}}</button>{{end}}
+              {{if .Turn}}<button type="button" class="ttab" role="tab" data-p="turn" onclick="tunnelTab(this)">{{$.L.TurnTitle}}</button>{{end}}
+            </div>
+            {{end}}
+            {{if .AWG}}
+            <div class="tpane" data-p="awg" role="tabpanel">
+              {{range .AWG}}
+              <div class="tsrv">
+                <span class="tsrv-n">{{.Label}}</span>
+                <button class="icon-btn" type="button" title="QR" aria-label="QR · {{.Label}}" data-qr="{{.QRURL}}" data-conf="{{.ConfURL}}" data-label="{{.Label}}" onclick="showTunnelQR(this)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2" /></svg></button>
+                <a class="icon-btn" href="{{.ConfURL}}" download title="{{$.L.AWGDownload}}" aria-label="{{$.L.AWGDownload}} · {{.Label}}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11" /><path d="M7 10.5l5 5 5-5" /><path d="M5 20h14" /></svg></a>
+              </div>
+              {{end}}
+              <p class="muted thint">{{$.L.AWGHint}} <a href="{{$.L.AWGSite}}" target="_blank" rel="noopener noreferrer">{{$.L.AppLink}}</a></p>
+            </div>
+            {{end}}
+            {{if .WG}}
+            <div class="tpane" data-p="wg" role="tabpanel">
+              {{range .WG}}
+              <div class="tsrv">
+                <span class="tsrv-n">{{.Label}}</span>
+                <button class="icon-btn" type="button" title="QR" aria-label="QR · {{.Label}}" data-qr="{{.QRURL}}" data-conf="{{.ConfURL}}" data-label="{{.Label}}" onclick="showTunnelQR(this)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2" /></svg></button>
+                <a class="icon-btn" href="{{.ConfURL}}" download title="{{$.L.AWGDownload}}" aria-label="{{$.L.AWGDownload}} · {{.Label}}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11" /><path d="M7 10.5l5 5 5-5" /><path d="M5 20h14" /></svg></a>
+              </div>
+              {{end}}
+              <p class="muted thint">{{$.L.WGHint}} <a href="{{$.L.WGSite}}" target="_blank" rel="noopener noreferrer">{{$.L.AppLink}}</a></p>
+            </div>
+            {{end}}
+            {{if .Turn}}
+            <div class="tpane" data-p="turn" role="tabpanel">
+              <!-- TURN has more to it than a QR: per server, the apps that import it from
+                   one link, and the manual settings; they open under the row. -->
+              {{range .Turn}}
+              <div class="tsrv">
+                <span class="tsrv-n">{{.Label}}</span>
+                <button class="icon-btn tsrv-exp" type="button" title="{{$.L.OpenInApp}}" aria-label="{{$.L.OpenInApp}} · {{.Label}}" aria-expanded="false" onclick="toggleTunnelRow(this)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg></button>
+                <a class="icon-btn" href="{{.ConfURL}}" download title="{{$.L.AWGDownload}}" aria-label="{{$.L.AWGDownload}} · {{.Label}}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11" /><path d="M7 10.5l5 5 5-5" /><path d="M5 20h14" /></svg></a>
+              </div>
+              <div class="tsrv-qr" hidden>
+                {{range .Apps}}
+                <div class="tapp">
+                  <a class="tapp-n" href="{{.AppLink}}" target="_blank" rel="noopener noreferrer" title="{{$.L.AppLink}}">{{.Name}}</a>
+                  <a class="btn alt tapp-open" href="{{.Href}}">{{$.L.OpenInApp}}</a>
+                  <button class="icon-btn" type="button" title="{{$.L.Copy}}" aria-label="{{$.L.Copy}} · {{.Name}}" onclick="copyIcon('{{.Link}}', this)">
+                      <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
+                      <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                  </button>
+                </div>
+                {{end}}
+                <details class="tman">
+                  <summary>{{$.L.TurnManual}}</summary>
+                  <p class="muted" style="margin: 8px 0 4px">{{$.L.TurnPeer}}</p>
+                  <div class="copy-row">
+                    <code>{{.Peer}}</code>
+                    <button class="icon-btn" type="button" title="{{$.L.Copy}}" aria-label="{{$.L.Copy}}" onclick="copyIcon('{{.Peer}}', this)">
+                      <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
+                      <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                    </button>
+                  </div>
+                  {{if .Link}}
+                  <p class="muted" style="margin: 12px 0 4px">{{$.L.TurnLink}}</p>
+                  <div class="copy-row">
+                    <code>{{.Link}}</code>
+                    <button class="icon-btn" type="button" title="{{$.L.Copy}}" aria-label="{{$.L.Copy}}" onclick="copyIcon('{{.Link}}', this)">
+                      <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
+                      <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                    </button>
+                  </div>
+                  {{else}}
+                  <p class="muted" style="margin: 12px 0 4px">{{$.L.TurnNoLink}}</p>
+                  {{end}}
+                </details>
+              </div>
+              {{end}}
+              <p class="muted thint">{{$.L.TurnHint}}</p>
+            </div>
+            {{end}}
+            {{if not .Main}}
+            <button class="tdel" type="button" onclick="deleteAWGKey(this, {{.ID}})">{{$.L.AWGKeyDelete}}</button>
+            {{end}}
+          </div>
+        </div>
+        {{end}}{{end}}
+        <!-- The QR of one config, over the device's dialog: big enough to scan, with
+             the file beside it. Filled from the button that opened it. -->
+        <div id="tqr" class="modal tdev" onclick="if (event.target === this) this.classList.remove('show');">
+          <div class="modal-card">
+            <div class="modal-head">
+              <b class="tqr-title"></b>
+              <button class="x" type="button" aria-label="{{.L.Close}}" onclick="this.closest('.modal').classList.remove('show')">✕</button>
+            </div>
+            <div class="qr"><img class="tqr-img" alt="QR" /></div>
+            <p class="muted tqr-hint">{{.L.ScanQR}}</p>
+            <a class="btn tqr-dl" download>{{.L.AWGDownload}}</a>
+          </div>
+        </div>
+{{end}}
 {{define "core:awg"}}
-        {{if .AWG}}
+        {{if and .AWG (not .Devices.AWG.Show)}}
         <div class="card">
           <details class="fold">
           <summary><span>{{.L.AWGTitle}} <span class="fold-count">· {{len .AWG}}</span></span></summary>
@@ -1229,7 +1511,7 @@
         {{end}}
 {{end}}
 {{define "core:wg"}}
-        {{if .WG}}
+        {{if and .WG (not .Devices.AWG.Show)}}
         <div class="card">
           <details class="fold">
           <summary><span>{{.L.WGTitle}} <span class="fold-count">· {{len .WG}}</span></span></summary>
@@ -1252,7 +1534,7 @@
         {{end}}
 {{end}}
 {{define "core:turn"}}
-        {{if .Turn}}
+        {{if and .Turn (not .Devices.AWG.Show)}}
         <div class="card">
           <details class="fold">
           <summary><span>{{.L.TurnTitle}} <span class="fold-count">· {{len .Turn}}</span></span></summary>
@@ -1546,7 +1828,7 @@
       </div>
       {{end}}
       <section class="pane" data-pane="sub">
-        {{template "churn" .}}{{template "blocks" .}}{{template "wizard" .}}{{template "connect" .}}{{template "devices" .}}{{template "awg" .}}{{template "wg" .}}{{template "turn" .}}{{template "configs" .}}{{template "tgproxy" .}}{{template "access" .}}{{template "rotate" .}}
+        {{template "churn" .}}{{template "blocks" .}}{{template "wizard" .}}{{template "connect" .}}{{template "devices" .}}{{template "tunnelkeys" .}}{{template "awg" .}}{{template "wg" .}}{{template "turn" .}}{{template "configs" .}}{{template "tgproxy" .}}{{template "access" .}}{{template "rotate" .}}
       </section>
       {{if .Billing.Show}}
       <section class="pane" data-pane="pay" hidden>
@@ -1569,6 +1851,7 @@
 {{define "wizard"}}{{template "core:wizard" .}}{{end}}
 {{define "connect"}}{{template "core:connect" .}}{{end}}
 {{define "devices"}}{{template "core:devices" .}}{{end}}
+{{define "tunnelkeys"}}{{template "core:tunnelkeys" .}}{{end}}
 {{define "awg"}}{{template "core:awg" .}}{{end}}
 {{define "wg"}}{{template "core:wg" .}}{{end}}
 {{define "turn"}}{{template "core:turn" .}}{{end}}
@@ -1913,6 +2196,225 @@
       }
       .dev + .dev {
         border-top: 1px solid var(--line);
+      }
+      .dev-open {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        width: 100%;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: inherit;
+        font: inherit;
+        text-align: start;
+        cursor: pointer;
+      }
+      .dev-open .dev-info {
+        display: flex;
+        flex-direction: column;
+      }
+      .dev-open svg {
+        width: 18px;
+        height: 18px;
+        flex: none;
+        fill: none;
+        stroke: var(--muted);
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      [dir="rtl"] .dev-open svg {
+        transform: scaleX(-1);
+      }
+      .tunnel-keys .btn {
+        margin-top: 8px;
+      }
+      .tk-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 4px;
+      }
+      .tk-protos {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 4px;
+      }
+      .tk-protos span {
+        font-size: 0.72rem;
+        padding: 1px 7px;
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--muted) 14%, transparent);
+        color: var(--muted);
+      }
+      .tk-add {
+        display: block;
+        width: 100%;
+        margin-top: 8px;
+        padding: 11px;
+        border: 1px dashed color-mix(in srgb, var(--accent-fg) 45%, transparent);
+        border-radius: 12px;
+        background: none;
+        color: var(--accent-fg);
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .tk-add:hover {
+        background: color-mix(in srgb, var(--brand) 8%, transparent);
+      }
+      .tk-hint {
+        margin: 10px 0 0;
+        font-size: 0.85rem;
+      }
+      .ttabs {
+        display: flex;
+        gap: 4px;
+        padding: 3px;
+        margin-bottom: 10px;
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--muted) 12%, transparent);
+      }
+      .ttab {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 8px 6px;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: 0.85rem;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .ttab.active {
+        background: var(--surface);
+        color: var(--ink);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+      }
+      .tpane[hidden],
+      .tsrv-qr[hidden] {
+        display: none;
+      }
+      .tsrv {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 0;
+      }
+      .tsrv + .tsrv,
+      .tsrv-qr + .tsrv {
+        border-top: 1px solid var(--line);
+      }
+      .tsrv-n {
+        flex: 1 1 auto;
+        min-width: 0;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .tsrv .icon-btn {
+        width: 34px;
+        height: 34px;
+      }
+      .tsrv .icon-btn.on {
+        background: var(--brand);
+        color: var(--on-brand);
+      }
+      .tsrv-qr {
+        padding: 2px 0 10px;
+      }
+      .tsrv-exp svg {
+        transition: transform 0.15s;
+      }
+      .tsrv-exp.on svg {
+        transform: rotate(180deg);
+      }
+      .tapp {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 0;
+      }
+      .tapp-n {
+        flex: 1 1 auto;
+        min-width: 0;
+        color: var(--ink);
+        font-size: 0.9rem;
+        text-decoration: none;
+        overflow-wrap: anywhere;
+      }
+      .tapp-n:hover {
+        color: var(--accent-fg);
+      }
+      .btn.tapp-open {
+        width: auto;
+        flex: none;
+        margin: 0;
+        padding: 8px 12px;
+        font-size: 0.85rem;
+      }
+      .tapp .icon-btn {
+        width: 34px;
+        height: 34px;
+      }
+      .tman {
+        margin-top: 6px;
+      }
+      .tman summary {
+        font-size: 0.85rem;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .tqr-hint {
+        margin: 10px 0 0;
+        text-align: center;
+        font-size: 0.85rem;
+      }
+      #tqr .btn {
+        margin-top: 12px;
+      }
+      .thint {
+        margin: 8px 0 0;
+        font-size: 0.85rem;
+      }
+      .thint a {
+        color: var(--accent-fg);
+      }
+      .tdel {
+        display: block;
+        margin: 14px auto 0;
+        padding: 6px 10px;
+        border: 0;
+        background: none;
+        color: var(--danger-fg, #b91c1c);
+        font: inherit;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      .chip-pair {
+        display: inline-flex;
+      }
+      .chip:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .chip-pair .chip:first-child {
+        border-start-end-radius: 0;
+        border-end-end-radius: 0;
+      }
+      .chip-pair .chip-x {
+        border-start-start-radius: 0;
+        border-end-start-radius: 0;
+        border-inline-start: none;
+        padding-inline: 10px;
       }
       .dev-info {
         min-width: 0;

@@ -1,6 +1,6 @@
 {
   "id": "theme-hero",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "api": 1,
   "panel": ">=5.16.0",
   "name": {

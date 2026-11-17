@@ -63,6 +63,7 @@ import { TrafficArea } from './charts'
 import { NodeTrafficSplit } from './NodeTrafficSplit'
 import { ABUSE_WINDOW_DAYS, AbuseList } from './AbuseList'
 import { UserEventsModal } from './UserEventsModal'
+import { AWGKeysPanel } from './AWGKeysPanel'
 import { inPanelTz } from './tz'
 import {
   Button,
@@ -931,6 +932,9 @@ export function UserDetail({
             </Panel>
             </ReadOnly>
           )}
+
+          {/* 4c. AmneziaWG keys, one per device beyond the main one. */}
+          <AWGKeysPanel userId={user.id} userName={user.name} canManage={canManage} />
 
           {/* 5. Tariff and limits. A tariff owns the quota, the device cap and the
                  reset cycle, so under one the fields are shown disabled rather than

@@ -26,6 +26,69 @@
         ],
         "type": "object"
       },
+      "AWGKeyRow": {
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "main": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "off": {
+            "type": "boolean"
+          },
+          "selected": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "selected",
+          "off",
+          "main"
+        ],
+        "type": "object"
+      },
+      "AWGKeys": {
+        "properties": {
+          "can_add": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "list": {
+            "items": {
+              "$ref": "#/components/schemas/AWGKeyRow"
+            },
+            "type": "array"
+          },
+          "pick": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "show": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "show",
+          "list",
+          "pick",
+          "can_add",
+          "count",
+          "limit"
+        ],
+        "type": "object"
+      },
       "AbuseMatch": {
         "properties": {
           "category": {
@@ -931,6 +994,9 @@
       },
       "Devices": {
         "properties": {
+          "awg": {
+            "$ref": "#/components/schemas/AWGKeys"
+          },
           "count": {
             "type": "integer"
           },
@@ -955,7 +1021,8 @@
           "list",
           "count",
           "limit",
-          "count_text"
+          "count_text",
+          "awg"
         ],
         "type": "object"
       },

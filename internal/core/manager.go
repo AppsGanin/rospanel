@@ -225,6 +225,12 @@ type Manager struct {
 	tz           *time.Location // operator timezone for the local-day stats boundary
 
 	sys *sysstat.Sampler // host metrics sampler for the dashboard (nil until started)
+	// awgKeysDirty is set when a user's device keys changed: the next user sync then
+	// refreshes the AmneziaWG peers even when nobody moved in or out of the set.
+	awgKeysDirty atomic.Bool
+	// awgKeysSig is the device keys in force as the last user sync found them
+	// (store.AWGKeysSignature). Guarded by applyMu.
+	awgKeysSig string
 	// loadBooted is whether the load history has had its first tick since boot
 	// (which first ends outages left open across a long gap). Watch loop only.
 	loadBooted bool
@@ -988,6 +994,44 @@ func (m *Manager) syncUsersOnce(ws *workingSet, wsErr error) (changed bool) {
 	return changed
 }
 
+// syncAWGKeysOnly is a user sync that moved nobody: when a device key was added or
+// deleted meanwhile (awgKeysChanged), the master's AmneziaWG tunnel and WireGuard
+// inbounds take the new peers and the nodes are told — true — and nothing else is
+// touched. The caller holds applyMu.
+func (m *Manager) syncAWGKeysOnly(dirty bool) (bool, error) {
+	if !dirty {
+		return false, nil
+	}
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return false, err
+	}
+	users, err := m.store.WorkingCredentials(time.Now().Unix())
+	if err != nil {
+		return false, err
+	}
+	// The same keys are peers of the WireGuard inbounds (TURN-VK included).
+	opts, err := m.genOptsFor(model.LocalNodeID)
+	if err != nil {
+		return true, err
+	}
+	if len(wireGuardInboundIDs(opts.Custom)) > 0 {
+		wgUsers, _, _ := m.claimWireGuard(users, opts.Custom, opts.Access)
+		cfg, err := xray.Generate(set, wgUsers, opts, m.getProxies())
+		if err != nil {
+			return true, err
+		}
+		if err := m.sup.WriteConfig(cfg); err != nil {
+			return true, err
+		}
+		if err := m.sup.SyncWireGuard(m.sup.APIAddr(), xray.WireGuardInbounds(cfg)); err != nil {
+			return true, err
+		}
+	}
+	m.syncAWGLocked(set, users)
+	return true, nil
+}
+
 // syncUsers brings the running Xray's inbound users in line with the current
 // working set using the live add/remove-user API (no restart), then rewrites
 // config.json so a crash-restart preserves the change.
@@ -997,6 +1041,18 @@ func (m *Manager) syncUsersOnce(ws *workingSet, wsErr error) (changed bool) {
 func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 	m.applyMu.Lock()
 	defer m.applyMu.Unlock()
+	// Taken before anything is read: a key added after this sets it again for the
+	// next sync rather than being lost between the read and the clear.
+	awgDirty := m.awgKeysDirty.Swap(false)
+	// The device keys in force also move when nobody touched a key: a user's device
+	// cap changed (a plan), or the panel default did. Their signature says so.
+	if sig, err := m.store.AWGKeysSignature(); err != nil {
+		logErr("user sync: device keys", "err", err)
+	} else if sig != m.awgKeysSig {
+		m.awgKeysSig = sig
+		awgDirty = true
+		m.dropNodeInputs()
+	}
 	if !m.sup.Running() {
 		return true, m.reconcileLocked() // can't live-update a stopped Xray
 	}
@@ -1006,6 +1062,9 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 	// afresh and the change derived from them, so a set that moves in between is
 	// applied as it is then, not as it was here.
 	if wsErr != nil {
+		if awgDirty {
+			m.awgKeysDirty.Store(true)
+		}
 		return false, wsErr
 	}
 	var ids []int64
@@ -1018,7 +1077,7 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 		}
 	}
 	if !m.workingIDsChanged(ids) {
-		return false, nil
+		return m.syncAWGKeysOnly(awgDirty)
 	}
 	seq := m.rekeyedUpTo()
 	set, err := m.store.GetSettings()
@@ -1063,7 +1122,7 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 		// here: their new credentials are read when they come back. Done with, or every
 		// sync after would read every credential again for it.
 		m.clearRekeyed(seq)
-		return false, nil
+		return m.syncAWGKeysOnly(awgDirty)
 	}
 	logInfo("user sync (live)", "added", len(added), "removed", len(removedEmails))
 

@@ -383,6 +383,42 @@ select {
   color: var(--ink);
   min-width: 0;
 }
+/* The browser's own arrow sits wherever it likes (Safari and Telegram press it
+   against the edge); ours keeps the same inset as the text. */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-inline-end: 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%238a94a6' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  background-size: 12px 8px;
+}
+[dir="rtl"] select {
+  background-position: left 16px center;
+}
+/* The devices of the tunnel configs: a chip each, the delete button joined to it. */
+.keys {
+  padding-bottom: 8px;
+}
+.chip-pair {
+  display: inline-flex;
+}
+.chip-pair .chip:first-child {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+.chip-pair .chip-x {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+  border-inline-start: none;
+  padding-inline: 10px;
+}
+.keys-hint {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
 .foot {
   text-align: center;
   font-size: 0.82rem;

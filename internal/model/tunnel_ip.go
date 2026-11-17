@@ -7,10 +7,11 @@ import "strings"
 // together).
 //
 // A WireGuard inbound behind Xray cannot see where its client really is: the access log
-// names the peer's tunnel address, which is the same for every device the user has and
-// is not an address of any machine. It is stored as the connection's address so the user
-// shows online, but it must not be counted as a device — beside the real address the
-// same person has on another protocol it made two of one.
+// names the peer's tunnel address — one per key (the main one, each device key), not an
+// address of any machine. It is stored as the connection's address so the user shows
+// online, but it must not be counted as a device by address — beside the real address
+// the same person has on another protocol it made two of one. How many WireGuard
+// devices a user runs at once is bounded by their keys instead (Settings.AWGKeyCap).
 const TunnelIPLike = "10.66.%"
 
 // TunnelProtoLabels are the names a WireGuard inbound's protocol goes by on a connection

@@ -6,7 +6,7 @@ anywhere in it). Lists (`[]…`) are what `range` may go over; inside, `.` is on
 element. Texts in the reader's language are in `.L`.
 
 - `.Lang` `i18n.Lang` — the reader's language: ru, en, zh, ar; .Lang.Dir is ltr or rtl
-- `.L` — the page's texts in the reader's language: `.L.AWGDownload`, `.L.AWGHint`, `.L.AWGSite`, `.L.AWGTitle`, `.L.AccessCopy`, `.L.AccessHint`, `.L.AccessTitle`, `.L.AddBtn`, `.L.AddHint`, `.L.AddTitle`, `.L.AppLink`, `.L.AutoRenew`, `.L.Balance`, `.L.CancelConfirm`, `.L.CancelFailed`, `.L.CancelSub`, `.L.ChangeBtn`, `.L.ChangeConfirm`, `.L.ChangeHint`, `.L.ChangePlanNote`, `.L.ChangeTitle`, `.L.Colon`, `.L.Copied`, `.L.CopyLink`, `.L.Copy`, `.L.CurrentPlan`, `.L.DefaultBrand`, `.L.DeviceConfirm`, `.L.DeviceFailed`, `.L.DeviceNeverUse`, `.L.DeviceRemove`, `.L.DevicesEmpty`, `.L.DevicesHint`, `.L.Devices`, `.L.DownloadClash`, `.L.Error`, `.L.GetFree`, `.L.GreetingName`, `.L.Greeting`, `.L.History`, `.L.ManualImage`, `.L.NetworkError`, `.L.Offline`, `.L.Online`, `.L.OpenInApp`, `.L.OrderCreated`, `.L.OrderTitle`, `.L.PaidTitle`, `.L.PayBalance`, `.L.PayFailed`, `.L.PayMethod`, `.L.PayProcessing`, `.L.PayTitle`, `.L.Pay`, `.L.PickApp`, `.L.PlanChange`, `.L.PlanPick`, `.L.PlansTitle`, `.L.PromoApply`, `.L.PromoPlaceholder`, `.L.PromoTitle`, `.L.RefInvitees`, `.L.RefTitle`, `.L.RenewTitle`, `.L.Renew`, `.L.RotateConfirm`, `.L.RotateFailed`, `.L.RotateHint`, `.L.RotateLink`, `.L.RotateTitle`, `.L.ScanQR`, `.L.Share`, `.L.SingleConfigs`, `.L.TGBindHint`, `.L.TGBind`, `.L.TGChangeCopied`, `.L.TGChange`, `.L.TGProxyAdd`, `.L.TGProxyHint`, `.L.TGProxyTitle`, `.L.TabPay`, `.L.TabRef`, `.L.TabSub`, `.L.Title`, `.L.TopupAmount`, `.L.Topup`, `.L.TrafficUntil`, `.L.Traffic`, `.L.TurnHint`, `.L.TurnLink`, `.L.TurnManual`, `.L.TurnNoLink`, `.L.TurnPeer`, `.L.TurnTitle`, `.L.UserID`, `.L.WGHint`, `.L.WGSite`, `.L.WGTitle`, `.L.WzBack`, `.L.WzDone`, `.L.WzNext`, `.L.WzOpen`, `.L.WzOther`, `.L.WzStep1`, `.L.WzStep2`, `.L.WzStep3`
+- `.L` — the page's texts in the reader's language: `.L.AWGDownload`, `.L.AWGHint`, `.L.AWGKeyAdd`, `.L.AWGKeyConfirm`, `.L.AWGKeyDelete`, `.L.AWGKeyFailed`, `.L.AWGKeyMain`, `.L.AWGKeyName`, `.L.AWGKeyNth`, `.L.AWGKeyOff`, `.L.AWGKeyTurn`, `.L.AWGKey`, `.L.AWGKeysFull`, `.L.AWGKeysOne`, `.L.AWGSite`, `.L.AWGTitle`, `.L.AccessCopy`, `.L.AccessHint`, `.L.AccessTitle`, `.L.AddBtn`, `.L.AddHint`, `.L.AddTitle`, `.L.AppLink`, `.L.AutoRenew`, `.L.Balance`, `.L.CancelConfirm`, `.L.CancelFailed`, `.L.CancelSub`, `.L.ChangeBtn`, `.L.ChangeConfirm`, `.L.ChangeHint`, `.L.ChangePlanNote`, `.L.ChangeTitle`, `.L.Close`, `.L.Colon`, `.L.Copied`, `.L.CopyLink`, `.L.Copy`, `.L.CurrentPlan`, `.L.DefaultBrand`, `.L.DeviceConfirm`, `.L.DeviceFailed`, `.L.DeviceNeverUse`, `.L.DeviceRemove`, `.L.DevicesEmpty`, `.L.DevicesHint`, `.L.Devices`, `.L.DownloadClash`, `.L.Error`, `.L.GetFree`, `.L.GreetingName`, `.L.Greeting`, `.L.History`, `.L.ManualImage`, `.L.NetworkError`, `.L.Offline`, `.L.Online`, `.L.OpenInApp`, `.L.OrderCreated`, `.L.OrderTitle`, `.L.PaidTitle`, `.L.PayBalance`, `.L.PayFailed`, `.L.PayMethod`, `.L.PayProcessing`, `.L.PayTitle`, `.L.Pay`, `.L.PickApp`, `.L.PlanChange`, `.L.PlanPick`, `.L.PlansTitle`, `.L.PromoApply`, `.L.PromoPlaceholder`, `.L.PromoTitle`, `.L.RefInvitees`, `.L.RefTitle`, `.L.RenewTitle`, `.L.Renew`, `.L.RotateConfirm`, `.L.RotateFailed`, `.L.RotateHint`, `.L.RotateLink`, `.L.RotateTitle`, `.L.ScanQR`, `.L.Share`, `.L.SingleConfigs`, `.L.TGBindHint`, `.L.TGBind`, `.L.TGChangeCopied`, `.L.TGChange`, `.L.TGProxyAdd`, `.L.TGProxyHint`, `.L.TGProxyTitle`, `.L.TabPay`, `.L.TabRef`, `.L.TabSub`, `.L.Title`, `.L.TopupAmount`, `.L.Topup`, `.L.TrafficUntil`, `.L.Traffic`, `.L.TurnHint`, `.L.TurnLink`, `.L.TurnManual`, `.L.TurnNoLink`, `.L.TurnPeer`, `.L.TurnTitle`, `.L.UserID`, `.L.WGHint`, `.L.WGSite`, `.L.WGTitle`, `.L.WzBack`, `.L.WzDone`, `.L.WzNext`, `.L.WzOpen`, `.L.WzOther`, `.L.WzStep1`, `.L.WzStep2`, `.L.WzStep3`
 - `.UserID` `int64` — the user's id, to quote to support
 - `.Name` `string` — the user's name, "" when they have none
 - `.BrandName` `string` — panel display name (defaults to the stock RosPanel name)
@@ -235,6 +235,62 @@ element. Texts in the reader's language are in `.L`.
   - `.Limit` `int` — 0 = unlimited
   - `.CountText` `string` — "2 / 3", or just the count when unlimited
   - `.UnbindPath` `string` — POST target that releases one device (<SubURL>/devices/unbind)
+  - `.AWG` `AWGKeys` — AWG is the reader's tunnel keys (AmneziaWG, WireGuard, TURN), one per device; AWG.Show is false without a tunnel card on the page.
+    - `.Show` `bool`
+    - `.List` `[]AWGKeyRow` — the device keys, oldest first; the main key is not in it
+      - `.ID` `int64`
+      - `.Name` `string` — the name given, else the client's own; may be ""
+      - `.Selected` `bool`
+      - `.Off` `bool` — Off is a key past the user's device cap (a cheaper plan since): it connects nowhere and cannot be picked, only deleted.
+      - `.Main` `bool` — Main is the user's own key, the first of All; it cannot be deleted.
+      - `.AWG` `[]awgCard` — AWG, WG and Turn are the device's configs, as the top-level cards of the same names; set on the rows of All only.
+        - `.Label` `string`
+        - `.ConfURL` `string`
+        - `.QRURL` `string`
+      - `.WG` `[]awgCard`
+        - `.Label` `string`
+        - `.ConfURL` `string`
+        - `.QRURL` `string`
+      - `.Turn` `[]turnCard`
+        - `.Label` `string`
+        - `.Peer` `string` — host:port of the relay
+        - `.Link` `string` — call invite link, "" when the operator set none
+        - `.ConfURL` `string`
+        - `.Apps` `[]turnApp` — Apps are the client apps that import this lane from one link.
+          - `.Name` `string` — the app's own name and platform; a brand, not translated
+          - `.Link` `string`
+          - `.Href` `template.URL`
+          - `.AppLink` `string` — AppLink is the app's own page — its repository, where every one of these lives.
+    - `.Pick` `int64` — Pick is the id of the key the card's configs use, 0 for the main one.
+    - `.CanAdd` `bool` — CanAdd is whether the reader may make another key (the device cap counts the main key too); Count and Limit are the keys held, main included, and the cap.
+    - `.Count` `int`
+    - `.Limit` `int`
+    - `.AddPath` `string` — POST target that makes a key: {"name"} → {"id"}
+    - `.DeletePath` `string` — POST target that deletes one: {"id"}
+    - `.All` `[]AWGKeyRow` — All is every device with its own configs: the main key, then List. The page opens one device's configs at a time (#tdev-<ID>, 0 the main key).
+      - `.ID` `int64`
+      - `.Name` `string` — the name given, else the client's own; may be ""
+      - `.Selected` `bool`
+      - `.Off` `bool` — Off is a key past the user's device cap (a cheaper plan since): it connects nowhere and cannot be picked, only deleted.
+      - `.Main` `bool` — Main is the user's own key, the first of All; it cannot be deleted.
+      - `.AWG` `[]awgCard` — AWG, WG and Turn are the device's configs, as the top-level cards of the same names; set on the rows of All only.
+        - `.Label` `string`
+        - `.ConfURL` `string`
+        - `.QRURL` `string`
+      - `.WG` `[]awgCard`
+        - `.Label` `string`
+        - `.ConfURL` `string`
+        - `.QRURL` `string`
+      - `.Turn` `[]turnCard`
+        - `.Label` `string`
+        - `.Peer` `string` — host:port of the relay
+        - `.Link` `string` — call invite link, "" when the operator set none
+        - `.ConfURL` `string`
+        - `.Apps` `[]turnApp` — Apps are the client apps that import this lane from one link.
+          - `.Name` `string` — the app's own name and platform; a brand, not translated
+          - `.Link` `string`
+          - `.Href` `template.URL`
+          - `.AppLink` `string` — AppLink is the app's own page — its repository, where every one of these lives.
 - `.ShowConfigs` `bool` — render the raw per-lane share links
 - `.ShowDownload` `bool` — ShowDownload renders the "download the Clash config" button. Off when the operator requires an HWID: the button fetches this same URL from the browser, which sends no id and would be refused — an offer the page cannot keep.
 - `.Asset string` `string` — Asset is a theme file's address, for a theme template: {{$.Asset "bg.webp"}}. "" for a name the theme does not have.

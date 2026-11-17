@@ -564,13 +564,14 @@ func confFileName(label, fallback string) string {
 // what the panel's relay serves unshaped. The mode switches are all spelled out: the
 // app applies them as a set, and one left out keeps whatever mode the device was in.
 func TurnImportLink(u model.User, s *model.Settings, in model.Inbound) string {
-	addr, ok := awg.ClientAddr(u.AWGSlot)
-	if !ok || u.WGPrivateKey == "" || in.Opts.WGPublicKey == "" || in.Opts.TurnMaskKey == "" {
+	key, slot := u.AWGIdentity()
+	addr, ok := awg.ClientAddr(slot)
+	if !ok || key == "" || in.Opts.WGPublicKey == "" || in.Opts.TurnMaskKey == "" {
 		return ""
 	}
 	settings := map[string]any{
 		"serverName":    link.CustomLabel(in, s),
-		"privateKey":    u.WGPrivateKey,
+		"privateKey":    key,
 		"peerPublicKey": in.Opts.WGPublicKey,
 		// Present though empty: the app's builds before 134 refuse a link without it,
 		// and an empty key is WireGuard's "no preshared key".
@@ -636,12 +637,13 @@ func FreeTurnImportLink(u model.User, s *model.Settings, in model.Inbound, conf 
 // It is the file the subscription serves and what the freeturn:// link carries. "" for
 // a user with no tunnel identity yet.
 func TurnClientConf(u model.User, s *model.Settings, in model.Inbound) string {
-	addr, ok := awg.ClientAddr(u.AWGSlot)
-	if !ok || u.WGPrivateKey == "" || in.Opts.WGPublicKey == "" {
+	key, slot := u.AWGIdentity()
+	addr, ok := awg.ClientAddr(slot)
+	if !ok || key == "" || in.Opts.WGPublicKey == "" {
 		return ""
 	}
 	return awg.ClientConfig{
-		PrivateKey:      u.WGPrivateKey,
+		PrivateKey:      key,
 		Address:         addr,
 		DNS:             awg.TunnelDNS(s),
 		MTU:             TurnMTU,
@@ -654,13 +656,14 @@ func TurnClientConf(u model.User, s *model.Settings, in model.Inbound) string {
 // inbound: the tunnel pointed at the server's own address and the inbound's port, for any
 // stock WireGuard client. "" for a user with no tunnel identity yet.
 func WireGuardClientConf(u model.User, s *model.Settings, in model.Inbound) string {
-	addr, ok := awg.ClientAddr(u.AWGSlot)
-	if !ok || u.WGPrivateKey == "" || in.Opts.WGPublicKey == "" || in.Protocol != model.InbWireGuard {
+	key, slot := u.AWGIdentity()
+	addr, ok := awg.ClientAddr(slot)
+	if !ok || key == "" || in.Opts.WGPublicKey == "" || in.Protocol != model.InbWireGuard {
 		return ""
 	}
 	host, port := in.ClientEndpoint(s.Host)
 	return awg.ClientConfig{
-		PrivateKey:      u.WGPrivateKey,
+		PrivateKey:      key,
 		Address:         addr,
 		DNS:             awg.TunnelDNS(s),
 		MTU:             WireGuardMTU,
@@ -692,8 +695,9 @@ const TurnMTU = 1280
 // relay does not have) and WRAP is OFF (unset means PREFERRED). The WireGuard endpoint is
 // the app's local TURN client, as in the .conf.
 func WingsVImportLink(u model.User, s *model.Settings, in model.Inbound) string {
-	addr, ok := awg.ClientAddr(u.AWGSlot)
-	priv, errPriv := base64.StdEncoding.DecodeString(u.WGPrivateKey)
+	key, slot := u.AWGIdentity()
+	addr, ok := awg.ClientAddr(slot)
+	priv, errPriv := base64.StdEncoding.DecodeString(key)
 	pub, errPub := base64.StdEncoding.DecodeString(in.Opts.WGPublicKey)
 	if !ok || errPriv != nil || errPub != nil || len(priv) != 32 || len(pub) != 32 {
 		return ""

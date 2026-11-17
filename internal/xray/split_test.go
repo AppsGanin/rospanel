@@ -111,6 +111,7 @@ func rowsOf(sc *SplitConfig, users []model.User) []nodeapi.UserRow {
 			}
 			if need.Tunnel {
 				row.WGKey, row.WGAddr, _ = TunnelIdentity(&u)
+				row.WGExtra = TunnelExtras(&u)
 			}
 		}
 		rows = append(rows, row)
@@ -157,6 +158,16 @@ func TestRenderedUsersAreTheGeneratedConfig(t *testing.T) {
 		users, access := splitUsers(n, uint64(n))
 		if c.unrestricted {
 			access = nil
+		}
+		// Some users hold device keys: a WireGuard inbound lists them after the main key.
+		for i := range users {
+			if i%3 == 0 && users[i].WGPrivateKey != "" {
+				for d := range int(users[i].ID%2) + 1 {
+					users[i].AWGDevices = append(users[i].AWGDevices, model.AWGKey{
+						ID: int64(d + 1), Key: testWGKey(byte(100 + d)), Slot: 30000 + int(users[i].ID)*2 + d,
+					})
+				}
+			}
 		}
 		cfg, err := Generate(set, users, Options{PanelDest: "127.0.0.1:8080", ServerID: model.LocalNodeID, Custom: custom, Access: access}, nil)
 		if err != nil {

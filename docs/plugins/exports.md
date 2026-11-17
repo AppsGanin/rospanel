@@ -527,6 +527,7 @@ conditions.
 | `wizard` | the "Connect in 3 steps" button | some app is on |
 | `connect` | QR, copy link, "Open in app", Clash config | always |
 | `devices` | bound devices and removing them | the operator shows them |
+| `tunnelkeys` | the user's devices for AmneziaWG, WireGuard and TURN, each opening a dialog with its configs (`.Devices.AWG.All`); the `awg`, `wg` and `turn` sections are empty then | the user has one of them |
 | `awg` | AmneziaWG configs per server | the user has AmneziaWG |
 | `wg` | WireGuard configs | the user has WireGuard |
 | `turn` | WireGuard over TURN: app links, manual setup | the user has TURN |
@@ -579,6 +580,9 @@ from your `layout`, or they appear twice.
   | `change-plan`, `buy-extra` | move to a plan; buy an add-on | `data-kind`, `data-plan`, `data-fb`, `data-value` |
   | `addn` (on `<select id="addn">`) | the add-on device count picked | — |
   | `pay-with` | pay with a provider | `data-value`: its key |
+  | `tunnel-key` | the device the tunnel configs are written for: a button (`.on` is set on the current one) or a `<select>` | `data-value` / option value: `""` the main key, else an id of `.Devices.AWG.List` |
+  | `tunnel-key-add` | add a device (asks for a name) | — |
+  | `tunnel-key-delete` | delete a device | `data-value`: its id (none: the current one) |
   | `promo`, `topup` | apply `#promo-code`; top up by `#topup-amount` | — |
   | `auto-renew` (on a checkbox) | switch renewal from the balance | — |
   | `cancel` | cancel the plan | — |

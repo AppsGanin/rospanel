@@ -122,6 +122,20 @@ func (m *Manager) awgPeersClaimed(serverID int64, users []model.User, access map
 			continue
 		}
 		peers = append(peers, awg.Peer{PublicKey: pub, Addr: addr, Email: model.UserEmail(u.ID)})
+		// Each of the user's devices is a peer of its own, under the same email: its
+		// traffic and sightings are the user's.
+		for _, d := range u.AWGDevices {
+			daddr, ok := awg.ClientAddr(d.Slot)
+			if !ok || d.Key == "" {
+				continue
+			}
+			dpub, err := awg.PublicKey(d.Key)
+			if err != nil {
+				logErr("awg: device key unusable", "user", u.ID, "device", d.ID, "err", err)
+				continue
+			}
+			peers = append(peers, awg.Peer{PublicKey: dpub, Addr: daddr, Email: model.UserEmail(u.ID)})
+		}
 	}
 	if unplaced > 0 && claimed {
 		logWarn("awg: no address left on the tunnel subnet, users left out",
@@ -197,6 +211,17 @@ func (m *Manager) pollAWG(enforce bool) error {
 	for id, key := range keys {
 		if pub, err := awg.PublicKey(key); err == nil {
 			byPub[pub] = id
+		}
+	}
+	devices, err := m.store.AllAWGDeviceKeys()
+	if err != nil {
+		return err
+	}
+	for id, ks := range devices {
+		for _, k := range ks {
+			if pub, err := awg.PublicKey(k.Key); err == nil {
+				byPub[pub] = id
+			}
 		}
 	}
 	now := time.Now().Unix()
@@ -355,10 +380,11 @@ func (m *Manager) AWGClientConfig(u *model.User, s *model.Settings) (string, err
 	if err := m.claimAWG([]*model.User{u}); err != nil {
 		return "", err
 	}
-	if _, ok := awg.ClientAddr(u.AWGSlot); !ok {
+	key, slot := u.AWGIdentity()
+	if _, ok := awg.ClientAddr(slot); !ok {
 		return "", fmt.Errorf("awg: no address left on the tunnel subnet for user %d", u.ID)
 	}
-	if u.WGPrivateKey == "" {
+	if key == "" {
 		return "", fmt.Errorf("awg: stored key for user %d is unreadable", u.ID)
 	}
 	// The same file the amneziawg:// line of the subscription carries (sub.AWGIncyLink).

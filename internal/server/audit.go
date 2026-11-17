@@ -291,7 +291,11 @@ var auditActions = map[string]auditRoute{
 	"POST /api/users/{id}/telegram/message": act(model.AuditUserMessaged),
 	"POST /api/users/{id}/reset-period":     skip,
 	"POST /api/users/{id}/devices/unbind":   skip,
-	"POST /api/users/{id}/plan":             skip,
+	// The user's journal records a key made or deleted; a rename changes a label.
+	"POST /api/users/{id}/awg-keys":        skip,
+	"POST /api/users/{id}/awg-keys/rename": skip,
+	"POST /api/users/{id}/awg-keys/delete": skip,
+	"POST /api/users/{id}/plan":            skip,
 	// A balance correction lands in the user's journal with the amount and the note.
 	"POST /api/users/{id}/balance":   skip,
 	"POST /api/users/{id}/autorenew": skip,

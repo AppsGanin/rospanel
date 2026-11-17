@@ -98,7 +98,8 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			}
 			lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
 			access := rt.buildAccess(r, *u, set)
-			if err := rt.servePage(w, *u, set, access, lang, clientIP(r)); err != nil {
+			pick, _ := strconv.ParseInt(r.URL.Query().Get("k"), 10, 64)
+			if err := rt.servePage(w, *u, set, access, lang, clientIP(r), pick); err != nil {
 				// Render errors keep the masquerade; an access read that failed is a
 				// different thing and must not look like a successful, empty answer.
 				if errors.Is(err, errSubUnavailable) {
@@ -136,6 +137,12 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			return
 		}
 		allServers = overrides.Apply(allServers)
+		// A client that names its install gets an AmneziaWG key of its own, so two
+		// devices on the account do not take the tunnel from each other.
+		if hwid := model.CleanHWID(r.Header.Get(model.HeaderHWID)); hwid != "" &&
+			sub.CarriesAWG(allServers, format, r.Header.Get("User-Agent")) {
+			u.AWGPick = rt.mgr.AWGKeyForHWID(subActorCtx(r, *u), u.ID, hwid, awgDeviceName(r))
+		}
 		supportURL := rt.telegramSupportURL(r.Context(), set, *u)
 		setSubHeaders(w, *u, set, supportURL)
 		rt.setRoutingHeaders(w, r, set)
@@ -296,6 +303,13 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			return
 		}
 		rt.handleSubDeviceUnbind(w, r, *u, set)
+
+	case "awg-keys/add", "awg-keys/delete":
+		if !subActionAllowed(r) {
+			rt.currentDecoy().ServeHTTP(w, r)
+			return
+		}
+		rt.handleSubAWGKey(w, r, *u, set, leaf)
 
 	default:
 		// /app/<n> — deep-link hand-off page (opened in the external browser from the
@@ -884,7 +898,7 @@ func hasTurnInbound(servers []sub.Server) bool {
 // lang comes from the caller's Accept-Language: the subscription page is the one
 // surface a VPN *user* sees, and the panel knows nothing about their language
 // preference, so the browser decides it per request.
-func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Settings, access sub.Access, lang i18n.Lang, clientIP string) error {
+func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Settings, access sub.Access, lang i18n.Lang, clientIP string, awgPick int64) error {
 	// Span the local server + each enabled node so the page's individual-config list
 	// covers every server (single-server ⇒ just the local set).
 	// A required HWID means the browser cannot fetch the machine payload — so the
@@ -902,8 +916,16 @@ func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Sett
 		}
 	}
 	rt.subNotices(&access, set, servers, lang)
+	devices := rt.buildDevices(u, set, lang)
+	devices.AWG = rt.buildAWGKeys(u, set, awgPick)
+	// The TURN cards' import links carry the key itself: written with the picked one.
+	if devices.AWG.Pick != 0 {
+		if key, err := rt.mgr.AWGKeyByID(u.ID, devices.AWG.Pick); err == nil && key != nil {
+			u.AWGPick = key
+		}
+	}
 	html, err := sub.Page(u, set, servers, rt.buildBilling(u, set, lang, rt.mgr.PaymentMethods()),
-		rt.buildDevices(u, set, lang), access, showDownload, lang)
+		devices, access, showDownload, lang)
 	if err != nil {
 		return err
 	}
@@ -1044,6 +1066,92 @@ func (rt *Router) handleSubDeviceUnbind(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	writeOK(w)
+}
+
+// buildAWGKeys assembles the tunnel key picker (AmneziaWG, WireGuard, TURN): the reader's device keys,
+// which one the configs are written with (pick, 0 = the main key, an id the user does
+// not hold is the main key too), and whether they may make another.
+func (rt *Router) buildAWGKeys(u model.User, set *model.Settings, pick int64) sub.AWGKeys {
+	list, capacity, err := rt.mgr.UserAWGKeys(u.ID)
+	if err != nil {
+		log.Printf("sub: awg keys for user %d: %v", u.ID, err)
+		return sub.AWGKeys{}
+	}
+	base := sub.URL(set, u.SubToken)
+	keys := map[int64]model.AWGKey{}
+	for i, d := range list[:model.ActiveAWGDevices(len(list), capacity)] {
+		keys[d.ID] = model.AWGKey{ID: d.ID, Key: list[i].PrivateKey, Slot: d.Slot}
+	}
+	k := sub.AWGKeys{
+		Show: true, Count: len(list) + 1, Limit: capacity,
+		CanAdd:  len(list)+1 < capacity,
+		AddPath: base + "/awg-keys/add", DeletePath: base + "/awg-keys/delete",
+	}
+	// A key past a cap lowered since is listed, to be deleted, but cannot be picked:
+	// it would not connect anywhere.
+	active := model.ActiveAWGDevices(len(list), capacity)
+	for i, d := range list {
+		row := sub.AWGKeyRow{ID: d.ID, Name: d.Name, Off: i >= active, Selected: d.ID == pick && i < active}
+		if row.Selected {
+			k.Pick = d.ID
+		}
+		k.List = append(k.List, row)
+	}
+	return sub.WithKeys(k, keys)
+}
+
+// handleSubAWGKey makes or deletes one of the caller's own tunnel device keys. The
+// sub token names the account, and only that account's keys are touched.
+func (rt *Router) handleSubAWGKey(w http.ResponseWriter, r *http.Request, u model.User, set *model.Settings, leaf string) {
+	if r.Method != http.MethodPost {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	// Only for a user some server gives AmneziaWG or WireGuard: anyone else has no use
+	// for a key, and the reply must not tell a link holder how the fleet is set up.
+	servers, err := rt.subServers(set, u.ID, clientIP(r))
+	if err != nil {
+		rt.subUnavailable(w, u.ID, err)
+		return
+	}
+	if !sub.HasTunnel(servers) {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+		ID   int64  `json:"id"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	ctx := subActorCtx(r, u)
+	// The reader is a subscriber, not an operator: a refusal is worded in their
+	// language, and a fault is not described to them at all.
+	fail := func(err error) {
+		var ve *core.ValidationError
+		if !errors.As(err, &ve) {
+			log.Printf("sub: device key for user %d: %v", u.ID, err)
+			writeErr(w, http.StatusInternalServerError, "")
+			return
+		}
+		lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
+		writeCoded(w, ve.Code, ve.Args, core.UserError(err, lang))
+	}
+	if leaf == "awg-keys/delete" {
+		if err := rt.mgr.DeleteUserAWGKey(ctx, u.ID, req.ID); err != nil {
+			fail(err)
+			return
+		}
+		writeOK(w)
+		return
+	}
+	d, _, err := rt.mgr.AddUserAWGKey(ctx, u.ID, req.Name, "")
+	if err != nil {
+		fail(err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"id": d.ID})
 }
 
 // handleSubChurn takes the reader's answer to why they did not renew.
@@ -1322,6 +1430,11 @@ func (rt *Router) serveTurnWG(w http.ResponseWriter, r *http.Request, u *model.U
 		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
+	u, ok = rt.pickTunnelKey(r, u)
+	if !ok {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
 	conf, err := rt.mgr.WireGuardClientConfig(u, srv.Set, in)
 	if err != nil {
 		rt.currentDecoy().ServeHTTP(w, r)
@@ -1381,12 +1494,53 @@ func (rt *Router) serveAWG(w http.ResponseWriter, r *http.Request, u *model.User
 		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
+	u, ok = rt.pickTunnelKey(r, u)
+	if !ok {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
 	conf, err := rt.mgr.AWGClientConfig(u, srv.Set)
 	if err != nil {
 		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	rt.serveTunnelConf(w, r, conf, ext, sub.AWGFileName(srv.Set))
+}
+
+// pickTunnelKey applies ?k= — one of the user's device keys, from the page's key
+// picker — to a tunnel config request (AmneziaWG, WireGuard, TURN). None is the main
+// key; a key the user does not hold is false.
+func (rt *Router) pickTunnelKey(r *http.Request, u *model.User) (*model.User, bool) {
+	k := r.URL.Query().Get("k")
+	if k == "" {
+		return u, true
+	}
+	id, err := strconv.ParseInt(k, 10, 64)
+	if err != nil {
+		return nil, false
+	}
+	key, err := rt.mgr.AWGKeyByID(u.ID, id)
+	if err != nil || key == nil {
+		return nil, false
+	}
+	pick := *u
+	pick.AWGPick = key
+	return &pick, true
+}
+
+// awgDeviceName names the key made for a subscription client from what it says
+// about itself: the model, else the platform, else the app.
+func awgDeviceName(r *http.Request) string {
+	for _, v := range []string{
+		model.CleanDeviceField(r.Header.Get(model.HeaderDeviceModel)),
+		model.CleanDeviceField(r.Header.Get(model.HeaderDeviceOS)),
+		model.CleanDeviceApp(r.Header.Get("User-Agent")),
+	} {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // serveTelegramQR draws one user's Telegram proxy link for one server as a QR code —

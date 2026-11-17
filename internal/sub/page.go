@@ -156,6 +156,19 @@ type pageText struct {
 	AWGTitle       string
 	AWGHint        string
 	AWGDownload    string
+	AWGKey         string
+	AWGKeyTurn     string
+	AWGKeyMain     string
+	AWGKeyAdd      string
+	AWGKeyName     string
+	AWGKeyDelete   string
+	AWGKeyConfirm  string
+	AWGKeyFailed   string
+	AWGKeysOne     string
+	AWGKeyOff      string
+	AWGKeyNth      string // a device with no name: "Device %d"
+	Close          string
+	AWGKeysFull    string
 	AWGSite        string // where the Amnezia apps are downloaded, in the page's language
 	WGTitle        string
 	WGHint         string
@@ -269,6 +282,19 @@ func text(lang i18n.Lang) pageText {
 		AWGTitle:       t("sub.awgTitle"),
 		AWGHint:        t("sub.awgHint"),
 		AWGDownload:    t("sub.awgDownload"),
+		AWGKey:         t("sub.awgKey"),
+		AWGKeyTurn:     t("sub.awgKeyTurn"),
+		AWGKeyMain:     t("sub.awgKeyMain"),
+		AWGKeyAdd:      t("sub.awgKeyAdd"),
+		AWGKeyName:     t("sub.awgKeyName"),
+		AWGKeyDelete:   t("sub.awgKeyDelete"),
+		AWGKeyConfirm:  t("sub.awgKeyConfirm"),
+		AWGKeyFailed:   t("sub.awgKeyFailed"),
+		AWGKeysOne:     t("sub.awgKeysOne"),
+		AWGKeyOff:      t("sub.awgKeyOff"),
+		AWGKeyNth:      t("sub.awgKeyNth"),
+		Close:          t("sub.close"),
+		AWGKeysFull:    t("sub.awgKeysFull"),
 		AWGSite:        amneziaSite(lang),
 		WGTitle:        t("sub.wgTitle"),
 		WGHint:         t("sub.wgHint"),
@@ -377,6 +403,73 @@ type tgProxyCard struct {
 	QRURL   string
 }
 
+// tunnelCards are a user's AmneziaWG, WireGuard and TURN cards across the servers,
+// written with u's key (model.User.AWGIdentity); keyID names that key on the config
+// URLs (0: the main one). The label names the server whose tunnel it is, but the files
+// are downloaded from the panel — a node hosts no /sub path.
+func tunnelCards(u model.User, local *model.Settings, servers []Server, keyID int64) (awgs, wgs []awgCard, turns []turnCard) {
+	subURL := URL(local, u.SubToken)
+	q := awgKeyQuery(keyID)
+	for _, srv := range servers {
+		s := srv.Set
+		if s.AWGEnabled && s.AWGPort != 0 && srv.allowsBuiltin(model.LaneAWG) {
+			awgs = append(awgs, awgCard{
+				Label:   s.ProtoLabelFor(model.ProtoAWG, &u),
+				ConfURL: AWGConfURL(local, u.SubToken, s.ServerID) + q,
+				QRURL:   fmt.Sprintf("%s/awg/%d.png", subURL, s.ServerID) + q,
+			})
+		}
+		for _, in := range srv.Custom {
+			if !srv.allowsInbound(in.ID) {
+				continue
+			}
+			switch in.Protocol {
+			case model.InbWireGuard:
+				wgs = append(wgs, awgCard{
+					Label:   link.CustomLabelFor(in, u, s),
+					ConfURL: TurnConfURL(local, u.SubToken, in.ID) + q,
+					QRURL:   fmt.Sprintf("%s/wg/%d.png", subURL, in.ID) + q,
+				})
+			case model.InbTurnVK:
+				c := turnCard{
+					Label:   link.CustomLabelFor(in, u, s),
+					Peer:    net.JoinHostPort(s.Host, strconv.Itoa(in.Port)),
+					Link:    in.Opts.TurnLink,
+					ConfURL: TurnConfURL(local, u.SubToken, in.ID) + q,
+				}
+				// Free Turn Proxy's masked wire first: the apps that speak it are the ones
+				// the call service does not shape. WINGS V reaches the relay unmasked.
+				for _, app := range []struct {
+					name, link, appLink string
+				}{
+					{"VK Turn Proxy (iOS)", TurnImportLink(u, s, in),
+						"https://github.com/anton48/vk-turn-proxy-ios"},
+					{"Free Turn Proxy (Android)", FreeTurnImportLink(u, s, in, TurnClientConf(u, s, in)),
+						"https://github.com/samosvalishe/turn-proxy-android"},
+					{"WINGS V (Android, Windows, Linux)", WingsVImportLink(u, s, in),
+						"https://github.com/WINGS-N/WINGSV"},
+				} {
+					if app.link != "" {
+						c.Apps = append(c.Apps, turnApp{
+							Name: app.name, Link: app.link, Href: template.URL(app.link), AppLink: app.appLink,
+						})
+					}
+				}
+				turns = append(turns, c)
+			}
+		}
+	}
+	return awgs, wgs, turns
+}
+
+// awgKeyQuery is the query naming a device key on a config URL, "" for the main key.
+func awgKeyQuery(id int64) string {
+	if id == 0 {
+		return ""
+	}
+	return fmt.Sprintf("?k=%d", id)
+}
+
 // awgCard is one server's AmneziaWG config on the page.
 type awgCard struct {
 	Label   string
@@ -483,6 +576,80 @@ type Devices struct {
 	Limit      int         `json:"limit"`      // 0 = unlimited
 	CountText  string      `json:"count_text"` // "2 / 3", or just the count when unlimited
 	UnbindPath string      `json:"-"`          // POST target that releases one device (<SubURL>/devices/unbind)
+	// AWG is the reader's tunnel keys (AmneziaWG, WireGuard, TURN), one per device;
+	// AWG.Show is false without a tunnel card on the page.
+	AWG AWGKeys `json:"awg"`
+}
+
+// AWGKeys is the tunnel key picker: the main key and one per device. The AmneziaWG,
+// WireGuard and TURN cards are written with the picked one.
+type AWGKeys struct {
+	Show bool        `json:"show"`
+	List []AWGKeyRow `json:"list"` // the device keys, oldest first; the main key is not in it
+	// Pick is the id of the key the card's configs use, 0 for the main one.
+	Pick int64 `json:"pick"`
+	// CanAdd is whether the reader may make another key (the device cap counts the
+	// main key too); Count and Limit are the keys held, main included, and the cap.
+	CanAdd     bool   `json:"can_add"`
+	Count      int    `json:"count"`
+	Limit      int    `json:"limit"`
+	AddPath    string `json:"-"` // POST target that makes a key: {"name"} → {"id"}
+	DeletePath string `json:"-"` // POST target that deletes one: {"id"}
+	// All is every device with its own configs: the main key, then List. The page
+	// opens one device's configs at a time (#tdev-<ID>, 0 the main key).
+	All  []AWGKeyRow            `json:"-"`
+	keys map[int64]model.AWGKey // by id: the keys of List in force (WithKeys)
+}
+
+// WithKeys hands the page the keys in force, by id, that the device rows of All are
+// written with. Kept off the type's exported surface: a theme gets the configs, never
+// the keys.
+func WithKeys(k AWGKeys, keys map[int64]model.AWGKey) AWGKeys {
+	k.keys = keys
+	return k
+}
+
+// deviceTunnels is every device of the user with its tunnel cards: the main key first,
+// then each key in force. A key past the cap (Off) is listed with none, to be deleted.
+func deviceTunnels(u model.User, local *model.Settings, servers []Server, k AWGKeys, mainName, nth string) []AWGKeyRow {
+	if !k.Show {
+		return nil
+	}
+	main := u
+	main.AWGPick = nil
+	row := AWGKeyRow{Name: mainName, Main: true}
+	row.AWG, row.WG, row.Turn = tunnelCards(main, local, servers, 0)
+	out := []AWGKeyRow{row}
+	for i, r := range k.List {
+		// A device made without a name is named by its place: the main key is the first.
+		if r.Name == "" {
+			r.Name = fmt.Sprintf(nth, i+2)
+		}
+		if key, ok := k.keys[r.ID]; ok && !r.Off {
+			dev := u
+			dev.AWGPick = &key
+			r.AWG, r.WG, r.Turn = tunnelCards(dev, local, servers, r.ID)
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// AWGKeyRow is one device key in the picker.
+type AWGKeyRow struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"` // the name given, else the client's own; may be ""
+	Selected bool   `json:"selected"`
+	// Off is a key past the user's device cap (a cheaper plan since): it connects
+	// nowhere and cannot be picked, only deleted.
+	Off bool `json:"off"`
+	// Main is the user's own key, the first of All; it cannot be deleted.
+	Main bool `json:"main"`
+	// AWG, WG and Turn are the device's configs, as the top-level cards of the same
+	// names; set on the rows of All only.
+	AWG  []awgCard  `json:"-"`
+	WG   []awgCard  `json:"-"`
+	Turn []turnCard `json:"-"`
 }
 
 // DeviceRow is one bound install as the page shows it.
@@ -735,15 +902,6 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 				QRURL:   fmt.Sprintf("%s/tg/%d.png", subURL, s.ServerID),
 			})
 		}
-		if s.AWGEnabled && s.AWGPort != 0 && srv.allowsBuiltin(model.LaneAWG) {
-			awgCards = append(awgCards, awgCard{
-				Label: s.ProtoLabelFor(model.ProtoAWG, &u),
-				// The label names the server whose tunnel this is, but the config
-				// itself is downloaded from the panel — the node hosts no /sub path.
-				ConfURL: AWGConfURL(local, u.SubToken, s.ServerID),
-				QRURL:   fmt.Sprintf("%s/awg/%d.png", subURL, s.ServerID),
-			})
-		}
 		if s.VLESSEnabled && srv.allowsBuiltin(model.LaneVLESS) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoVLESS, &u), link.VLESS(u, s)})
 		}
@@ -774,42 +932,8 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 			if !srv.allowsInbound(in.ID) {
 				continue
 			}
-			if in.Protocol == model.InbWireGuard {
-				wgCards = append(wgCards, awgCard{
-					Label:   link.CustomLabelFor(in, u, s),
-					ConfURL: TurnConfURL(local, u.SubToken, in.ID),
-					QRURL:   fmt.Sprintf("%s/wg/%d.png", subURL, in.ID),
-				})
-				continue
-			}
-			if in.Protocol == model.InbTurnVK {
-				peer := net.JoinHostPort(s.Host, strconv.Itoa(in.Port))
-				turnCards = append(turnCards, turnCard{
-					Label:   link.CustomLabelFor(in, u, s),
-					Peer:    peer,
-					Link:    in.Opts.TurnLink,
-					ConfURL: TurnConfURL(local, u.SubToken, in.ID),
-				})
-				c := &turnCards[len(turnCards)-1]
-				// Free Turn Proxy's masked wire first: the apps that speak it are the ones
-				// the call service does not shape. WINGS V reaches the relay unmasked.
-				for _, app := range []struct {
-					name, link, appLink string
-				}{
-					{"VK Turn Proxy (iOS)", TurnImportLink(u, s, in),
-						"https://github.com/anton48/vk-turn-proxy-ios"},
-					{"Free Turn Proxy (Android)", FreeTurnImportLink(u, s, in, TurnClientConf(u, s, in)),
-						"https://github.com/samosvalishe/turn-proxy-android"},
-					{"WINGS V (Android, Windows, Linux)", WingsVImportLink(u, s, in),
-						"https://github.com/WINGS-N/WINGSV"},
-				} {
-					if app.link != "" {
-						c.Apps = append(c.Apps, turnApp{
-							Name: app.name, Link: app.link, Href: template.URL(app.link), AppLink: app.appLink,
-						})
-					}
-				}
-				continue
+			if model.IsWireGuard(in.Protocol) {
+				continue // the tunnel cards (tunnelCards)
 			}
 			if l := link.Custom(u, in, s); l != "" {
 				protoLinks = append(protoLinks, protoLink{link.CustomLabelFor(in, u, s), l})
@@ -837,6 +961,12 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 	if isDefault {
 		brandName = i18n.T(lang, "sub.defaultBrand")
 	}
+	// The tunnel lanes, written with the key picked (?k=, the main one by default):
+	// what a theme's own cards show. The panel's page lists every device with its own
+	// (Devices.AWG.All).
+	awgCards, wgCards, turnCards = tunnelCards(u, local, servers, devices.AWG.Pick)
+	lt := text(lang)
+	devices.AWG.All = deviceTunnels(u, local, servers, devices.AWG, lt.AWGKeyMain, lt.AWGKeyNth)
 	pal := branding.ParsePalette(local.PanelTheme)
 	dark := colorsOf(pal.Dark)
 	data := pageData{
@@ -874,6 +1004,11 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 		ShowDownload: showDownload && local.SubShowClash,
 	}
 	data.Wizard = Wizard(lang, local, data.DeepLinks)
+	// The picker serves every tunnel card: AmneziaWG, WireGuard and TURN all take the
+	// same key.
+	if len(awgCards)+len(wgCards)+len(turnCards) == 0 {
+		data.Devices.AWG.Show = false
+	}
 	if u.DataLimit > 0 {
 		data.HasLimit = true
 		data.Limit = fmtBytes(u.DataLimit)

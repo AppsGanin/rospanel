@@ -686,6 +686,8 @@ func (m *Manager) RotateSubToken(ctx context.Context, id int64) (*model.User, er
 	// The bound devices belonged to the token that was just revoked. Rotation is what
 	// an operator does when a link has leaked, so keeping the old installs bound would
 	// leave the leak holding the slots and lock the owner out of their own cap.
+	// The tunnel keys those clients were given go too, for the same reason.
+	m.dropHWIDAWGKeys(id)
 	if n, err := m.store.DeleteDevices(id); err != nil {
 		logErr("devices: release on rotate failed", "user", id, "err", err)
 	} else if n > 0 {
@@ -733,6 +735,13 @@ func (m *Manager) ResetUserUUID(ctx context.Context, id int64) (*model.User, err
 		}
 		return nil, err
 	}
+	// Their devices' keys go with the main one. The credentials above are already
+	// new, so a failure here must not skip pushing them: it is logged, and the device
+	// keys keep working until the next reset.
+	if err := m.rekeyAWGDevices(id); err != nil {
+		logErr("uuid reset: device keys", "id", id, "err", err)
+	}
+	m.dropNodeInputs()
 	u, err := m.store.GetUser(id)
 	if err != nil {
 		return nil, err

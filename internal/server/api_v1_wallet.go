@@ -186,8 +186,10 @@ func (rt *Router) apiUserSubscription(w http.ResponseWriter, r *http.Request, id
 	if hasTurnInbound(servers) {
 		_ = rt.mgr.ClaimTunnelIdentity(u) // the TURN link carries the user's tunnel key
 	}
+	devices := rt.buildDevices(*u, set, lang)
+	devices.AWG = rt.buildAWGKeys(*u, set, 0)
 	view, err := sub.PageView(*u, set, servers, rt.buildBilling(*u, set, lang, rt.mgr.PaymentMethods()),
-		rt.buildDevices(*u, set, lang), lang)
+		devices, lang)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return

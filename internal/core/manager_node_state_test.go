@@ -427,6 +427,7 @@ func TestSameNodeInputs(t *testing.T) {
 		"password":      func(in *nodeInputs) { in.users[1].Password = "x" },
 		"tunnel key":    func(in *nodeInputs) { in.users[1].WGPrivateKey = "k2" },
 		"tunnel slot":   func(in *nodeInputs) { in.users[0].AWGSlot = 3 },
+		"device key":    func(in *nodeInputs) { in.users[0].AWGDevices = []model.AWGKey{{ID: 1, Key: "d", Slot: 9}} },
 		"one user more": func(in *nodeInputs) { in.users = append(in.users, model.User{ID: 9}) },
 		"access":        func(in *nodeInputs) { in.access[1].Tokens["t"] = false },
 		"access gone":   func(in *nodeInputs) { in.access = nil },

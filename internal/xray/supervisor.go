@@ -66,7 +66,7 @@ type proc struct {
 	// wireGuard is the peers this process's WireGuard inbounds hold as the panel has
 	// changed them (inbound tag → email → peer), and wireGuardLost the same mark as
 	// hysteriaLost (see wireguard_live.go). Under runMu.
-	wireGuard     map[string]map[string]wireGuardPeerState
+	wireGuard     map[string]map[string][]wireGuardPeerState
 	wireGuardLost bool
 	// tunnelUsers is who each WireGuard inbound's tunnel addresses belong to, for the
 	// access-log tap: that inbound logs no email (see attributeTunnel). Replaced whole

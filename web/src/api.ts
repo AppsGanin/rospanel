@@ -129,6 +129,29 @@ export interface DeviceList {
 
 export const getUserDevices = (id: number) => api<DeviceList>(`api/users/${id}/devices`)
 
+// A user's extra AmneziaWG keys, one per device; the main key is not listed.
+// limit counts the main key too.
+export interface AWGKey {
+  id: number
+  name: string
+  hwid?: string
+  addr: string
+  created_at: number
+  active: boolean // false: past the user's device cap, so a peer nowhere
+}
+export interface AWGKeyList {
+  keys: AWGKey[]
+  limit: number
+  enabled: boolean // some server has AmneziaWG on
+}
+export const getUserAWGKeys = (id: number) => api<AWGKeyList>(`api/users/${id}/awg-keys`)
+export const addUserAWGKey = (id: number, name: string) =>
+  api<AWGKey>(`api/users/${id}/awg-keys`, { method: 'POST', body: JSON.stringify({ name }) })
+export const renameUserAWGKey = (id: number, keyId: number, name: string) =>
+  api<void>(`api/users/${id}/awg-keys/rename`, { method: 'POST', body: JSON.stringify({ key_id: keyId, name }) })
+export const deleteUserAWGKey = (id: number, keyId: number) =>
+  api<void>(`api/users/${id}/awg-keys/delete`, { method: 'POST', body: JSON.stringify({ key_id: keyId }) })
+
 // Releases one device slot, or every one of them with all=true.
 export const unbindUserDevice = (id: number, body: { hwid?: string; all?: boolean }) =>
   api<{ removed: number }>(`api/users/${id}/devices/unbind`, {

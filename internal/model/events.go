@@ -38,20 +38,22 @@ const (
 	EventUserEnabled    = "user.enabled"
 	EventUserDisabled   = "user.disabled"
 	EventUserLimits     = "user.limits_changed"
-	EventSpeedLimit     = "user.speed_limit"    // per-user bandwidth cap changed
-	EventTrafficReset   = "user.traffic_reset"  // admin zeroed the counters
-	EventQuotaReset     = "user.quota_reset"    // the automatic period rollover did
-	EventResetPeriod    = "user.reset_period"   // autoreset period changed
-	EventSubRotated     = "user.sub_rotated"    // subscription link reissued
-	EventUUIDReset      = "user.uuid_reset"     // proxy credentials reissued
-	EventUserExpired    = "user.expired"        // system: subscription lapsed
-	EventTermStarted    = "user.term_started"   // system: the first connection started a held term
-	EventUserLimited    = "user.limited"        // system: quota exhausted
-	EventDeviceLimited  = "user.device_limited" // system: too many devices
-	EventDeviceBound    = "user.device_bound"   // a client install claimed a device slot
-	EventDeviceRefused  = "user.device_refused" // system: a new device hit the device cap
-	EventPolicyRefused  = "user.policy_refused" // system: connected from a source the policy refuses
-	EventDeviceUnbound  = "user.device_unbound" // a device was released (admin, or token rotation)
+	EventSpeedLimit     = "user.speed_limit"     // per-user bandwidth cap changed
+	EventTrafficReset   = "user.traffic_reset"   // admin zeroed the counters
+	EventQuotaReset     = "user.quota_reset"     // the automatic period rollover did
+	EventResetPeriod    = "user.reset_period"    // autoreset period changed
+	EventSubRotated     = "user.sub_rotated"     // subscription link reissued
+	EventUUIDReset      = "user.uuid_reset"      // proxy credentials reissued
+	EventUserExpired    = "user.expired"         // system: subscription lapsed
+	EventTermStarted    = "user.term_started"    // system: the first connection started a held term
+	EventUserLimited    = "user.limited"         // system: quota exhausted
+	EventDeviceLimited  = "user.device_limited"  // system: too many devices
+	EventDeviceBound    = "user.device_bound"    // a client install claimed a device slot
+	EventDeviceRefused  = "user.device_refused"  // system: a new device hit the device cap
+	EventPolicyRefused  = "user.policy_refused"  // system: connected from a source the policy refuses
+	EventDeviceUnbound  = "user.device_unbound"  // a device was released (admin, or token rotation)
+	EventAWGKeyAdded    = "user.awg_key_added"   // a device got its own AmneziaWG key
+	EventAWGKeyRemoved  = "user.awg_key_removed" // a device's AmneziaWG key was deleted
 	EventTelegramLinked = "user.telegram_linked"
 	EventTelegramUnlink = "user.telegram_unlinked"
 	// System: the automatic blocklist measures (model.AbuseMeasures).
@@ -111,6 +113,8 @@ var UserEventCatalog = []string{
 	EventDeviceRefused,
 	EventPolicyRefused,
 	EventDeviceUnbound,
+	EventAWGKeyAdded,
+	EventAWGKeyRemoved,
 	EventTelegramLinked,
 	EventTelegramUnlink,
 	EventAbuseWarned,

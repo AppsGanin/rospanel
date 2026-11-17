@@ -80,10 +80,10 @@ func TestValidHostRejectsOverlongName(t *testing.T) {
 // address they come from, whichever way the route was matched, and leaves every other
 // inbound's lines and every unknown address alone.
 func TestTunnelUsersAttribute(t *testing.T) {
-	users := tunnelUsersOf(map[string]map[string]wireGuardPeerState{
+	users := tunnelUsersOf(map[string]map[string][]wireGuardPeerState{
 		"custom-18": {
-			"u7": {allowedIPs: "10.66.0.2/32"},
-			"u9": {allowedIPs: "10.66.0.3/32,10.66.0.0/16"}, // a wide prefix names nobody
+			"u7": {{allowedIPs: "10.66.0.2/32"}, {allowedIPs: "10.66.0.5/32"}}, // a device's key too
+			"u9": {{allowedIPs: "10.66.0.3/32,10.66.0.0/16"}},                  // a wide prefix names nobody
 		},
 	})
 	cases := []struct {
@@ -92,6 +92,7 @@ func TestTunnelUsersAttribute(t *testing.T) {
 		{"2026/09/17 13:31:59.176153 from tcp:10.66.0.2:31239 accepted tcp:Example.com.:443 [custom-18 >> direct]", "u7", "10.66.0.2", "example.com"},
 		{"from udp:10.66.0.3:5353 accepted udp:1.1.1.1:53 [custom-18 -> warp]", "u9", "10.66.0.3", "1.1.1.1"},
 		{"from tcp:10.66.0.2:1 accepted tcp:[2001:db8::1]:443 [custom-18 ==> block]", "u7", "10.66.0.2", "2001:db8::1"},
+		{"from tcp:10.66.0.5:1 accepted tcp:example.com:443 [custom-18 >> direct]", "u7", "10.66.0.5", "example.com"},
 		{"from tcp:10.66.0.4:1 accepted tcp:example.com:443 [custom-18 >> direct]", "", "", ""}, // no such peer
 		{"from tcp:10.66.0.2:1 accepted tcp:example.com:443 [vless-in >> direct]", "", "", ""},  // another inbound
 		{"from tcp:10.66.0.2:1 rejected tcp:example.com:443 [custom-18 >> direct]", "", "", ""}, // not a connection

@@ -870,6 +870,8 @@ every node until unbanned. Every block, manual or automatic, with unban — in *
 
 #### 🧰 Operations and security
 
+**Tunnel keys per device** — a user can hold several keys for AmneziaWG, WireGuard and TURN, one per device, up to the HWID device limit: two devices on one key knock each other off. A client that sends an HWID gets its own key on its first fetch; on the subscription page the owner picks, adds and deletes keys; the user card lists them.
+
 **Server monitoring** (*server card → chart, or a server on the dashboard*) — CPU, RAM, disk, network in and out, users online and availability of every server, master included, over 24 hours, 7 or 30 days, plus an outage log with start and duration. Sampled once a minute.
 
 **Diagnostics** in one click: the Xray process, the AmneziaWG tunnel, config application, TLS expiry, disk space, geo

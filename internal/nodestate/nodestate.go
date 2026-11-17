@@ -158,6 +158,9 @@ func Assemble(p *Parts) (*nodeapi.NodeState, error) {
 		}
 		if tunnel != nil && r.AWGKey != "" {
 			tunnel.Peers = append(tunnel.Peers, nodeapi.AWGPeer{PublicKey: r.AWGKey, Addr: r.AWGAddr, Email: email})
+			for _, x := range r.AWGExtra {
+				tunnel.Peers = append(tunnel.Peers, nodeapi.AWGPeer{PublicKey: x.PublicKey, Addr: x.Addr, Email: email})
+			}
 		}
 	}
 	meta.AWG = tunnel

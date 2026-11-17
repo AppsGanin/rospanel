@@ -133,7 +133,8 @@ func diffNodeInputs(a, b *nodeInputs) ([]int64, bool) {
 			j++
 		default:
 			x, y := &a.users[i], &b.users[j]
-			if x.UUID != y.UUID || x.Password != y.Password || x.WGPrivateKey != y.WGPrivateKey || x.AWGSlot != y.AWGSlot {
+			if x.UUID != y.UUID || x.Password != y.Password || x.WGPrivateKey != y.WGPrivateKey || x.AWGSlot != y.AWGSlot ||
+				!slices.Equal(x.AWGDevices, y.AWGDevices) {
 				touched[x.ID] = struct{}{}
 			}
 			i++
@@ -404,10 +405,12 @@ func encodeBlocked(meta nodeapi.NodeMeta) (json.RawMessage, error) {
 // a peer of the tunnel — ascending by id, and returns their ids with them. users must be
 // ascending by id, as the working set is read.
 func splitRows(sc *xray.SplitConfig, users []model.User, meta nodeapi.NodeMeta, speed map[string]int) ([]json.RawMessage, []int64, error) {
-	peers := map[string]nodeapi.AWGPeer{}
+	// A user's first peer is their main key, the rest their devices' (awgPeersClaimed
+	// lists them in that order).
+	peers := map[string][]nodeapi.AWGPeer{}
 	if meta.AWG != nil {
 		for _, p := range meta.AWG.Peers {
-			peers[p.Email] = p
+			peers[p.Email] = append(peers[p.Email], p)
 		}
 	}
 	var rows []json.RawMessage
@@ -419,7 +422,8 @@ func splitRows(sc *xray.SplitConfig, users []model.User, meta nodeapi.NodeMeta, 
 		}
 		email := model.UserEmail(u.ID)
 		slots := sc.Placed[u.ID]
-		peer, tunnelled := peers[email]
+		userPeers := peers[email]
+		tunnelled := len(userPeers) > 0
 		if len(slots) == 0 && !tunnelled {
 			continue
 		}
@@ -436,10 +440,14 @@ func splitRows(sc *xray.SplitConfig, users []model.User, meta nodeapi.NodeMeta, 
 				// SplitUsers matched this user's entry against the same identity, so
 				// it is there to take.
 				row.WGKey, row.WGAddr, _ = xray.TunnelIdentity(u)
+				row.WGExtra = xray.TunnelExtras(u)
 			}
 		}
 		if tunnelled {
-			row.AWGKey, row.AWGAddr = peer.PublicKey, peer.Addr
+			row.AWGKey, row.AWGAddr = userPeers[0].PublicKey, userPeers[0].Addr
+			for _, p := range userPeers[1:] {
+				row.AWGExtra = append(row.AWGExtra, nodeapi.AWGPeerKey{PublicKey: p.PublicKey, Addr: p.Addr})
+			}
 		}
 		raw, err := json.Marshal(row)
 		if err != nil {

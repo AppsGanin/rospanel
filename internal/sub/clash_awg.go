@@ -81,8 +81,9 @@ func clashAWGLine(name string, u model.User, s *model.Settings) (string, bool) {
 	if err != nil || p.IsZero() {
 		return "", false
 	}
-	addr, ok := awg.ClientAddr(u.AWGSlot)
-	if !ok || u.WGPrivateKey == "" {
+	key, slot := u.AWGIdentity()
+	addr, ok := awg.ClientAddr(slot)
+	if !ok || key == "" {
 		return "", false
 	}
 	var dns []string
@@ -93,7 +94,7 @@ func clashAWGLine(name string, u model.User, s *model.Settings) (string, bool) {
 	}
 	return fmt.Sprintf(
 		"  - {name: %q, type: wireguard, server: %q, port: %d, ip: %q, private-key: %q, public-key: %q, allowed-ips: [\"0.0.0.0/0\", \"::/0\"], udp: true, mtu: %d, persistent-keepalive: %d, remote-dns-resolve: true, dns: [%s], amnezia-wg-option: {%s}}",
-		name, s.Host, s.AWGPort, addr.String(), u.WGPrivateKey, s.AWGPublicKey,
+		name, s.Host, s.AWGPort, addr.String(), key, s.AWGPublicKey,
 		awg.DefaultMTU, awg.Keepalive, strings.Join(dns, ", "), clashAWGOption(p)), true
 }
 

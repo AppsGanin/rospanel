@@ -100,7 +100,10 @@ func planUserChanges(cur, next []byte) (changes []userChange, ok bool) {
 		if key == "" {
 			continue
 		}
-		c, ok := diffUsers(curUsers[i], nextUsers[i])
+		// A WireGuard inbound lists a user once per key (main, then devices'); its
+		// change is applied from the whole peer list (syncWireGuardLocked), so the
+		// diff only has to say whether there is one.
+		c, ok := diffUsers(curUsers[i], nextUsers[i], protocol == "wireguard")
 		if !ok {
 			return nil, false
 		}
@@ -173,8 +176,9 @@ func takeUsers(raw any) ([]any, bool) {
 
 // diffUsers matches users by email. A user present on both sides with any field changed
 // (a rotated key) is removed and added again. ok is false when a user has no email or
-// shares one, since removal goes by email.
-func diffUsers(cur, next []any) (userChange, bool) {
+// shares one, since removal goes by email — unless shared is set, where a user's entries
+// under one email are taken together (a WireGuard user's keys).
+func diffUsers(cur, next []any, shared bool) (userChange, bool) {
 	index := func(users []any) (map[string]string, []string, bool) {
 		byEmail := make(map[string]string, len(users))
 		order := make([]string, 0, len(users))
@@ -187,12 +191,16 @@ func diffUsers(cur, next []any) (userChange, bool) {
 			if email == "" {
 				return nil, nil, false
 			}
-			if _, dup := byEmail[email]; dup {
-				return nil, nil, false
-			}
 			b, err := json.Marshal(m)
 			if err != nil {
 				return nil, nil, false
+			}
+			if prev, dup := byEmail[email]; dup {
+				if !shared {
+					return nil, nil, false
+				}
+				byEmail[email] = prev + "\n" + string(b)
+				continue
 			}
 			byEmail[email] = string(b)
 			order = append(order, email)
@@ -213,9 +221,17 @@ func diffUsers(cur, next []any) (userChange, bool) {
 			c.remove = append(c.remove, email)
 		}
 	}
-	for i, email := range nextOrder {
+	changed := map[string]bool{}
+	for _, email := range nextOrder {
 		if cb, had := curBy[email]; !had || cb != nextBy[email] {
-			c.add = append(c.add, next[i])
+			changed[email] = true
+		}
+	}
+	// Every entry of a changed user, in the list's order: with shared emails a user
+	// has more than one.
+	for _, u := range next {
+		if email, _ := u.(map[string]any)["email"].(string); changed[email] {
+			c.add = append(c.add, u)
 		}
 	}
 	return c, true

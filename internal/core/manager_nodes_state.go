@@ -409,7 +409,8 @@ func (m *Manager) readNodeInputsLocked(ws *workingSet) (*nodeInputs, error) {
 	// The credentials cost several times the rest of this read put together, in time
 	// and in garbage both, and they change only by paths that forget this snapshot: a
 	// uuid and a password are written when the account is made and again only by a
-	// UUID reset (markRekeyed), and a tunnel identity is claimed once (see claimAWG).
+	// UUID reset (markRekeyed), a tunnel identity is claimed once (see claimAWG), and
+	// a device key changes only through awgKeysChanged.
 	// So while the set is the same, last read's credentials are the same.
 	if prev != nil && slices.Equal(prev.ids, ids) {
 		in.users, in.ids = prev.users, prev.ids
@@ -507,7 +508,8 @@ func sameNodeInputs(a, b *nodeInputs) bool {
 	for i := range a.users {
 		x, y := &a.users[i], &b.users[i]
 		if x.ID != y.ID || x.UUID != y.UUID || x.Password != y.Password ||
-			x.WGPrivateKey != y.WGPrivateKey || x.AWGSlot != y.AWGSlot {
+			x.WGPrivateKey != y.WGPrivateKey || x.AWGSlot != y.AWGSlot ||
+			!slices.Equal(x.AWGDevices, y.AWGDevices) {
 			return false
 		}
 	}

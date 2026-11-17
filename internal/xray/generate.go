@@ -1150,9 +1150,24 @@ const WireGuardMTU = 1280
 // whose stored key cannot be read, and neither can complete a handshake anyway.
 func customWireGuardPeers(users []model.User) []WireGuardInboundPeer {
 	out := make([]WireGuardInboundPeer, 0, len(users))
-	for _, u := range users {
-		if peer, ok := wireGuardPeer(u.ID, u.WGPrivateKey, u.AWGSlot); ok {
-			out = append(out, peer)
+	for i := range users {
+		out = append(out, wireGuardPeersOf(&users[i])...)
+	}
+	return out
+}
+
+// wireGuardPeersOf is every peer a user has on a WireGuard inbound: their main key
+// first, then each device's key (model.User.AWGDevices), all under their email. None
+// when the main key is missing: devices are keys of a user who has one.
+func wireGuardPeersOf(u *model.User) []WireGuardInboundPeer {
+	main, ok := wireGuardPeer(u.ID, u.WGPrivateKey, u.AWGSlot)
+	if !ok {
+		return nil
+	}
+	out := []WireGuardInboundPeer{main}
+	for _, d := range u.AWGDevices {
+		if p, ok := wireGuardPeer(u.ID, d.Key, d.Slot); ok {
+			out = append(out, p)
 		}
 	}
 	return out

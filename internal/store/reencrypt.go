@@ -83,6 +83,7 @@ func (s *Store) ReencryptSensitiveFields() error {
 		{"payment providers", s.reencryptPaymentProviders},
 		{"plugin settings", s.reencryptPlugins},
 		{"user tunnel keys", s.reencryptUserWGKeys},
+		{"device tunnel keys", s.reencryptAWGDevices},
 		{"node keys", s.reencryptNodes},
 		{"webhook secrets", s.reencryptWebhooks},
 		{"custom inbound keys", s.reencryptInbounds},
@@ -163,6 +164,12 @@ func (s *Store) reencryptColumns(table, query string, cols []string, update stri
 func (s *Store) reencryptUserWGKeys() error {
 	return s.reencryptColumns("user", `SELECT id, wg_private_key FROM users WHERE wg_private_key <> ''`,
 		[]string{"wg_private_key"}, `UPDATE users SET wg_private_key = ? WHERE id = ?`)
+}
+
+// reencryptAWGDevices covers the extra AmneziaWG keys of users' devices.
+func (s *Store) reencryptAWGDevices() error {
+	return s.reencryptColumns("awg device", `SELECT id, private_key FROM user_awg_devices`,
+		[]string{"private_key"}, `UPDATE user_awg_devices SET private_key = ? WHERE id = ?`)
 }
 
 // reencryptNodes covers a node's own key material: REALITY, WARP, AmneziaWG and the

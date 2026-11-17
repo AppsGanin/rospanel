@@ -195,10 +195,11 @@ func (m *Manager) WireGuardClientConfig(u *model.User, s *model.Settings, in *mo
 	if err := m.claimAWG([]*model.User{u}); err != nil {
 		return "", err
 	}
-	if _, ok := awg.ClientAddr(u.AWGSlot); !ok {
+	key, slot := u.AWGIdentity()
+	if _, ok := awg.ClientAddr(slot); !ok {
 		return "", fmt.Errorf("wireguard: no address left on the tunnel subnet for user %d", u.ID)
 	}
-	if u.WGPrivateKey == "" {
+	if key == "" {
 		return "", fmt.Errorf("wireguard: stored key for user %d is unreadable", u.ID)
 	}
 	conf := sub.TurnClientConf(*u, s, *in)

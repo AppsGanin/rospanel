@@ -32,7 +32,7 @@ type wireGuardInbound struct {
 }
 
 // readWireGuardLive reads the peers of the WireGuard inbounds a process started with.
-func readWireGuardLive(cfg []byte) (map[string]map[string]wireGuardPeerState, error) {
+func readWireGuardLive(cfg []byte) (map[string]map[string][]wireGuardPeerState, error) {
 	var doc struct {
 		Inbounds []struct {
 			Tag      string          `json:"tag"`
@@ -46,7 +46,7 @@ func readWireGuardLive(cfg []byte) (map[string]map[string]wireGuardPeerState, er
 	if err := json.Unmarshal(cfg, &doc); err != nil {
 		return nil, fmt.Errorf("read the running config: %w", err)
 	}
-	out := map[string]map[string]wireGuardPeerState{}
+	out := map[string]map[string][]wireGuardPeerState{}
 	for _, in := range doc.Inbounds {
 		if in.Protocol != ProtoWireGuard || in.Tag == "" {
 			continue
@@ -66,19 +66,20 @@ func readWireGuardLive(cfg []byte) (map[string]map[string]wireGuardPeerState, er
 	return out, nil
 }
 
-// wireGuardPeerStates indexes peers by email. Removal goes by email, so a peer with none
-// or a shared one cannot be managed live.
-func wireGuardPeerStates(tag string, peers []WireGuardInboundPeer) (map[string]wireGuardPeerState, error) {
-	out := make(map[string]wireGuardPeerState, len(peers))
+// wireGuardPeerStates indexes peers by email: a user's main key and their devices'
+// keys (wireGuardPeersOf), in order. Removal goes by email, so a peer with none cannot
+// be managed live.
+func wireGuardPeerStates(tag string, peers []WireGuardInboundPeer) (map[string][]wireGuardPeerState, error) {
+	out := make(map[string][]wireGuardPeerState, len(peers))
 	for _, p := range peers {
-		if _, dup := out[p.Email]; dup || p.Email == "" {
-			return nil, fmt.Errorf("%s holds a peer with no email or a shared one (%q)", tag, p.Email)
+		if p.Email == "" {
+			return nil, fmt.Errorf("%s holds a peer with no email", tag)
 		}
 		key, err := wireGuardKeyHex(p.PublicKey)
 		if err != nil {
 			return nil, fmt.Errorf("%s: peer %s: %w", tag, p.Email, err)
 		}
-		out[p.Email] = wireGuardPeerState{key: key, allowedIPs: strings.Join(p.AllowedIPs, ",")}
+		out[p.Email] = append(out[p.Email], wireGuardPeerState{key: key, allowedIPs: strings.Join(p.AllowedIPs, ",")})
 	}
 	return out, nil
 }
@@ -96,15 +97,17 @@ type tunnelUsers map[string]map[string]string // inbound tag → tunnel address 
 // tunnelUsersOf builds the lookup from peers as the sync tracks them. Only a peer's
 // single-address prefixes are taken: those are the addresses the panel gives, and a
 // wider one could not name one user.
-func tunnelUsersOf(peers map[string]map[string]wireGuardPeerState) *tunnelUsers {
+func tunnelUsersOf(peers map[string]map[string][]wireGuardPeerState) *tunnelUsers {
 	out := tunnelUsers{}
 	for tag, byEmail := range peers {
 		addrs := map[string]string{}
-		for email, p := range byEmail {
-			for _, cidr := range strings.Split(p.allowedIPs, ",") {
-				prefix, err := netip.ParsePrefix(strings.TrimSpace(cidr))
-				if err == nil && prefix.IsSingleIP() {
-					addrs[prefix.Addr().String()] = email
+		for email, ps := range byEmail {
+			for _, p := range ps {
+				for _, cidr := range strings.Split(p.allowedIPs, ",") {
+					prefix, err := netip.ParsePrefix(strings.TrimSpace(cidr))
+					if err == nil && prefix.IsSingleIP() {
+						addrs[prefix.Addr().String()] = email
+					}
 				}
 			}
 		}
@@ -218,31 +221,36 @@ func (s *Supervisor) syncWireGuardLocked(apiAddr string, want []wireGuardInbound
 		if err != nil {
 			return err
 		}
+		// A user whose keys changed at all has every peer of theirs replaced: the API
+		// removes by email, one peer a call, and cannot name which of a user's peers.
 		var gone, joined []string
-		for email, peer := range have {
-			if now, kept := next[email]; !kept || now != peer {
+		for email, peers := range have {
+			if now, kept := next[email]; !kept || !slices.Equal(now, peers) {
 				gone = append(gone, email)
 			}
 		}
-		for email, peer := range next {
-			if was, had := have[email]; !had || was != peer {
+		for email, peers := range next {
+			if was, had := have[email]; !had || !slices.Equal(was, peers) {
 				joined = append(joined, email)
 			}
 		}
 		slices.Sort(gone)
 		slices.Sort(joined)
 		for _, email := range gone {
-			if err := api.removeUser(in.tag, email); err != nil {
-				return err
+			for range have[email] {
+				if err := api.removeUser(in.tag, email); err != nil {
+					return err
+				}
 			}
 			delete(have, email)
 		}
 		for _, email := range joined {
-			peer := next[email]
-			if err := api.addWireGuardUser(in.tag, email, peer.key, strings.Split(peer.allowedIPs, ",")); err != nil {
-				return err
+			for _, peer := range next[email] {
+				if err := api.addWireGuardUser(in.tag, email, peer.key, strings.Split(peer.allowedIPs, ",")); err != nil {
+					return err
+				}
+				have[email] = append(have[email], peer)
 			}
-			have[email] = peer
 		}
 	}
 	return nil

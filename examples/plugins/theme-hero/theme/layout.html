@@ -94,6 +94,22 @@
         <button type="button" class="b b-mini" data-action="copy" data-value="{{.URL}}">{{$.L.Copy}}</button>
       </div>
       {{end}}{{end}}
+      {{if .Devices.AWG.Show}}
+      <div class="line">
+        <div class="line-t"><b>{{.L.AWGKey}}</b><small>{{.Devices.AWG.Count}} / {{.Devices.AWG.Limit}}</small></div>
+      </div>
+      <div class="chips keys">
+        <button type="button" class="chip" data-action="tunnel-key" data-value="">{{.L.AWGKeyMain}}</button>
+        {{range .Devices.AWG.List}}
+        <span class="chip-pair">
+          {{if .Off}}<button type="button" class="chip" disabled>{{if .Name}}{{.Name}}{{else}}#{{.ID}}{{end}} · {{$.L.AWGKeyOff}}</button>{{else}}<button type="button" class="chip" data-action="tunnel-key" data-value="{{.ID}}">{{if .Name}}{{.Name}}{{else}}#{{.ID}}{{end}}</button>{{end}}
+          <button type="button" class="chip chip-x" data-action="tunnel-key-delete" data-value="{{.ID}}" aria-label="{{$.L.AWGKeyDelete}}">×</button>
+        </span>
+        {{end}}
+        {{if .Devices.AWG.CanAdd}}<button type="button" class="chip" data-action="tunnel-key-add">+ {{.L.AWGKeyAdd}}</button>{{end}}
+      </div>
+      {{if not .Devices.AWG.CanAdd}}<p class="keys-hint">{{if eq .Devices.AWG.Limit 1}}{{.L.AWGKeysOne}}{{else}}{{.L.AWGKeysFull}}{{end}}</p>{{end}}
+      {{end}}
       {{range .AWG}}
       <div class="line">
         <div class="line-t"><b>{{$.L.AWGTitle}}</b><small>{{.Label}}</small></div>

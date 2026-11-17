@@ -193,6 +193,12 @@ type User struct {
 	// same on every server; 0 until their tunnel key is first needed. Handed out, not
 	// derived from the id, so a panel's user ids can grow past the subnet's size.
 	AWGSlot int `json:"-"`
+	// AWGDevices are the user's extra AmneziaWG keys (AWGDevice), loaded where peers
+	// are built from users; nil elsewhere.
+	AWGDevices []AWGKey `json:"-"`
+	// AWGPick is the key a subscription answer writes the AmneziaWG configs with when
+	// it is not the main one (AWGIdentity). Set per request, never stored.
+	AWGPick *AWGKey `json:"-"`
 
 	// ExtraDevices are devices bought beyond the plan's own (already in DeviceLimit);
 	// PackData is traffic bought on top of its quota (already in DataLimit), gone at

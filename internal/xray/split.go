@@ -63,6 +63,9 @@ func SplitUsers(cfg *Config, custom []model.Inbound, users []model.User) (*Split
 				entries = nil
 			}
 		}
+		// A WireGuard inbound lists a user once per key: the main one, then each
+		// device's (wireGuardPeersOf), one after another.
+		more := map[int64]int{}
 		for _, e := range entries {
 			if strings.HasPrefix(emailOf(e), "bridge-") {
 				// A cascade bridge's service entry: kept as written, after the users.
@@ -81,10 +84,23 @@ func SplitUsers(cfg *Config, custom []model.Inbound, users []model.User) (*Split
 				return nil, false
 			}
 			u := byID[id]
-			if u == nil || !reflect.DeepEqual(e, slotEntry(slot, u.ID, userSlotCreds(slot, u))) {
+			if u == nil {
 				return nil, false
 			}
 			placed := out.Placed[id]
+			if k := more[id]; k > 0 {
+				peers := wireGuardPeersOf(u)
+				if slot.Kind != "wireguard" || placed[len(placed)-1] != index || k >= len(peers) ||
+					!reflect.DeepEqual(e, peers[k]) {
+					return nil, false
+				}
+				more[id] = k + 1
+				continue
+			}
+			if !reflect.DeepEqual(e, slotEntry(slot, u.ID, userSlotCreds(slot, u))) {
+				return nil, false
+			}
+			more[id] = 1
 			if n := len(placed); n > 0 && placed[n-1] == index {
 				return nil, false // listed twice in one inbound
 			}
@@ -221,6 +237,21 @@ func TunnelIdentity(u *model.User) (key, addr string, ok bool) {
 	return peer.PublicKey, a.String(), true
 }
 
+// TunnelExtras is a user's device keys as WireGuard peers hold them: public key and
+// tunnel address, in the order wireGuardPeersOf lists them after the main key.
+func TunnelExtras(u *model.User) []nodeapi.AWGPeerKey {
+	peers := wireGuardPeersOf(u)
+	if len(peers) < 2 {
+		return nil
+	}
+	out := make([]nodeapi.AWGPeerKey, 0, len(peers)-1)
+	for _, p := range peers[1:] {
+		addr, _, _ := strings.Cut(p.AllowedIPs[0], "/")
+		out = append(out, nodeapi.AWGPeerKey{PublicKey: p.PublicKey, Addr: addr})
+	}
+	return out
+}
+
 // slotEntry is one user's entry in a slot's list, as the generator writes it.
 func slotEntry(s nodeapi.UserSlot, id int64, c slotCreds) any {
 	email := model.UserEmail(id)
@@ -282,6 +313,11 @@ func RenderUsers(skeleton []byte, slots []nodeapi.UserSlot, rows []nodeapi.UserR
 			lists[si] = append(lists[si], slotEntry(slots[si], r.ID, slotCreds{
 				uuid: r.UUID, password: r.Password, wgKey: r.WGKey, wgAddr: r.WGAddr,
 			}))
+			if slots[si].Kind == "wireguard" && r.WGKey != "" {
+				for _, x := range r.WGExtra {
+					lists[si] = append(lists[si], slotEntry(slots[si], r.ID, slotCreds{wgKey: x.PublicKey, wgAddr: x.Addr}))
+				}
+			}
 		}
 	}
 	for si, s := range slots {

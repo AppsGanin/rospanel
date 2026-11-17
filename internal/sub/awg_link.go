@@ -64,12 +64,13 @@ func AWGClientConf(u model.User, s *model.Settings) string {
 	if err != nil {
 		return ""
 	}
-	addr, ok := awg.ClientAddr(u.AWGSlot)
-	if !ok || u.WGPrivateKey == "" {
+	key, slot := u.AWGIdentity()
+	addr, ok := awg.ClientAddr(slot)
+	if !ok || key == "" {
 		return ""
 	}
 	return awg.ClientConfig{
-		PrivateKey:      u.WGPrivateKey,
+		PrivateKey:      key,
 		Address:         addr,
 		DNS:             awg.TunnelDNS(s),
 		Params:          p,
@@ -93,12 +94,13 @@ func AWGThroneLink(u model.User, s *model.Settings) string {
 	if err != nil || p.IsZero() {
 		return ""
 	}
-	addr, ok := awg.ClientAddr(u.AWGSlot)
-	if !ok || u.WGPrivateKey == "" {
+	key, slot := u.AWGIdentity()
+	addr, ok := awg.ClientAddr(slot)
+	if !ok || key == "" {
 		return ""
 	}
 	q := []string{
-		"private_key=" + u.WGPrivateKey,
+		"private_key=" + key,
 		"local_address=" + addr.String() + "/32",
 		"public_key=" + s.AWGPublicKey,
 		"mtu=" + strconv.Itoa(awg.DefaultMTU),
@@ -156,4 +158,51 @@ func awgLinkFor(userAgent string) func(model.User, *model.Settings) string {
 		return AWGThroneLink // its WireGuard.kt reads Throne's wg:// keys, "+" "/" "=" literally
 	}
 	return nil
+}
+
+// CarriesAWG reports whether a subscription answer in format for userAgent writes
+// AmneziaWG configs: some server in it has the lane on for the user, and the client
+// reads the lane in that format (a Clash core ClashAWG admits, or a link-list client
+// awgLinkFor has a form for). Only then is a key of the client's own worth making.
+func CarriesAWG(servers []Server, format, userAgent string) bool {
+	switch format {
+	case "clash":
+		if !ClashAWG(userAgent) {
+			return false
+		}
+	case "v2ray", "":
+		if awgLinkFor(userAgent) == nil {
+			return false
+		}
+	default:
+		return false
+	}
+	return HasAWG(servers)
+}
+
+// HasTunnel reports whether some server gives the user a lane the device keys serve:
+// AmneziaWG, or a WireGuard inbound (TURN-VK included).
+func HasTunnel(servers []Server) bool {
+	if HasAWG(servers) {
+		return true
+	}
+	for _, srv := range servers {
+		for _, in := range srv.Custom {
+			if model.IsWireGuard(in.Protocol) && srv.allowsInbound(in.ID) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// HasAWG reports whether some server has the AmneziaWG lane on for the user.
+func HasAWG(servers []Server) bool {
+	for _, srv := range servers {
+		s := srv.Set
+		if s.AWGEnabled && s.AWGPort != 0 && s.AWGPublicKey != "" && srv.allowsBuiltin(model.LaneAWG) {
+			return true
+		}
+	}
+	return false
 }

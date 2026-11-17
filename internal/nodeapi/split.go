@@ -101,10 +101,23 @@ type UserRow struct {
 	// AWGKey and AWGAddr make the user a peer of the node's AmneziaWG tunnel.
 	AWGKey  string `json:"awg_key,omitempty"`
 	AWGAddr string `json:"awg_addr,omitempty"`
+	// AWGExtra are the user's devices' own keys on the same tunnel, each a peer of its
+	// own. An agent older than them ignores the field: the user's main key still works.
+	AWGExtra []AWGPeerKey `json:"awg_extra,omitempty"`
 	// WGKey and WGAddr are the same identity for the WireGuard inbounds in Slots. Kept
 	// apart from the AWG pair: a user may be allowed on one lane and not the other.
 	WGKey  string `json:"wg_key,omitempty"`
 	WGAddr string `json:"wg_addr,omitempty"`
+	// WGExtra are the user's devices' keys on those inbounds, each a peer after the
+	// main one. An agent older than them ignores the field.
+	WGExtra []AWGPeerKey `json:"wg_extra,omitempty"`
+}
+
+// AWGPeerKey is one extra AmneziaWG peer of a user: a public key and its tunnel
+// address.
+type AWGPeerKey struct {
+	PublicKey string `json:"pk"`
+	Addr      string `json:"ip"`
 }
 
 // Blocked is what a node drops at its own firewall: the source policy's refusals, which

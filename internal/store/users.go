@@ -699,9 +699,14 @@ const deviceCountCTE = `SELECT CASE
 // device limit. enabled is an independent manual flag — expiry/quota/devices
 // never change it, they just exclude the user from the config here.
 func (s *Store) WorkingUsers(now int64) ([]model.User, error) {
-	return s.queryUsers(`WITH device_count AS (`+deviceCountCTE+`)
+	users, err := s.queryUsers(`WITH device_count AS (`+deviceCountCTE+`)
 		SELECT `+userCols+` FROM users u `+workingUsersWhere+`
 		ORDER BY u.id ASC`, workingUsersArgs(now)...)
+	if err != nil {
+		return nil, err
+	}
+	// The tunnel's peers are built from these users: each extra key is a peer too.
+	return users, s.attachAWGDevices(users)
 }
 
 // WorkingUserIDs is WorkingUsers for a caller that only needs to know WHO: the ids,
@@ -778,7 +783,8 @@ func (s *Store) WorkingSet(now int64) (ids []int64, caps map[int64]int, err erro
 
 // WorkingCredentials is WorkingUsers for building a proxy config: the same users in
 // the same order, each carrying only what a config is made of — ID, UUID, Password,
-// WGPrivateKey and AWGSlot. Every other field is zero, and no status is derived.
+// WGPrivateKey, AWGSlot, AWGDevices and the HWIDLimit that caps them. Every other
+// field is zero, and no status is derived.
 //
 // A node asks for its config twice a poll and again on every wake, and the master
 // rebuilds its own on every user sync. With 5000 users the full read took ~20ms of
@@ -786,7 +792,7 @@ func (s *Store) WorkingSet(now int64) (ids []int64, caps map[int64]int, err erro
 // these few columns take ~4ms.
 func (s *Store) WorkingCredentials(now int64) ([]model.User, error) {
 	rows, err := s.db.Query(`WITH device_count AS (`+deviceCountCTE+`)
-		SELECT u.id, u.uuid, u.password, u.wg_private_key, u.awg_slot FROM users u `+workingUsersWhere+`
+		SELECT u.id, u.uuid, u.password, u.wg_private_key, u.awg_slot, u.hwid_limit FROM users u `+workingUsersWhere+`
 		ORDER BY u.id ASC`, workingUsersArgs(now)...)
 	if err != nil {
 		return nil, err
@@ -798,12 +804,12 @@ func (s *Store) WorkingCredentials(now int64) ([]model.User, error) {
 	type cred struct {
 		id                 int64
 		uuid, password, wg string
-		slot               int
+		slot, hwid         int
 	}
 	var creds []cred
 	for rows.Next() {
 		var c cred
-		if err := rows.Scan(&c.id, &c.uuid, &c.password, &c.wg, &c.slot); err != nil {
+		if err := rows.Scan(&c.id, &c.uuid, &c.password, &c.wg, &c.slot, &c.hwid); err != nil {
 			return nil, err
 		}
 		creds = append(creds, c)
@@ -813,9 +819,9 @@ func (s *Store) WorkingCredentials(now int64) ([]model.User, error) {
 	}
 	out := make([]model.User, len(creds))
 	for i, c := range creds {
-		out[i] = model.User{ID: c.id, UUID: c.uuid, Password: decField(c.password), WGPrivateKey: decField(c.wg), AWGSlot: c.slot}
+		out[i] = model.User{ID: c.id, UUID: c.uuid, Password: decField(c.password), WGPrivateKey: decField(c.wg), AWGSlot: c.slot, HWIDLimit: c.hwid}
 	}
-	return out, nil
+	return out, s.attachAWGDevices(out)
 }
 
 // workingUsersWhere is the one statement of who belongs in the proxy config, shared by
@@ -1189,21 +1195,9 @@ type AWGIdentity struct {
 func (s *Store) ClaimUsersAWG(claims []AWGClaim, first, last int) (map[int64]AWGIdentity, error) {
 	out := make(map[int64]AWGIdentity, len(claims))
 	err := s.withTx(func(tx *sql.Tx) error {
-		used := map[int]bool{}
-		rows, err := tx.Query(`SELECT awg_slot FROM users WHERE awg_slot > 0`)
+		// The devices' extra keys share the subnet (migration 0147).
+		used, err := usedAWGSlots(tx)
 		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var slot int
-			if err := rows.Scan(&slot); err != nil {
-				rows.Close()
-				return err
-			}
-			used[slot] = true
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
 			return err
 		}
 		next := first
