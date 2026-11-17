@@ -84,6 +84,7 @@ var ru = map[string]string{
 	"sub.statusLimited":          "Лимит исчерпан",
 	"sub.never":                  "бессрочно",
 	"sub.until":                  "до %s",
+	"sub.renewOpens":             "Продление откроется %s",
 	"sub.holdTerm":               "%s с первого подключения",
 	"sub.minutesAgo":             "%d мин назад",
 	"sub.hoursAgo":               "%d ч назад",

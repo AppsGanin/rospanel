@@ -30,6 +30,8 @@ export const EMPTY_PLAN = (): TariffPlan => ({
   group_ids: [],
   device_price: 0,
   device_max: 0,
+  renew_window_days: 0,
+  max_prepaid_days: 0,
 });
 
 
@@ -233,6 +235,26 @@ export function PlanForm({
             />
           </div>
           <p className="text-xs text-ink-muted">{t("bill.extraDevicesHint")}</p>
+        </div>
+      )}
+      {!designated && plan.period_days > 0 && (
+        <div className="flex flex-col gap-2 border-t border-gray-100 pt-3">
+          <span className="text-sm font-medium text-ink">{t("bill.renewLimits")}</span>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextInput
+              type="number"
+              label={t("bill.renewWindow")}
+              value={String(plan.renew_window_days ?? 0)}
+              onChange={(v) => patch({ renew_window_days: Math.max(0, Math.floor(Number(v) || 0)) })}
+            />
+            <TextInput
+              type="number"
+              label={t("bill.maxPrepaid")}
+              value={String(plan.max_prepaid_days ?? 0)}
+              onChange={(v) => patch({ max_prepaid_days: Math.max(0, Math.floor(Number(v) || 0)) })}
+            />
+          </div>
+          <p className="text-xs text-ink-muted">{t("bill.renewLimitsHint")}</p>
         </div>
       )}
       {/* Access groups: the plan decides WHICH connections its users may reach, not

@@ -75,6 +75,9 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 	if p.DataLimit < 0 || p.DeviceLimit < model.IPLimitUnlimited || p.SpeedLimit < 0 {
 		return invalidCode("err.planLimitsNegative", "лимиты тарифа не могут быть отрицательными")
 	}
+	if p.RenewWindowDays < 0 || p.RenewWindowDays > maxPlanPeriodDays || p.MaxPrepaidDays < 0 || p.MaxPrepaidDays > maxPlanPeriodDays {
+		return invalidCode("err.renewLimitsRange", "ограничения продления: от 0 до {{max}} дней", map[string]any{"max": maxPlanPeriodDays})
+	}
 	if p.DevicePrice < 0 || p.DevicePrice > promoValueMaxRub || p.DeviceMax < 0 || p.DeviceMax > model.MaxDeviceLimit {
 		return invalidCode("err.planDevicesRange", "доп. устройства: цена от 0 до {{price}} ₽, не больше {{max}} штук",
 			map[string]any{"price": promoValueMaxRub, "max": model.MaxDeviceLimit})
@@ -268,6 +271,9 @@ func (m *Manager) SaveBillingSettings(st *model.Settings) error {
 	// already on the free plan — so the trial expires and nothing ever rescues them.
 	if err := validateWalletSettings(st); err != nil {
 		return err
+	}
+	if st.RenewWindowDays < 0 || st.RenewWindowDays > maxPlanPeriodDays || st.MaxPrepaidDays < 0 || st.MaxPrepaidDays > maxPlanPeriodDays {
+		return invalidCode("err.renewLimitsRange", "ограничения продления: от 0 до {{max}} дней", map[string]any{"max": maxPlanPeriodDays})
 	}
 	st.BillingReturnURL = strings.TrimSpace(st.BillingReturnURL)
 	if st.BillingReturnURL != "" && !model.ValidReturnURL(st.BillingReturnURL) {
@@ -988,6 +994,15 @@ func (m *Manager) confirmOrderPaid(order *model.PaymentOrder, paidAt int64) (sto
 	// either taken away or carried into the new term unpaid — the money goes to the
 	// balance instead, and the renewal is bought again at its current price.
 	if m.isPlanRenewalFor(*u, order.PlanID) {
+		// Another order, paid first, may have moved the end date out of the renewal
+		// window or past the prepaid cap: this one waits on the balance instead.
+		if plan, err := m.store.GetTariffPlan(order.PlanID); err == nil && set.WalletEnabled &&
+			m.checkRenewLimitsAt(set, *u, plan, order.Periods, time.Now().Unix()) != nil {
+			spec.CreditKop = int64(order.AmountRub) * 100
+			spec.AsTopup = true
+			spec.PromoID = 0
+			return m.store.ConfirmOrder(order.ID, paidAt, spec)
+		}
 		if plan, err := m.store.GetTariffPlan(order.PlanID); err == nil && heldDevices(*u, plan) != order.Devices {
 			spec.CreditKop = int64(order.AmountRub) * 100
 			spec.AsTopup = true

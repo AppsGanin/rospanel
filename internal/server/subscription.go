@@ -685,8 +685,11 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 	if active := rt.mgr.ActivePaidPlan(u); active != nil {
 		b.Locked = true
 		b.Cancelable = true
-		// A lifetime plan has nothing to renew.
-		if active.PeriodDays > 0 {
+		// A lifetime plan has nothing to renew; a renewal the window or the prepaid
+		// cap holds back says when it opens instead.
+		if at := rt.mgr.RenewOpensAt(set, u, active, time.Now().Unix()); at > 0 {
+			b.RenewOpens = i18n.T(lang, "sub.renewOpens", core.RenewOpensText(at, rt.mgr.Location()))
+		} else if active.PeriodDays > 0 {
 			b.Plans = []sub.BillingPlan{{
 				ID: active.ID, Name: active.Name, Label: payPlanLabel(lang, *active), Current: true,
 			}}

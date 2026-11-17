@@ -349,6 +349,9 @@ func (m *Manager) purchaseDraft(lang i18n.Lang, userID int64, p Purchase) (store
 		if err := m.checkPeriods(plan, max(p.Periods, 1)); err != nil {
 			return store.OrderDraft{}, "", err
 		}
+		if err := m.checkRenewLimits(*u, plan, p.Periods); err != nil {
+			return store.OrderDraft{}, "", err
+		}
 	}
 	q, plan, err := m.quotePurchase(*u, p, time.Now().Unix())
 	if err != nil {

@@ -522,6 +522,9 @@
           "renew_note": {
             "type": "string"
           },
+          "renew_opens": {
+            "type": "string"
+          },
           "renew_short": {
             "type": "boolean"
           },
@@ -552,6 +555,7 @@
           "current_plan",
           "expire_text",
           "plans",
+          "renew_opens",
           "providers",
           "manual",
           "manual_only",
@@ -3377,6 +3381,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "max_prepaid_days": {
+            "type": "integer"
+          },
           "name": {
             "type": "string"
           },
@@ -3384,6 +3391,9 @@
             "type": "integer"
           },
           "price_rub": {
+            "type": "integer"
+          },
+          "renew_window_days": {
             "type": "integer"
           },
           "reset_period": {
@@ -3414,7 +3424,9 @@
           "enabled",
           "group_ids",
           "device_price",
-          "device_max"
+          "device_max",
+          "renew_window_days",
+          "max_prepaid_days"
         ],
         "type": "object"
       },
@@ -4253,6 +4265,9 @@
           "manual_label": {
             "type": "string"
           },
+          "max_prepaid_days": {
+            "type": "integer"
+          },
           "payment_note": {
             "type": "string"
           },
@@ -4272,6 +4287,9 @@
             "type": "string"
           },
           "ref_percent": {
+            "type": "integer"
+          },
+          "renew_window_days": {
             "type": "integer"
           },
           "return_url": {
@@ -4923,12 +4941,17 @@
               "$ref": "#/components/schemas/PlanQuote"
             },
             "type": "array"
+          },
+          "renew_opens_at": {
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
           "plan_id",
           "plan_name",
-          "quotes"
+          "quotes",
+          "renew_opens_at"
         ],
         "type": "object"
       },
@@ -7237,6 +7260,9 @@
                     "format": "int64",
                     "type": "integer"
                   },
+                  "max_prepaid_days": {
+                    "type": "integer"
+                  },
                   "name": {
                     "type": "string"
                   },
@@ -7244,6 +7270,9 @@
                     "type": "integer"
                   },
                   "price_rub": {
+                    "type": "integer"
+                  },
+                  "renew_window_days": {
                     "type": "integer"
                   },
                   "reset_period": {
@@ -7769,6 +7798,9 @@
                   "manual_label": {
                     "type": "string"
                   },
+                  "max_prepaid_days": {
+                    "type": "integer"
+                  },
                   "payment_note": {
                     "type": "string"
                   },
@@ -7788,6 +7820,9 @@
                     "type": "string"
                   },
                   "ref_percent": {
+                    "type": "integer"
+                  },
+                  "renew_window_days": {
                     "type": "integer"
                   },
                   "return_url": {

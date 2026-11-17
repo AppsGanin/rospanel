@@ -73,6 +73,7 @@ var fa = map[string]string{
 	"sub.statusLimited":          "سهمیه تمام شده",
 	"sub.never":                  "بدون انقضا",
 	"sub.until":                  "تا %s",
+	"sub.renewOpens":             "تمدید از %s ممکن می\u200cشود",
 	"sub.holdTerm":               "%s از اولین اتصال",
 	"sub.minutesAgo":             "%d دقیقه پیش",
 	"sub.hoursAgo":               "%d ساعت پیش",

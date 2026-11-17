@@ -85,6 +85,8 @@ type Panel interface {
 	BuyPlanFromBalance(ctx context.Context, userID, planID, expectExpire int64, periods int) (*model.PaymentOrder, error)
 	QuotePlanFor(u model.User, plan *model.TariffPlan, periods int) core.PlanQuote
 	PeriodOffers(u model.User, plan *model.TariffPlan) []core.PlanQuote
+	// RenewOpensAt is when the user may next renew plan, 0 = now.
+	RenewOpensAt(set *model.Settings, u model.User, plan *model.TariffPlan, now int64) int64
 	// Purchases beyond a plain plan: extra devices, a plan change, add-ons.
 	QuotePurchase(u model.User, p core.Purchase) (core.PlanQuote, error)
 	StartPurchase(ctx context.Context, lang i18n.Lang, userID int64, p core.Purchase, provider, returnURL string) (*model.PaymentOrder, error)

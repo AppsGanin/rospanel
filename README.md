@@ -647,6 +647,8 @@ plus your picture, a QR code or a screenshot of the requisites — and an admin 
   the subscription.
 - **Longer-term discounts** — a plan for several periods at once, cheaper, traffic refilled
   every period.
+- **Renewal limits** (off by default) — renewal opens N days before the end, and a cap on
+  the days paid ahead; per plan too.
 - **Win-back** (off by default) — some days after a paid subscription ends, the user gets a
   personal one-use discount code in the bot, already applied to the next payment.
 - **Exit survey** (off by default) — a day after a paid subscription ends, the bot

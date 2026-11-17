@@ -1668,6 +1668,7 @@
           {{if .Billing.Locked}}
           <!-- An active plan: its renewal and a move to another plan, each in a dialog;
                what can be added, and — quietly, last — cancelling it. -->
+          {{if .Billing.RenewOpens}}<p class="muted renew-opens">{{.Billing.RenewOpens}}</p>{{end}}
           {{if or .Billing.Plans .Billing.Changes}}
           <div class="btn-row">
             {{if .Billing.Plans}}<button class="btn" onclick="showModal('renewmodal')">{{.L.Renew}}</button>{{end}}

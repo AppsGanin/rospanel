@@ -678,6 +678,10 @@ type Billing struct {
 	CurrentPlan string        `json:"current_plan"` // active plan name ("" = none / manual)
 	ExpireText  string        `json:"expire_text"`  // "until DD.MM.YYYY" for a paid expiry, else ""
 	Plans       []BillingPlan `json:"plans"`        // paid plans offered for purchase/renewal
+	// RenewOpens says when the renewal of the active plan opens ("Renewal opens on
+	// DD.MM.YYYY"), "" when it is open or there is nothing to renew. Plans is then
+	// empty.
+	RenewOpens string `json:"renew_opens"`
 	// Providers are the payment methods offered, in the order they are shown. Manual
 	// payment, when the operator has it on, is one of them under ManualPayKey.
 	Providers []BillingPay `json:"providers"`

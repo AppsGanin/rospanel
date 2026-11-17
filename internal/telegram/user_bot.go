@@ -1118,8 +1118,12 @@ func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msg
 	// Active paid plan: renew the same plan or cancel it — switching is blocked.
 	if active := s.panel.ActivePaidPlan(u); active != nil {
 		var rows [][]InlineButton
-		// A lifetime plan has nothing to renew.
-		if active.PeriodDays > 0 {
+		text := i18n.T(lang, "user.planActive", esc(active.Name), planActiveUntil(u, s.panel, lang))
+		// A lifetime plan has nothing to renew; a renewal the window or the prepaid cap
+		// holds back says when it opens instead of offering a button.
+		if at := s.panel.RenewOpensAt(set, u, active, time.Now().Unix()); at > 0 {
+			text += "\n\n" + i18n.T(lang, "sub.renewOpens", core.RenewOpensText(at, s.panel.Location()))
+		} else if active.PeriodDays > 0 {
 			rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnRenewPlan", active.Name), CallbackData: fmt.Sprintf("vu:buy:%d", active.ID)}})
 		}
 		if len(s.panel.ChangeOffers(u)) > 0 {
@@ -1132,8 +1136,7 @@ func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msg
 			[]InlineButton{{Text: i18n.T(lang, "user.btnCancelSub"), CallbackData: "vu:cancelplan"}},
 			[]InlineButton{{Text: i18n.T(lang, "user.btnBack"), CallbackData: "vu:menu"}},
 		)
-		s.edit(ctx, client, chatID, msgID,
-			i18n.T(lang, "user.planActive", esc(active.Name), planActiveUntil(u, s.panel, lang)), rows)
+		s.edit(ctx, client, chatID, msgID, text, rows)
 		return
 	}
 	plans, err := s.panel.ListTariffPlans(false)
@@ -1241,6 +1244,13 @@ func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID,
 		u = fresh
 	}
 	if plan, err := s.store.GetTariffPlan(planID); err == nil && !plan.IsFree() {
+		// A renewal button from an older message, tapped before the renewal opens: say
+		// when it does rather than price a purchase that will be refused.
+		if at := s.panel.RenewOpensAt(set, u, plan, time.Now().Unix()); at > 0 {
+			s.edit(ctx, client, chatID, msgID, i18n.T(lang, "sub.renewOpens", core.RenewOpensText(at, s.panel.Location())),
+				[][]InlineButton{{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}}})
+			return
+		}
 		// Several terms on sale: ask which first. With nothing to pay money with, only
 		// the terms the balance covers.
 		offers := s.panel.PeriodOffers(u, plan)

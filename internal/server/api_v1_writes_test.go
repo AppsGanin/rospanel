@@ -161,9 +161,10 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 				"manual_label": "By transfer", "wallet": true, "topup_min": float64(150), "topup_max": float64(15000),
 				"ref_mode": "percent", "ref_percent": float64(15), "ref_days": float64(9),
 				"ref_first": true, "periods": []any{map[string]any{"periods": float64(3), "percent": float64(10)}},
-				"winback":      map[string]any{"enabled": true, "after_days": float64(10), "percent": float64(25), "valid_days": float64(5)},
-				"churn_survey": true,
-				"return_url":   "https://example.com/paid",
+				"winback":           map[string]any{"enabled": true, "after_days": float64(10), "percent": float64(25), "valid_days": float64(5)},
+				"churn_survey":      true,
+				"return_url":        "https://example.com/paid",
+				"renew_window_days": float64(5), "max_prepaid_days": float64(60),
 			},
 			check: func(t *testing.T) map[string]any {
 				set, err := st.GetSettings()
@@ -177,10 +178,11 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 					"wallet": set.WalletEnabled, "topup_min": float64(set.WalletTopupMin), "topup_max": float64(set.WalletTopupMax),
 					"ref_mode": set.RefMode, "ref_percent": float64(set.RefPercent),
 					"ref_days": float64(set.RefDays), "ref_first": set.RefFirstOnly,
-					"periods":      len(set.BillingPeriods) == 1 && set.BillingPeriods[0].Periods == 3 && set.BillingPeriods[0].Percent == 10,
-					"winback":      set.Winback == model.WinbackSettings{Enabled: true, AfterDays: 10, Percent: 25, ValidDays: 5},
-					"churn_survey": set.ChurnSurvey,
-					"return_url":   set.BillingReturnURL,
+					"periods":           len(set.BillingPeriods) == 1 && set.BillingPeriods[0].Periods == 3 && set.BillingPeriods[0].Percent == 10,
+					"winback":           set.Winback == model.WinbackSettings{Enabled: true, AfterDays: 10, Percent: 25, ValidDays: 5},
+					"churn_survey":      set.ChurnSurvey,
+					"return_url":        set.BillingReturnURL,
+					"renew_window_days": float64(set.RenewWindowDays), "max_prepaid_days": float64(set.MaxPrepaidDays),
 				}
 			},
 		},
@@ -191,6 +193,7 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 				"device_limit": float64(5), "hwid_limit": float64(4), "speed_limit": float64(2048), "reset_period": "monthly",
 				"sort_order": float64(3), "enabled": true, "group_ids": []any{},
 				"device_price": float64(50), "device_max": float64(3),
+				"renew_window_days": float64(7), "max_prepaid_days": float64(90),
 			},
 			// id picks create from update; a create is told to leave it out.
 			derived: []string{"id"},
@@ -208,6 +211,7 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 					"sort_order":   float64(p.SortOrder), "enabled": p.Enabled,
 					"group_ids":    len(p.GroupIDs) == 0,
 					"device_price": float64(p.DevicePrice), "device_max": float64(p.DeviceMax),
+					"renew_window_days": float64(p.RenewWindowDays), "max_prepaid_days": float64(p.MaxPrepaidDays),
 				}
 			},
 		},

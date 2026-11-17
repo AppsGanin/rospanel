@@ -338,6 +338,10 @@ type TariffPlan struct {
 	// limit and a term.
 	DevicePrice int `json:"device_price"`
 	DeviceMax   int `json:"device_max"`
+	// RenewWindowDays and MaxPrepaidDays are the plan's own renewal limits (see
+	// Settings.RenewWindowDays); 0 takes the billing settings' value.
+	RenewWindowDays int `json:"renew_window_days"`
+	MaxPrepaidDays  int `json:"max_prepaid_days"`
 }
 
 // SellsDevices reports whether the plan sells extra devices.
@@ -1391,6 +1395,11 @@ type Settings struct {
 	// quota; PlanChange lets users switch plans while one is active.
 	TrafficPacks []TrafficPack `json:"-"`
 	PlanChange   bool          `json:"-"`
+	// RenewWindowDays opens the renewal of an active plan only this many days before
+	// its end; MaxPrepaidDays caps the paid time a user may hold after a purchase
+	// (never below one period). 0 = no limit. A plan may set its own.
+	RenewWindowDays int `json:"-"`
+	MaxPrepaidDays  int `json:"-"`
 	// MiniAppPath is the Mini App's random address segment; TGMenuURL the address the
 	// user bot's menu button was last set to.
 	MiniAppPath string `json:"-"`

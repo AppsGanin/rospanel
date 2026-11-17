@@ -73,6 +73,7 @@ var zh = map[string]string{
 	"sub.statusLimited":          "流量已用完",
 	"sub.never":                  "永不",
 	"sub.until":                  "至 %s",
+	"sub.renewOpens":             "续订将于 %s 开放",
 	"sub.holdTerm":               "自首次连接起 %s",
 	"sub.minutesAgo":             "%d 分钟前",
 	"sub.hoursAgo":               "%d 小时前",

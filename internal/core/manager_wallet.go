@@ -181,8 +181,12 @@ func (m *Manager) PeriodOffersWith(u model.User, plan *model.TariffPlan, devices
 		return nil
 	}
 	out := []PlanQuote{m.quotePlan(set, u, plan, 1, devices)}
+	now := time.Now().Unix()
 	for _, o := range set.BillingPeriods {
-		out = append(out, m.quotePlan(set, u, plan, o.Periods, devices))
+		// A term the prepaid cap rules out is not offered.
+		if m.periodsFit(set, u, plan, o.Periods, now) {
+			out = append(out, m.quotePlan(set, u, plan, o.Periods, devices))
+		}
 	}
 	return out
 }
@@ -292,6 +296,10 @@ func (m *Manager) buyPlanFromBalance(ctx context.Context, userID int64, p Purcha
 		return nil, err
 	}
 	if err := m.checkPeriods(plan, periods); err != nil {
+		m.applyPlanMu.Unlock()
+		return nil, err
+	}
+	if err := m.checkRenewLimitsAt(set, *u, plan, periods, time.Now().Unix()); err != nil {
 		m.applyPlanMu.Unlock()
 		return nil, err
 	}

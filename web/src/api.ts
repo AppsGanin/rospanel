@@ -2368,6 +2368,9 @@ export interface TariffPlan {
   // device_max of them (0 = none sold).
   device_price?: number
   device_max?: number
+  // The plan's own renewal limits in days; 0 takes the billing settings' value.
+  renew_window_days?: number
+  max_prepaid_days?: number
 }
 
 // Traffic on sale on top of a plan's quota.
@@ -2429,6 +2432,8 @@ export interface BillingInfo {
   traffic_packs: TrafficPack[]
   plan_change: boolean // users may switch plans while one is active
   return_url: string // where a payer from the bot lands after paying ("" = Mini App / sub page)
+  renew_window_days: number // renewal opens this many days before the end (0 = always)
+  max_prepaid_days: number // paid time a purchase may leave, in days (0 = no limit)
   plans: TariffPlan[]
   plan_users?: Record<string, number> // plan id → number of users on it
 }
@@ -2523,6 +2528,8 @@ export const saveBilling = (b: {
   traffic_packs: TrafficPack[]
   plan_change: boolean
   return_url: string
+  renew_window_days: number
+  max_prepaid_days: number
 }) =>
   api<{ ok: boolean }>('api/billing', {
     method: 'POST',

@@ -151,6 +151,7 @@ element. Texts in the reader's language are in `.L`.
     - `.Devices` `[]DeviceOption` — Devices are the device counts a new plan can be bought with (the first is the plan's own), empty when it sells no extra devices.
       - `.Extra` `int` — devices beyond the plan's own
       - `.Label` `string` — "3 devices (+100 ₽ per period)"
+  - `.RenewOpens` `string` — RenewOpens says when the renewal of the active plan opens ("Renewal opens on DD.MM.YYYY"), "" when it is open or there is nothing to renew. Plans is then empty.
   - `.Providers` `[]BillingPay` — Providers are the payment methods offered, in the order they are shown. Manual payment, when the operator has it on, is one of them under ManualPayKey.
     - `.Key` `string`
     - `.Label` `string`

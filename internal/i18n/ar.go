@@ -73,6 +73,7 @@ var ar = map[string]string{
 	"sub.statusLimited":          "نفد حد البيانات",
 	"sub.never":                  "بلا انتهاء",
 	"sub.until":                  "حتى %s",
+	"sub.renewOpens":             "يُتاح التجديد في %s",
 	"sub.holdTerm":               "%s من أول اتصال",
 	"sub.minutesAgo":             "منذ %d دقيقة",
 	"sub.hoursAgo":               "منذ %d ساعة",

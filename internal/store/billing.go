@@ -53,7 +53,7 @@ func (s *Store) SetPlanUsersResetPeriod(planID int64, period string, now int64) 
 // ListTariffPlans returns plans sorted for display.
 func (s *Store) ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error) {
 	q := `SELECT id, slug, name, price_rub, period_days, data_limit, device_limit,
-	             speed_limit, reset_period, sort_order, enabled, device_price, device_max, hwid_limit
+	             speed_limit, reset_period, sort_order, enabled, device_price, device_max, hwid_limit, renew_window_days, max_prepaid_days
 	      FROM tariff_plans`
 	if !includeDisabled {
 		q += ` WHERE enabled = 1`
@@ -64,7 +64,7 @@ func (s *Store) ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error
 
 func (s *Store) GetTariffPlan(id int64) (*model.TariffPlan, error) {
 	plans, err := s.scanPlans(`SELECT id, slug, name, price_rub, period_days, data_limit, device_limit,
-		speed_limit, reset_period, sort_order, enabled, device_price, device_max, hwid_limit FROM tariff_plans WHERE id = ?`, id)
+		speed_limit, reset_period, sort_order, enabled, device_price, device_max, hwid_limit, renew_window_days, max_prepaid_days FROM tariff_plans WHERE id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -86,21 +86,22 @@ func (s *Store) SaveTariffPlan(p *model.TariffPlan) error {
 		if p.ID == 0 {
 			if err := tx.QueryRow(
 				`INSERT INTO tariff_plans (slug, name, price_rub, period_days, data_limit, device_limit,
-				 speed_limit, reset_period, is_free, sort_order, enabled, device_price, device_max, hwid_limit)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+				 speed_limit, reset_period, is_free, sort_order, enabled, device_price, device_max, hwid_limit,
+				 renew_window_days, max_prepaid_days)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 				p.Slug, p.Name, p.PriceRub, p.PeriodDays, p.DataLimit, p.DeviceLimit,
 				p.SpeedLimit, p.ResetPeriod, boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled),
-				p.DevicePrice, p.DeviceMax, p.HWIDLimit,
+				p.DevicePrice, p.DeviceMax, p.HWIDLimit, p.RenewWindowDays, p.MaxPrepaidDays,
 			).Scan(&p.ID); err != nil {
 				return err
 			}
 		} else if _, err := tx.Exec(
 			`UPDATE tariff_plans SET slug=?, name=?, price_rub=?, period_days=?, data_limit=?,
 			 device_limit=?, speed_limit=?, reset_period=?, is_free=?, sort_order=?, enabled=?,
-			 device_price=?, device_max=?, hwid_limit=? WHERE id=?`,
+			 device_price=?, device_max=?, hwid_limit=?, renew_window_days=?, max_prepaid_days=? WHERE id=?`,
 			p.Slug, p.Name, p.PriceRub, p.PeriodDays, p.DataLimit, p.DeviceLimit,
 			p.SpeedLimit, p.ResetPeriod, boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled),
-			p.DevicePrice, p.DeviceMax, p.HWIDLimit, p.ID,
+			p.DevicePrice, p.DeviceMax, p.HWIDLimit, p.RenewWindowDays, p.MaxPrepaidDays, p.ID,
 		); err != nil {
 			return err
 		}
@@ -274,6 +275,7 @@ func (s *Store) scanPlans(query string, args ...any) ([]model.TariffPlan, error)
 		if err := rows.Scan(
 			&p.ID, &p.Slug, &p.Name, &p.PriceRub, &p.PeriodDays, &p.DataLimit, &p.DeviceLimit,
 			&p.SpeedLimit, &p.ResetPeriod, &p.SortOrder, &en, &p.DevicePrice, &p.DeviceMax, &p.HWIDLimit,
+			&p.RenewWindowDays, &p.MaxPrepaidDays,
 		); err != nil {
 			return nil, err
 		}
@@ -810,6 +812,7 @@ func (s *Store) SetBillingSettings(st *model.Settings) error {
 		 ref_mode = ?, ref_percent = ?, ref_days = ?, ref_first_only = ?,
 		 winback_enabled = ?, winback_after_days = ?, winback_percent = ?, winback_valid_days = ?, churn_survey = ?,
 		 traffic_packs = ?, plan_change = ?, billing_return_url = ?,
+		 renew_window_days = ?, max_prepaid_days = ?,
 		 updated_at = unixepoch() WHERE id = 1`,
 		boolToInt(st.BillingEnabled),
 		st.BillingFreePlanID, st.BillingTrialPlanID, st.BillingPaymentNote,
@@ -818,6 +821,7 @@ func (s *Store) SetBillingSettings(st *model.Settings) error {
 		st.RefMode, st.RefPercent, st.RefDays, boolToInt(st.RefFirstOnly),
 		boolToInt(st.Winback.Enabled), st.Winback.AfterDays, st.Winback.Percent, st.Winback.ValidDays, boolToInt(st.ChurnSurvey),
 		packsJSON(st.TrafficPacks), boolToInt(st.PlanChange), st.BillingReturnURL,
+		st.RenewWindowDays, st.MaxPrepaidDays,
 	)
 	return err
 }

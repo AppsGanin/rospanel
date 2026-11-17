@@ -75,6 +75,7 @@ var en = map[string]string{
 	"sub.statusLimited":          "Quota used up",
 	"sub.never":                  "never",
 	"sub.until":                  "until %s",
+	"sub.renewOpens":             "Renewal opens on %s",
 	"sub.holdTerm":               "%s from the first connection",
 	"sub.minutesAgo":             "%d min ago",
 	"sub.hoursAgo":               "%d h ago",
