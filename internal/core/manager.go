@@ -225,6 +225,9 @@ type Manager struct {
 	tz           *time.Location // operator timezone for the local-day stats boundary
 
 	sys *sysstat.Sampler // host metrics sampler for the dashboard (nil until started)
+	// loadBooted is whether the load history has had its first tick since boot
+	// (which first ends outages left open across a long gap). Watch loop only.
+	loadBooted bool
 
 	tmplMu    sync.Mutex
 	tmplCache map[string]routingTmpl // cached routing templates by URL

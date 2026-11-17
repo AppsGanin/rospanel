@@ -4436,6 +4436,43 @@ const en: Dict = {
     reverts: "Reverts",
   },
 
+  serverLoad: {
+    action: "Monitoring",
+    titleOf: "Monitoring — “{{name}}”",
+    range: {
+      "24h": "24 hours",
+      "7d": "7 days",
+      "30d": "30 days",
+    },
+    uptime: "Uptime",
+    outages: "Outages",
+    downtime: "Downtime",
+    loadTitle: "CPU, RAM and disk",
+    availability: "Availability",
+    outageLog: "Outages",
+    noOutages: "No outages",
+    noHistory: "History appears within a few minutes",
+    noData: "no data",
+    upShare: "up {{pct}}% of the time",
+    ongoing: "ongoing, {{dur}}",
+    peak: "peak",
+    disk: "Disk",
+    netTitle: "Network",
+    netIn: "In",
+    netOut: "Out",
+    onlineTitle: "Users online",
+    online: "Online",
+    onlinePeak: "Peak online",
+    trafficIn: "Traffic in",
+    trafficOut: "Traffic out",
+    rate: {
+      b: "{{n}} bit/s",
+      k: "{{n}} kbit/s",
+      m: "{{n}} Mbit/s",
+      g: "{{n}} Gbit/s",
+    },
+  },
+
   nodes: {
     traffic: {
       title: "Traffic limit",

@@ -13,6 +13,7 @@ import {
 } from "./api";
 import { fmtBytes, fmtStamp } from "./format";
 import { HealthPanel } from "./HealthPanel";
+import { ServerLoadDialog } from "./ServerLoad";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { EMPTY_STEP_UP, type StepUp, StepUpFields, stepUpReady, useTotpEnabled } from "./stepup";
 import { XrayConfigView } from "./XrayConfig";
@@ -26,6 +27,7 @@ import {
   DropdownItem,
   IconBraces,
   IconButton,
+  IconChart,
   IconDots,
   IconGear,
   IconGlobe,
@@ -114,6 +116,7 @@ export function NodeCard({
   const [showingLogs, setShowingLogs] = useState(false);
   const [showingConfig, setShowingConfig] = useState(false);
   const [showingHealth, setShowingHealth] = useState(false);
+  const [showingLoad, setShowingLoad] = useState(false);
   const [showingReach, setShowingReach] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
@@ -272,6 +275,11 @@ export function NodeCard({
           {canServers && (
             <IconButton title={t("nodes.diagnostics")} onClick={() => setShowingHealth(true)}>
               <IconPulse size={16} />
+            </IconButton>
+          )}
+          {canServers && (
+            <IconButton title={t("serverLoad.action")} onClick={() => setShowingLoad(true)}>
+              <IconChart size={16} />
             </IconButton>
           )}
           {canServers && reachOn && (
@@ -480,6 +488,13 @@ export function NodeCard({
       >
         <HealthPanel nodeId={node.id} />
       </Modal>
+      {showingLoad && (
+        <ServerLoadDialog
+          nodeId={node.id}
+          title={t("serverLoad.titleOf", { name: serverName(node) })}
+          onClose={() => setShowingLoad(false)}
+        />
+      )}
       {showingReach && (
         <ReachDialog node={node} onClose={() => setShowingReach(false)} onChecked={onChanged} />
       )}

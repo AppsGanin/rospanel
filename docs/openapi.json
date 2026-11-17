@@ -3108,6 +3108,9 @@
           "cert_days_left": {
             "type": "integer"
           },
+          "cpu_avg": {
+            "type": "number"
+          },
           "cpu_cores": {
             "type": "integer"
           },
@@ -3144,7 +3147,15 @@
             "format": "int64",
             "type": "integer"
           },
+          "net_down_avg": {
+            "format": "int64",
+            "type": "integer"
+          },
           "net_up": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "net_up_avg": {
             "format": "int64",
             "type": "integer"
           },
@@ -3199,6 +3210,7 @@
         },
         "required": [
           "cpu_percent",
+          "cpu_avg",
           "mem_used",
           "mem_total",
           "swap_used",
@@ -3208,6 +3220,8 @@
           "host_uptime",
           "net_up",
           "net_down",
+          "net_up_avg",
+          "net_down_avg",
           "xray_running",
           "xray_uptime",
           "xray_version",

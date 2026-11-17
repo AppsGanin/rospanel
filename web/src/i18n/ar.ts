@@ -4318,6 +4318,43 @@ const ar: Dict = {
     reverts: "التراجعات",
   },
 
+  serverLoad: {
+    action: "المراقبة",
+    titleOf: "المراقبة — «{{name}}»",
+    range: {
+      "24h": "24 ساعة",
+      "7d": "7 أيام",
+      "30d": "30 يومًا",
+    },
+    uptime: "التوفر",
+    outages: "الانقطاعات",
+    downtime: "مدة التوقف",
+    loadTitle: "المعالج والذاكرة والقرص",
+    availability: "التوفر",
+    outageLog: "الانقطاعات",
+    noOutages: "لا انقطاعات",
+    noHistory: "سيظهر السجل خلال بضع دقائق",
+    noData: "لا بيانات",
+    upShare: "يعمل {{pct}}% من الوقت",
+    ongoing: "مستمر، {{dur}}",
+    peak: "الذروة",
+    disk: "القرص",
+    netTitle: "الشبكة",
+    netIn: "وارد",
+    netOut: "صادر",
+    onlineTitle: "المستخدمون المتصلون",
+    online: "متصل",
+    onlinePeak: "ذروة الاتصال",
+    trafficIn: "حركة واردة",
+    trafficOut: "حركة صادرة",
+    rate: {
+      b: "{{n}} بت/ث",
+      k: "{{n}} كيلوبت/ث",
+      m: "{{n}} ميغابت/ث",
+      g: "{{n}} غيغابت/ث",
+    },
+  },
+
   nodes: {
     traffic: {
       title: "حد البيانات",

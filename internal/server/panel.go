@@ -659,6 +659,7 @@ func (rt *Router) panelMux() http.Handler {
 	canLogs("GET /api/nodes/{id}/logs", withID(rt.nodeLogs))
 	canServersManage("GET /api/nodes/{id}/xray-config", withID(rt.nodeXrayConfig))
 	canServersView("GET /api/nodes/{id}/health", withID(rt.nodeHealth))
+	canServersView("GET /api/nodes/{id}/load", withID(rt.nodeLoad))
 	canServersView("GET /api/nodes/{id}/reach", withID(rt.nodeReach))
 	canServersView("POST /api/nodes/{id}/reach", withID(rt.checkNodeReach))
 	canServersView("GET /api/reach", rt.getReach)

@@ -503,8 +503,11 @@ func (a *Agent) hostStats() *nodeapi.HostStats {
 	firewall := ipblock.CanEnforce()
 	return &nodeapi.HostStats{
 		CPUPercent: st.CPUPercent,
+		CPUAvg:     st.CPUAvg,
 		NetUp:      st.NetUp,
 		NetDown:    st.NetDown,
+		NetUpAvg:   st.NetUpAvg,
+		NetDownAvg: st.NetDownAvg,
 		DiskUsed:   st.DiskUsed,
 		DiskTotal:  st.DiskTotal,
 		MemUsed:    st.MemUsed,

@@ -34,6 +34,7 @@ import {
   Skeletons,
 } from "./ui";
 import { ManagementCard } from "./Management";
+import { ServerLoadDialog } from "./ServerLoad";
 
 // SPARK_DAYS is how far back the traffic chart reaches. The panel keeps traffic per
 // DAY (model.TrafficDailyRetentionDays), not per hour, so this is a week of days
@@ -105,15 +106,21 @@ const SERVER_COLS =
 // serving, how loaded the machine is, and what it carried today. A server that has
 // never reported says so across the three load columns rather than showing empty
 // bars, which read as an idle machine.
-function ServerRow({ node }: { node: NodeView }) {
+// A row opens the server's monitoring dialog when the reader may see it.
+function ServerRow({ node, onOpen }: { node: NodeView; onOpen?: () => void }) {
   const { t } = useTranslation();
   const state = nodeState(node);
   const pct = (used: number, total: number) => (total > 0 ? (used / total) * 100 : 0);
   const traffic = (node.traffic_up ?? 0) + (node.traffic_down ?? 0);
+  const Row = onOpen ? "button" : "div";
   return (
-    <div
+    <Row
+      type={onOpen ? "button" : undefined}
+      onClick={onOpen}
+      title={onOpen ? t("serverLoad.action") : undefined}
       className={cn(
-        "grid items-center gap-2.5 border-b border-gray-100 px-3.5 py-2 last:border-0",
+        "grid w-full items-center gap-2.5 border-b border-gray-100 px-3.5 py-2 text-start last:border-0",
+        onOpen && "cursor-pointer transition hover:bg-gray-50",
         SERVER_COLS,
         // The one row an operator must not scroll past. Far fainter than a chip:
         // it sits under text that still has to read as text.
@@ -153,7 +160,7 @@ function ServerRow({ node }: { node: NodeView }) {
       <Mono className="text-end text-xs text-gray-800 max-sm:col-start-2 max-sm:row-start-1">
         {fmtBytes(traffic)}
       </Mono>
-    </div>
+    </Row>
   );
 }
 
@@ -190,6 +197,9 @@ function OverviewSkeleton() {
 export function OverviewPanel() {
   const { t } = useTranslation();
   const canServers = useCan("servers.view", "routing.view");
+  // The monitoring dialog reads /api/nodes/{id}/load, which is servers.view only.
+  const canLoad = useCan("servers.view");
+  const [loadOf, setLoadOf] = useState<NodeView | null>(null);
   const canUsers = useCan("users.view");
   const canStats = useCan("stats.view");
   // The server shows plugin tiles to either permission; anyone else would get a 403
@@ -547,7 +557,16 @@ export function OverviewPanel() {
               </div>
               {nodes.length === 0
                 ? <Skeletons n={2} row="border-b border-gray-100 px-3.5 py-3 last:border-0" className="h-3.5 w-full" />
-                : nodes.map((n) => <ServerRow key={n.id} node={n} />)}
+                : nodes.map((n) => (
+                    <ServerRow key={n.id} node={n} onOpen={canLoad ? () => setLoadOf(n) : undefined} />
+                  ))}
+              {loadOf && (
+                <ServerLoadDialog
+                  nodeId={loadOf.id}
+                  title={t("serverLoad.titleOf", { name: serverName(loadOf) })}
+                  onClose={() => setLoadOf(null)}
+                />
+              )}
             </Panel>
           </div>
         )}

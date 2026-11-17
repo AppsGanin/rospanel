@@ -37,7 +37,8 @@ export function cssVar(name: string, fallback: string): string {
   return v || fallback
 }
 
-const TEAL = '#0d9488' // distinct second data series (kept independent of accent)
+export const TEAL = '#0d9488' // distinct second data series (kept independent of accent)
+export const AMBER = '#d97706' // a third series, where two colours are not enough
 
 type Point = { day: string; up: number; down: number }
 
@@ -304,5 +305,108 @@ export function DayBars({
         )
       })}
     </div>
+  )
+}
+
+// LoadSeries is one line of a server's load chart: key reads the step's average,
+// peak its highest sample (shown in the tooltip, which a coarse step would
+// otherwise hide). null in the data is a gap, drawn as a break in the line rather
+// than a drop to zero.
+export type LoadSeries = {
+  key: string
+  peak?: string
+  label: string
+  color: string
+}
+
+// LoadArea draws a server's load over time, one area per series. fmt renders a
+// value on the axis and in the tooltip; max, when set, fixes the axis top (100 for
+// percentages).
+export function LoadArea({
+  data,
+  series,
+  fmt,
+  max,
+  height = 200,
+  axisWidth = 44,
+  tick,
+  stamp,
+}: {
+  data: object[]
+  series: LoadSeries[]
+  fmt: (v: number) => string
+  max?: number
+  // axisWidth fits the longest tick label: "100%" needs little, "960 kbit/s" more.
+  axisWidth?: number
+  height?: number
+  tick: (t: number) => string
+  stamp: (t: number) => string
+}) {
+  const grid = cssVar('--color-gray-200', '#eef2f7')
+  const axis = cssVar('--color-ink-muted', '#8995a5')
+  const byKey = new Map(series.map((s) => [s.key, s]))
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <RAreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <defs>
+          {series.map((s) => (
+            <linearGradient key={s.key} id={`gLoad-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={s.color} stopOpacity={0.25} />
+              <stop offset="100%" stopColor={s.color} stopOpacity={0} />
+            </linearGradient>
+          ))}
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke={grid} vertical={false} />
+        <XAxis
+          dataKey="t"
+          tickFormatter={tick}
+          tick={{ fontSize: 11, fill: axis }}
+          tickLine={false}
+          axisLine={false}
+          minTickGap={40}
+        />
+        <YAxis
+          domain={[0, max ?? 'auto']}
+          ticks={max === 100 ? [0, 25, 50, 75, 100] : undefined}
+          allowDecimals={false}
+          tickFormatter={(v) => fmt(num(v))}
+          tick={{ fontSize: 11, fill: axis }}
+          tickLine={false}
+          axisLine={false}
+          width={axisWidth}
+        />
+        <Tooltip
+          labelFormatter={(v) => stamp(num(v))}
+          formatter={(v, n, item) => {
+            const s = byKey.get(String(n))
+            const row = item?.payload as Record<string, number | null> | undefined
+            const peak = s?.peak ? row?.[s.peak] : null
+            const avg = fmt(num(v))
+            return [peak != null ? `${avg} · ${i18n.t('serverLoad.peak')} ${fmt(peak)}` : avg, s?.label ?? String(n)]
+          }}
+          contentStyle={{ borderRadius: 12, border: `1px solid ${grid}`, fontSize: 13 }}
+        />
+        {series.length > 1 && (
+          // In the order given, not sorted by name: CPU and RAM belong together.
+          <Legend
+            formatter={(v) => byKey.get(String(v))?.label ?? String(v)}
+            itemSorter={null}
+            iconType="circle"
+            wrapperStyle={{ fontSize: 13 }}
+          />
+        )}
+        {series.map((s) => (
+          <Area
+            key={s.key}
+            type="monotone"
+            dataKey={s.key}
+            stroke={s.color}
+            fill={`url(#gLoad-${s.key})`}
+            strokeWidth={2}
+            isAnimationActive={false}
+          />
+        ))}
+      </RAreaChart>
+    </ResponsiveContainer>
   )
 }

@@ -253,6 +253,8 @@ export const IconTerminal = ({ size = 16, className }: IconProps) =>
   );
 export const IconPulse = ({ size = 16, className }: IconProps) =>
   svg(size, className, <path d="M3 12h4l2 5 4-12 2 7h6" />);
+export const IconChart = ({ size = 16, className }: IconProps) =>
+  svg(size, className, <path d="M4 4v16h16M8 15l3-4 3 2 5-6" />);
 export const IconSun = ({ size = 16, className }: IconProps) =>
   svg(
     size,

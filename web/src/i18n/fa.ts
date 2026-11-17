@@ -4436,6 +4436,43 @@ const fa: Dict = {
     reverts: "بازگردانی‌ها",
   },
 
+  serverLoad: {
+    action: "پایش",
+    titleOf: "پایش — «{{name}}»",
+    range: {
+      "24h": "24 ساعت",
+      "7d": "7 روز",
+      "30d": "30 روز",
+    },
+    uptime: "دسترس‌پذیری",
+    outages: "قطعی‌ها",
+    downtime: "مدت قطعی",
+    loadTitle: "پردازنده، حافظه و دیسک",
+    availability: "دسترس‌پذیری",
+    outageLog: "قطعی‌ها",
+    noOutages: "قطعی‌ای نبوده",
+    noHistory: "تاریخچه تا چند دقیقه دیگر نمایش داده می‌شود",
+    noData: "بدون داده",
+    upShare: "{{pct}}٪ از زمان فعال",
+    ongoing: "ادامه دارد، {{dur}}",
+    peak: "اوج",
+    disk: "دیسک",
+    netTitle: "شبکه",
+    netIn: "ورودی",
+    netOut: "خروجی",
+    onlineTitle: "کاربران آنلاین",
+    online: "آنلاین",
+    onlinePeak: "اوج آنلاین",
+    trafficIn: "ترافیک ورودی",
+    trafficOut: "ترافیک خروجی",
+    rate: {
+      b: "{{n}} بیت/ث",
+      k: "{{n}} کیلوبیت/ث",
+      m: "{{n}} مگابیت/ث",
+      g: "{{n}} گیگابیت/ث",
+    },
+  },
+
   nodes: {
     traffic: {
       title: "محدودیت ترافیک",

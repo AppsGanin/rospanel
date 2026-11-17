@@ -4409,6 +4409,43 @@ const zh: Dict = {
     reverts: "回退",
   },
 
+  serverLoad: {
+    action: "监控",
+    titleOf: "监控 — “{{name}}”",
+    range: {
+      "24h": "24 小时",
+      "7d": "7 天",
+      "30d": "30 天",
+    },
+    uptime: "可用率",
+    outages: "中断次数",
+    downtime: "停机时长",
+    loadTitle: "CPU、内存和磁盘",
+    availability: "可用性",
+    outageLog: "中断记录",
+    noOutages: "没有中断",
+    noHistory: "几分钟后会出现历史数据",
+    noData: "无数据",
+    upShare: "{{pct}}% 的时间在线",
+    ongoing: "进行中，{{dur}}",
+    peak: "峰值",
+    disk: "磁盘",
+    netTitle: "网络",
+    netIn: "入站",
+    netOut: "出站",
+    onlineTitle: "在线用户",
+    online: "在线",
+    onlinePeak: "在线峰值",
+    trafficIn: "入站流量",
+    trafficOut: "出站流量",
+    rate: {
+      b: "{{n}} bit/s",
+      k: "{{n}} kbit/s",
+      m: "{{n}} Mbit/s",
+      g: "{{n}} Gbit/s",
+    },
+  },
+
   nodes: {
     traffic: {
       title: "流量限额",

@@ -4436,6 +4436,43 @@ const ru = {
     reverts: "Откаты",
   },
 
+  serverLoad: {
+    action: "Мониторинг",
+    titleOf: "Мониторинг — «{{name}}»",
+    range: {
+      "24h": "24 часа",
+      "7d": "7 дней",
+      "30d": "30 дней",
+    },
+    uptime: "Доступность",
+    outages: "Отключений",
+    downtime: "Простой",
+    loadTitle: "CPU, RAM и диск",
+    availability: "Доступность",
+    outageLog: "Отключения",
+    noOutages: "Отключений не было",
+    noHistory: "История появится через несколько минут",
+    noData: "нет данных",
+    upShare: "работал {{pct}}% времени",
+    ongoing: "идёт {{dur}}",
+    peak: "пик",
+    disk: "Диск",
+    netTitle: "Сеть",
+    netIn: "Входящий",
+    netOut: "Исходящий",
+    onlineTitle: "Пользователи онлайн",
+    online: "Онлайн",
+    onlinePeak: "Пик онлайн",
+    trafficIn: "Трафик входящий",
+    trafficOut: "Трафик исходящий",
+    rate: {
+      b: "{{n}} бит/с",
+      k: "{{n}} Кбит/с",
+      m: "{{n}} Мбит/с",
+      g: "{{n}} Гбит/с",
+    },
+  },
+
   nodes: {
     traffic: {
       title: "Лимит трафика",

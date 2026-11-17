@@ -16,6 +16,10 @@ import (
 // per-second rates.
 type Stats struct {
 	CPUPercent float64 `json:"cpu_percent"`
+	// CPUAvg is CPU utilisation averaged over the last minute (or since start, if
+	// sooner). The load history samples once a minute, and the 2 s figure taken at
+	// that instant would be a coin toss on a bursty machine.
+	CPUAvg     float64 `json:"cpu_avg"`
 	MemUsed    int64   `json:"mem_used"`
 	MemTotal   int64   `json:"mem_total"`
 	SwapUsed   int64   `json:"swap_used"`
@@ -25,6 +29,10 @@ type Stats struct {
 	HostUptime int64   `json:"host_uptime"` // seconds
 	NetUp      int64   `json:"net_up"`      // bytes/sec
 	NetDown    int64   `json:"net_down"`    // bytes/sec
+	// NetUpAvg and NetDownAvg are the same averaged over the last minute, for the
+	// load history (like CPUAvg).
+	NetUpAvg   int64 `json:"net_up_avg"`
+	NetDownAvg int64 `json:"net_down_avg"`
 }
 
 type cpuTimes struct{ total, idle uint64 }
@@ -39,12 +47,21 @@ type Sampler struct {
 	netUp    int64
 	netDown  int64
 	lastCPU  cpuTimes
+	cpuRing  [cpuAvgWindow]float64 // the last minute of 2 s CPU figures
+	cpuN     int                   // how many slots of cpuRing hold a figure
+	cpuAt    int                   // next slot to write
 	lastNet  netCounters
 	lastNetT time.Time
+	netRing  [cpuAvgWindow][2]int64 // the last minute of 2 s rates: up, down
+	netN     int
+	netAt    int
 
 	stop     chan struct{}
 	stopOnce sync.Once
 }
+
+// cpuAvgWindow is how many 2 s CPU figures CPUAvg averages: one minute's worth.
+const cpuAvgWindow = 30
 
 // New starts a sampler that refreshes CPU/network rates every 2s.
 func New(diskPath string) *Sampler {
@@ -82,6 +99,11 @@ func (s *Sampler) sample() {
 		dIdle := float64(cur.idle - s.lastCPU.idle)
 		if dTot > 0 {
 			s.cpu = (1 - dIdle/dTot) * 100
+			s.cpuRing[s.cpuAt] = s.cpu
+			s.cpuAt = (s.cpuAt + 1) % cpuAvgWindow
+			if s.cpuN < cpuAvgWindow {
+				s.cpuN++
+			}
 		}
 		s.lastCPU = cur
 		s.mu.Unlock()
@@ -93,6 +115,11 @@ func (s *Sampler) sample() {
 		if dt > 0 {
 			s.netDown = int64(float64(cur.rx-s.lastNet.rx) / dt)
 			s.netUp = int64(float64(cur.tx-s.lastNet.tx) / dt)
+			s.netRing[s.netAt] = [2]int64{s.netUp, s.netDown}
+			s.netAt = (s.netAt + 1) % cpuAvgWindow
+			if s.netN < cpuAvgWindow {
+				s.netN++
+			}
 		}
 		s.lastNet = cur
 		s.lastNetT = now
@@ -105,8 +132,25 @@ func (s *Sampler) Read() Stats {
 	var st Stats
 	s.mu.Lock()
 	st.CPUPercent = s.cpu
+	st.CPUAvg = s.cpu
+	if s.cpuN > 0 {
+		var sum float64
+		for _, v := range s.cpuRing[:s.cpuN] {
+			sum += v
+		}
+		st.CPUAvg = sum / float64(s.cpuN)
+	}
 	st.NetUp = s.netUp
 	st.NetDown = s.netDown
+	st.NetUpAvg, st.NetDownAvg = s.netUp, s.netDown
+	if s.netN > 0 {
+		var up, down int64
+		for _, v := range s.netRing[:s.netN] {
+			up += v[0]
+			down += v[1]
+		}
+		st.NetUpAvg, st.NetDownAvg = up/int64(s.netN), down/int64(s.netN)
+	}
 	s.mu.Unlock()
 
 	memTotal, memAvail, swapTotal, swapFree := readMem()

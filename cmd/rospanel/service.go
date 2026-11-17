@@ -708,6 +708,7 @@ func retentionLoop(mgr *core.Manager) func(context.Context) {
 		mgr.PurgeOldAbuse()           // blocklist matches past their (short) window
 		mgr.PurgeOldTraffic()         // per-day traffic history past a year
 		mgr.PurgeOldUptime()          // status-page history past its window
+		mgr.PurgeOldLoad()            // server load charts past their window
 		mgr.PurgeExpiredUsers()       // no-op unless the operator set a grace period
 		mgr.PurgeDeletedNodes()       // reclaim node tombstones past their grace window
 	}

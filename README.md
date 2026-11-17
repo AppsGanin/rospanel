@@ -870,6 +870,8 @@ every node until unbanned. Every block, manual or automatic, with unban — in *
 
 #### 🧰 Operations and security
 
+**Server monitoring** (*server card → chart, or a server on the dashboard*) — CPU, RAM, disk, network in and out, users online and availability of every server, master included, over 24 hours, 7 or 30 days, plus an outage log with start and duration. Sampled once a minute.
+
 **Diagnostics** in one click: the Xray process, the AmneziaWG tunnel, config application, TLS expiry, disk space, geo
 database freshness, egress health — every check with a hint. A separate **connection self-test**
 connects to each protocol as a real client and confirms traffic actually goes out — catching

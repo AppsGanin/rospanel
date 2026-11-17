@@ -453,6 +453,16 @@ func (rt *Router) nodeHealth(w http.ResponseWriter, _ *http.Request, id int64) {
 	writeJSON(w, http.StatusOK, rep)
 }
 
+// nodeLoad serves a server's load charts: ?range=24h|7d|30d.
+func (rt *Router) nodeLoad(w http.ResponseWriter, r *http.Request, id int64) {
+	rep, err := rt.mgr.ServerLoad(id, r.URL.Query().Get("range"))
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
+}
+
 // setNodeEnabled toggles whether a node serves traffic and appears in links.
 func (rt *Router) setNodeEnabled(w http.ResponseWriter, r *http.Request, id int64) {
 	var req struct {

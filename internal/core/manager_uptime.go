@@ -27,6 +27,8 @@ func (m *Manager) SampleUptime() {
 	if err != nil {
 		return
 	}
+	// The load charts take the same tick with the same meaning of "up".
+	m.sampleLoad(nodes, time.Now())
 	now := time.Now().Unix()
 	for i := range nodes {
 		n := &nodes[i]

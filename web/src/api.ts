@@ -2186,6 +2186,43 @@ export interface HealthReport {
 // it per server.)
 export const getNodeHealth = (id: number) => api<HealthReport>(`api/nodes/${id}/health`)
 
+// A server's load charts (node 0 is the panel's own). One point per step across
+// the window; null where nothing was sampled or nothing reported.
+export type LoadRange = '24h' | '7d' | '30d'
+export type LoadPoint = {
+  t: number
+  cpu: number | null
+  cpu_max: number | null
+  mem: number | null
+  mem_max: number | null
+  up: number | null
+  // disk in percent, rx/tx in bytes per second, online in users
+  disk: number | null
+  disk_max: number | null
+  rx: number | null
+  rx_max: number | null
+  tx: number | null
+  tx_max: number | null
+  online: number | null
+  online_max: number | null
+}
+export type LoadReport = {
+  range: LoadRange
+  from: number
+  to: number
+  step: number
+  points: LoadPoint[]
+  outages: { start: number; end: number }[]
+  uptime: number
+  samples: number
+  down_seconds: number
+  rx_bytes: number
+  tx_bytes: number
+  online_max: number
+}
+export const getNodeLoad = (id: number, range: LoadRange) =>
+  api<LoadReport>(`api/nodes/${id}/load?range=${range}`)
+
 export type BulkAction = 'enable' | 'disable' | 'reset' | 'extend' | 'delete'
 
 // bulkUsers applies one action to many users in a single server pass (one Xray
