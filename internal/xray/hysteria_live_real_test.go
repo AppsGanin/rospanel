@@ -20,6 +20,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -112,8 +113,14 @@ func TestSyncHysteriaAgainstRealXray(t *testing.T) {
 	for _, email := range []string{"u1", "u2", "u3"} {
 		fetchers[email] = hysteriaClient(t, bin, dir, email, hyPort, pin)
 	}
+	// The background loop below reads the clients while the test adds one (the new
+	// key's): the map is guarded.
+	var fetchersMu sync.Mutex
 	get := func(email string) error {
-		resp, err := fetchers[email].Get(targetURL)
+		fetchersMu.Lock()
+		client := fetchers[email]
+		fetchersMu.Unlock()
+		resp, err := client.Get(targetURL)
 		if err != nil {
 			return err
 		}
@@ -189,7 +196,10 @@ func TestSyncHysteriaAgainstRealXray(t *testing.T) {
 	if err := get("u3"); err == nil {
 		t.Error("u3's connection on the old key still carries traffic after the new key")
 	}
-	fetchers["u3-new"] = hysteriaClientAuth(t, bin, dir, "u3-new", "pw-u3-new", hyPort, pin)
+	newKey := hysteriaClientAuth(t, bin, dir, "u3-new", "pw-u3-new", hyPort, pin)
+	fetchersMu.Lock()
+	fetchers["u3-new"] = newKey
+	fetchersMu.Unlock()
 	waitFor(t, "u3 to get through on the new key", func() bool { return get("u3-new") == nil })
 
 	close(stop)
