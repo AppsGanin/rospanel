@@ -17,7 +17,8 @@ import (
 // certPath/keyPath. force=true always (re)issues; force=false issues only when
 // the cert is missing or near expiry. If ACME fails and no usable cert is on
 // disk, it writes a self-signed fallback (and returns the ACME error so the
-// caller logs it and keeps retrying). An existing usable cert is left untouched.
+// caller logs it and keeps retrying). An existing usable cert is left untouched
+// when it covers the configured host, or when force is set.
 func Ensure(set *model.Settings, certPath, keyPath, acmeDir string, force bool) error {
 	err := ensureACME(set, certPath, keyPath, acmeDir, force)
 	if err == nil {
@@ -31,7 +32,11 @@ func Ensure(set *model.Settings, certPath, keyPath, acmeDir string, force bool) 
 	// client rejects, and the panel behind :443 goes with it — recoverable only over SSH.
 	// A self-signed cert keeps clients working, because the subscription pins its
 	// fingerprint (see applyTLSHints).
-	if !tlsutil.Usable(certPath) {
+	// "For this host" too, unless forced. A node whose host changed keeps a usable CA
+	// cert that names the old host: every client fails the name check, and nothing
+	// pins it. A forced issue is the panel's own host change, and its caller puts the
+	// old host back on failure, so the old host's cert must survive it.
+	if !tlsutil.Usable(certPath) || (!force && set.Host != "" && !tlsutil.CertCovers(certPath, set.Host)) {
 		cert, key, gerr := tlsutil.GenerateSelfSigned(set.Host)
 		if gerr != nil {
 			return fmt.Errorf("acme failed (%w); self-signed fallback failed: %v", err, gerr)
