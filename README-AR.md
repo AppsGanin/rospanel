@@ -263,6 +263,7 @@ Amnezia VPN 5.0.1.5 أو أحدث؛ والخادم الذي وُلّدت معا�
 `u<id>`، وكلمة المرور UUID الخاص بالمستخدم. في الاشتراك يُقدَّم للعملاء الذين يستوردونه —
 Shadowrocket (بصيغة `http2://`)، وv2rayN، وKaring، وThrone، وExclave — حين تكون الشهادة موثوقة
 (نطاق أو شهادة Let's Encrypt لعنوان IP).
+ويمرّ عبره UDP أيضًا لدى Shadowrocket وThrone (UDP over TCP)، فتعمل المكالمات.
 
 **mieru** مسار مدمج على منفذ TCP خاص به يُختار تلقائيًا. اسم الدخول `u<id>`، وكلمة المرور UUID الخاص
 بالمستخدم؛ والتوجيه واحتساب البيانات والحدود والقطع تعمل كما في المسارات الأخرى. في الاشتراك يُقدَّم
@@ -279,7 +280,7 @@ UUID الخاص بالمستخدم. يُقدَّم لعملاء sing-box، وم�
 **TrustTunnel** (بروتوكول AdGuard) مسار مدمج على منفذ VLESS-TCP-TLS عبر HTTP/2، خلف الشهادة نفسها
 وموقع التمويه نفسه: TCP وUDP، باسم الدخول `tt-u<id>` وكلمة المرور UUID المستخدم. يتطلب نطاقًا بشهادة
 موثوقة: لا تتصل التطبيقات عبر IP. تستورد تطبيقاته (TrustTunnel لـ iOS وAndroid وmacOS وعميل سطر الأوامر)
-رابط `tt://` من صفحة الاشتراك؛ ويحصل عليه Throne (من 1.2.0؛ وAndroid من 2.0.0) وExclave (من 0.17.19) وLxBox (من 2.25.19) وNyameBox (من 5.11.28) ضمن الاشتراك، ونوى mihomo من 1.19.21 ضمن Clash (ClashMetaForAndroid 2.11.24+ وFlClash 0.8.93+ وClash Verge Rev 2.4.7+ وClash Party 1.9.3+ وFlClashX وClashMi).
+رابط `tt://` من صفحة الاشتراك؛ ويحصل عليه Throne (من 1.2.0؛ وAndroid من 2.0.0) وExclave (من 0.17.19) وLxBox (من 2.25.19) وShadowrocket وNyameBox (من 5.11.28) ضمن الاشتراك، ونوى mihomo من 1.19.21 ضمن Clash (ClashMetaForAndroid 2.11.24+ وFlClash 0.8.93+ وClash Verge Rev 2.4.7+ وClash Party 1.9.3+ وFlClashX وClashMi).
 
 **MTProto (وكيل Telegram)** مسار مدمج على منفذ TCP خاص به يُختار تلقائيًا، ومفعّل افتراضيًا: يتصل
 Telegram نفسه عبر الخادم دون تطبيق VPN. ‏fake TLS مع سرّ لكل مستخدم مشتق من UUID الخاص به — يفقده

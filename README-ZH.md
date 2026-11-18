@@ -236,7 +236,7 @@ DPI 设备无需看到握手即可匹配——同时为全部四种消息类型�
 **NaiveProxy** 是位于 VLESS-TCP-TLS 端口上的内置通道：使用 Chrome 网络栈的客户端，由 :443 后的伪装站点
 以同一张证书提供服务。路由、流量统计、限制和断开与其他通道一致。登录名为 `u<id>`，密码为用户的 UUID。
 当证书受信任时（域名或 Let's Encrypt IP 证书），订阅会将其下发给支持导入的客户端——Shadowrocket（作为 `http2://`）、
-v2rayN、Karing、Throne、Exclave。
+v2rayN、Karing、Throne、Exclave。Shadowrocket 和 Throne 还会通过它传输 UDP（UDP over TCP），因此通话可用。
 
 **mieru** 是一条使用独立 TCP 端口的内置通道，端口自动选择。登录名为 `u<id>`，
 密码为用户的 UUID；路由、流量统计、限制和断开与其他通道一致。订阅会将其下发给支持导入的客户端——
@@ -252,7 +252,7 @@ Throne、Exclave、Karing 和 NekoBox。
 
 **TrustTunnel**（AdGuard 的协议）是位于 VLESS-TCP-TLS 端口上、基于 HTTP/2 的内置通道，与其共用证书和伪装站点：
 支持 TCP 和 UDP，登录名为 `tt-u<id>`，密码为用户的 UUID。需要拥有受信任证书的域名：应用无法通过 IP 连接。
-其应用（iOS、Android、macOS 版 TrustTunnel 及 CLI 客户端）从订阅页面导入 `tt://` 链接；Throne（1.2.0 起；Android 版 2.0.0 起）、Exclave（0.17.19 起）、LxBox（2.25.19 起）和 NyameBox（5.11.28 起）在订阅中获取该链接，1.19.21 起的 mihomo 内核在 Clash 配置中获取（ClashMetaForAndroid 2.11.24+、FlClash 0.8.93+、Clash Verge Rev 2.4.7+、Clash Party 1.9.3+、FlClashX、ClashMi）。
+其应用（iOS、Android、macOS 版 TrustTunnel 及 CLI 客户端）从订阅页面导入 `tt://` 链接；Throne（1.2.0 起；Android 版 2.0.0 起）、Exclave（0.17.19 起）、LxBox（2.25.19 起）、Shadowrocket 和 NyameBox（5.11.28 起）在订阅中获取该链接，1.19.21 起的 mihomo 内核在 Clash 配置中获取（ClashMetaForAndroid 2.11.24+、FlClash 0.8.93+、Clash Verge Rev 2.4.7+、Clash Party 1.9.3+、FlClashX、ClashMi）。
 
 **MTProto（Telegram 代理）** 是一条使用独立
 TCP端口的内置通道，端口自动选择，默认开启：Telegram 本身通过服务器连接，无需 VPN 应用。采用

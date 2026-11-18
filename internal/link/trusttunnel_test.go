@@ -46,7 +46,7 @@ func TestTrustTunnelLink(t *testing.T) {
 	}
 	f := ttFields(t, TrustTunnel(u, set))
 	want := map[uint64]string{
-		ttTagVersion:  "\x02",
+		ttTagVersion:  "\x01",
 		ttTagHostname: "vpn.example.com",
 		ttTagAddress:  "203.0.113.5:443",
 		ttTagUsername: "tt-u7",

@@ -20,7 +20,7 @@ func TrustTunnelOn(set *model.Settings) bool {
 	return set.TrustTunnelEnabled && !set.TLSInsecure && net.ParseIP(NaiveServerName(set)) == nil
 }
 
-// Deep link tags (TrustTunnel DEEP_LINK.md, version 2).
+// Deep link tags (TrustTunnel DEEP_LINK.md).
 const (
 	ttTagVersion  = 0x00
 	ttTagHostname = 0x01
@@ -30,7 +30,9 @@ const (
 	ttTagProtocol = 0x09
 	ttTagName     = 0x0C
 
-	ttLinkVersion = 2
+	// ttLinkVersion is 1: version 2 only adds subscription_url, which the link does not
+	// carry, and Shadowrocket rejects a version 2 link while every reader takes a lower one.
+	ttLinkVersion = 1
 	ttHTTP2       = 0x01
 )
 

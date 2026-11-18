@@ -279,6 +279,7 @@ TCP. Объявлять это через `Alt-Svc` она не стала — �
 работают как на остальных протоколах. Логин — `u<id>`, пароль — UUID пользователя. В подписке его
 получают клиенты, которые его понимают, — Shadowrocket (в форме `http2://`), v2rayN, Karing, Throne,
 Exclave, — при доверенном сертификате (домен или IP-сертификат Let's Encrypt).
+У Shadowrocket и Throne через него идёт и UDP (UDP over TCP), так что работают звонки.
 
 **mieru** — встроенный протокол на своём TCP-порту, порт выбирается автоматически. Логин — `u<id>`, пароль — UUID пользователя; маршрутизация,
 учёт трафика, лимиты и отключение работают как на остальных протоколах. В подписке его получают
@@ -295,7 +296,7 @@ ClashMetaForAndroid, ClashMi), ссылка `mierus://` для Shadowrocket, Thr
 **TrustTunnel** (протокол AdGuard) — встроенный протокол на порту VLESS-TCP-TLS по HTTP/2, за тем
 же сертификатом и сайтом-приманкой: TCP и UDP, логин `tt-u<id>`, пароль — UUID пользователя. Нужен
 домен с доверенным сертификатом: по IP приложения не подключаются. Приложения (TrustTunnel для iOS,
-Android, macOS, CLI-клиент) берут ссылку `tt://` со страницы подписки; Throne (с 1.2.0; Android — с 2.0.0), Exclave (с 0.17.19), LxBox (с 2.25.19) и NyameBox (с 5.11.28) получают её в подписке, ядра mihomo с 1.19.21 — в Clash (ClashMetaForAndroid 2.11.24+, FlClash 0.8.93+, Clash Verge Rev 2.4.7+, Clash Party 1.9.3+, FlClashX, ClashMi).
+Android, macOS, CLI-клиент) берут ссылку `tt://` со страницы подписки; Throne (с 1.2.0; Android — с 2.0.0), Exclave (с 0.17.19), LxBox (с 2.25.19), Shadowrocket и NyameBox (с 5.11.28) получают её в подписке, ядра mihomo с 1.19.21 — в Clash (ClashMetaForAndroid 2.11.24+, FlClash 0.8.93+, Clash Verge Rev 2.4.7+, Clash Party 1.9.3+, FlClashX, ClashMi).
 
 **MTProto (прокси для Telegram)** — встроенный протокол на своём TCP-порту, порт выбирается
 автоматически, включён по умолчанию: Telegram сам подключается через сервер, VPN-приложение не

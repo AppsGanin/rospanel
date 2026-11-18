@@ -282,6 +282,7 @@ served by the decoy site behind :443 with the same certificate. Routing, traffic
 and cut-off work as on the other lanes. The login is `u<id>`, the password the user's UUID. In the
 subscription it goes to the clients that import it — Shadowrocket (as `http2://`), v2rayN, Karing,
 Throne, Exclave — when the certificate is trusted (a domain or a Let's Encrypt IP certificate).
+Shadowrocket and Throne also carry UDP through it (UDP over TCP), so calls work.
 
 **mieru** is a built-in lane on a TCP port of its own, picked automatically. The login is `u<id>`,
 the password the user's UUID; routing, traffic accounting, limits and cut-off work as on the other
@@ -300,7 +301,7 @@ cores that have it), v2rayN, Shadowrocket, Throne, Exclave, Karing and NekoBox, 
 behind the same certificate and decoy site: TCP and UDP, the login `tt-u<id>`, the password the
 user's UUID. Requires a domain with a trusted certificate: the apps do not connect to an IP. Its
 apps (TrustTunnel for iOS, Android, macOS, the CLI client) import the `tt://` link from the
-subscription page; Throne (from 1.2.0; Android from 2.0.0), Exclave (from 0.17.19), LxBox (from 2.25.19) and NyameBox (from 5.11.28) get it in the subscription, mihomo cores from 1.19.21 in Clash (ClashMetaForAndroid 2.11.24+, FlClash 0.8.93+, Clash Verge Rev 2.4.7+, Clash Party 1.9.3+, FlClashX, ClashMi).
+subscription page; Throne (from 1.2.0; Android from 2.0.0), Exclave (from 0.17.19), LxBox (from 2.25.19), Shadowrocket and NyameBox (from 5.11.28) get it in the subscription, mihomo cores from 1.19.21 in Clash (ClashMetaForAndroid 2.11.24+, FlClash 0.8.93+, Clash Verge Rev 2.4.7+, Clash Party 1.9.3+, FlClashX, ClashMi).
 
 **MTProto (Telegram proxy)** is a built-in lane on a TCP port of its own, picked automatically, on
 by default: Telegram itself connects through the server, no VPN app needed. Fake TLS with a secret

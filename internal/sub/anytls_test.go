@@ -52,6 +52,7 @@ func TestAnyTLSClients(t *testing.T) {
 		{"throne android trusttunnel old", TrustTunnelLinkFor, "Throne/Android/1.6.4", false},
 		{"lxbox trusttunnel", TrustTunnelLinkFor, "LxBox-android/2.25.19", true},
 		{"lxbox trusttunnel old", TrustTunnelLinkFor, "LxBox-android/2.25.18", false},
+		{"shadowrocket trusttunnel", TrustTunnelLinkFor, "Shadowrocket/2.2.80 CFNetwork/3826.500.131 Darwin/24.5.0", true},
 		{"nyamebox no trusttunnel", TrustTunnelLinkFor, "nekobox/5.10.1 (Prefer ClashMeta Format)", false},
 		{"throne android mieru", MieruLinkFor, "Throne/Android/2.0.6", true},
 		{"throne android anytls", AnyTLSLinkFor, "Throne/Android/2.0.6", true},

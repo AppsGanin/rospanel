@@ -111,8 +111,8 @@ var v2rayngUA = regexp.MustCompile(`(?i)^v2rayng/v?(\d+)\.(\d+)\.(\d+)`)
 
 // TrustTunnelLinkFor reports whether a subscription client imports the tt:// link —
 // checked against each client's own parser: Throne from 1.2.0, Throne for Android from
-// 2.0.0, Exclave from 0.17.19, LxBox from 2.25.19, NyameBox on the link list
-// (NyameBoxLinkList).
+// 2.0.0, Exclave from 0.17.19, LxBox from 2.25.19, Shadowrocket (version 1 links only,
+// which link.TrustTunnel is), NyameBox on the link list (NyameBoxLinkList).
 // husi reads tt:// too, but its User-Agent gets the sing-box profile; the mihomo family
 // gets the Clash proxy (clashTrustTunnel); TrustTunnel's own apps take no subscription.
 // An empty User-Agent is a hand-made request, which gets every form.
@@ -141,7 +141,7 @@ func trustTunnelLinkFor(userAgent string) func(model.User, *model.Settings) stri
 			return nil
 		}
 	}
-	if userAgent == "" {
+	if userAgent == "" || strings.Contains(strings.ToLower(userAgent), "shadowrocket") {
 		return link.TrustTunnel
 	}
 	return nil

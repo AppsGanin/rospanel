@@ -272,7 +272,7 @@ func TestNaiveLinkForShadowrocket(t *testing.T) {
 	if string(auth) != "u3:11111111-2222-3333-4444-555555555555@203.0.113.5:443" {
 		t.Fatalf("payload %q", auth)
 	}
-	if q := pu.Query(); q.Get("padding") != "1" || q.Get("peer") != "vpn.example.com" {
+	if q := pu.Query(); q.Get("padding") != "1" || q.Get("peer") != "vpn.example.com" || q.Get("uot") != "2" {
 		t.Fatalf("query %v", q)
 	}
 	if pu.Fragment != "NAIVEPROXY" {

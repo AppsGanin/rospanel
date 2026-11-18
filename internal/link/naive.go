@@ -37,13 +37,15 @@ func NaiveUoT(u model.User, set *model.Settings) string {
 
 // NaiveShadowrocket is the same credential in the form Shadowrocket imports for its
 // NaiveProxy type (HTTP2): http2://base64(u<id>:<uuid>@host:port)?padding=1&peer=<name>
-// #label — the userinfo base64'd unescaped, the certificate's name in peer.
+// &uot=2#label — the userinfo base64'd unescaped, the certificate's name in peer, and
+// uot=2 so its UDP rides the tunnel as UDP over TCP version 2, which the lane serves.
 func NaiveShadowrocket(u model.User, set *model.Settings) string {
 	auth := fmt.Sprintf("%s:%s@%s", model.UserEmail(u.ID), u.UUID,
 		net.JoinHostPort(set.Host, strconv.Itoa(set.VLESSPort)))
 	q := url.Values{}
 	q.Set("padding", "1")
 	q.Set("peer", NaiveServerName(set))
+	q.Set("uot", "2")
 	return fmt.Sprintf("http2://%s?%s#%s", base64.StdEncoding.EncodeToString([]byte(auth)),
 		q.Encode(), url.PathEscape(LabelFor(model.ProtoNaive, u, set)))
 }

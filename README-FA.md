@@ -269,6 +269,7 @@ NET_ADMIN`)، چون کانتینر به‌طور پیش‌فرض دستگاه T
 مسیرهای دیگر کار می‌کنند. نام کاربری `u<id>` و رمز عبور UUID کاربر است. در اشتراک به کلاینت‌هایی می‌رسد
 که آن را وارد می‌کنند — Shadowrocket (به‌صورت `http2://`)، v2rayN، Karing، Throne، Exclave — وقتی گواهی
 معتبر باشد (دامنه یا گواهی IP از Let's Encrypt).
+در Shadowrocket و Throne ترافیک UDP هم از آن عبور می‌کند (UDP over TCP)، پس تماس‌ها کار می‌کنند.
 
 **mieru** یک مسیر داخلی روی پورت TCP مخصوص خودش است که خودکار انتخاب می‌شود. نام کاربری `u<id>` و
 رمز عبور UUID کاربر است؛ مسیریابی، حسابرسی ترافیک، محدودیت‌ها و قطع اتصال مانند مسیرهای دیگر کار
@@ -286,7 +287,7 @@ Throne، Exclave، Karing و NekoBox می‌رسد، وقتی گواهی معت�
 **TrustTunnel** (پروتکل AdGuard) یک مسیر داخلی روی پورت VLESS-TCP-TLS با HTTP/2 است، پشت همان
 گواهی و سایت پوششی: TCP و UDP، نام کاربری `tt-u<id>` و رمز عبور UUID کاربر. دامنه با گواهی معتبر لازم
 است: برنامه‌ها با IP وصل نمی‌شوند. برنامه‌های آن (TrustTunnel برای iOS، Android، macOS و کلاینت خط فرمان)
-لینک `tt://` را از صفحهٔ اشتراک می‌گیرند؛ Throne (از 1.2.0؛ Android از 2.0.0)، Exclave (از 0.17.19)، LxBox (از 2.25.19) و NyameBox (از 5.11.28) آن را در اشتراک می‌گیرند و هسته‌های mihomo از 1.19.21 در Clash (ClashMetaForAndroid 2.11.24+، FlClash 0.8.93+، Clash Verge Rev 2.4.7+، Clash Party 1.9.3+، FlClashX، ClashMi).
+لینک `tt://` را از صفحهٔ اشتراک می‌گیرند؛ Throne (از 1.2.0؛ Android از 2.0.0)، Exclave (از 0.17.19)، LxBox (از 2.25.19)، Shadowrocket و NyameBox (از 5.11.28) آن را در اشتراک می‌گیرند و هسته‌های mihomo از 1.19.21 در Clash (ClashMetaForAndroid 2.11.24+، FlClash 0.8.93+، Clash Verge Rev 2.4.7+، Clash Party 1.9.3+، FlClashX، ClashMi).
 
 **MTProto (پروکسی Telegram)** یک مسیر داخلی روی پورت TCP مخصوص خودش است که خودکار انتخاب می‌شود و
 به‌طور پیش‌فرض روشن است: خود Telegram از طریق سرور وصل می‌شود و برنامهٔ VPN لازم نیست. ‏fake TLS با
