@@ -832,8 +832,7 @@ func bootstrapPanel(st *store.Store) (string, error) {
 	}
 	if n == 0 {
 		// Predictable default login; the first-run wizard forces a password change.
-		const password = "admin"
-		hash, err := auth.HashPassword(password)
+		hash, err := auth.HashPassword(defaultAdminPassword)
 		if err != nil {
 			return "", err
 		}
@@ -848,19 +847,23 @@ func bootstrapPanel(st *store.Store) (string, error) {
 		if _, err := st.CreateAdmin("admin", hash, model.RoleOwner, true); err != nil {
 			return "", err
 		}
-		printFirstRunBanner(set.Host, secret, "admin", password)
+		printFirstRunBanner(set.Host, secret)
 	}
 	return secret, nil
 }
 
-func printFirstRunBanner(host, secret, username, password string) {
+// defaultAdminPassword is the public bootstrap password: requireAuth lets the
+// account do nothing but change it, so the banner prints it as plain text.
+const defaultAdminPassword = "admin"
+
+func printFirstRunBanner(host, secret string) {
 	bar := strings.Repeat("=", 64)
 	log.Printf("\n%s\n FIRST-RUN CREDENTIALS (shown only once — save them now)\n%s\n"+
 		" Panel path : /%s/\n"+
 		" Full URL   : https://%s/%s/\n"+
-		" Username   : %s\n"+
-		" Password   : %s\n%s",
-		bar, bar, secret, model.URLHost(host), secret, username, password, bar)
+		" Username   : admin\n"+
+		" Password   : admin (change it on first login)\n%s",
+		bar, bar, secret, model.URLHost(host), secret, bar)
 }
 
 // panelDest converts the admin listen address into the loopback dest Xray uses
