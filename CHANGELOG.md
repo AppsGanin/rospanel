@@ -1,5 +1,33 @@
 # Changelog
 
+## [5.18.0](https://github.com/AppsGanin/rospanel/compare/v5.17.0...v5.18.0) (2026-11-18)
+
+
+### Features
+
+* **billing:** one return address after payment for every provider ([7b85658](https://github.com/AppsGanin/rospanel/commit/7b856586c654f89828dcfcad4714bb55c6bffdcb))
+* **billing:** renewal window and prepaid cap ([aae6941](https://github.com/AppsGanin/rospanel/commit/aae69418312fe3d51856c91d7a0335aab32386ed))
+* **routing:** egress lanes scoped to access groups ([1ae61c1](https://github.com/AppsGanin/rospanel/commit/1ae61c1b6def5c9d10f3fc90b3d22c6f5b5841b9))
+* **servers:** monitoring of CPU, RAM, disk, network, users online and uptime ([69abfbd](https://github.com/AppsGanin/rospanel/commit/69abfbdcd83042cd57ee774035db98cf4c6bbc31))
+* **stats:** cascade traffic counted on the exit server ([039169b](https://github.com/AppsGanin/rospanel/commit/039169b6a3cc88b86b938f570f35a144cbab8957))
+* **sub:** AmneziaWG, WireGuard and TURN-VK keys per device ([e06730b](https://github.com/AppsGanin/rospanel/commit/e06730bb2ab1bf5b29ab6ba7c54b9587d81eee27))
+* **sub:** Karing import link turns on the x-hwid header ([b23bfb7](https://github.com/AppsGanin/rospanel/commit/b23bfb7bc56e8a2e09429908f05d337b5f2679b6))
+* **sub:** TrustTunnel in subscriptions; link list for Hiddify 5 and NyameBox ([305c73f](https://github.com/AppsGanin/rospanel/commit/305c73f2ad4b3bc9208973946516794adb152f00))
+* **xhttp:** VLESS-XHTTP-TLS lane on the VLESS-TCP-TLS port behind the decoy ([8f270d6](https://github.com/AppsGanin/rospanel/commit/8f270d668a6bc07918450bb511f9efb59a7b3427))
+
+
+### Bug Fixes
+
+* **i18n:** Серверы instead of Сервера in Russian texts ([9603bbe](https://github.com/AppsGanin/rospanel/commit/9603bbe6747dc44bba91fcfc3c695c3e6bf83abd))
+* **inbounds:** show the label of the certificate-pin switch ([8f270d6](https://github.com/AppsGanin/rospanel/commit/8f270d668a6bc07918450bb511f9efb59a7b3427))
+* **links:** bracket an IPv6 server address in links and URLs ([35d0b27](https://github.com/AppsGanin/rospanel/commit/35d0b27dfe985ef7ec90af75521ba7fc47c81dc6))
+* **payments:** accept YooMoney's HMAC-SHA256 notification signature ([fab8de5](https://github.com/AppsGanin/rospanel/commit/fab8de53d56d5d735f0e9d5d71d9041611734d68))
+* **routing:** lane groups hint for a scoped catch-all lane ([1c89d55](https://github.com/AppsGanin/rospanel/commit/1c89d55ae2129c21f40f6f2ec6adfee7ac54079b))
+* **store:** stamp device-limit overruns in chunks of 900 ids ([09c4dda](https://github.com/AppsGanin/rospanel/commit/09c4dda5c778b73dcbf5d1aa08d5011f850be490))
+* **sub:** leave XHTTP out of Clash only for cores known to lack it ([8f270d6](https://github.com/AppsGanin/rospanel/commit/8f270d668a6bc07918450bb511f9efb59a7b3427))
+* **sub:** show a tap-to-open button inside the Telegram webview ([ccd9030](https://github.com/AppsGanin/rospanel/commit/ccd9030654bf047ac682d2fc8e8c7157d98465e7))
+* **tls:** replace the fallback certificate after a host change ([8b1153a](https://github.com/AppsGanin/rospanel/commit/8b1153ac3e3c8d604f2988390de032ec342955d3))
+
 ## [5.17.0](https://github.com/AppsGanin/rospanel/compare/v5.16.2...v5.17.0) (2026-11-12)
 
 
