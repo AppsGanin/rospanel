@@ -3,7 +3,9 @@ package link
 import (
 	"encoding/base64"
 	"fmt"
+	"net"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -50,8 +52,8 @@ func Custom(u model.User, in model.Inbound, set *model.Settings) string {
 // the inbound's own name rather than a protocol constant.
 func customAssemble(scheme, cred string, u model.User, in model.Inbound, q url.Values, set *model.Settings) string {
 	host, port := in.ClientEndpoint(set.Host)
-	return fmt.Sprintf("%s://%s@%s:%d?%s#%s",
-		scheme, cred, host, port, q.Encode(), url.PathEscape(CustomLabelFor(in, u, set)))
+	return fmt.Sprintf("%s://%s@%s?%s#%s",
+		scheme, cred, net.JoinHostPort(host, strconv.Itoa(port)), q.Encode(), url.PathEscape(CustomLabelFor(in, u, set)))
 }
 
 // transportParams writes the transport-specific query parameters (the ones that tell
@@ -232,6 +234,6 @@ func customShadowsocks(u model.User, in model.Inbound, set *model.Settings) stri
 	userKey := model.UserShadowKey(u.UUID, o.Method)
 	userinfo := base64.RawURLEncoding.EncodeToString(
 		[]byte(o.Method + ":" + o.ShadowKey + ":" + userKey))
-	return fmt.Sprintf("ss://%s@%s:%d#%s",
-		userinfo, set.Host, in.Port, url.PathEscape(CustomLabelFor(in, u, set)))
+	return fmt.Sprintf("ss://%s@%s#%s",
+		userinfo, net.JoinHostPort(set.Host, strconv.Itoa(in.Port)), url.PathEscape(CustomLabelFor(in, u, set)))
 }

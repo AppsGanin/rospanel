@@ -37,6 +37,12 @@ export function isIP(s: string): boolean {
   return /^[0-9a-fA-F:]+$/.test(v) && v.includes(':')
 }
 
+// urlHost is a host as it goes into a URL: an IPv6 literal in brackets, anything
+// else (including an already bracketed location.hostname) unchanged.
+export function urlHost(h: string): string {
+  return h.includes(':') && !h.startsWith('[') ? `[${h}]` : h
+}
+
 // isValidACMETarget reports whether target is acceptable: Let's Encrypt accepts
 // a domain OR an IP; ZeroSSL accepts domains only.
 export function isValidACMETarget(target: string, zerossl: boolean): boolean {

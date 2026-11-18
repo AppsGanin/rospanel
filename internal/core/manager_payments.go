@@ -397,7 +397,7 @@ func (m *Manager) PaymentWebhookURL(key string) string {
 	if set == nil || set.PaymentWebhookSecret == "" || set.Host == "" {
 		return ""
 	}
-	return "https://" + set.Host + "/" + set.PaymentWebhookSecret + "/" + key
+	return "https://" + model.URLHost(set.Host) + "/" + set.PaymentWebhookSecret + "/" + key
 }
 
 // StartPlanPayment creates an order plus a provider payment and returns the order

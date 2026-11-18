@@ -48,7 +48,7 @@ func LegalURL(set *model.Settings, kind string) string {
 	if strings.TrimSpace(set.Host) == "" || set.LegalPath == "" {
 		return ""
 	}
-	return "https://" + set.Host + "/" + set.SubPathOr() + "/" + set.LegalPath + "/" + kind
+	return "https://" + model.URLHost(set.Host) + "/" + set.SubPathOr() + "/" + set.LegalPath + "/" + kind
 }
 
 // LegalTitle is a document's name in lang.

@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import i18n from "./i18n";
 import { type SystemProxy, type SystemProxyAccount } from "./api";
 import { Button, Code, IconButton, IconTrash, Section, SettingRow, Switch, TextInput } from "./ui";
+import { urlHost } from "./validate";
 
 // systemProxyIssue names why a proxy draft cannot be saved, or "" when it can. The
 // same rules the server enforces (model.SystemProxy.Validate) — checked here too so
@@ -101,7 +102,7 @@ export function SystemProxyEditor({
     );
   const url = (scheme: string, enabled: boolean, port: number, a: SystemProxyAccount) =>
     enabled && host && port
-      ? `${scheme}://${encodeURIComponent(a.user)}:${encodeURIComponent(a.pass)}@${host}:${port}`
+      ? `${scheme}://${encodeURIComponent(a.user)}:${encodeURIComponent(a.pass)}@${urlHost(host)}:${port}`
       : "";
 
   return (

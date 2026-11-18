@@ -12,7 +12,7 @@ import {
   Skeleton,
   TextInput,
 } from "./ui";
-import { isValidACMETarget, isValidEmail } from "./validate";
+import { isValidACMETarget, isValidEmail, urlHost } from "./validate";
 
 // TLSPanel is the domain/TLS editor. By default it edits the panel's own domain
 // (getTLS/setACME) and redirects to the new address on success. Passing load/save
@@ -62,7 +62,7 @@ export function TLSPanel({
       if (redirectOnSuccess) {
         notifySuccess(t("tls.changedRedirect"));
         setTimeout(() => {
-          window.location.href = `https://${host}${window.location.pathname}${window.location.hash}`;
+          window.location.href = `https://${urlHost(host)}${window.location.pathname}${window.location.hash}`;
         }, 2500);
       } else {
         notifySuccess(t("tls.changedReissue"));

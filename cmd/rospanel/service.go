@@ -860,7 +860,7 @@ func printFirstRunBanner(host, secret, username, password string) {
 		" Full URL   : https://%s/%s/\n"+
 		" Username   : %s\n"+
 		" Password   : %s\n%s",
-		bar, bar, secret, host, secret, username, password, bar)
+		bar, bar, secret, model.URLHost(host), secret, username, password, bar)
 }
 
 // panelDest converts the admin listen address into the loopback dest Xray uses

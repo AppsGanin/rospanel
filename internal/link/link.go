@@ -3,7 +3,9 @@ package link
 
 import (
 	"fmt"
+	"net"
 	"net/url"
+	"strconv"
 
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -28,8 +30,8 @@ func LabelFor(proto string, u model.User, set *model.Settings) string {
 // cred must already be escaped where the protocol needs it (password links pass
 // url.QueryEscape(pw); UUID links pass the raw uuid). host is always set.Host.
 func assemble(scheme, cred string, port int, q url.Values, proto string, u model.User, set *model.Settings) string {
-	return fmt.Sprintf("%s://%s@%s:%d?%s#%s",
-		scheme, cred, set.Host, port, q.Encode(), url.PathEscape(LabelFor(proto, u, set)))
+	return fmt.Sprintf("%s://%s@%s?%s#%s",
+		scheme, cred, net.JoinHostPort(set.Host, strconv.Itoa(port)), q.Encode(), url.PathEscape(LabelFor(proto, u, set)))
 }
 
 // pinSelfSigned adds the cert-pin query param (pcs) when the active cert isn't

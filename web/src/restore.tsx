@@ -15,6 +15,7 @@ import { locale, td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
 import { inPanelTz } from "./tz";
 import { Modal, Spinner } from "./ui";
+import { urlHost } from "./validate";
 
 // File-picker accept list. macOS doesn't recognize the compound ".tar.gz"
 // extension, so the gzip/tar MIME types are listed alongside it.
@@ -153,7 +154,7 @@ export function RestoreWaiting({
   const newUrl =
     url ??
     (manifest?.domain
-      ? `https://${manifest.domain}/${manifest.secret_path}/`
+      ? `https://${urlHost(manifest.domain)}/${manifest.secret_path}/`
       : `${window.location.origin}/${manifest?.secret_path ?? ""}/`);
 
   useEffect(() => {

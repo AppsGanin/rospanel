@@ -142,7 +142,7 @@ func runPath(dataDir string) {
 		fmt.Fprintln(os.Stderr, "settings error:", err)
 		os.Exit(1)
 	}
-	host := strings.TrimSpace(set.Host)
+	host := model.URLHost(strings.TrimSpace(set.Host))
 	if host == "" {
 		host = "<domain-not-configured>"
 	}

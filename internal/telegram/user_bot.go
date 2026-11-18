@@ -1560,7 +1560,7 @@ func (s *UserService) publishMenuButton(ctx context.Context, client *Client) boo
 		// Ours is the address last set, or anything under this panel's subscription
 		// path (an older build set a fixed one there); anything else is the operator's.
 		ours := cur.WebApp.URL == set.TGMenuURL ||
-			strings.HasPrefix(cur.WebApp.URL, "https://"+set.Host+"/"+set.SubPathOr()+"/")
+			strings.HasPrefix(cur.WebApp.URL, "https://"+model.URLHost(set.Host)+"/"+set.SubPathOr()+"/")
 		if !ours {
 			return true
 		}

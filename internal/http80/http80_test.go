@@ -130,3 +130,16 @@ func TestRedirectFollowsAHostChange(t *testing.T) {
 		t.Errorf("Location %q after the host changed, want %q", got, want)
 	}
 }
+
+// An IPv6 server address goes into Location in brackets, or the browser reads the
+// last group as a port.
+func TestRedirectBracketsIPv6Host(t *testing.T) {
+	h := Handler(func() string { return "2001:db8::1" })
+	r := httptest.NewRequest(http.MethodGet, "/p", nil)
+	r.Host = "[2001:db8::1]:80"
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if got, want := w.Header().Get("Location"), "https://[2001:db8::1]/p"; got != want {
+		t.Errorf("Location %q, want %q", got, want)
+	}
+}

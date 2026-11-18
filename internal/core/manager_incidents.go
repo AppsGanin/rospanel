@@ -560,7 +560,7 @@ func statusPageURL(set *model.Settings) string {
 	if !set.StatusEnabled || set.Host == "" {
 		return ""
 	}
-	return "https://" + set.Host + "/" + set.StatusPathOr()
+	return "https://" + model.URLHost(set.Host) + "/" + set.StatusPathOr()
 }
 
 // incidentServerNames is the servers an incident names, "" when it is the whole

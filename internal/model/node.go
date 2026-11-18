@@ -248,6 +248,15 @@ type NodeStatusUpdate struct {
 	ServesXHTTP       bool
 }
 
+// URLHost is host as it goes before ":port" or into a URL: an IPv6 literal in
+// brackets, anything else unchanged. A bare "2001:db8::1" there reads as a port.
+func URLHost(h string) string {
+	if strings.Contains(h, ":") && !strings.HasPrefix(h, "[") && net.ParseIP(h) != nil {
+		return "[" + h + "]"
+	}
+	return h
+}
+
 // ValidServerHost reports whether h can be a server's address: an IP literal, or a
 // name of letters, digits, hyphens and underscores (a trailing dot allowed). The host goes verbatim into every
 // subscription line and AmneziaWG config the server hands out — a newline in it would

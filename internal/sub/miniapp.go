@@ -24,7 +24,7 @@ func MiniAppURL(set *model.Settings) string {
 	if strings.TrimSpace(set.Host) == "" || set.MiniAppPath == "" || !set.SubPageReachable() {
 		return ""
 	}
-	return "https://" + set.Host + "/" + set.SubPathOr() + "/" + set.MiniAppPath
+	return "https://" + model.URLHost(set.Host) + "/" + set.SubPathOr() + "/" + set.MiniAppPath
 }
 
 var miniAppTpl = template.Must(template.New("miniapp").Parse(`<!doctype html>

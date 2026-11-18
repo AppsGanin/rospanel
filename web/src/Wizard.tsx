@@ -8,7 +8,7 @@ import { BACKUP_ACCEPT, ManifestCard, RestoreWaiting, useRestore, ValidationNote
 import { useStepUpDialog } from './stepup'
 import { browserTimezone, tzOptions } from './tz'
 import { Button, cn, Code, IconCheck, PasswordInput, Select, TextInput } from './ui'
-import { isIP, isValidACMETarget, isValidEmail } from './validate'
+import { isIP, isValidACMETarget, isValidEmail, urlHost } from './validate'
 
 // The five steps the indicator names, "Начало" (the new-or-restore choice) among
 // them: an indicator that starts at the second step tells the reader nothing about
@@ -265,7 +265,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
   const redirect = (path: string) => {
     const host = finalHost || window.location.hostname
     const go = () => {
-      window.location.href = `https://${host}/${path}/`
+      window.location.href = `https://${urlHost(host)}/${path}/`
     }
     if (wizMode === 'domain') setTimeout(go, 2500)
     else go()
@@ -333,7 +333,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
             <div className="flex animate-fade-in flex-col gap-4">
               <p className="text-xs leading-relaxed text-ink-muted">{t('wizard.newPathIntro')}</p>
               <Code block copy>
-                {`https://${finalHost || window.location.hostname}/${savedPath}/`}
+                {`https://${urlHost(finalHost || window.location.hostname)}/${savedPath}/`}
               </Code>
               <p className="warning-tint rounded-lg px-3 py-2.5 text-xs leading-relaxed text-warning">
                 {t('wizard.newPathWarn')}
