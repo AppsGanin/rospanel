@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.18.1](https://github.com/AppsGanin/rospanel/compare/v5.18.0...v5.18.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **links:** UDP over TCP and TrustTunnel for Shadowrocket ([f89788c](https://github.com/AppsGanin/rospanel/commit/f89788cca376447c15c4baf6d9dbb43760b510da))
+* **security:** print the default first-run password as a literal ([2d9bea0](https://github.com/AppsGanin/rospanel/commit/2d9bea0fba3fc7e924823f97bdd55e767b31f331))
+
 ## [5.18.0](https://github.com/AppsGanin/rospanel/compare/v5.17.0...v5.18.0) (2026-11-18)
 
 
