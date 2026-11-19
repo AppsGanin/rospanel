@@ -1618,8 +1618,11 @@ export function CustomizableSelect({
         }}
       />
       {custom && !disabled && (
-        <div className="flex items-end gap-2">
-          <div className="min-w-0 flex-1">
+        // Wrapping, not squeezing: in a settings row the number, the unit and the
+        // button do not fit on one line, and flex-1 alone pressed the number field
+        // to nothing. The field keeps a floor; the button drops below instead.
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-[5rem] flex-1">
             <TextInput
               type="number"
               value={raw}
@@ -1629,7 +1632,7 @@ export function CustomizableSelect({
             />
           </div>
           {units && units.length > 1 && (
-            <div className="w-28">
+            <div className="w-24 shrink-0">
               <Select
                 value={String(unit)}
                 onChange={(v) => setUnit(Number(v))}
@@ -1639,6 +1642,7 @@ export function CustomizableSelect({
           )}
           <Button
             size="sm"
+            className="ms-auto shrink-0"
             onClick={apply}
             disabled={raw.trim() === "" || (max !== undefined && Number(raw) * (units?.[unit]?.factor ?? 1) > max)}
           >
