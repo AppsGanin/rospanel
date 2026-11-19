@@ -54,10 +54,7 @@ Xray من حالة اللوحة (لن تلمس JSON بيدك أبدًا)، وي�
 
 [VDSina](https://www.vdsina.com/?partner=nmzki7z7tu) ·
 [Aeza](https://aeza.net/?ref=375522) ·
-[NetGrid](https://netgrid.host/ru?from=3491) ·
-[Serv.host](https://serv.host/?from=36809) ·
-[u1Host](https://u1host.com/?from=7702) ·
-[Waicore](https://waicore.net/?from=35607)
+[NetGrid](https://netgrid.host/ru?from=3491)
 
 شكرًا لكل من يسجّل عبرها 🙏
 
