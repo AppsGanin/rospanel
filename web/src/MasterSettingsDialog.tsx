@@ -41,7 +41,7 @@ import {
   type StatusBadge,
 } from "./RoutingEditor";
 import {
-  ReadOnly, CenterLoader, Drawer, Section, Select, SettingRow, TextInput } from "./ui";
+  ReadOnly, CenterLoader, Drawer, Section, Select, SettingRow, Textarea, TextInput } from "./ui";
 import { PlacementFields, placementOf } from "./PlacementFields";
 import {
   CopyRoutingFrom,
@@ -84,12 +84,14 @@ export function MasterSettingsDialog({
   const [loaded, setLoaded] = useState(false);
   const [name, setName] = useState(node.master_label ?? "");
   const [decoy, setDecoy] = useState(node.decoy_template);
+  const [note, setNote] = useState(node.note ?? "");
   const [pl, setPl] = useState<Placement>(placementOf(node));
   const [plBase, setPlBase] = useState<Placement>(placementOf(node));
   const plDirty = JSON.stringify(pl) !== JSON.stringify(plBase);
   const [genBase, setGenBase] = useState({
     name: node.master_label ?? "",
     decoy: node.decoy_template,
+    note: node.note ?? "",
   });
   // The system proxy is part of this tab, so its draft rides the tab's single save.
   const [proxy, setProxy] = useState<SystemProxy>(node.proxy);
@@ -100,7 +102,8 @@ export function MasterSettingsDialog({
   const [dnsBase, setDnsBase] = useState(canonicalDns(node.xray_dns ?? ""));
   // The server's own fields (servers.manage) and the system proxy (routing.manage)
   // save through different routes, so a role holding one saves only its part.
-  const ownDirty = name !== genBase.name || decoy !== genBase.decoy || plDirty;
+  const ownDirty =
+    name !== genBase.name || decoy !== genBase.decoy || note !== genBase.note || plDirty;
   const genDirty = ownDirty || proxyDirty;
   const dnsDirty = dns !== dnsBase;
   // Live egress status for the badges (master's egress runs locally, so the panel
@@ -255,7 +258,7 @@ export function MasterSettingsDialog({
     setSavingGeneral(true);
     try {
       if (ownDirty) {
-        await setMasterName(name.trim());
+        await setMasterName(name.trim(), note);
         if (plDirty) {
           await setMasterPlacement(pl);
           setPlBase(pl);
@@ -268,7 +271,7 @@ export function MasterSettingsDialog({
         await setServerProxy(0, proxy);
         setProxyBase(proxy);
       }
-      setGenBase({ name, decoy });
+      setGenBase({ name, decoy, note });
       notifySuccess(t("nodes.generalSaved"));
       onRefresh();
     } catch (e) {
@@ -340,6 +343,14 @@ export function MasterSettingsDialog({
                     />
                   }
                 />
+                <SettingRow label={t("nodes.note")}>
+                  <Textarea
+                    value={note}
+                    onChange={setNote}
+                    rows={3}
+                    placeholder={t("nodes.notePlaceholder")}
+                  />
+                </SettingRow>
               </Section>
               <PlacementFields
                 value={pl}
@@ -366,6 +377,7 @@ export function MasterSettingsDialog({
                 onReset={() => {
                   setName(genBase.name);
                   setDecoy(genBase.decoy);
+                  setNote(genBase.note);
                   setPl(plBase);
                   setProxy(proxyBase);
                 }}

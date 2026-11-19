@@ -52,7 +52,7 @@ const nodeColumns = `id, name, host, enabled,
 	traffic_limit, traffic_period, hide_when_over, traffic_reset_day,
 	awg_enabled, awg_private_key, awg_public_key, awg_params, naive_enabled, serves_naive,
 	mieru_enabled, serves_mieru, anytls_enabled, serves_anytls, seen_ip,
-	mtproto_enabled, serves_mtproto, mtproto_domain, trusttunnel_enabled, serves_trusttunnel, xhttp_enabled, serves_xhttp`
+	mtproto_enabled, serves_mtproto, mtproto_domain, trusttunnel_enabled, serves_trusttunnel, xhttp_enabled, serves_xhttp, note`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
 func generateNodeToken() (string, error) {
@@ -93,7 +93,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&n.TrafficLimit, &n.TrafficPeriod, &hideOver, &n.TrafficResetDay,
 		&awgEn, &n.AWGPrivateKey, &n.AWGPublicKey, &awgParamsJSON, &naiveEn, &servesNaive,
 		&mieruEn, &servesMieru, &anytlsEn, &servesAnyTLS, &n.SeenIP,
-		&mtprotoEn, &servesMTProto, &n.MTProtoDomain, &ttEn, &servesTT, &xhttpEn, &servesXHTTP,
+		&mtprotoEn, &servesMTProto, &n.MTProtoDomain, &ttEn, &servesTT, &xhttpEn, &servesXHTTP, &n.Note,
 	); err != nil {
 		return nil, err
 	}
@@ -541,6 +541,14 @@ func (s *Store) SetNodeConnections(id int64, c *model.NodeConnections) error {
 		blob = string(b)
 	}
 	_, err := s.db.Exec(`UPDATE nodes SET connections_config = ? WHERE id = ?`, blob, id)
+	return err
+}
+
+// SetNodeNote stores the operator's note on a node. Its own write, outside
+// UpdateNode, so every NodeEdit caller need not carry it and a note never wakes
+// the node.
+func (s *Store) SetNodeNote(id int64, note string) error {
+	_, err := s.db.Exec(`UPDATE nodes SET note = ? WHERE id = ?`, note, id)
 	return err
 }
 

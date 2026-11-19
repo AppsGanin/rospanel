@@ -2990,6 +2990,7 @@ export interface NodeView {
   reality_short_id: string
   reality_path: string
   master_label?: string // config-label name of the master (local node only)
+  note: string // the operator's own text on the card
   // The connections a cascade can reach this server over, its names for them, and
   // whether each is on there.
   bridges?: { bridge: string; name: string; enabled: boolean }[]
@@ -3123,10 +3124,11 @@ export const setServerProxy = (id: number, proxy: SystemProxy) =>
 export const listNodes = () => api<{ nodes: NodeView[] }>('api/nodes')
 
 // setMasterName sets the panel server's display name shown in config labels.
-export const setMasterName = (name: string) =>
+// note, when given, replaces the master card's note in the same call.
+export const setMasterName = (name: string, note?: string) =>
   api<{ ok: boolean }>('api/nodes/master-name', {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, note }),
   })
 
 // setMasterProtocols toggles the panel's own protocols on/off (the master card).
@@ -3182,10 +3184,10 @@ export const setNodeACME = (
     body: JSON.stringify({ target, email, provider }),
   })
 
-export const createNode = (name: string, host: string) =>
+export const createNode = (name: string, host: string, note = '') =>
   api<{ id: number; install_command: string }>('api/nodes', {
     method: 'POST',
-    body: JSON.stringify({ name, host }),
+    body: JSON.stringify({ name, host, note }),
   })
 
 // NodePatch carries a node edit (name/host/decoy). Protocols are edited on the
@@ -3218,6 +3220,7 @@ export interface NodePatch {
   reality_enabled?: boolean
   traffic_coefficient?: number
   placement?: Placement
+  note?: string // omitted = keep the current note
 }
 
 export const setMasterPlacement = (p: Placement) =>

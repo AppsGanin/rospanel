@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/decoy"
@@ -644,6 +645,19 @@ func (m *Manager) IssueJoinToken(id int64) (string, error) { return m.store.Issu
 // SetMasterLabel sets the panel server's display name used in config labels.
 func (m *Manager) SetMasterLabel(label string) error {
 	return m.store.SetMasterLabel(strings.TrimSpace(label))
+}
+
+// SetServerNote replaces the operator's note on a server card (node 0 = the
+// master). The note is panel-only: nothing is pushed to the node or reloaded.
+func (m *Manager) SetServerNote(id int64, note string) error {
+	note = strings.TrimSpace(strings.ReplaceAll(note, "\r\n", "\n"))
+	if utf8.RuneCountInString(note) > model.MaxServerNoteLen {
+		return invalidCode("err.noteTooLong", "заметка длиннее {{max}} символов", map[string]any{"max": model.MaxServerNoteLen})
+	}
+	if id == model.LocalNodeID {
+		return m.store.SetMasterNote(note)
+	}
+	return m.store.SetNodeNote(id, note)
 }
 
 // What a node's restart request currently reads as, for the UI.

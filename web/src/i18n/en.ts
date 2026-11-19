@@ -4576,6 +4576,8 @@ const en: Dict = {
     tabReinstallSsh: "Reinstall over SSH",
     namePlaceholder: "Netherlands #1",
     masterNamePlaceholder: "e.g. Main (empty — no prefix)",
+    note: "Note",
+    notePlaceholder: "For yourself: routes, lanes, what is set up where",
     hostLabel: "Node domain or IP",
     sshHint: "The panel installs the node over SSH. The SSH credentials are not stored — they are used for the install only.",
     sshHost: "SSH address (IP)",

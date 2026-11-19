@@ -4458,6 +4458,8 @@ const ar: Dict = {
     tabReinstallSsh: "إعادة التثبيت عبر SSH",
     namePlaceholder: "هولندا #1",
     masterNamePlaceholder: "مثلًا: الرئيسي (فارغ — بلا بادئة)",
+    note: "ملاحظة",
+    notePlaceholder: "لنفسك: المسارات والقنوات وما هو مُعدّ وأين",
     hostLabel: "نطاق العقدة أو IP",
     sshHint: "تثبّت لوحة التحكم العقدة عبر SSH. بيانات اعتماد SSH لا تُخزَّن — تُستخدم للتثبيت فقط.",
     sshHost: "عنوان SSH ‏(IP)",

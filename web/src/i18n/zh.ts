@@ -4549,6 +4549,8 @@ const zh: Dict = {
     tabReinstallSsh: "通过 SSH 重新安装",
     namePlaceholder: "荷兰 #1",
     masterNamePlaceholder: "例如：Main（留空 — 无前缀）",
+    note: "备注",
+    notePlaceholder: "自用：路由、通道、各处配置",
     hostLabel: "节点域名或 IP",
     sshHint: "面板将通过 SSH 安装节点。SSH 凭据不会保存 — 仅在安装时使用。",
     sshHost: "SSH 地址（IP）",

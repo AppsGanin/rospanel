@@ -1458,6 +1458,8 @@ type Settings struct {
 	// MasterLabel is the panel server's display name in share-link / subscription
 	// config labels (multi-node: "<master> · VLESS"). Empty ⇒ no prefix.
 	MasterLabel string `json:"-"`
+	// MasterNote is the operator's note on the master's server card.
+	MasterNote string `json:"-"`
 
 	// GeoRefreshHours is how often to auto-refresh the geo databases (hours; 0 ⇒
 	// never — manual only). Applies to the master and is pushed to nodes.

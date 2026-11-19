@@ -47,6 +47,7 @@ func (rt *Router) listNodes(w http.ResponseWriter, _ *http.Request) {
 type nodeCreateReq struct {
 	Name string `json:"name"`
 	Host string `json:"host"`
+	Note string `json:"note"`
 }
 
 // createNode registers a node and returns its view plus the one-time install
@@ -70,6 +71,14 @@ func (rt *Router) createNode(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeManagerErr(w, err)
 		return
+	}
+	// The node exists by now; a note that fails its check is reported, and the
+	// operator fixes it from the card rather than getting a second node on retry.
+	if strings.TrimSpace(req.Note) != "" {
+		if err := rt.mgr.SetServerNote(node.ID, req.Note); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
 	}
 	set, _ := rt.mgr.Store().GetSettings()
 	nodePath := ""
@@ -97,6 +106,8 @@ type nodePatchReq struct {
 	// Placement (see model.Placement). Pointer so a General-tab save that predates
 	// these fields keeps the node's current placement rather than blanking it.
 	Placement *model.Placement `json:"placement"`
+	// Note: nil keeps the current one.
+	Note *string `json:"note"`
 }
 
 // orBool returns a when set, else b — used to preserve a node's current protocol
@@ -162,6 +173,12 @@ func (rt *Router) updateNode(w http.ResponseWriter, r *http.Request, id int64) {
 	if err := rt.mgr.UpdateNode(id, edit); err != nil {
 		writeManagerErr(w, err)
 		return
+	}
+	if req.Note != nil {
+		if err := rt.mgr.SetServerNote(id, *req.Note); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
 	}
 	writeOK(w)
 }
@@ -235,9 +252,17 @@ func (rt *Router) setNodeDNS(w http.ResponseWriter, r *http.Request, id int64) {
 func (rt *Router) setMasterName(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
+		// Note is the master card's note; nil keeps the current one.
+		Note *string `json:"note"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
+	}
+	if req.Note != nil {
+		if err := rt.mgr.SetServerNote(model.LocalNodeID, *req.Note); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
 	}
 	if err := rt.mgr.SetMasterLabel(req.Name); err != nil {
 		writeManagerErr(w, err)

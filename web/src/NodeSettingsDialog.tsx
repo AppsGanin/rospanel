@@ -23,7 +23,7 @@ import { errMessage, notifyError, notifySuccess } from "./notify";
 import { TLSPanel } from "./TLSPanel";
 import { type CascadeServer, hydrateRouting, RoutingEditor, type StatusBadge } from "./RoutingEditor";
 import {
-  ReadOnly, Drawer, Section, Select, SettingRow, TextInput } from "./ui";
+  ReadOnly, Drawer, Section, Select, SettingRow, Textarea, TextInput } from "./ui";
 import { PlacementFields, placementOf } from "./PlacementFields";
 import {
   DialogTabs,
@@ -66,6 +66,7 @@ export function NodeSettingsDialog({
   // The per-node quota multiplier (1 = neutral). Kept as a string so the field can be
   // cleared while typing; parsed on save.
   const [coef, setCoef] = useState(String(node.traffic_coefficient || 1));
+  const [note, setNote] = useState(node.note ?? "");
   const [pl, setPl] = useState<Placement>(placementOf(node));
   const [plBase, setPlBase] = useState<Placement>(placementOf(node));
   const plDirty = JSON.stringify(pl) !== JSON.stringify(plBase);
@@ -75,6 +76,7 @@ export function NodeSettingsDialog({
     name: node.name,
     decoy: node.decoy_template,
     coef: String(node.traffic_coefficient || 1),
+    note: node.note ?? "",
   });
   // The system proxy is part of the General tab, so its draft lives here and rides
   // that tab's single save.
@@ -111,7 +113,11 @@ export function NodeSettingsDialog({
   // The server's own fields (servers.manage) and the system proxy (routing.manage)
   // save through different routes, so a role holding one saves only its part.
   const ownDirty =
-    name !== genBase.name || decoy !== genBase.decoy || coef !== genBase.coef || plDirty;
+    name !== genBase.name ||
+    decoy !== genBase.decoy ||
+    coef !== genBase.coef ||
+    note !== genBase.note ||
+    plDirty;
   const genDirty = ownDirty || proxyDirty;
   const dnsDirty = dns !== dnsBase;
 
@@ -146,6 +152,7 @@ export function NodeSettingsDialog({
         decoy_template: decoy,
         traffic_coefficient: clampCoefficient(coef),
         placement: pl,
+        note,
         // Protocols are edited on the Connections tab; omitting them here tells the
         // panel to preserve the current values (never revert a just-made change).
       });
@@ -155,7 +162,7 @@ export function NodeSettingsDialog({
         await setServerProxy(node.id, proxy);
         setProxyBase(proxy);
       }
-      setGenBase({ name, decoy, coef });
+      setGenBase({ name, decoy, coef, note });
       setPlBase(pl);
       notifySuccess(t("nodes.generalSaved"));
       onRefresh();
@@ -254,6 +261,14 @@ export function NodeSettingsDialog({
                 />
               }
             />
+            <SettingRow label={t("nodes.note")}>
+              <Textarea
+                value={note}
+                onChange={setNote}
+                rows={3}
+                placeholder={t("nodes.notePlaceholder")}
+              />
+            </SettingRow>
           </Section>
           <PlacementFields
             value={pl}
@@ -281,6 +296,7 @@ export function NodeSettingsDialog({
               setName(genBase.name);
               setDecoy(genBase.decoy);
               setCoef(genBase.coef);
+              setNote(genBase.note);
               setPl(plBase);
               setProxy(proxyBase);
             }}

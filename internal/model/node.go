@@ -53,6 +53,9 @@ type Node struct {
 	Name    string `json:"name"`
 	Host    string `json:"host"`
 	Enabled bool   `json:"enabled"`
+	// Note is the operator's own free text about this server (panel-only; never
+	// sent to the node and never part of its config).
+	Note string `json:"note"`
 
 	// TrafficCoefficient scales how much of a user's quota is spent per real byte on
 	// this node: 2.0 makes an expensive location drain the allowance twice as fast,

@@ -54,6 +54,7 @@ export function AddNodeDialog({
   const [mode, setMode] = useState<"command" | "ssh">("command");
   const [name, setName] = useState("");
   const [host, setHost] = useState("");
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
   // SSH (auto) fields.
@@ -73,7 +74,7 @@ export function AddNodeDialog({
     if (!name.trim() || !host.trim()) return;
     setBusy(true);
     try {
-      const res = await createNode(name.trim(), host.trim());
+      const res = await createNode(name.trim(), host.trim(), note);
       onCreated(res.install_command);
     } catch (e) {
       notifyError(errMessage(e));
@@ -92,7 +93,7 @@ export function AddNodeDialog({
       let nodeId = createdId;
       if (nodeId == null) {
         setLog([t("nodes.creating")]);
-        const res = await createNode(name.trim(), host.trim());
+        const res = await createNode(name.trim(), host.trim(), note);
         nodeId = res.id;
         setCreatedId(res.id);
       } else {
@@ -155,6 +156,13 @@ export function AddNodeDialog({
           value={host}
           onChange={setHost}
           placeholder="nl1.example.com"
+        />
+        <Textarea
+          label={t("nodes.note")}
+          value={note}
+          onChange={setNote}
+          rows={2}
+          placeholder={t("nodes.notePlaceholder")}
         />
 
         {mode === "ssh" && (

@@ -32,6 +32,8 @@ type (
 		OperaEnabled       *bool                `json:"opera_enabled,omitempty"`
 		OperaCountry       *string              `json:"opera_country,omitempty"`
 		TrafficCoefficient *float64             `json:"traffic_coefficient,omitempty"`
+		// Note is the operator's text on the server card.
+		Note *string `json:"note,omitempty"`
 		// Placement in subscriptions (see model.Placement): country (ISO-2), a manual
 		// weight, capacity in users and whether to hide the node when full.
 		Country      *string `json:"country,omitempty"`
@@ -331,6 +333,12 @@ func (rt *Router) apiPatchNode(w http.ResponseWriter, r *http.Request, id int64)
 		writeAPIManagerErr(w, err)
 		return
 	}
+	if req.Note != nil {
+		if err := rt.mgr.SetServerNote(id, *req.Note); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
 	writeAPIData(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -412,6 +420,7 @@ func nodeFieldPerms(req apiPatchNodeReq) []fieldPerm {
 		{req.Hysteria != nil, "hysteria_enabled", sm},
 		{req.Reality != nil, "reality_enabled", sm},
 		{req.TrafficCoefficient != nil, "traffic_coefficient", sm},
+		{req.Note != nil, "note", sm},
 		{req.Country != nil, "country", sm},
 		{req.SortWeight != nil, "sort_weight", sm},
 		{req.Capacity != nil, "capacity", sm},

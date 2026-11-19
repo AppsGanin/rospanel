@@ -4576,6 +4576,8 @@ const fa: Dict = {
     tabReinstallSsh: "نصب مجدد از طریق SSH",
     namePlaceholder: "هلند #1",
     masterNamePlaceholder: "مثلاً اصلی (خالی — بدون پیشوند)",
+    note: "یادداشت",
+    notePlaceholder: "برای خودتان: مسیرها، خطوط، چه چیزی کجا تنظیم شده",
     hostLabel: "دامنه یا IP نود",
     sshHint: "پنل نود را از طریق SSH نصب می‌کند. اطلاعات ورود SSH ذخیره نمی‌شوند — فقط برای نصب استفاده می‌شوند.",
     sshHost: "نشانی SSH (IP)",

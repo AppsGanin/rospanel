@@ -110,7 +110,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       tg_admin_events, api_path,
 		       vless_name, reality_name, hysteria_name,
 		       local_backup_cron, local_backup_keep,
-		       sub_announce, user_autodelete_days, node_api_path, master_label,
+		       sub_announce, user_autodelete_days, node_api_path, master_label, master_note,
 		       geo_refresh_hours, iplist_refresh_hours,
 		       tg_support_enabled, tg_support_bot_token, tg_support_bot_username,
 		       tg_support_group_id, tg_support_greeting, tg_lang, tg_proxy, tg_proxy_mode,
@@ -172,7 +172,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&st.TGAdminEvents, &st.APIPath,
 		&st.VLESSName, &st.RealityName, &st.HysteriaName,
 		&st.LocalBackupCron, &st.LocalBackupKeep,
-		&st.SubAnnounce, &st.UserAutoDeleteDays, &st.NodeAPIPath, &st.MasterLabel,
+		&st.SubAnnounce, &st.UserAutoDeleteDays, &st.NodeAPIPath, &st.MasterLabel, &st.MasterNote,
 		&st.GeoRefreshHours, &st.IPListRefreshHours,
 		&tgSupportEn, &st.TGSupportBotToken, &st.TGSupportBotUsername,
 		&st.TGSupportGroupID, &st.TGSupportGreeting, &st.TGLang, &st.TGProxy, &st.TGProxyMode,
@@ -782,6 +782,9 @@ func (s *Store) SetNodeAPIPath(p string) error { return s.setSetting("node_api_p
 
 // SetMasterLabel persists the panel server's display name used in config labels.
 func (s *Store) SetMasterLabel(label string) error { return s.setSetting("master_label", label) }
+
+// SetMasterNote persists the operator's note on the master's server card.
+func (s *Store) SetMasterNote(note string) error { return s.setSetting("master_note", note) }
 
 // SetGeoRefresh persists the geo auto-refresh cadence in hours (0 ⇒ never).
 func (s *Store) SetGeoRefresh(hours int) error { return s.setSetting("geo_refresh_hours", hours) }

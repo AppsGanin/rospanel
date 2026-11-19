@@ -363,6 +363,17 @@ export function NodeCard({
         </span>
       </header>
 
+      {/* The operator's own words about this server, as written: line breaks kept,
+          a long note cut at three lines with the whole of it on hover. */}
+      {!!node.note?.trim() && (
+        <p
+          title={node.note}
+          className="line-clamp-3 whitespace-pre-line break-words px-3.5 pt-3 text-xs text-ink-muted"
+        >
+          {node.note}
+        </p>
+      )}
+
       {/* On a phone this is three stacked lines — who and what it carried, how it is,
           then the load bars full width. On a wider screen the same three parts sit in
           one row; `lg:contents` dissolves the mobile pairing so ordering can put the

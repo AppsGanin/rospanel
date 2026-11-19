@@ -100,6 +100,7 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 				// server. All three normalise together, so all three are checked.
 				"traffic_limit": float64(500 << 30), "traffic_period": "month",
 				"hide_when_over": true, "traffic_reset_day": float64(14),
+				"note": "exit for RU routes",
 			},
 			check: func(t *testing.T) map[string]any {
 				n := getNode(t)
@@ -117,6 +118,7 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 					"capacity": float64(n.Capacity), "hide_when_full": n.HideWhenFull,
 					"traffic_limit": float64(n.TrafficLimit), "traffic_period": n.TrafficPeriod,
 					"hide_when_over": n.HideWhenOver, "traffic_reset_day": float64(n.TrafficResetDay),
+					"note": n.Note,
 					// Routing round-trips as a struct; that it arrived non-nil is the
 					// landing test — its contents are model.RoutingConfig's own business.
 					"routing": n.Routing != nil,

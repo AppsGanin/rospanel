@@ -2005,6 +2005,9 @@
           "node_version": {
             "type": "string"
           },
+          "note": {
+            "type": "string"
+          },
           "online": {
             "type": "boolean"
           },
@@ -2149,6 +2152,7 @@
           "reality_public_key",
           "reality_short_id",
           "reality_path",
+          "note",
           "bridges",
           "country",
           "sort_weight",
@@ -4805,6 +4809,9 @@
             "type": "boolean"
           },
           "name": {
+            "type": "string"
+          },
+          "note": {
             "type": "string"
           },
           "opera_country": {
@@ -9801,6 +9808,9 @@
                     "type": "boolean"
                   },
                   "name": {
+                    "type": "string"
+                  },
+                  "note": {
                     "type": "string"
                   },
                   "opera_country": {

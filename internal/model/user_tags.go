@@ -11,8 +11,10 @@ import (
 // caller cannot turn the users table into a document store.
 const (
 	MaxUserNoteLen = 2000 // characters
-	MaxUserTags    = 20
-	MaxUserTagLen  = 32 // characters
+	// MaxServerNoteLen caps the note on a server card.
+	MaxServerNoteLen = 2000 // characters
+	MaxUserTags      = 20
+	MaxUserTagLen    = 32 // characters
 )
 
 // NormalizeTags brings a tag list into canonical form: each tag trimmed and

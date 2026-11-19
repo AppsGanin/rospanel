@@ -4576,6 +4576,8 @@ const ru = {
     tabReinstallSsh: "Переустановить по SSH",
     namePlaceholder: "Нидерланды #1",
     masterNamePlaceholder: "напр. Main (пусто — без префикса)",
+    note: "Заметка",
+    notePlaceholder: "Для себя: маршруты, полосы, что где настроено",
     hostLabel: "Домен или IP ноды",
     sshHint: "Панель установит ноду по SSH. Данные SSH не сохраняются — используются только на время установки.",
     sshHost: "SSH-адрес (IP)",

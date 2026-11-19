@@ -105,6 +105,8 @@ type NodeView struct {
 	// MasterLabel is the master server's config-label name (local node only), so the
 	// UI can edit it. Empty for remote nodes (they use their own Name).
 	MasterLabel string `json:"master_label,omitempty"`
+	// Note is the operator's own text on the card.
+	Note string `json:"note"`
 	// Bridges are the connections a cascade can reach this server over (EgressLane.Via).
 	Bridges []BridgeOption `json:"bridges"`
 	// Placement (country, weight, capacity) and the live online-user count the
@@ -151,6 +153,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		RealityEnabled:  set.RealityEnabled,
 		DecoyTemplate:   set.DecoyTemplate,
 		MasterLabel:     set.MasterLabel,
+		Note:            set.MasterNote,
 		Bridges:         bridgeOptions(set),
 		Placement:       set.MasterPlacement,
 		OnlineUsers:     online[model.LocalNodeID],
@@ -199,6 +202,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			Name:               n.Name,
 			Host:               n.Host,
 			Enabled:            n.Enabled,
+			Note:               n.Note,
 			Online:             n.Online(now),
 			Joined:             n.Joined(),
 			LastSeen:           n.LastSeen,
