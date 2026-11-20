@@ -2,6 +2,7 @@ package sub
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"net/url"
 	"strconv"
 	"strings"
@@ -136,5 +137,54 @@ func TestAWGThroneLink(t *testing.T) {
 		if got := awgLinkFor(ua) != nil; got != want {
 			t.Errorf("%q: %v, want %v", ua, got, want)
 		}
+	}
+}
+
+// Shadowrocket's wg:// carries the keys as named query values and the AmneziaWG set as
+// one JSON object of strings, bands as "min-max"; every Shadowrocket gets it.
+func TestAWGShadowrocketLink(t *testing.T) {
+	_, pub, _ := awg.GenerateKey()
+	priv, _, _ := awg.GenerateKey()
+	s := &model.Settings{Host: "vpn.example.com", AWGEnabled: true, AWGPort: 51999, AWGPublicKey: pub,
+		AWGParams: awg.ToModel(awg.RandomParams())}
+	u := model.User{ID: 7, UUID: "11111111-2222-3333-4444-555555555555", WGPrivateKey: priv, AWGSlot: 9}
+	l := AWGShadowrocketLink(u, s)
+	pu, err := url.Parse(l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := pu.Query()
+	if pu.Scheme != "wg" || pu.Host != "vpn.example.com:51999" || q.Get("publicKey") != pub ||
+		q.Get("privateKey") != priv || q.Get("ip") != "10.66.0.9/32" || q.Get("obfs") != "amneziawg" ||
+		q.Get("udp") != "1" || q.Get("reserved") != "0,0,0" || pu.Fragment != model.ProtoAWG {
+		t.Fatalf("link %s", l)
+	}
+	var obfs map[string]string
+	if err := json.Unmarshal([]byte(q.Get("obfsParam")), &obfs); err != nil {
+		t.Fatalf("obfsParam: %v", err)
+	}
+	p, _ := awg.FromModel(s.AWGParams)
+	h1 := strconv.FormatUint(uint64(p.H1.Min), 10) + "-" + strconv.FormatUint(uint64(p.H1.Max), 10)
+	if obfs["jc"] != strconv.Itoa(p.Jc) || obfs["s4"] != strconv.Itoa(p.S4) || obfs["h1"] != h1 ||
+		obfs["header_protection_key"] != p.HeaderKey || obfs["i1"] != "" {
+		t.Fatalf("obfsParam %v", obfs)
+	}
+	if p.Trailers && obfs["random_trailers"] != "true" {
+		t.Fatalf("no random_trailers: %v", obfs)
+	}
+	if !p.Padding.IsZero() && !strings.Contains(obfs["content_padding_addition"], "-") {
+		t.Fatalf("padding %v", obfs)
+	}
+	if AWGShadowrocketLink(u, s) != l {
+		t.Fatal("the link changes between calls")
+	}
+	var got string
+	for _, x := range ShareLinksFor(u, []Server{{Set: s, Access: model.UnrestrictedAccess()}}, "Shadowrocket/2.2.80 CFNetwork") {
+		if strings.Contains(x, "obfs=amneziawg") {
+			got = x
+		}
+	}
+	if got == "" {
+		t.Fatal("Shadowrocket got no AmneziaWG line")
 	}
 }

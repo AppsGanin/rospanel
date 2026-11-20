@@ -2,6 +2,7 @@ package sub
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"net"
 	"net/url"
 	"regexp"
@@ -143,9 +144,73 @@ func AWGThroneLink(u model.User, s *model.Settings) string {
 		url.PathEscape(link.LabelFor(model.ProtoAWG, u, s))
 }
 
+// AWGShadowrocketLink is a user's tunnel on one server in the form Shadowrocket imports
+// with its AmneziaWG obfuscation (checked on a device by the issue-122 reporter):
+// wg://host:port?publicKey=…&privateKey=…&ip=…&obfs=amneziawg&obfsParam=<JSON>#label,
+// the obfuscation set as one URL-encoded JSON object of strings. Bands are written
+// "min-max" even when they hold one value — the form that was seen working; timers
+// left at the protocol default are left out. I1/I2 are left out as for Throne.
+// "" when the user has no tunnel identity yet or the parameters are unreadable.
+func AWGShadowrocketLink(u model.User, s *model.Settings) string {
+	if s.Host != "" && !model.ValidServerHost(s.Host) {
+		return ""
+	}
+	p, err := awg.FromModel(s.AWGParams)
+	if err != nil || p.IsZero() {
+		return ""
+	}
+	key, slot := u.AWGIdentity()
+	addr, ok := awg.ClientAddr(slot)
+	if !ok || key == "" {
+		return ""
+	}
+	band := func(r awg.Range) string {
+		return strconv.FormatUint(uint64(r.Min), 10) + "-" + strconv.FormatUint(uint64(r.Max), 10)
+	}
+	obfs := map[string]string{
+		"jc": strconv.Itoa(p.Jc), "jmin": strconv.Itoa(p.Jmin), "jmax": strconv.Itoa(p.Jmax),
+		"s1": strconv.Itoa(p.S1), "s2": strconv.Itoa(p.S2), "s3": strconv.Itoa(p.S3), "s4": strconv.Itoa(p.S4),
+		"h1": band(p.H1), "h2": band(p.H2), "h3": band(p.H3), "h4": band(p.H4),
+	}
+	if p.HeaderKey != "" {
+		obfs["header_protection_key"] = p.HeaderKey
+	}
+	if !p.Padding.IsZero() {
+		obfs["content_padding_addition"] = band(p.Padding)
+	}
+	if p.Trailers {
+		obfs["random_trailers"] = "true" // reads as yes to both NSString.boolValue and Swift Bool(_:)
+	}
+	for k, r := range map[string]awg.Range{
+		"rekey_after_time": p.RekeyAfter, "rekey_timeout": p.RekeyTimeout, "reject_after_time": p.RejectAfter,
+		"keepalive_timeout": p.Keepalive, "max_handshake_attempts": p.Handshakes,
+	} {
+		if !r.IsZero() {
+			obfs[k] = band(r)
+		}
+	}
+	js, err := json.Marshal(obfs) // map keys come out sorted: one server, one link
+	if err != nil {
+		return ""
+	}
+	q := url.Values{}
+	q.Set("publicKey", s.AWGPublicKey)
+	q.Set("privateKey", key)
+	q.Set("ip", addr.String()+"/32")
+	q.Set("mtu", strconv.Itoa(awg.DefaultMTU))
+	q.Set("keepalive", strconv.Itoa(awg.Keepalive))
+	q.Set("udp", "1")
+	q.Set("reserved", "0,0,0")
+	q.Set("obfs", "amneziawg")
+	q.Set("obfsParam", string(js))
+	return "wg://" + net.JoinHostPort(s.Host, strconv.Itoa(s.AWGPort)) + "?" + q.Encode() + "#" +
+		url.PathEscape(link.LabelFor(model.ProtoAWG, u, s))
+}
+
 // awgLinkFor is the AmneziaWG link form a subscription client imports, or nil: INCY
 // (AWGLinkFor) its amneziawg://, Throne from 1.3.0 (random trailers among the rest) and
-// Throne for Android from 2.0.0 its wg://. The others with an AmneziaWG of their own speak 1.5 or 2.0 — Hiddify, Karing,
+// Throne for Android from 2.0.0 its wg://, Shadowrocket its own wg:// with obfsParam
+// (AWGShadowrocketLink; no version known to start from, so every one). The others with an AmneziaWG of their own speak 1.5 or 2.0 — Hiddify, Karing,
 // NyameBox, v2RayTun — and cannot finish a handshake with a 3.1 server.
 func awgLinkFor(userAgent string) func(model.User, *model.Settings) string {
 	if AWGLinkFor(userAgent) {
@@ -156,6 +221,9 @@ func awgLinkFor(userAgent string) func(model.User, *model.Settings) string {
 	}
 	if m := throneAndroidUA.FindStringSubmatch(userAgent); m != nil && versionAtLeast(m[1:], 2, 0, 0) {
 		return AWGThroneLink // its WireGuard.kt reads Throne's wg:// keys, "+" "/" "=" literally
+	}
+	if strings.Contains(strings.ToLower(userAgent), "shadowrocket") {
+		return AWGShadowrocketLink
 	}
 	return nil
 }
