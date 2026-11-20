@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.19.1](https://github.com/AppsGanin/rospanel/compare/v5.19.0...v5.19.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **deps:** bump amneziawg-go to v3.1.20261116 ([7115b2b](https://github.com/AppsGanin/rospanel/commit/7115b2bb1eb1655852e3d68de1affefa2dc503e5))
+
 ## [5.19.0](https://github.com/AppsGanin/rospanel/compare/v5.18.1...v5.19.0) (2026-11-20)
 
 
