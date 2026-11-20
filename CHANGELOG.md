@@ -1,5 +1,18 @@
 # Changelog
 
+## [5.19.0](https://github.com/AppsGanin/rospanel/compare/v5.18.1...v5.19.0) (2026-11-20)
+
+
+### Features
+
+* **nodes:** operator notes on server cards ([fd169c0](https://github.com/AppsGanin/rospanel/commit/fd169c0b0753b8ec36305c7c367efb29bdd0162f))
+* **sub:** AmneziaWG 3.1 for Shadowrocket ([911b57b](https://github.com/AppsGanin/rospanel/commit/911b57b22faaef0dcbf1c8755fb1309d1729516f))
+
+
+### Bug Fixes
+
+* **ui:** keep the custom value field visible in a settings row ([e0f5672](https://github.com/AppsGanin/rospanel/commit/e0f56723c56d175e43e3626751907d7675366dea))
+
 ## [5.18.1](https://github.com/AppsGanin/rospanel/compare/v5.18.0...v5.18.1) (2026-11-18)
 
 
