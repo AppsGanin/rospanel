@@ -6240,7 +6240,7 @@
   "info": {
     "description": "External REST API for managing RosPanel users, billing and stats.",
     "title": "RosPanel API",
-    "version": "5.19.0"
+    "version": "5.19.1"
   },
   "openapi": "3.0.3",
   "paths": {
