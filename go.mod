@@ -3,7 +3,7 @@ module github.com/AppsGanin/rospanel
 go 1.26.11
 
 require (
-	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260828
+	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20261116
 	github.com/enfein/mieru/v3 v3.39.0
 	github.com/go-acme/lego/v4 v4.35.2
 	github.com/google/uuid v1.6.0
