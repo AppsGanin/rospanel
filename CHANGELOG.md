@@ -1,5 +1,18 @@
 # Changelog
 
+## [5.20.0](https://github.com/AppsGanin/rospanel/compare/v5.19.1...v5.20.0) (2026-11-27)
+
+
+### Features
+
+* **sub:** the apps a subscription is fetched with, and the minutes spent on each protocol ([638c4fa](https://github.com/AppsGanin/rospanel/commit/638c4fa09e30c304422c70128f5a52c1e633f65f))
+* **users:** filter by several statuses, tags and groups, and sort by a column ([37938d9](https://github.com/AppsGanin/rospanel/commit/37938d97412044dd6715440b765569427c13dcc6))
+
+
+### Bug Fixes
+
+* **users:** the address table names the platform and keeps the User-Agent ([bbe5753](https://github.com/AppsGanin/rospanel/commit/bbe57537bbfbf18081fd244362a888c374abd397))
+
 ## [5.19.1](https://github.com/AppsGanin/rospanel/compare/v5.19.0...v5.19.1) (2026-11-20)
 
 
