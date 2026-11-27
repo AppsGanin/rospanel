@@ -30,6 +30,7 @@ import {
   type DailyPoint,
   type DeviceList,
   type Group,
+  type SubClient,
   type TariffPlan,
   type User,
 } from './api'
@@ -55,7 +56,7 @@ import {
   termModes,
   unixToLocalDate,
 } from './format'
-import { useShowMore } from './hooks'
+
 import { HtmlEditor } from './HtmlEditor'
 import { useMessageHooks } from './messageHooks'
 import { errMessage, notifyError, notifySuccess } from './notify'
@@ -64,6 +65,9 @@ import { NodeTrafficSplit } from './NodeTrafficSplit'
 import { ABUSE_WINDOW_DAYS, AbuseList } from './AbuseList'
 import { UserEventsModal } from './UserEventsModal'
 import { AWGKeysPanel } from './AWGKeysPanel'
+import { UserLaneSplit, useUserClients } from './UserUsage'
+import { HWIDDevicesModal } from './HWIDDevicesModal'
+import { IPDevicesModal } from './IPDevicesModal'
 import { inPanelTz } from './tz'
 import {
   Button,
@@ -134,6 +138,14 @@ function planSelectData(plans: TariffPlan[], user: User) {
 // StateRow is one fact about the account: what it is on the left, muted; what it
 // says on the right, mono when it is a number. Rows divide; they are not boxed.
 // One read-only fact about the account, in the row shape the settings screens use.
+// DevTab is which list the Devices card shows: the addresses the account connects
+// from (each carrying the apps that refreshed the subscription from it), or the
+// installs bound by HWID. The two are different axes, so they stay two tabs.
+type DevTab = 'ip' | 'hwid'
+
+// IP_PAGE is how many addresses the card lists before "show more".
+const IP_PAGE = 5
+
 function StateRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <SettingRow
@@ -174,6 +186,14 @@ export function UserDetail({
   const [plans, setPlans] = useState<TariffPlan[]>([])
   const [tgLink, setTgLink] = useState<{ url: string; mins: number } | null>(null)
   const [eventsOpen, setEventsOpen] = useState(false)
+  const [devicesOpen, setDevicesOpen] = useState(false)
+  const [ipPage, setIpPage] = useState(IP_PAGE)
+  // The address table: everything the card's short rows leave out.
+  const [ipDetailsOpen, setIpDetailsOpen] = useState(false)
+  const [devTabPicked, setDevTab] = useState<DevTab>('ip')
+  const clients = useUserClients(user?.id ?? 0)
+  // HWID is not a tab while binding is off: a pick of it falls back to addresses.
+  const devTab: DevTab = devTabPicked === 'hwid' && !bound?.enabled ? 'ip' : devTabPicked
   const [msgOpen, setMsgOpen] = useState(false)
   const hooks = useMessageHooks()
   // The bot delivers to a linked chat; anyone else hears it through the external
@@ -231,6 +251,19 @@ export function UserDetail({
     setGroupQuery('')
     resetLimitDraft()
   }, [user])
+
+  // A different user is a different card: whatever the previous one had loaded must
+  // not sit under the new name while the requests are in flight. Keyed on the id, not
+  // on the object, so a refreshed copy of the same user keeps the open tab and list.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the id is the trigger; the body only resets state
+  useEffect(() => {
+    setConns([])
+    setBound(null)
+    setDevTab('ip')
+    setDevicesOpen(false)
+    setIpDetailsOpen(false)
+    setIpPage(IP_PAGE)
+  }, [userId])
 
   useEffect(() => {
     setHappLink('')
@@ -528,11 +561,25 @@ export function UserDetail({
   // server's device count does.
   const deviceConns = conns.filter((c) => !c.tunnel)
   const activeConnCount = user ? deviceConns.filter((c) => isOnline(c.last_seen)).length : 0
+  // Which installs last refreshed the subscription from each address. The address is
+  // the one a fetch came from, not the one the tunnel uses (a phone fetches over
+  // Wi-Fi and tunnels over mobile), so a chip is a hint about who is behind the IP.
+  // Installs whose address is gone from the list (an old fetch, a row recorded before
+  // the address was kept) get a group of their own under it.
+  const clientsByIP = new Map<string, SubClient[]>()
+  const clientsWithoutAddress: SubClient[] = []
+  for (const c of clients) {
+    if (c.ip && deviceConns.some((k) => k.ip === c.ip)) {
+      clientsByIP.set(c.ip, [...(clientsByIP.get(c.ip) ?? []), c])
+    } else {
+      clientsWithoutAddress.push(c)
+    }
+  }
   // Devices are the longest list in the card (the server hands over up to 20 IPs) and
   // sit between two sections the operator scrolls to, so only the most recent few are
-  // open by default. Keyed on the user so reopening the card for someone else starts
-  // collapsed again.
-  const devices = useShowMore(conns, { first: 5, resetKey: user?.id })
+  // open by default. Which apps are behind an address is the "Подробнее" table's job.
+  const ipRows = conns.slice(0, Math.min(ipPage, conns.length))
+  const ipRest = conns.length - ipRows.length
 
   return (
     <>
@@ -758,130 +805,159 @@ export function UserDetail({
           </Panel>
           </ReadOnly>
 
-          {/* 4. Devices: the addresses the account connects from, always. A router or
-                 any client that sends no HWID shows up only here, so this list must not
-                 give way to the bound installs below. */}
+          {/* 4. Devices, in one card: the addresses the account connects from (always —
+                 a router or any client that sends no HWID shows up only there), the
+                 installs bound by HWID when binding is on, and the apps that fetch the
+                 subscription. */}
           <Panel
-            title={t('userDetail.devices')}
+            title={t('userDetail.devicesAll')}
             aside={
-              <span className="text-xs text-ink-muted">
-                {user.ip_limit > 0
-                  ? t('userDetail.activeOfLimit', {
-                      active: activeConnCount,
-                      limit: user.ip_limit,
-                      total: deviceConns.length,
-                    })
-                  : t('userDetail.activeTotal', {
-                      active: activeConnCount,
-                      total: deviceConns.length,
-                    })}
-              </span>
+              <SegmentedControl
+                size="xs"
+                nav
+                value={devTab}
+                onChange={(v) => setDevTab(v as DevTab)}
+                data={[
+                  { value: 'ip', label: `IP · ${deviceConns.length}` },
+                  ...(bound?.enabled
+                    ? [{ value: 'hwid', label: `HWID · ${bound.devices.length}` }]
+                    : []),
+                ]}
+              />
             }
           >
-            {conns.length === 0 ? (
-              <p className="px-3.5 py-3 text-xs text-ink-muted">
-                {t('userDetail.noConnections')}
-              </p>
-            ) : (
+            {devTab === 'ip' && (
               <>
-                {devices.shown.map((c) => (
-                  <div
-                    key={c.ip}
-                    className={cn(
-                      'flex items-center justify-between gap-3 border-b border-gray-100 px-3.5 py-2.5 last:border-0',
-                      c.banned && 'bg-gray-50',
-                    )}
-                  >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span
+                <div className="flex min-h-9 items-center justify-between gap-2 border-b border-gray-100 px-3.5 py-1.5">
+                  <span className="text-xs text-ink-muted">
+                    {user.ip_limit > 0
+                      ? t('userDetail.activeOfLimit', {
+                          active: activeConnCount,
+                          limit: user.ip_limit,
+                          total: deviceConns.length,
+                        })
+                      : t('userDetail.activeTotal', {
+                          active: activeConnCount,
+                          total: deviceConns.length,
+                        })}
+                  </span>
+                  {conns.length > 0 && (
+                    <Button variant="subtle" size="xs" nav onClick={() => setIpDetailsOpen(true)}>
+                      {t('userDetail.devDetails')}
+                    </Button>
+                  )}
+                </div>
+                {conns.length === 0 ? (
+                  <p className="px-3.5 py-3 text-xs text-ink-muted">
+                    {t('userDetail.noConnections')}
+                  </p>
+                ) : (
+                  <>
+                    {ipRows.map((c) => (
+                      <div
+                        key={c.ip}
                         className={cn(
-                          'size-1.5 shrink-0 rounded-full',
-                          c.banned
-                            ? 'bg-gray-300'
-                            : isOnline(c.last_seen)
-                              ? 'bg-success'
-                              : 'bg-gray-400',
+                          'border-b border-gray-100 px-3.5 py-2.5 last:border-0',
+                          c.banned && 'bg-gray-50',
                         )}
-                      />
-                      <Mono
-                        className={cn('truncate text-xs', c.banned ? 'text-ink-muted' : 'text-ink')}
                       >
-                        {c.ip}
-                      </Mono>
-                      {c.tunnel && (
-                        <span className="shrink-0 text-[11px] text-ink-muted">
-                          {c.tunnel_via?.length ? c.tunnel_via.join(' · ') : t('userDetail.tunnelConn')}
-                        </span>
-                      )}
-                    </span>
-                    <span className="flex shrink-0 items-center gap-2">
-                      <Mono
-                        className="text-[11px] text-ink-muted"
-                        title={`${t('userDetail.lastConnect')}\n${t('userDetail.approxHint', {
-                          time: fmtDuration(c.approx_seconds),
-                          count: c.count,
-                        })}`}
-                      >
-                        {fmtLastSeen(c.last_seen)}
-                      </Mono>
-                      {/* One slot on every row, button or not, so the rows keep one
-                          height and the times one column; the negative margin keeps the
-                          button from making its row taller than a row of text. */}
-                      {canBan && (
-                        <span className="-my-1 flex size-6 shrink-0 items-center justify-center">
-                          {c.banned ? (
-                            <IconButton
-                              compact
-                              disabled={banBusy !== null}
-                              title={t('userDetail.unban')}
-                              onClick={() => unbanConn(c.ip)}
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span
+                              className={cn(
+                                'size-1.5 shrink-0 rounded-full',
+                                c.banned
+                                  ? 'bg-gray-300'
+                                  : isOnline(c.last_seen)
+                                    ? 'bg-success'
+                                    : 'bg-gray-400',
+                              )}
+                            />
+                            <Mono
+                              className={cn('truncate text-xs', c.banned ? 'text-ink-muted' : 'text-ink')}
                             >
-                              <IconUnlock size={16} />
-                            </IconButton>
-                          ) : (
-                            c.can_ban && (
-                              <IconButton
-                                compact
-                                color="red"
-                                disabled={banBusy !== null}
-                                title={t('userDetail.ban')}
-                                onClick={() => banConn(c.ip)}
-                              >
-                                <IconBan size={16} />
-                              </IconButton>
-                            )
-                          )}
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                ))}
-                {devices.rest > 0 && (
-                  <div className="px-3.5 py-2">
-                    <ShowMore rest={devices.rest} onClick={devices.showMore} />
-                  </div>
+                              {c.ip}
+                            </Mono>
+                            {c.tunnel && (
+                              <span className="shrink-0 text-[11px] text-ink-muted">
+                                {c.tunnel_via?.length ? c.tunnel_via.join(' · ') : t('userDetail.tunnelConn')}
+                              </span>
+                            )}
+                          </span>
+                          <span className="flex shrink-0 items-center gap-2">
+                            <Mono
+                              className="text-[11px] text-ink-muted"
+                              title={`${t('userDetail.lastConnect')}\n${t('userDetail.approxHint', {
+                                time: fmtDuration(c.approx_seconds),
+                                count: c.count,
+                              })}`}
+                            >
+                              {fmtLastSeen(c.last_seen)}
+                            </Mono>
+                            {/* One slot on every row, button or not, so the rows keep one
+                                height and the times one column; the negative margin keeps the
+                                button from making its row taller than a row of text. */}
+                            {canBan && (
+                              <span className="-my-1 flex size-6 shrink-0 items-center justify-center">
+                                {c.banned ? (
+                                  <IconButton
+                                    compact
+                                    disabled={banBusy !== null}
+                                    title={t('userDetail.unban')}
+                                    onClick={() => unbanConn(c.ip)}
+                                  >
+                                    <IconUnlock size={16} />
+                                  </IconButton>
+                                ) : (
+                                  c.can_ban && (
+                                    <IconButton
+                                      compact
+                                      color="red"
+                                      disabled={banBusy !== null}
+                                      title={t('userDetail.ban')}
+                                      onClick={() => banConn(c.ip)}
+                                    >
+                                      <IconBan size={16} />
+                                    </IconButton>
+                                  )
+                                )}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                    {ipRest > 0 && (
+                      <div className="px-3.5 py-2">
+                        <ShowMore rest={ipRest} onClick={() => setIpPage((n) => n + 20)} />
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}
-          </Panel>
-
-          {/* 4b. Bound installs, when HWID binding is on: the apps that fetched the
-                 subscription with an HWID, each of which can be unbound. */}
-          {bound?.enabled && (
-            <ReadOnly when={!canManage}>
-            <Panel
-              title={t('userDetail.boundDevices')}
-              aside={
-                <span className="text-xs text-ink-muted">
-                  {bound.limit > 0
-                    ? t('userDetail.boundOfLimit', {
-                        count: bound.devices.length,
-                        limit: bound.limit,
-                      })
-                    : t('userDetail.boundTotal', { count: bound.devices.length })}
-                </span>
-              }
-            >
+            {devTab === 'hwid' && bound?.enabled && (
+              <ReadOnly when={!canManage}>
+                <div className="flex min-h-9 items-center justify-between gap-2 border-b border-gray-100 px-3.5 py-1.5">
+                  <span className="text-xs text-ink-muted">
+                    {bound.limit > 0
+                      ? t('userDetail.boundOfLimit', {
+                          count: bound.devices.length,
+                          limit: bound.limit,
+                        })
+                      : t('userDetail.boundTotal', { count: bound.devices.length })}
+                  </span>
+                  {bound.devices.length > 0 && (
+                    <span className="flex items-center gap-1">
+                      <Button variant="subtle" size="xs" nav onClick={() => setDevicesOpen(true)}>
+                        {t('userDetail.devDetails')}
+                      </Button>
+                      <Button variant="subtle" color="red" size="xs" onClick={() => unbindDevice()}>
+                        {t('userDetail.unbindAll')}
+                      </Button>
+                    </span>
+                  )}
+                </div>
               {bound.devices.length === 0 ? (
                 <p className="px-3.5 py-3 text-xs text-ink-muted">
                   {t('userDetail.noBoundDevices')}
@@ -922,16 +998,9 @@ export function UserDetail({
                   )
                 })
               )}
-              {bound.devices.length > 0 && (
-                <div className="border-t border-gray-100 px-3.5 py-2">
-                  <Button variant="subtle" color="red" size="xs" onClick={() => unbindDevice()}>
-                    {t('userDetail.unbindAll')}
-                  </Button>
-                </div>
-              )}
-            </Panel>
-            </ReadOnly>
-          )}
+              </ReadOnly>
+            )}
+          </Panel>
 
           {/* 4c. AmneziaWG keys, one per device beyond the main one. */}
           <AWGKeysPanel userId={user.id} userName={user.name} canManage={canManage} />
@@ -1298,17 +1367,6 @@ export function UserDetail({
           </Panel>
           </ReadOnly>
 
-          <Panel
-            title={t('stats.blocklistMatches')}
-            aside={
-              <span className="text-xs text-ink-muted">
-                {t('stats.window', { count: ABUSE_WINDOW_DAYS })}
-              </span>
-            }
-          >
-            <AbuseList userId={user.id} first={5} />
-          </Panel>
-
           <Panel title={t('userDetail.traffic')} pad bodyClassName="flex flex-col gap-3">
             <SegmentedControl fullWidth value={range} onChange={setRange} data={ranges()} />
             {chart.length === 0 ? (
@@ -1321,8 +1379,24 @@ export function UserDetail({
                   from={localDay(Number(range) - 1)}
                   to={localDay(0)}
                 />
+                <UserLaneSplit
+                  userId={user.id}
+                  from={localDay(Number(range) - 1)}
+                  to={localDay(0)}
+                />
               </>
             )}
+          </Panel>
+
+          <Panel
+            title={t('stats.blocklistMatches')}
+            aside={
+              <span className="text-xs text-ink-muted">
+                {t('stats.window', { count: ABUSE_WINDOW_DAYS })}
+              </span>
+            }
+          >
+            <AbuseList userId={user.id} first={5} />
           </Panel>
 
         </div>
@@ -1346,6 +1420,35 @@ export function UserDetail({
         open={extendOpen}
         onClose={() => setExtendOpen(false)}
         onChanged={onChanged}
+      />
+    )}
+
+    {user && (
+      <IPDevicesModal
+        open={ipDetailsOpen}
+        onClose={() => setIpDetailsOpen(false)}
+        userName={user.name}
+        conns={conns}
+        clientsByIP={clientsByIP}
+        withoutAddress={clientsWithoutAddress}
+        limit={user.ip_limit}
+        active={activeConnCount}
+        canBan={canBan}
+        banBusy={banBusy}
+        onBan={banConn}
+        onUnban={unbanConn}
+      />
+    )}
+
+    {user && bound?.enabled && (
+      <HWIDDevicesModal
+        open={devicesOpen}
+        onClose={() => setDevicesOpen(false)}
+        userName={user.name}
+        devices={bound.devices}
+        limit={bound.limit}
+        canManage={canManage}
+        onUnbind={unbindDevice}
       />
     )}
 

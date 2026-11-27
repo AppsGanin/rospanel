@@ -223,6 +223,7 @@ func runServer(dataDir string) {
 		log.Printf("REALITY: порт %d общий с TLS-полосой, но фронт не поднят — REALITY будет недоступен (см. ROSPANEL_TLS_FRONT)", set.VLESSPort)
 	}
 	sup.SetOnAccess(mgr.RecordLocalAccess) // track online status + connection IPs
+	sup.SetOnLane(mgr.RecordLocalLane)     // per-user time on each protocol
 	mgr.StartSysstat(dataDir)              // host metrics for the dashboard
 	// Blocklists for abuse detection. Cached copies load synchronously (fast, local),
 	// so matching works from the first access-log line; downloads run in background
@@ -650,11 +651,13 @@ func accessFlushLoop(mgr *core.Manager) func(context.Context) {
 			// rather than folded into FlushAccess so a failure in one does not cost the
 			// other its batch — they write different tables for different purposes.
 			safeTick("abuse flush", mgr.FlushAbuse)
+			safeTick("usage flush", mgr.FlushUsage)
 		})
 		// One last flush on the way out: these buffers are the only copy of who
 		// connected in the last few seconds, and a stop should not lose them.
 		safeTick("access flush", mgr.FlushAccess)
 		safeTick("abuse flush", mgr.FlushAbuse)
+		safeTick("usage flush", mgr.FlushUsage)
 	}
 }
 
@@ -705,6 +708,7 @@ func retentionLoop(mgr *core.Manager) func(context.Context) {
 		mgr.PurgeOldOrders()          // cancelled (never-paid) orders past their retention window
 		mgr.PurgeOldNodeCommands()    // node commands nobody came back for
 		mgr.PurgeIdleDevices()        // bound devices gone quiet past their TTL
+		mgr.PurgeOldSubClients()      // subscription apps that stopped fetching
 		mgr.PurgeOldAbuse()           // blocklist matches past their (short) window
 		mgr.PurgeOldTraffic()         // per-day traffic history past a year
 		mgr.PurgeOldUptime()          // status-page history past its window

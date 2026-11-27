@@ -2386,6 +2386,9 @@ const MODAL_SIZES = {
   md: { w: "max-w-lg", body: 200 },
   lg: { w: "max-w-2xl", body: 320 },
   xl: { w: "max-w-3xl", body: 420 },
+  // 2xl is for a table of many short columns: at xl the headers wrap and the rows
+  // squeeze the address column.
+  "2xl": { w: "max-w-5xl", body: 420 },
 } as const;
 
 export function Modal({
@@ -2416,7 +2419,7 @@ export function Modal({
   // When false the modal can't be dismissed (no X, no backdrop click, no Esc) —
   // used for blocking states like "panel restarting".
   dismissible?: boolean;
-  size?: "md" | "lg" | "xl";
+  size?: "md" | "lg" | "xl" | "2xl";
   // A floor for the body, in pixels. Only worth setting when the frame resizing
   // under the reader would be worse than the empty space it costs.
   minBodyHeight?: number;
@@ -2449,8 +2452,11 @@ export function Modal({
           className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-gray-300 sm:hidden"
         />
         {title && (
-          <div className="flex min-w-0 shrink-0 items-start justify-between gap-2 border-b border-gray-100 px-5 py-4">
-            <div className="min-w-0 flex-1">
+          // Wraps rather than squeezes: on a phone the title takes its whole line and the
+          // header's buttons drop under it, instead of a three-line title beside buttons
+          // pinned to nothing.
+          <div className="flex min-w-0 shrink-0 flex-wrap items-start justify-between gap-2 border-b border-gray-100 px-5 py-4">
+            <div className="min-w-0 flex-1 basis-[calc(100%-2.5rem)] sm:basis-0">
               <div className="text-lg font-bold text-ink">{title}</div>
               {subtitle && (
                 <div className="mt-0.5 text-xs leading-relaxed text-ink-muted">

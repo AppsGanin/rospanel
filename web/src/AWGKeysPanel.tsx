@@ -95,14 +95,17 @@ export function AWGKeysPanel({ userId, userName, canManage }: { userId: number; 
         <div className="flex flex-col gap-2 border-t border-gray-100 px-3.5 py-2.5 sm:flex-row sm:items-center">
           {canAdd ? (
             <>
+              {/* Both the field and the button carry the same height: an input's border
+                  makes it a couple of pixels taller than a filled button of the same
+                  padding, and the pair reads as mismatched controls. */}
               <TextInput
                 value={name}
                 onChange={setName}
                 placeholder={t('awgKeys.namePlaceholder')}
                 ariaLabel={t('awgKeys.namePlaceholder')}
-                className="min-w-0 flex-1"
+                className="h-9 min-w-0 flex-1"
               />
-              <Button size="xs" onClick={add} loading={busy}>
+              <Button size="sm" className="h-9 shrink-0" onClick={add} loading={busy}>
                 {t('awgKeys.add')}
               </Button>
             </>

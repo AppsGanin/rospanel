@@ -266,6 +266,11 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 	if len(req.Sites) > 0 && served != nil {
 		m.ingestNodeAbuse(n.ID, req.Sites, believed)
 	}
+	// Per-user lane minutes: summed counts, so not gated on ReportID either (a
+	// duplicated sync costs a minute or two of someone's protocol share).
+	if len(req.UserLanes) > 0 && served != nil {
+		m.ingestNodeLaneMinutes(n.ID, req.UserLanes, believed)
+	}
 	if foreign > 0 && m.siteNotice.should(fmt.Sprintf("node-foreign:%d", n.ID), now) {
 		// Not a lag: a user who left the node's config is believed for an hour after.
 		// A node naming users it was never given is broken or no longer the operator's.

@@ -196,6 +196,11 @@ type SyncRequest struct {
 	// the right trade for a view that only ever shows a top-N. At most MaxSiteRows.
 	Sites []SiteSample `json:"sites,omitempty"`
 
+	// UserLanes are the minutes each user was active on each lane of this node since
+	// the last sync (a minute counts once however many connections it opened). A panel
+	// too old to know them ignores the field.
+	UserLanes []UserLaneSample `json:"user_lanes,omitempty"`
+
 	// Logs is the node's recent log tail (agent + Xray), sent only when the panel
 	// asked for it via SyncResponse.WantLogs — so a viewing operator sees fresh logs
 	// without every sync carrying the payload.
@@ -365,6 +370,13 @@ type SiteSample struct {
 	UserID int64  `json:"u"`
 	Host   string `json:"h"`
 	Count  int64  `json:"c"`
+}
+
+// UserLaneSample is one user's active minutes on one lane of the node.
+type UserLaneSample struct {
+	UserID  int64  `json:"u"`
+	Lane    string `json:"l"`
+	Minutes int64  `json:"m"`
 }
 
 // SyncResponse is returned immediately when the desired state differs from what

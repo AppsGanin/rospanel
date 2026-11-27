@@ -129,6 +129,13 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		if !rt.admitDevice(w, r, *u, set) {
 			return
 		}
+		// Which app fetched it, for the user card and the statistics: buffered, written
+		// with the access flush.
+		rt.mgr.RecordSubClient(u.ID, r.Header.Get("User-Agent"),
+			model.CleanHWID(r.Header.Get(model.HeaderHWID)),
+			model.CleanDeviceField(r.Header.Get(model.HeaderDeviceOS)),
+			model.CleanDeviceField(r.Header.Get(model.HeaderDeviceModel)),
+			clientIP(r), time.Now())
 		// allServers spans the local server plus each enabled, connected node, so the
 		// payload carries one entry per protocol × server (single-server = local only).
 		allServers, err := rt.subServers(set, u.ID, clientIP(r))

@@ -248,6 +248,10 @@ func (m *Manager) pollAWG(enforce bool) error {
 		}
 		m.awgLast[pub] = st
 		if addUp > 0 || addDown > 0 {
+			// One minute per poll, and the poll is a minute apart: a poll that lands late
+			// loses the minute it skipped, so AWG time is a lower bound, not a count of
+			// the minutes that had traffic. Xray's lanes do not have this bias.
+			m.RecordLaneActivity(userID, xray.LaneAWG, time.Unix(now, 0))
 			deltas = append(deltas, store.TrafficDelta{
 				UserID: userID, NodeID: model.LocalNodeID, Day: today,
 				AddUp: nonNeg(addUp), AddDown: nonNeg(addDown), SeenAt: now,

@@ -28,6 +28,7 @@ func bulkTestManager(t *testing.T) *Manager {
 		store:      st,
 		accLast:    map[string]int64{},
 		accPending: map[accPendingKey]store.ConnectionHit{},
+		usage:      newUsage(),
 	}
 }
 

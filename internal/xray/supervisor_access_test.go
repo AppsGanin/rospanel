@@ -1,6 +1,12 @@
 package xray
 
-import "testing"
+import (
+	"io"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+)
 
 func TestParseAccess(t *testing.T) {
 	line := "2024/01/01 00:00:00.000000 from tcp:203.0.113.10:54321 accepted tcp:example.com:443 [inbound-vless >> direct] email: u1"
@@ -110,5 +116,26 @@ func TestTunnelUsersAttribute(t *testing.T) {
 	var none *tunnelUsers
 	if email, _, _ := none.attribute(cases[0].line); email != "" {
 		t.Error("a process with no WireGuard inbound attributed a line")
+	}
+}
+
+// Each access line the tap counts also names its inbound to the lane hook; a line
+// with no email (a fallback hop, the API) names nothing.
+func TestAccessTapReportsTheInbound(t *testing.T) {
+	dir := t.TempDir()
+	sup := NewSupervisor("", filepath.Join(dir, "config.json"), dir)
+	var lanes []string
+	sup.SetOnAccess(func(string, string, string) {})
+	sup.SetOnLane(func(email, in string) { lanes = append(lanes, email+" "+in) })
+	lines := strings.Join([]string{
+		"2026/09/17 10:24:08 from 5.6.7.8:55772 accepted tcp:a.example:443 [vless-in >> direct] email: u2",
+		"2026/09/17 10:24:08 from 5.6.7.8:55773 accepted udp:b.example:443 [hysteria-in -> direct] email: u3",
+		"2026/09/17 10:24:08 from 5.6.7.8:55774 accepted tcp:c.example:443 [custom-7 >> direct] email: u05",
+		"2026/09/17 10:24:08 from 5.6.7.8:55775 accepted tcp:d.example:443 [vless-in >> direct]",
+	}, "\n")
+	sup.tap(&proc{}, strings.NewReader(lines), io.Discard, true)
+	want := []string{"u2 vless-in", "u3 hysteria-in", "u05 custom-7"}
+	if !slices.Equal(lanes, want) {
+		t.Errorf("lanes\n got  %q\n want %q", lanes, want)
 	}
 }

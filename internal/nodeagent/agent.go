@@ -217,6 +217,8 @@ type Agent struct {
 	// truncated to the busiest few per user when the sync request is built. Shares
 	// connMu with conns: both are written from the same access-log callback.
 	sites map[siteKey]int64
+	// userLanes is each user's active minutes per lane since the last sync.
+	userLanes *userLanes
 	// sitesAfter is the last user whose destinations the previous sync got through
 	// when not all of them fitted; the next sync starts after it (see takeSites).
 	sitesAfter int64
@@ -585,6 +587,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		inflight:     map[int64]*nodeapi.TrafficDelta{},
 		conns:        map[string]nodeapi.ConnSample{},
 		sites:        map[siteKey]int64{},
+		userLanes:    newUserLanes(),
 		seen:         newSeenAddrs(),
 		shaper:       shaper.New(),
 		awg:          awg.New(),
@@ -610,6 +613,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 	// Tap Xray's access log so the panel can count this node's devices (mirrors the
 	// master's sup.SetOnAccess(RecordAccess)).
 	a.sup.SetOnAccess(a.recordConn)
+	a.sup.SetOnLane(a.recordLane)
 	// A restart resets the counters: sample what they hold first, or up to a minute
 	// of this node's traffic is never reported.
 	a.sup.SetOnBeforeRestart(a.sampleStats)
@@ -732,6 +736,16 @@ func (a *Agent) recordConn(email, ip, dest string) {
 		if _, seen := a.sites[k]; seen || len(a.sites) < sitesMax {
 			a.sites[k]++
 		}
+	}
+}
+
+// recordLane counts a user's minute on the lane an access line came in on.
+func (a *Agent) recordLane(email, lane string) {
+	if _, bridge := xray.BridgeLaneEntry(lane); bridge {
+		return
+	}
+	if id, ok := userIDFromEmail(xray.CanonicalEmail(email)); ok {
+		a.userLanes.note(id, lane, time.Now())
 	}
 }
 
@@ -1276,6 +1290,8 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 	// A body already at the ceiling leaves sites nothing. Checked on len(base) first
 	// so the headroom is only ever computed from a length known to be below it — the
 	// shape CodeQL accepts as bounding the size takeSites later allocates by.
+	// Per-user lane minutes go in before the measurement, so sites yield to them too.
+	req.UserLanes = a.userLanes.take(userLanesPerSync)
 	sitesBudget := sitesBytesMax
 	if base, err := json.Marshal(req); err == nil {
 		if len(base) >= syncBodyCeiling {

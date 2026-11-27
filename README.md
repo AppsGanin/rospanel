@@ -374,6 +374,8 @@ map** breaks down where clients connect from — distinct source IPs per **count
 same geoip database Xray routes with) and per **network operator / ASN** (from a free
 iptoasn table the panel fetches itself); no external service.
 
+**Clients and protocols.** The user card's devices are the addresses the account connects from, and under each address sit the apps that refreshed the subscription from it (name, version, platform, device model, when), so an operator sees who is behind an address, with HWID binding on or off; apps whose address has already left the connections list get a group of their own. The card also shows how long the user was active on each protocol over the chart's period: Xray counts bytes per user, not per protocol, so the measure is time. Statistics show which apps and platforms the users who refreshed in the period run.
+
 **Device limits.** A user has two limits, set apart in the user card and in a tariff: **by IP**
 and **by HWID**. Each is *Default* (the panel-wide value from *Settings → Subscriptions*),
 *Unlimited* or a number. Extra devices bought on a tariff are added to both.

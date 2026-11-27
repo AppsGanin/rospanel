@@ -14,6 +14,7 @@ import { ShareBar, TrafficArea } from './charts'
 import { fmtBytes, localDay, ranges } from './format'
 import { useAction, useRefreshTick, useShowMore } from './hooks'
 import { LaneTrafficSplit } from './LaneTrafficSplit'
+import { ClientShares } from './ClientShares'
 import { NodeTrafficSplit } from './NodeTrafficSplit'
 import { useCan } from './role'
 import { BlockedList, ProbeList } from './SecurityLists'
@@ -180,6 +181,8 @@ export function StatsPanel() {
       <NodeTrafficSplit from={from} to={to} title={t('stats.byServer')} refresh={tick} />
 
       <LaneTrafficSplit from={from} to={to} refresh={tick} />
+
+      <ClientShares from={from} to={to} refresh={tick} />
 
       <CascadeTrafficSplit from={from} to={to} refresh={tick} />
 

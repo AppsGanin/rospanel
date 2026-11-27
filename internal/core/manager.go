@@ -136,6 +136,8 @@ type Manager struct {
 	// abuse holds the blocklists and their refresh loop. Nil when the feature is off,
 	// which the hot path treats as "matches nothing".
 	abuse *abuse.Store
+	// usage buffers subscription clients and per-user lane minutes (manager_usage.go).
+	usage *usage
 	// abuseMu guards the match buffer and the alert dedupe. Separate from accMu so a
 	// match never contends with the connections path it rides along with.
 	abuseMu      sync.Mutex
@@ -533,6 +535,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		accPending:     make(map[accPendingKey]store.ConnectionHit),
 		accFlushDue:    make(chan struct{}, 1),
 		abusePending:   make(map[abusePendingKey]store.AbuseHit),
+		usage:          newUsage(),
 		abuseAlerted:   make(map[abuseAlertKey]struct{}),
 		applied:        make(map[int64]struct{}),
 		rekeyed:        make(map[int64]uint64),

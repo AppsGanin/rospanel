@@ -371,13 +371,18 @@ func (s *Store) StatsByUser(from, to string) ([]model.UserTotal, error) {
 	return out, rows.Err()
 }
 
-// ResetDailyStats clears the entire per-day traffic history.
+// ResetDailyStats clears the entire per-day traffic history, the per-lane split and the
+// per-user minutes on protocols. The apps a subscription was fetched with are not
+// per-day history — they live 180 days of their own and are cleared by their own purge.
 func (s *Store) ResetDailyStats() error {
 	return s.withTx(func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`DELETE FROM traffic_daily`); err != nil {
 			return err
 		}
-		_, err := tx.Exec(`DELETE FROM lane_traffic_daily`)
+		if _, err := tx.Exec(`DELETE FROM lane_traffic_daily`); err != nil {
+			return err
+		}
+		_, err := tx.Exec(`DELETE FROM user_lane_daily`)
 		return err
 	})
 }
@@ -637,9 +642,9 @@ func (s *Store) PurgeConnections(before int64) (int64, error) {
 // statement and stall every query queued behind it.
 func (s *Store) PurgeTrafficDaily(beforeDay string) (int64, error) {
 	var total int64
-	for _, table := range []string{"traffic_daily", "lane_traffic_daily"} {
+	for _, table := range []string{"traffic_daily", "lane_traffic_daily", "user_lane_daily"} {
 		for {
-			// table is one of the two literals above.
+			// table is one of the literals above.
 			res, err := s.db.Exec(
 				`DELETE FROM `+table+` WHERE rowid IN (
 					SELECT rowid FROM `+table+` WHERE day < ? LIMIT ?

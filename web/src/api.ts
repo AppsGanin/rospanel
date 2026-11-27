@@ -666,6 +666,42 @@ export const getLaneTraffic = (p: { from?: string; to?: string }) => {
   if (p.to) q.set('to', p.to)
   return api<LaneTraffic[]>('api/stats/lanes?' + q.toString())
 }
+// SubClient is one install that fetched a user's subscription: the app and platform
+// parsed from its User-Agent (and x-device-os), the raw User-Agent of its last fetch.
+export type SubClient = {
+  // One install: "h:<hwid>" when the client names itself, else "a:<app>|<platform>".
+  id: string
+  app: string
+  version: string
+  platform: string
+  model: string
+  // The address this install last refreshed the subscription from: a hint, since a
+  // device may fetch over Wi-Fi and tunnel over mobile.
+  ip: string
+  ua: string
+  first_seen: number
+  last_seen: number
+  fetches: number
+}
+export const getUserClients = (id: number) =>
+  api<{ clients: SubClient[] }>(`api/users/${id}/clients`)
+// UserLane is a user's active minutes on one protocol over a period (summed over
+// servers), on how many days, and the last day it was used.
+export type UserLane = {
+  lane: string
+  name: string
+  minutes: number
+  days: number
+  last_day: string
+}
+export const getUserLanes = (id: number, p: { from: string; to: string }) =>
+  api<UserLane[]>(`api/users/${id}/lanes?` + new URLSearchParams(p).toString())
+// ClientShare is how many users fetched with one app, or from one platform.
+export type ClientShare = { name: string; users: number }
+export const getClientShares = (p: { from: string; to: string }) =>
+  api<{ apps: ClientShare[]; platforms: ClientShare[]; users: number }>(
+    'api/stats/clients?' + new URLSearchParams(p).toString(),
+  )
 export type CascadeTraffic = {
   exit_id: number
   exit_name: string
