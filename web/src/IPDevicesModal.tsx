@@ -31,17 +31,21 @@ function ClientSummary({ list }: { list: SubClient[] }) {
   return (
     <span
       className="line-clamp-2 text-xs text-ink"
+      // One line per install: the parsed app and device, the User-Agent it actually
+      // sent, and when it last fetched — the cell has room for the first only.
       title={list
-        .map(
-          (c) =>
-            `${clientName(c, t('userDetail.unknownApp'))}${device(c) ? ` · ${device(c)}` : ''} — ${t(
-              'userDetail.clientRefreshed',
-              { time: fmtLastSeen(c.last_seen) },
-            )}`,
-        )
-        .join('\n')}
+        .map((c) => {
+          const head = `${clientName(c, t('userDetail.unknownApp'))}${device(c) ? ` · ${device(c)}` : ''}`
+          const ua = c.ua && c.ua !== head ? `\n${c.ua}` : ''
+          return `${head}${ua}\n${t('userDetail.clientRefreshed', { time: fmtLastSeen(c.last_seen) })}`
+        })
+        .join('\n\n')}
     >
-      {list.map((c) => clientName(c, t('userDetail.unknownApp'))).join(', ')}
+      {list
+        .map((c) =>
+          [clientName(c, t('userDetail.unknownApp')), c.platform].filter(Boolean).join(' · '),
+        )
+        .join(', ')}
     </span>
   )
 }
