@@ -62,10 +62,13 @@ type userRow struct {
 }
 
 type usersPage struct {
-	Users  []userRow      `json:"users"`
-	Total  int            `json:"total"`  // users the filter matches
-	All    int            `json:"all"`    // every user
-	Counts map[string]int `json:"counts"` // per chip, over every user
+	Users []userRow `json:"users"`
+	Total int       `json:"total"` // users the filter matches
+	All   int       `json:"all"`   // every user, whatever is filtered
+	// Subset is how many users the tag and the group leave: what the chips count, and
+	// what "all · N" reads. Equal to All when neither is set.
+	Subset int            `json:"subset"`
+	Counts map[string]int `json:"counts"` // per chip, over that subset
 	Tags   []tagCount     `json:"tags"`
 	// IDs is every matching user's id, in list order, when asked for (?ids=1) — what
 	// "select all" selects.
@@ -75,9 +78,13 @@ type usersPage struct {
 // listUsersPage answers GET /api/users/page:
 //
 //	?q=      search: name, note or tag containing it; id or Xray email equal to it
-//	?filter= all | active | online | expiring | limited | disabled | expired
-//	?tag=    only users carrying this tag
+//	?filter= active | online | expiring | limited | disabled | expired — repeat for
+//	         users matching any of them; absent or "all" means everyone
+//	?tag=    only users carrying this tag — repeat for any of several
+//	?group=  only members of this access group's id — repeat for any of several;
+//	         "none" means users in no group at all
 //	?sort=   new | name | traffic | expiry | online
+//	?dir=    asc | desc, the direction of that order (each has its natural one)
 //	?lang=   ru | en | zh | ar, the alphabet a name sort follows
 //	?offset= ?limit=   the window (limit 0 returns counts only)
 //	?ids=1   also every matching id
@@ -296,6 +303,16 @@ func chipBit(filter string) uint32 {
 	return 0
 }
 
+// chipBits is the mask of every named chip: a user matching any of them is kept, so
+// the status filter answers "which of these" rather than "all at once".
+func chipBits(filters []string) uint32 {
+	var mask uint32
+	for _, f := range filters {
+		mask |= chipBit(f)
+	}
+	return mask
+}
+
 // searchText folds every name and note to lower case, once per snapshot. Tags are
 // stored folded already (see model.NormalizeTags), so they are read as they are.
 func (idx *usersIndex) searchText(users []store.UserSummary) *loweredText {
@@ -318,10 +335,15 @@ func (idx *usersIndex) searchText(users []store.UserSummary) *loweredText {
 // and an operator paging through one asks for the same order again and again. The
 // expiry order is as of when the index was worked out, which the snapshot's age bounds.
 // The slice is shared: callers must not modify it.
-func (idx *usersIndex) order(users []store.UserSummary, by, lang string) []int32 {
+func (idx *usersIndex) order(users []store.UserSummary, by, lang, dir string) []int32 {
 	key := by
 	if by == "name" {
 		key = "name:" + collationLang(lang)
+	}
+	// The direction is absolute — "asc"/"desc" — and its own list, cached under its own
+	// key: a page of either costs one sort per snapshot.
+	if dir == "asc" || dir == "desc" {
+		key += ":" + dir
 	}
 	idx.mu.Lock()
 	o, ok := idx.orders[key]
@@ -336,6 +358,13 @@ func (idx *usersIndex) order(users []store.UserSummary, by, lang string) []int32
 		o[i] = int32(i)
 	}
 	sortUserList(o, users, idx, by, lang, idx.now)
+	// The sorts name their natural direction (traffic and last-seen read biggest and
+	// newest first); the other one is the same list walked backwards.
+	if (dir == "asc" && naturalDesc(by)) || (dir == "desc" && !naturalDesc(by)) {
+		for i, j := 0, len(o)-1; i < j; i, j = i+1, j-1 {
+			o[i], o[j] = o[j], o[i]
+		}
+	}
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 	if kept, ok := idx.orders[key]; ok {
@@ -412,6 +441,17 @@ func singleUserWrite(path string) (int64, bool) {
 	return id, true
 }
 
+// cleanedValues is a repeated query parameter, trimmed and with the blanks dropped.
+func cleanedValues(vals []string) []string {
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // pageLookups are what the page reads only for the rows it shows.
 type pageLookups struct {
 	groups  func() map[int64][]model.GroupRef
@@ -425,24 +465,96 @@ type pageLookups struct {
 // copies of the users: a summary is a couple of hundred bytes, and a page of fifty
 // rows used to move all fifty thousand of them twice.
 func buildUsersPage(users []store.UserSummary, idx *usersIndex, q url.Values, look pageLookups) usersPage {
-	chip := chipBit(q.Get("filter"))
+	// The status filter may name several chips (?filter=active&filter=expired).
+	chip := chipBits(cleanedValues(q["filter"]))
 	search := strings.ToLower(strings.TrimSpace(q.Get("q")))
-	tag := strings.TrimSpace(q.Get("tag"))
+	// A tag and a group may each be named more than once (?tag=a&tag=b): a user then
+	// has to carry one of the tags, and be in one of the groups — the two narrow each
+	// other the way filters do, alternatives inside one of them are enough.
+	tags := cleanedValues(q["tag"])
+	groupQs := cleanedValues(q["group"])
+	groupIDs := make([]int64, 0, len(groupQs))
+	inNone := false
+	for _, g := range groupQs {
+		if g == "none" {
+			inNone = true
+			continue
+		}
+		if id, err := strconv.ParseInt(g, 10, 64); err == nil {
+			groupIDs = append(groupIDs, id)
+		}
+	}
 
-	page := usersPage{All: len(users), Counts: idx.counts, Tags: idx.tags, Users: []userRow{}}
+	page := usersPage{All: len(users), Subset: len(users), Counts: idx.counts, Tags: idx.tags, Users: []userRow{}}
+	// Membership is read once, and only when the list is asked to filter by it: the
+	// chips, the search and the sort never need the groups of everyone.
+	var members map[int64][]model.GroupRef
+	if len(groupQs) > 0 && look.groups != nil {
+		members = look.groups()
+	}
+	hasTag := func(i int) bool {
+		if len(tags) == 0 {
+			return true
+		}
+		for _, want := range tags {
+			if slices.Contains(users[i].Tags, want) {
+				return true
+			}
+		}
+		return false
+	}
+	inGroup := func(id int64) bool {
+		if len(groupQs) == 0 {
+			return true
+		}
+		if inNone && len(members[id]) == 0 {
+			return true
+		}
+		for _, g := range members[id] {
+			for _, want := range groupIDs {
+				if g.ID == want {
+					return true
+				}
+			}
+		}
+		return false
+	}
 	var low *loweredText
 	var searchID int64
 	if search != "" {
 		low = idx.searchText(users)
 		searchID = searchedID(search)
 	}
+	// The subset the questions are asked of: a tag and a group narrow what the chips
+	// count, so "all · 4" never sits above a list of two. Both are read from the same
+	// snapshot, so this is a pass over it, not a query.
+	inSubset := func(i int) bool {
+		return hasTag(i) && inGroup(users[i].ID)
+	}
+	if len(tags) > 0 || len(groupQs) > 0 {
+		counts := make(map[string]int, len(userChips))
+		all := 0
+		for i := range users {
+			if !inSubset(i) {
+				continue
+			}
+			all++
+			for _, name := range userChips {
+				if idx.chips[i]&chipBit(name) != 0 {
+					counts[name]++
+				}
+			}
+		}
+		page.Counts, page.Subset = counts, all
+	}
+
 	// nil is every user in the order they are already in, which is the order the page
 	// shows unless it is asked for another: whole-list work no request needs.
 	var matched []int32
-	if chip != 0 || tag != "" || search != "" {
+	if chip != 0 || len(tags) > 0 || len(groupQs) > 0 || search != "" {
 		matched = []int32{}
 		for i := range users {
-			if idx.chips[i]&chip == chip && (tag == "" || slices.Contains(users[i].Tags, tag)) &&
+			if (chip == 0 || idx.chips[i]&chip != 0) && inSubset(i) &&
 				(search == "" || userSearchMatch(&users[i], low.names[i], low.notes[i], search, searchID)) {
 				matched = append(matched, int32(i))
 			}
@@ -461,7 +573,7 @@ func buildUsersPage(users []store.UserSummary, idx *usersIndex, q url.Values, lo
 		return page
 	}
 	if by := q.Get("sort"); slices.Contains(userSorts, by) {
-		sorted := idx.order(users, by, q.Get("lang"))
+		sorted := idx.order(users, by, q.Get("lang"), q.Get("dir"))
 		if matched == nil {
 			matched = sorted // shared: only read from here on
 		} else {
@@ -581,6 +693,10 @@ func userSearchMatch(u *store.UserSummary, name, note, q string, id int64) bool 
 // anything unknown — is newest first, which is how the users are read: a stable sort
 // of fifty thousand rows into the order they already hold is work for nothing.
 var userSorts = []string{"name", "traffic", "expiry", "online"}
+
+// naturalDesc is the direction each order sorts into without being asked: traffic and
+// last-seen read biggest and most recent first, the others read forwards.
+func naturalDesc(by string) bool { return by == "traffic" || by == "online" }
 
 // sortUserList orders positions into users, in place. Stable, over a newest-first
 // list, so users that tie keep newest first.

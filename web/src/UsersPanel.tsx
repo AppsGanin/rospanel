@@ -7,7 +7,9 @@ import {
   bulkUsers,
   createUser,
   getBilling,
+  type Group,
   getUser,
+  listGroups,
   listUsersPage,
   setResetPeriod,
   setUserPlan,
@@ -34,15 +36,15 @@ import {
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { useCan } from "./role";
 import {
-  Badge,
   Button,
   cn,
   Code,
   DatePicker,
   Dropdown,
-  DropdownItem,
   EmptyState,
   IconCheck,
+  IconChevron,
+  IconClose,
   IconSearch,
   Modal,
   loadColor,
@@ -104,13 +106,47 @@ const FIRST_CHUNK = 50;
 // what is on screen in one go, up to this.
 const WINDOW_MAX = 1000;
 
-const sorts = () => [
-  { value: "new", label: i18n.t("usersPanel.sNew") },
-  { value: "name", label: i18n.t("usersPanel.sName") },
-  { value: "traffic", label: i18n.t("usersPanel.sTraffic") },
-  { value: "expiry", label: i18n.t("usersPanel.sExpiry") },
-  { value: "online", label: i18n.t("usersPanel.sOnline") },
-];
+// sortColumns are the columns that carry an order, and the direction each reads in
+// first: a name list reads forwards, money and dates read newest and largest first.
+const sortColumns: Record<string, "asc" | "desc"> = {
+  name: "asc",
+  traffic: "desc",
+  expiry: "asc",
+};
+
+// SortHead is one clickable column title. The first click orders by the column in its
+// natural direction, the second turns it around, the third puts the list back in its
+// own newest-first order — the state a header shows with no arrow at all.
+function SortHead({
+  id,
+  label,
+  sort,
+  dir,
+  onSort,
+}: {
+  id: string
+  label: string
+  sort: string
+  dir: string
+  onSort: (id: string) => void
+}) {
+  const active = sort === id
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(id)}
+      className={cn(
+        "flex min-w-0 items-center gap-1 text-start transition",
+        active ? "text-ink" : "hover:text-ink",
+      )}
+    >
+      <span className="truncate">{label}</span>
+      <span aria-hidden className={cn("shrink-0", active ? "text-accent" : "opacity-30")}>
+        {active && dir === "asc" ? "↑" : active ? "↓" : "↕"}
+      </span>
+    </button>
+  )
+}
 
 // Filter is what the chips above the list select. It is wider than User.status on
 // purpose: "online" and "expiring" are facts about a user that no status field
@@ -134,14 +170,32 @@ const CHIPS: { value: Filter; key: string }[] = [
   { value: "expired", key: "usersPanel.chipExpired" },
 ];
 
+// selectionLabel is how the bar names a multi-choice: the first name and how many
+// more there are — "VIP +2", which says what is on and that there is more of it.
+function selectionLabel(names: (string | undefined)[]): string | undefined {
+  const shown = names.filter((n): n is string => !!n)
+  if (shown.length === 0) return undefined
+  if (shown.length === 1) return shown[0]
+  return `${shown[0]} +${shown.length - 1}`
+}
+
+// chipLabel is the name of one status as the bar prints it, empty for no status.
+function chipLabel(value?: Filter): string {
+  if (!value) return ""
+  const key = (CHIPS.find((c) => c.value === value)?.key ?? "usersPanel.chipAll") as
+    | "usersPanel.chipAll"
+    | "usersPanel.chipActive"
+  return i18n.t(key)
+}
+
 // The skeleton repeats the shape of the table — the same full-bleed toolbar and
 // rows, with the same insets — so the page does not rebuild itself under the
 // operator when the list lands.
 function UsersSkeleton() {
   return (
     <div className="flex min-h-0 flex-1 animate-fade-in flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b border-brand-600/10 px-5 py-2.5">
-        <Skeleton className="h-8 w-65 max-w-full rounded-lg" />
+      <div className="flex flex-wrap items-center gap-2 border-b border-brand-600/10 bg-gray-50/70 px-5 py-2.5">
+        <Skeleton className="h-8 w-56 max-w-full rounded-lg" />
         <Skeleton className="h-7.5 w-20 rounded-full" />
         <Skeleton className="h-7.5 w-24 rounded-full" />
       </div>
@@ -153,38 +207,85 @@ function UsersSkeleton() {
   );
 }
 
-// FilterChip is one of the toolbar's saved questions: "which of these are online",
-// "which run out this week". Selected reads as an accent-tinted pill; the count is
-// part of the label because the answer is worth knowing before clicking.
-function FilterChip({
+// toggle adds a value to a selection or takes it out.
+function toggle<T>(list: T[], v: T): T[] {
+  return list.includes(v) ? list.filter((x) => x !== v) : [...list, v]
+}
+
+// MenuItem is one row of a filter menu: a tick, the name and how many users carry it.
+// It does not close the menu — the point of these menus is picking several things.
+function MenuItem({
+  checked,
   label,
   count,
-  active,
   onClick,
 }: {
-  label: string;
-  count?: number;
-  active: boolean;
-  onClick: () => void;
+  checked: boolean
+  label: string
+  count?: number
+  onClick: () => void
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-pressed={active}
+      aria-pressed={checked}
+      className="flex w-full items-center gap-2 px-3 py-1.5 text-start text-xs transition hover:bg-gray-50"
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "flex size-3.5 shrink-0 items-center justify-center rounded border text-[9px]",
+          checked ? "border-accent bg-accent text-onbrand" : "border-gray-300",
+        )}
+      >
+        {checked ? "✓" : ""}
+      </span>
+      <span className={cn("min-w-0 flex-1 truncate", checked ? "text-ink" : "text-ink-muted")}>
+        {label}
+      </span>
+      {count !== undefined && <span className="font-mono text-[11px] text-ink-muted">{count}</span>}
+    </button>
+  )
+}
+
+// BarButton is the trigger of every menu the filter bar offers — a tag, a group, the
+// order. One look: the attribute's name in muted text, its value beside it, a chevron;
+// accent-tinted once a value is set, so the bar says at a glance what narrows it.
+// (It is a span: Dropdown already wraps its trigger in a button.)
+function BarButton({
+  label,
+  value,
+  placeholder,
+}: {
+  label: string
+  value?: string
+  // What "no value" reads as; the name alone when there is nothing to say.
+  placeholder?: string
+}) {
+  const shown = value ?? placeholder
+  return (
+    <span
       className={cn(
-        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition",
-        active
+        "inline-flex h-8 max-w-56 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs transition",
+        value
           ? "accent-tint border-accent text-accent"
-          : "border-gray-300 text-ink-muted hover:bg-gray-50",
+          : "border-gray-200 bg-white text-ink-muted hover:border-gray-300 hover:text-ink",
       )}
     >
-      {label}
-      {count !== undefined && (
-        <span className="ms-1 font-mono opacity-70">· {count}</span>
+      {shown ? (
+        <>
+          <span className={cn(value ? "text-accent/70" : "text-ink-muted")}>{label}</span>
+          <span className={cn("truncate font-medium", value ? "text-accent" : "text-ink-muted")}>
+            {shown}
+          </span>
+        </>
+      ) : (
+        <span className="font-medium">{label}</span>
       )}
-    </button>
-  );
+      <IconChevron size={12} className="shrink-0 opacity-60" />
+    </span>
+  )
 }
 
 export function UsersPanel({
@@ -213,12 +314,19 @@ export function UsersPanel({
 
   const [query, setQuery] = useState("");
   const search = useDebounced(query.trim(), 250);
-  const [filter, setFilter] = useState<Filter>("all");
+  // Any of these statuses (none = everyone); the bar's "Статус" menu sets them.
+  const [filters, setFilters] = useState<Filter[]>([]);
   // "" = any tag. The options come with every page, counted over all users, so the
   // dropdown can never disagree with the rows.
-  const [tagFilter, setTagFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  // "" = any group, "none" = users in none, else the group's id as a string.
+  const [groupFilter, setGroupFilter] = useState<string[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  // The order the table's header sets: a column and its direction. "new" — the list's
+  // own newest-first order — is what an untouched table shows.
   const [sort, setSort] = useState("new");
-  const filterKey = `${search}|${filter}|${tagFilter}|${sort}`;
+  const [sortDir, setSortDir] = useState("");
+  const filterKey = `${search}|${filters.join(",")}|${tagFilter.join(",")}|${groupFilter.join(",")}|${sort}|${sortDir}`;
 
   const canManage = useCan("users.manage");
   const canDelete = useCan("users.delete");
@@ -251,8 +359,18 @@ export function UsersPanel({
 
   const fetchWindow = useCallback(
     (offset: number, limit: number) =>
-      listUsersPage({ q: search, filter, tag: tagFilter, sort, lang: currentLang(), offset, limit }),
-    [search, filter, tagFilter, sort],
+      listUsersPage({
+        q: search,
+        filter: filters,
+        tag: tagFilter,
+        group: groupFilter,
+        sort,
+        dir: sortDir,
+        lang: currentLang(),
+        offset,
+        limit,
+      }),
+    [search, filters, tagFilter, groupFilter, sort, sortDir],
   );
 
   // load replaces the list with its first `limit` rows under the current filter.
@@ -316,7 +434,9 @@ export function UsersPanel({
       .catch((e) => notifyError(errMessage(e)));
   };
 
-  const all = page?.all ?? 0;
+  const all = page?.all ?? 0
+  // What the chips count: everyone until a tag or a group narrows the list.
+  const subset = page?.subset ?? all
   const total = page?.total ?? 0;
   const counts = page?.counts ?? {};
   const tagOptions = page?.tags ?? [];
@@ -329,8 +449,29 @@ export function UsersPanel({
   // A tag that disappears from every user drops out of the options, and a filter
   // pinned to it falls back to "any".
   useEffect(() => {
-    if (page && tagFilter && !page.tags.some((o) => o.tag === tagFilter)) setTagFilter("");
+    if (!page || tagFilter.length === 0) return
+    const live = tagFilter.filter((t) => page.tags.some((o) => o.tag === t))
+    if (live.length !== tagFilter.length) setTagFilter(live)
   }, [page, tagFilter]);
+
+  // The groups are the same list the Groups tab edits, read once when the list opens.
+  // A role without the groups permission gets a refusal here, which simply means the
+  // filter stays hidden — the list itself is none of its business.
+  useEffect(() => {
+    let alive = true
+    listGroups()
+      .then((g) => alive && setGroups(g))
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, []);
+  // A deleted group leaves a choice that matches nobody: it drops out of the selection.
+  useEffect(() => {
+    if (groups.length === 0 || groupFilter.length === 0) return
+    const live = groupFilter.filter((g) => g === "none" || groups.some((x) => String(x.id) === g))
+    if (live.length !== groupFilter.length) setGroupFilter(live)
+  }, [groups, groupFilter]);
 
   // Which ids "all matching" means, when it is known: fetched for this filter, or
   // every matching row already on screen.
@@ -364,7 +505,18 @@ export function UsersPanel({
     if (!ids) {
       const key = filterKey;
       try {
-        ids = (await listUsersPage({ q: search, filter, tag: tagFilter, sort, limit: 0, ids: true })).ids ?? [];
+        ids = (
+          await listUsersPage({
+            q: search,
+            filter: filters,
+            tag: tagFilter,
+            group: groupFilter,
+            sort,
+            dir: sortDir,
+            limit: 0,
+            ids: true,
+          })
+        ).ids ?? [];
       } catch (e) {
         notifyError(errMessage(e));
         return;
@@ -380,10 +532,30 @@ export function UsersPanel({
   };
 
   const clearSelection = () => setSelected(new Set());
+  // cycleSort walks a column through its natural order, the opposite one, and back to
+  // the list's own newest-first order.
+  const cycleSort = (id: string) => {
+    const natural = sortColumns[id] ?? "asc"
+    if (sort !== id) {
+      setSort(id)
+      setSortDir(natural)
+      return
+    }
+    if (sortDir === natural) {
+      setSortDir(natural === "asc" ? "desc" : "asc")
+      return
+    }
+    setSort("new")
+    setSortDir("")
+  }
+
   const clearFilters = () => {
     setQuery("");
-    setFilter("all");
-    setTagFilter("");
+    setFilters([]);
+    setTagFilter([]);
+    setGroupFilter([]);
+    setSort("new");
+    setSortDir("");
   };
   const runBulk = async (action: BulkAction, days = 0) => {
     const ids = [...selected];
@@ -520,11 +692,11 @@ export function UsersPanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* One line: a compact search, the saved questions as chips, and the sort as
-          text. Boxed selects for the tag and the sort made this two rows of controls
-          taller than the rows they filter. */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-brand-600/10 px-5 py-2.5">
-        <span className="flex w-65 max-w-full items-center gap-2 rounded-lg border border-gray-300 bg-gray-50 px-2.5 py-1.5">
+      {/* The filter bar: the search, then the saved questions, then the two attributes
+          that narrow the same list. The order lives in the table's own header — a click
+          on a column — so the bar has nothing to say about it. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-brand-600/10 bg-gray-50/70 px-5 py-2">
+        <span className="flex h-8 w-full shrink-0 items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 sm:w-56">
           <IconSearch size={14} className="shrink-0 text-ink-muted" />
           <input
             value={query}
@@ -534,72 +706,115 @@ export function UsersPanel({
           />
         </span>
 
-        <FilterChip
-          label={t("usersPanel.chipAll")}
-          count={all}
-          active={filter === "all"}
-          onClick={() => setFilter("all")}
-        />
-        {/* A chip nothing matches is a question with no answer — it is not drawn. */}
-        {CHIPS.filter((c) => (counts[c.value] ?? 0) > 0).map((c) => (
-          <FilterChip
-            key={c.value}
-            label={t(c.key as "usersPanel.chipActive")}
-            count={counts[c.value]}
-            active={filter === c.value}
-            onClick={() => setFilter(filter === c.value ? "all" : c.value)}
-          />
-        ))}
-
-        {tagOptions.length > 0 && (
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          {/* Statuses: any of the ticked ones. Nothing ticked is everyone, so there is
+              no "all" chip — the menu says it instead. */}
           <Dropdown
             align="start"
-            width={220}
+            width={240}
             trigger={
-              <span
-                className={cn(
-                  "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition",
-                  tagFilter
-                    ? "accent-tint border-accent text-accent"
-                    : "border-gray-300 text-ink-muted hover:bg-gray-50",
-                )}
-              >
-                {tagFilter || t("usersPanel.addTagFilter")}
-              </span>
+              <BarButton
+                label={t("usersPanel.statusLabel")}
+                value={selectionLabel(filters.map((f) => chipLabel(f)))}
+                placeholder={t("usersPanel.chipAll")}
+              />
             }
           >
-            {tagFilter && (
-              <DropdownItem onClick={() => setTagFilter("")}>
-                {t("usersPanel.anyTag")}
-              </DropdownItem>
-            )}
-            {tagOptions.map((o) => (
-              <DropdownItem key={o.tag} onClick={() => setTagFilter(o.tag)}>
-                {t("usersPanel.tagN", { tag: o.tag, count: o.count })}
-              </DropdownItem>
+            <MenuItem
+              checked={filters.length === 0}
+              label={t("usersPanel.chipAll")}
+              count={subset}
+              onClick={() => setFilters([])}
+            />
+            {CHIPS.filter((c) => (counts[c.value] ?? 0) > 0).map((c) => (
+              <MenuItem
+                key={c.value}
+                checked={filters.includes(c.value)}
+                label={t(c.key as "usersPanel.chipActive")}
+                count={counts[c.value]}
+                onClick={() => setFilters(toggle(filters, c.value))}
+              />
             ))}
           </Dropdown>
-        )}
 
-        <div className="ms-auto flex items-center gap-2">
-          <Dropdown
-            width={200}
-            trigger={
-              <span className="whitespace-nowrap text-xs text-ink-muted transition hover:text-ink">
-                {t("usersPanel.sortBy", {
-                  name: sorts().find((o) => o.value === sort)?.label ?? "",
-                })}
-              </span>
-            }
-          >
-            {sorts().map((o) => (
-              <DropdownItem key={o.value} onClick={() => setSort(o.value)}>
-                <span className={o.value === sort ? "font-medium text-accent" : ""}>
-                  {o.label}
-                </span>
-              </DropdownItem>
-            ))}
-          </Dropdown>
+          {tagOptions.length > 0 && (
+            <Dropdown
+              align="start"
+              width={240}
+              trigger={
+                <BarButton
+                  label={t("usersPanel.tagLabel")}
+                  value={selectionLabel(tagFilter)}
+                  placeholder={t("usersPanel.anyTag")}
+                />
+              }
+            >
+              <MenuItem
+                checked={tagFilter.length === 0}
+                label={t("usersPanel.anyTag")}
+                onClick={() => setTagFilter([])}
+              />
+              {tagOptions.map((o) => (
+                <MenuItem
+                  key={o.tag}
+                  checked={tagFilter.includes(o.tag)}
+                  label={o.tag}
+                  count={o.count}
+                  onClick={() => setTagFilter(toggle(tagFilter, o.tag))}
+                />
+              ))}
+            </Dropdown>
+          )}
+
+          {groups.length > 0 && (
+            <Dropdown
+              align="start"
+              width={240}
+              trigger={
+                <BarButton
+                  label={t("usersPanel.groupLabel")}
+                  value={selectionLabel(
+                    groupFilter.map((g) =>
+                      g === "none"
+                        ? t("usersPanel.groupNone")
+                        : groups.find((x) => String(x.id) === g)?.name,
+                    ),
+                  )}
+                  placeholder={t("usersPanel.anyGroup")}
+                />
+              }
+            >
+              <MenuItem
+                checked={groupFilter.length === 0}
+                label={t("usersPanel.anyGroup")}
+                onClick={() => setGroupFilter([])}
+              />
+              <MenuItem
+                checked={groupFilter.includes("none")}
+                label={t("usersPanel.groupNone")}
+                onClick={() => setGroupFilter(toggle(groupFilter, "none"))}
+              />
+              {groups.map((g) => (
+                <MenuItem
+                  key={g.id}
+                  checked={groupFilter.includes(String(g.id))}
+                  label={g.name}
+                  onClick={() => setGroupFilter(toggle(groupFilter, String(g.id)))}
+                />
+              ))}
+            </Dropdown>
+          )}
+
+          {(search || filters.length > 0 || tagFilter.length > 0 || groupFilter.length > 0 || sort !== "new") && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 text-xs text-ink-muted transition hover:border-gray-300 hover:text-ink"
+            >
+              <IconClose size={12} className="shrink-0 opacity-70" />
+              {t("usersPanel.resetFilters")}
+            </button>
+          )}
         </div>
       </div>
 
@@ -629,10 +844,28 @@ export function UsersPanel({
               onChange={toggleAllFiltered}
               label={t("usersPanel.selectAll", { count: total })}
             />
-            <span className="truncate">{t("usersPanel.colUser")}</span>
+            <SortHead
+              id="name"
+              label={t("usersPanel.colUser")}
+              sort={sort}
+              dir={sortDir}
+              onSort={cycleSort}
+            />
             <span className="truncate">{t("usersPanel.colStatus")}</span>
-            <span className="truncate">{t("usersPanel.colTraffic")}</span>
-            <span className="truncate">{t("usersPanel.colExpires")}</span>
+            <SortHead
+              id="traffic"
+              label={t("usersPanel.colTraffic")}
+              sort={sort}
+              dir={sortDir}
+              onSort={cycleSort}
+            />
+            <SortHead
+              id="expiry"
+              label={t("usersPanel.colExpires")}
+              sort={sort}
+              dir={sortDir}
+              onSort={cycleSort}
+            />
             {roomy && (
               <>
                 <span className="truncate">{t("usersPanel.colDevices")}</span>
@@ -704,15 +937,19 @@ export function UsersPanel({
               >
                 {t("usersPanel.clearSelection")}
               </button>
-              <span className="ms-auto text-xs text-ink-muted">
-                {t("usersPanel.shownOf", { shown: rows.length, total: all })}
-              </span>
+              {rest > 0 && (
+                <span className="ms-auto text-xs text-ink-muted">
+                  {t("usersPanel.shownOf", { shown: rows.length, total })}
+                </span>
+              )}
             </div>
           ) : (
             <div className="flex items-center gap-3">
-              <span className="text-xs text-ink-muted">
-                {t("usersPanel.shownOf", { shown: rows.length, total: all })}
-              </span>
+              {rest > 0 && (
+                <span className="text-xs text-ink-muted">
+                  {t("usersPanel.shownOf", { shown: rows.length, total })}
+                </span>
+              )}
               {rest > 0 && (
                 <Button
                   size="xs"
@@ -1186,6 +1423,10 @@ function AddUser({
 // into "+N" with the full list on hover, for the same reason groups collapse.
 const tagsShown = 2;
 
+// tagCls is the tag label in a list row: smaller than a Badge, because the row already
+// carries a name, an id and a status and the tags are the quietest thing on it.
+const tagCls = "shrink-0 rounded bg-gray-100 px-1.5 py-0 text-[10px] leading-4 text-gray-600"
+
 // TagList renders a user's tags as small muted badges — muted so they read as labels
 // the operator attached, not as a status the panel derived.
 function TagList({ tags, max = tagsShown }: { tags: string[]; max?: number }) {
@@ -1195,14 +1436,14 @@ function TagList({ tags, max = tagsShown }: { tags: string[]; max?: number }) {
   return (
     <>
       {shown.map((tag) => (
-        <Badge key={tag} color="gray" size="xs" className="shrink-0">
+        <span key={tag} className={tagCls}>
           {tag}
-        </Badge>
+        </span>
       ))}
       {rest.length > 0 && (
-        <Badge color="gray" size="xs" className="shrink-0" title={rest.join(", ")}>
+        <span className={tagCls} title={rest.join(", ")}>
           +{rest.length}
-        </Badge>
+        </span>
       )}
     </>
   );

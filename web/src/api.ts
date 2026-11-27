@@ -2185,15 +2185,24 @@ export type UserRow = Pick<
 export interface UsersPage {
   users: UserRow[]
   total: number // users the filter matches
-  all: number // every user
-  counts: Record<string, number> // per filter chip, over every user
+  all: number // every user, whatever is filtered
+  // How many users the tag and the group leave — what the chips count and what
+  // "all · N" reads. Equals all when neither is set.
+  subset: number
+  counts: Record<string, number> // per filter chip, over that subset
   tags: TagCount[]
   ids?: number[] // every matching id, in list order, when asked for
 }
 export interface UsersPageQuery {
   q?: string
-  filter?: string
-  tag?: string
+  // Any of these statuses; empty means everyone.
+  filter?: string[]
+  // Any of these tags.
+  tag?: string[]
+  // Any of these access group ids; "none" stands for the users in no group.
+  group?: string[]
+  // The direction of the order: asc | desc (each sort has its natural one).
+  dir?: string
   sort?: string
   lang?: string
   offset?: number
@@ -2203,9 +2212,12 @@ export interface UsersPageQuery {
 export const listUsersPage = (p: UsersPageQuery) => {
   const q = new URLSearchParams()
   if (p.q) q.set('q', p.q)
-  if (p.filter && p.filter !== 'all') q.set('filter', p.filter)
-  if (p.tag) q.set('tag', p.tag)
+  // Repeated parameters: one per chosen status, tag and group.
+  for (const f of p.filter ?? []) q.append('filter', f)
+  for (const t of p.tag ?? []) q.append('tag', t)
+  for (const g of p.group ?? []) q.append('group', g)
   if (p.sort) q.set('sort', p.sort)
+  if (p.dir) q.set('dir', p.dir)
   if (p.lang) q.set('lang', p.lang)
   if (p.offset) q.set('offset', String(p.offset))
   if (p.limit !== undefined) q.set('limit', String(p.limit))

@@ -161,6 +161,16 @@ func TestUsersPageFiltersCountsAndWindows(t *testing.T) {
 		{"offset=2&limit=3", []string{"1a", "_x", "Ёж"}},
 		{"offset=50", []string{}},
 		{"sort=new", []string{"Zed", "crowd", "1a", "_x", "Ёж", "alice", "bob", "Анна"}},
+		// Several statuses read "any of these", and combine with several tags the same
+		// way inside each kind and as an AND between them.
+		{"filter=limited&filter=expired", []string{"crowd", "_x", "Ёж"}},
+		{"filter=disabled&filter=online", []string{"crowd", "bob", "Анна"}},
+		{"tag=trial&tag=sales&filter=active", []string{"Zed", "Анна"}},
+		{"tag=trial&tag=nosuch", []string{"Zed"}},
+		// The direction is absolute, and each order has its own natural one.
+		{"sort=name&lang=en&dir=desc", []string{"Ёж", "Анна", "Zed", "crowd", "bob", "alice", "1a", "_x"}},
+		{"sort=traffic&dir=asc", []string{"Анна", "bob", "Ёж", "1a", "crowd", "Zed", "_x", "alice"}},
+		{"sort=expiry&dir=desc", []string{"Анна", "bob", "_x", "crowd", "Zed", "1a", "alice", "Ёж"}},
 		// A filter and an order together: the page orders what matched, not everyone.
 		{"filter=active&sort=name&lang=en", []string{"1a", "alice", "Zed", "Анна"}},
 		{"filter=active&sort=name&lang=en&offset=2", []string{"Zed", "Анна"}},
@@ -170,11 +180,21 @@ func TestUsersPageFiltersCountsAndWindows(t *testing.T) {
 		if got := pageNames(p); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: %v, want %v", c.query, got, c.want)
 		}
-		// The chips count every user whatever is selected: a count taken over the
-		// current filter would read the same on every chip.
+		// The chips answer "how many of these are online" about the subset a tag or a
+		// group has already narrowed to, and about everyone otherwise; the chip itself
+		// and the search never change them.
+		if strings.Contains(c.query, "tag=") || strings.Contains(c.query, "group=") {
+			continue
+		}
 		if !reflect.DeepEqual(p.Counts, wantCounts) || p.All != 8 {
 			t.Errorf("%s: counts %v over %d users, want %v over 8", c.query, p.Counts, p.All, wantCounts)
 		}
+	}
+
+	// "sales" is Anna and Zed, both active: the chips describe those two, not everyone,
+	// while "all" keeps meaning every user — the page must still know it is not empty.
+	if p, _ := getPage(t, h, op, "tag=sales"); p.Subset != 2 || p.All != 8 || p.Counts["active"] != 2 || p.Counts["disabled"] != 0 {
+		t.Errorf("tag subset: subset=%d all=%d counts=%v", p.Subset, p.All, p.Counts)
 	}
 
 	// Counts only, and every matching id for "select all".
@@ -303,6 +323,72 @@ func TestUserSummariesMatchWholeUsers(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("hwid mode")
+}
+
+
+// The list narrows to one access group's members, or to the users in none of them.
+func TestUsersPageFiltersByGroup(t *testing.T) {
+	t.Parallel()
+	rt, st := rolesTestRouter(t)
+	h := rt.panelMux()
+	op := signIn(t, st, "support", model.RoleOperator, false)
+	f := newPageFixture(t, st)
+
+	vip, err := st.CreateGroup("vip", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := st.CreateGroup("other", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetUserGroups(f.ids["Анна"], []int64{vip.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetUserGroups(f.ids["Zed"], []int64{vip.ID, other.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, c := range []struct {
+		query string
+		want  []string
+	}{
+		{"group=none", []string{"crowd", "1a", "_x", "Ёж", "alice", "bob"}},
+		{"group=999999", []string{}},
+	} {
+		p, _ := getPage(t, h, op, c.query)
+		if got := pageNames(p); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: %v, want %v", c.query, got, c.want)
+		}
+	}
+	// Several groups read "any of these": Zed is in both, Anna only in vip.
+	if p, _ := getPage(t, h, op, fmt.Sprintf("group=%d&group=%d", vip.ID, other.ID)); p.Subset != 2 {
+		t.Errorf("both groups: %d", p.Subset)
+	}
+	// "No group at all" is an alternative like any other: six users in none, two in vip,
+	// and between them they are everyone.
+	if p, _ := getPage(t, h, op, "group=none"); p.Subset != 6 {
+		t.Errorf("no group: %d", p.Subset)
+	}
+	if p, _ := getPage(t, h, op, "group=none&group="+fmt.Sprint(vip.ID)); p.Subset != 8 {
+		t.Errorf("none or vip: %d", p.Subset)
+	}
+
+	// A membership filter composes with a chip and with an order.
+	p, _ := getPage(t, h, op, fmt.Sprintf("group=%d", vip.ID))
+	if got := pageNames(p); len(got) != 2 {
+		t.Fatalf("vip: %v", got)
+	}
+	if p, _ := getPage(t, h, op, fmt.Sprintf("group=%d&filter=active", vip.ID)); len(pageNames(p)) != 2 {
+		t.Errorf("vip+active: %v", pageNames(p))
+	}
+	// The chips describe the group, not everyone: VIP is Anna (active) and Zed (active).
+	if p, _ := getPage(t, h, op, fmt.Sprintf("group=%d", vip.ID)); p.Subset != 2 || p.Counts["active"] != 2 || p.Counts["expiring"] != 0 {
+		t.Errorf("group subset: subset=%d counts=%v", p.Subset, p.Counts)
+	}
+	if _, body := getPage(t, h, op, "group="+fmt.Sprint(other.ID)); !strings.Contains(body, "Zed") || strings.Contains(body, "\"Анна\"") {
+		t.Errorf("other: %s", body)
+	}
 }
 
 // A page with no rows reads neither groups nor devices; a page with rows asks for the
